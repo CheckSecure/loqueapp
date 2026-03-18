@@ -54,7 +54,7 @@ export default async function IntroductionsPage() {
   // Pending intro requests where I'm the target (from introductions table)
   const { data: pending } = await supabase
     .from('introductions')
-    .select('id, message, created_at, requester:profiles!requester_id(id, full_name, role, company, avatar_color)')
+    .select('id, message, created_at, requester:profiles!requester_id(id, full_name, role, company)')
     .eq('target_id', profileId)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
@@ -80,20 +80,13 @@ export default async function IntroductionsPage() {
 
   const suggestedIds = (batchRows || []).map((r: any) => r.suggested_id).filter(Boolean)
 
-  console.log('[Introductions] batchRows:', JSON.stringify(batchRows))
-  console.log('[Introductions] suggestedIds:', suggestedIds)
-
   // Fetch the full profiles for those suggested IDs
   let profileMap: Record<string, any> = {}
   if (suggestedIds.length > 0) {
-    const { data: suggestedProfiles, error: profilesError } = await supabase
+    const { data: suggestedProfiles } = await supabase
       .from('profiles')
-      .select('id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_color')
+      .select('id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role')
       .in('id', suggestedIds)
-
-    console.log('[Introductions] profilesError:', profilesError?.message ?? 'none')
-    console.log('[Introductions] suggestedProfiles:', JSON.stringify(suggestedProfiles))
-
     for (const p of suggestedProfiles || []) {
       profileMap[p.id] = p
     }
@@ -102,8 +95,6 @@ export default async function IntroductionsPage() {
   const suggestions = (batchRows || [])
     .map((r: any) => ({ rowId: r.id, profile: profileMap[r.suggested_id] }))
     .filter((r: any) => r.profile)
-
-  console.log('[Introductions] final suggestions count:', suggestions.length)
 
   return (
     <div className="p-6 md:p-8 pt-20 md:pt-8">
@@ -128,7 +119,7 @@ export default async function IntroductionsPage() {
                 return (
                   <div key={p.id} className="bg-white border border-amber-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-full ${req.avatar_color || pickColor(req.id)} flex items-center justify-center text-white text-xs font-bold`}>
+                      <div className={`w-9 h-9 rounded-full ${pickColor(req.id)} flex items-center justify-center text-white text-xs font-bold`}>
                         {getInitials(req.full_name)}
                       </div>
                       <div>
@@ -193,7 +184,7 @@ export default async function IntroductionsPage() {
             {suggestions.map((row: any) => {
               const s = row.profile
               const key = row.rowId || s.id
-              const avatarColor = s.avatar_color || pickColor(s.id)
+              const avatarColor = pickColor(s.id)
               const interests = Array.isArray(s.interests)
                 ? s.interests
                 : typeof s.interests === 'string' && s.interests
