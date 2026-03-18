@@ -42,13 +42,13 @@ export default async function Home() {
     <div className="min-h-screen bg-white flex flex-col">
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <span className="text-xl font-bold text-[#1B2850] tracking-tight">Cadre</span>
+          <span className="text-xl font-bold text-[#1B2850] tracking-tight">Loque</span>
           <div className="flex items-center gap-3">
             <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
               Sign in
             </Link>
             <Link href="/signup" className="text-sm font-semibold bg-[#1B2850] text-white px-4 py-2 rounded-lg hover:bg-[#2E4080] transition-colors">
-              Join Cadre
+              Join Loque
             </Link>
           </div>
         </div>
@@ -66,7 +66,7 @@ export default async function Home() {
             <span className="text-[#C4922A]">starts with an introduction.</span>
           </h1>
           <p className="text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed mb-10">
-            Cadre is the professional network built on trust. Connect with the right people through warm introductions, not cold outreach.
+            Loque is the professional network built on trust. Connect with the right people through warm introductions, not cold outreach.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
@@ -109,7 +109,7 @@ export default async function Home() {
             <div>
               <h2 className="text-3xl font-bold text-slate-900 mb-4">Networking the way it should be</h2>
               <p className="text-slate-500 leading-relaxed mb-8">
-                Cadre is built for professionals who believe that the best opportunities come from trusted connections — not spam, not cold emails, not follower counts.
+                Loque is built for professionals who believe that the best opportunities come from trusted connections — not spam, not cold emails, not follower counts.
               </p>
               <ul className="space-y-3">
                 {benefits.map((b) => (
@@ -123,7 +123,7 @@ export default async function Home() {
             <div className="bg-gradient-to-br from-[#1B2850] to-[#2E4080] rounded-3xl p-8 text-white">
               <p className="text-[#C4922A] text-sm font-semibold uppercase tracking-wide mb-6">Ready to join?</p>
               <p className="text-2xl font-bold mb-3 leading-snug">Join professionals who value meaningful connections.</p>
-              <p className="text-white/60 text-sm mb-8 leading-relaxed">Create your free account and start building your Cadre today.</p>
+              <p className="text-white/60 text-sm mb-8 leading-relaxed">Create your free account and start building your network on Loque today.</p>
               <Link
                 href="/signup"
                 className="inline-flex items-center gap-2 bg-white text-[#1B2850] text-sm font-bold px-6 py-3 rounded-xl hover:bg-[#FDF3E3] transition-colors"
@@ -136,7 +136,7 @@ export default async function Home() {
       </main>
 
       <footer className="border-t border-slate-100 py-8 text-center text-sm text-slate-400">
-        © {new Date().getFullYear()} Cadre. All rights reserved.
+        © {new Date().getFullYear()} Loque. All rights reserved.
       </footer>
     </div>
   )

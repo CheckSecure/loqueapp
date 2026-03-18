@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProfileForm from '@/components/ProfileForm'
 
-export const metadata = { title: 'Profile | Cadre' }
+export const metadata = { title: 'Profile | Loque' }
 
 export default async function ProfilePage() {
   const supabase = createClient()
@@ -20,7 +20,7 @@ export default async function ProfilePage() {
       <div className="max-w-2xl">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-slate-900">Profile</h1>
-          <p className="text-slate-500 text-sm mt-0.5">How you appear to other professionals on Cadre.</p>
+          <p className="text-slate-500 text-sm mt-0.5">How you appear to other professionals on Loque.</p>
         </div>
         <ProfileForm profile={profile} email={user.email || ''} />
         {/* Admin link — mobile only */}

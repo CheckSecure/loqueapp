@@ -5,8 +5,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Cadre',
-  description: 'Cadre - Your collaborative workspace',
+  title: 'Loque',
+  description: 'Loque — Curated professional introductions for people worth knowing.',
 }
 
 export default function RootLayout({

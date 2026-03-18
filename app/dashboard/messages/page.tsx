@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import MessagesClient from '@/components/MessagesClient'
 
-export const metadata = { title: 'Messages | Cadre' }
+export const metadata = { title: 'Messages | Loque' }
 
 export default async function MessagesPage() {
   const supabase = createClient()

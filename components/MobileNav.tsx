@@ -72,7 +72,7 @@ export default function MobileNav({ credits, unreadCount = 0 }: { credits: numbe
     <>
       {/* Top header — mobile only */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-200 px-4 h-14 flex items-center justify-between">
-        <span className="text-lg font-bold text-[#1B2850] tracking-tight">Cadre</span>
+        <span className="text-lg font-bold text-[#1B2850] tracking-tight">Loque</span>
         <CreditsChip credits={credits} />
       </div>
 

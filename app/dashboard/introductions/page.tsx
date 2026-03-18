@@ -4,7 +4,7 @@ import { Search, Briefcase, MapPin, Inbox, Star, Sparkles } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
 import RequestIntroButton from '@/components/RequestIntroButton'
 
-export const metadata = { title: 'Introductions | Cadre' }
+export const metadata = { title: 'Introductions | Loque' }
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',

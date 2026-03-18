@@ -127,7 +127,7 @@ export default function OnboardingForm() {
 
         {/* Header */}
         <div className="text-center mb-8">
-          <span className="text-2xl font-bold text-[#1B2850] tracking-tight block mb-6">Cadre</span>
+          <span className="text-2xl font-bold text-[#1B2850] tracking-tight block mb-6">Loque</span>
           <h1 className="text-2xl font-bold text-slate-900 mb-2">
             {step === 1 ? 'Who do you want to meet?' : 'How do you prefer to connect?'}
           </h1>

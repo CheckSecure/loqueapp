@@ -1,4 +1,4 @@
-# Cadre — Professional Networking App
+# Loque — Professional Networking App
 
 A Next.js 14 professional networking app backed entirely by Supabase.
 

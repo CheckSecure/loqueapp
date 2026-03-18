@@ -58,7 +58,7 @@ export default function SignupPage() {
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
           <p className="text-slate-500 text-sm mb-6">
-            We sent a confirmation link to <strong className="text-slate-700">{email}</strong>. Click it to activate your Cadre account.
+            We sent a confirmation link to <strong className="text-slate-700">{email}</strong>. Click it to activate your Loque account.
           </p>
           <Link href="/login" className="text-[#1B2850] text-sm font-semibold hover:underline">
             Back to sign in
@@ -71,18 +71,18 @@ export default function SignupPage() {
   return (
     <div className="min-h-screen flex">
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#1B2850] to-[#2E4080] flex-col justify-between p-12">
-        <Link href="/" className="text-2xl font-bold text-white tracking-tight">Cadre</Link>
+        <Link href="/" className="text-2xl font-bold text-white tracking-tight">Loque</Link>
         <div className="text-white">
           <p className="text-3xl font-bold mb-3 leading-snug">Join a network built on trust and warm introductions.</p>
           <p className="text-white/60">Your next big opportunity is one introduction away.</p>
         </div>
-        <p className="text-white/40 text-sm">© {new Date().getFullYear()} Cadre</p>
+        <p className="text-white/40 text-sm">© {new Date().getFullYear()} Loque</p>
       </div>
 
       <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8">
-            <Link href="/" className="text-xl font-bold text-[#1B2850] lg:hidden block mb-6 tracking-tight">Cadre</Link>
+            <Link href="/" className="text-xl font-bold text-[#1B2850] lg:hidden block mb-6 tracking-tight">Loque</Link>
             <h2 className="text-2xl font-bold text-slate-900">Create your account</h2>
             <p className="mt-1 text-sm text-slate-500">
               Already have an account?{' '}

@@ -18,9 +18,9 @@ function downloadICS(m: Meeting) {
   const now = new Date()
   const description = [m.notes, m.zoom_link ? `Meeting link: ${m.zoom_link}` : ''].filter(Boolean).join('\\n')
   const lines = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Cadre//Cadre Networking//EN',
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Loque//Loque Networking//EN',
     'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
-    `UID:cadre-meeting-${m.id}@cadre.app`,
+    `UID:loque-meeting-${m.id}@loque.app`,
     `DTSTAMP:${toICSDate(now.toISOString())}`,
     `DTSTART:${toICSDate(start.toISOString())}`,
     `DTEND:${toICSDate(end.toISOString())}`,

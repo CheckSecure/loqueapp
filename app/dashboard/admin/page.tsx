@@ -4,7 +4,7 @@ import { adminGetPendingRequests } from '@/lib/introRequests'
 import AdminIntroRequests from '@/components/AdminIntroRequests'
 import { ShieldCheck } from 'lucide-react'
 
-export const metadata = { title: 'Admin | Cadre' }
+export const metadata = { title: 'Admin | Loque' }
 
 export default async function AdminPage() {
   const supabase = createClient()
