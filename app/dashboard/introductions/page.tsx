@@ -54,7 +54,7 @@ export default async function IntroductionsPage() {
   // Pending intro requests where I'm the target (from introductions table)
   const { data: pending } = await supabase
     .from('introductions')
-    .select('id, message, created_at, requester:profiles!requester_id(id, full_name, role, company)')
+    .select('id, message, created_at, requester:profiles!requester_id(id, full_name, role, company, avatar_url)')
     .eq('target_id', profileId)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
@@ -85,7 +85,7 @@ export default async function IntroductionsPage() {
   if (suggestedIds.length > 0) {
     const { data: suggestedProfiles } = await supabase
       .from('profiles')
-      .select('id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role')
+      .select('id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url')
       .in('id', suggestedIds)
     for (const p of suggestedProfiles || []) {
       profileMap[p.id] = p
@@ -129,9 +129,13 @@ export default async function IntroductionsPage() {
                   <div key={p.id} className="bg-white border border-amber-200 rounded-xl p-4 shadow-sm flex flex-col gap-3">
                     {/* Top: avatar + name/role */}
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-9 h-9 rounded-full ${pickColor(req.id)} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
-                        {getInitials(req.full_name)}
-                      </div>
+                      {req.avatar_url ? (
+                        <img src={req.avatar_url} alt={req.full_name} className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+                      ) : (
+                        <div className={`w-9 h-9 rounded-full ${pickColor(req.id)} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
+                          {getInitials(req.full_name)}
+                        </div>
+                      )}
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900 truncate">{req.full_name || 'Unknown'}</p>
                         <p className="text-xs text-slate-500 truncate">
@@ -210,9 +214,13 @@ export default async function IntroductionsPage() {
                 >
                   {/* Header */}
                   <div className="flex items-start gap-3">
-                    <div className={`w-11 h-11 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>
-                      {getInitials(s.full_name)}
-                    </div>
+                    {s.avatar_url ? (
+                      <img src={s.avatar_url} alt={s.full_name} className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
+                    ) : (
+                      <div className={`w-11 h-11 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>
+                        {getInitials(s.full_name)}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-slate-900 truncate">{s.full_name || 'New member'}</p>
                       {(s.title || s.company) && (

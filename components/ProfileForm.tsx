@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Linkedin, Twitter, Link as LinkIcon, Loader2, CheckCircle } from 'lucide-react'
 import { updateProfile } from '@/app/actions'
+import AvatarUpload from '@/components/AvatarUpload'
 
 interface Profile {
   id: string
@@ -17,7 +18,7 @@ interface Profile {
   linkedin_url?: string
   twitter_url?: string
   website_url?: string
-  avatar_color?: string
+  avatar_url?: string | null
   seniority?: string
   role_type?: string
   mentorship_role?: string
@@ -57,12 +58,14 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
         <div className="h-20 bg-gradient-to-r from-[#1B2850] to-[#2E4080]" />
         <div className="px-6 pb-6">
-          <div className="flex items-end justify-between -mt-8 mb-4">
-            <div className="relative">
-              <div className={`w-16 h-16 rounded-xl ${profile?.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xl font-bold border-4 border-white shadow-sm`}>
-                {initials}
-              </div>
-            </div>
+          <div className="flex items-end justify-between">
+            {profile?.id && (
+              <AvatarUpload
+                userId={profile.id}
+                initialAvatarUrl={profile?.avatar_url}
+                displayName={profile?.full_name || email}
+              />
+            )}
             <div className="flex items-center gap-1.5 mb-1">
               <input
                 type="checkbox"
@@ -77,7 +80,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
               </label>
             </div>
           </div>
-          <p className="text-xs text-slate-400">{email}</p>
+          <p className="text-xs text-slate-400 mt-1">{email}</p>
         </div>
       </div>
 

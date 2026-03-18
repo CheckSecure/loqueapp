@@ -20,6 +20,7 @@ interface SidebarProps {
   email: string
   initials: string
   avatarColor: string
+  avatarUrl?: string | null
   credits: number
 }
 
@@ -81,7 +82,7 @@ function CreditsChip({ credits }: { credits: number }) {
   )
 }
 
-export default function Sidebar({ displayName, email, initials, avatarColor, credits }: SidebarProps) {
+export default function Sidebar({ displayName, email, initials, avatarColor, avatarUrl, credits }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -120,9 +121,17 @@ export default function Sidebar({ displayName, email, initials, avatarColor, cre
           <CreditsChip credits={credits} />
         </div>
         <div className="flex items-center gap-3 px-2">
-          <div className={`w-8 h-8 rounded-full ${avatarColor} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
-            {initials}
-          </div>
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt={displayName}
+              className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+            />
+          ) : (
+            <div className={`w-8 h-8 rounded-full ${avatarColor} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
+              {initials}
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-slate-900 truncate">{displayName}</p>
             <p className="text-xs text-slate-400 truncate">{email}</p>

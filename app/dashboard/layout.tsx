@@ -38,13 +38,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   )
 
   const [{ data: profile }, { data: creditRow }] = await Promise.all([
-    supabase.from('profiles').select('full_name').eq('id', user.id).single(),
+    supabase.from('profiles').select('full_name, avatar_url').eq('id', user.id).single(),
     supabase.from('meeting_credits').select('balance').eq('user_id', user.id).single(),
   ])
 
   const displayName = profile?.full_name || user.email?.split('@')[0] || 'You'
   const initials = displayName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
   const avatarColor = pickColor(user.id)
+  const avatarUrl: string | null = (profile as any)?.avatar_url ?? null
   const credits: number = creditRow?.balance ?? 0
 
   // Unread message count — messages from others in the user's conversations
@@ -100,6 +101,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           email={user.email || ''}
           initials={initials}
           avatarColor={avatarColor}
+          avatarUrl={avatarUrl}
           credits={credits}
         />
         <main className="flex-1 min-w-0 overflow-x-hidden">
