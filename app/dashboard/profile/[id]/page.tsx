@@ -49,11 +49,12 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('id, full_name, title, company, location, bio, expertise, intro_preferences, open_to_intros, seniority, role_type, mentorship_role')
+    .select('*')
     .eq('id', params.id)
     .single()
 
-  if (error || !profile) notFound()
+  if (error) console.error('[Profile/[id]] query error:', error.message)
+  if (!profile) notFound()
 
   const avatarColor = pickColor(profile.id)
   const name = profile.full_name || 'Member'
