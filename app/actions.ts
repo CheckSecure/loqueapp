@@ -109,9 +109,9 @@ export async function scheduleMeeting(formData: FormData) {
   if (!user) return { error: 'Not authenticated' }
 
   const { error } = await supabase.from('meetings').insert({
-    organizer_id: user.id,
+    requester_id: user.id,
     title: formData.get('title') as string,
-    attendee_id: formData.get('attendee_id') as string || null,
+    recipient_id: formData.get('attendee_id') as string || null,
     scheduled_at: formData.get('scheduled_at') as string,
     duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
     meeting_type: formData.get('meeting_type') as string || 'video',

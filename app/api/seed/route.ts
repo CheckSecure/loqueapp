@@ -55,7 +55,7 @@ export async function GET() {
     // 1. Create a match between Alexandra and the other user
     const { data: match, error: matchErr } = await supabase
       .from('matches')
-      .insert({ user1_id: user.id, user2_id: def.otherId })
+      .insert({ user_a_id: user.id, user_b_id: def.otherId })
       .select('id')
       .single()
 
@@ -98,8 +98,8 @@ export async function GET() {
     {
       label: 'Upcoming: M&A Diligence Call',
       row: {
-        organizer_id: user.id,
-        attendee_id: SARAH_ID,
+        requester_id: user.id,
+        recipient_id: SARAH_ID,
         title: 'M&A Diligence Strategy Call',
         scheduled_at: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
         duration_minutes: 45,
@@ -110,8 +110,8 @@ export async function GET() {
     {
       label: 'Upcoming: Legal Ops Discussion',
       row: {
-        organizer_id: user.id,
-        attendee_id: PRIYA_ID,
+        requester_id: user.id,
+        recipient_id: PRIYA_ID,
         title: 'Legal Ops Framework Discussion',
         scheduled_at: new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000).toISOString(),
         duration_minutes: 30,
@@ -122,8 +122,8 @@ export async function GET() {
     {
       label: 'Past: Apex Scaling Session',
       row: {
-        organizer_id: JAMES_ID,
-        attendee_id: user.id,
+        requester_id: JAMES_ID,
+        recipient_id: user.id,
         title: 'In-House Team Scaling: Lessons from Apex',
         scheduled_at: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         duration_minutes: 60,

@@ -12,8 +12,8 @@ export default async function MessagesPage() {
   // Step 1: get all matches for this user
   const { data: matchRows, error: matchErr } = await supabase
     .from('matches')
-    .select('id, user1_id, user2_id')
-    .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+    .select('id, user_a_id, user_b_id')
+    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
 
   console.log('[Messages] matchErr:', matchErr?.message ?? 'none')
   console.log('[Messages] matches:', JSON.stringify(matchRows))
@@ -32,13 +32,13 @@ export default async function MessagesPage() {
     console.log('[Messages] conversations:', convRows?.length ?? 0)
 
     // Step 3: collect the other user IDs from each match
-    const matchMap: Record<string, { user1_id: string; user2_id: string }> = {}
+    const matchMap: Record<string, { user_a_id: string; user_b_id: string }> = {}
     for (const m of matchRows || []) {
-      matchMap[m.id] = { user1_id: m.user1_id, user2_id: m.user2_id }
+      matchMap[m.id] = { user_a_id: m.user_a_id, user_b_id: m.user_b_id }
     }
 
     const otherIds = (matchRows || []).map((m: any) =>
-      m.user1_id === user.id ? m.user2_id : m.user1_id
+      m.user_a_id === user.id ? m.user_b_id : m.user_a_id
     ).filter(Boolean)
 
     // Step 4: fetch other users' profiles
@@ -55,7 +55,7 @@ export default async function MessagesPage() {
     for (const c of convRows || []) {
       const match = matchMap[c.match_id]
       if (!match) continue
-      const otherId = match.user1_id === user.id ? match.user2_id : match.user1_id
+      const otherId = match.user_a_id === user.id ? match.user_b_id : match.user_a_id
       const other = profileById[otherId] ?? null
 
       const sortedMessages = [...((c.messages as any[]) || [])].sort(

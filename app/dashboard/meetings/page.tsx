@@ -9,19 +9,16 @@ export default async function MeetingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Step 1: get all meetings where user is organizer or attendee
-  const { data: meetingRows, error: meetingsErr } = await supabase
+  // Step 1: get all meetings where user is requester or recipient
+  const { data: meetingRows } = await supabase
     .from('meetings')
-    .select('id, title, scheduled_at, duration_minutes, meeting_type, location, organizer_id, attendee_id')
-    .or(`organizer_id.eq.${user.id},attendee_id.eq.${user.id}`)
+    .select('id, title, scheduled_at, duration_minutes, meeting_type, location, requester_id, recipient_id')
+    .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
     .order('scheduled_at', { ascending: true })
 
-  console.log('[Meetings] error:', meetingsErr?.message ?? 'none')
-  console.log('[Meetings] rows:', meetingRows?.length ?? 0)
-
-  // Step 2: collect the other user IDs and look up their profiles
+  // Step 2: look up the other person's profile
   const otherIds = (meetingRows || []).map((m: any) =>
-    m.organizer_id === user.id ? m.attendee_id : m.organizer_id
+    m.requester_id === user.id ? m.recipient_id : m.requester_id
   ).filter(Boolean)
 
   let profileById: Record<string, any> = {}
@@ -34,8 +31,8 @@ export default async function MeetingsPage() {
   }
 
   const enriched = (meetingRows || []).map((m: any) => {
-    const isOrganizer = m.organizer_id === user.id
-    const otherId = isOrganizer ? m.attendee_id : m.organizer_id
+    const isRequester = m.requester_id === user.id
+    const otherId = isRequester ? m.recipient_id : m.requester_id
     return {
       id: m.id,
       title: m.title,
@@ -44,7 +41,7 @@ export default async function MeetingsPage() {
       meeting_type: m.meeting_type,
       location: m.location,
       other: profileById[otherId] ?? null,
-      isOrganizer,
+      isOrganizer: isRequester,
       isPast: new Date(m.scheduled_at) < new Date(),
     }
   })
