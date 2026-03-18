@@ -9,29 +9,80 @@ export default async function MeetingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Meetings where user is requester or recipient
-  const { data: meetingRows } = await supabase
+  // ── 1. Get all user IDs the current user is matched with ──────────────────
+  const { data: matchRows } = await supabase
+    .from('matches')
+    .select('id, user_a_id, user_b_id')
+    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
+
+  const matchedUserIds = (matchRows || []).map((r: any) =>
+    r.user_a_id === user.id ? r.user_b_id : r.user_a_id
+  ).filter(Boolean)
+
+  // ── 2. Fetch profiles for all matched users — this query WORKS (same as modal) ──
+  let profileById: Record<string, any> = {}
+  let matchedUsers: { id: string; full_name: string; title?: string; company?: string }[] = []
+
+  if (matchedUserIds.length > 0) {
+    const { data: matchedProfiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, title, company, avatar_color')
+      .in('id', matchedUserIds)
+    for (const p of matchedProfiles || []) profileById[p.id] = p
+    matchedUsers = matchedProfiles || []
+  }
+
+  console.log('[Meetings] user.id:', user.id)
+  console.log('[Meetings] matchedUserIds:', JSON.stringify(matchedUserIds))
+  console.log('[Meetings] profileById keys:', Object.keys(profileById))
+
+  // ── 3. Fetch meetings ─────────────────────────────────────────────────────
+  const { data: meetingRows, error: meetingErr } = await supabase
     .from('meetings')
     .select('id, purpose, format, status, scheduled_at, duration_minutes, location, zoom_link, notes, requester_id, recipient_id')
     .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
     .order('scheduled_at', { ascending: true })
 
-  const otherIds = (meetingRows || []).map((m: any) =>
-    m.requester_id === user.id ? m.recipient_id : m.requester_id
-  ).filter(Boolean)
+  console.log('[Meetings] meetingErr:', meetingErr?.message ?? 'none')
+  console.log('[Meetings] meetingRows count:', meetingRows?.length ?? 0)
 
-  let profileById: Record<string, any> = {}
-  if (otherIds.length > 0) {
-    const { data: profileRows } = await supabase
-      .from('profiles')
-      .select('id, full_name, title, company, avatar_color')
-      .in('id', otherIds)
-    for (const p of profileRows || []) profileById[p.id] = p
+  // ── 4. Also try PostgREST join in case the profiles aren't in matchedUserIds ──
+  const { data: joinRows, error: joinErr } = await supabase
+    .from('meetings')
+    .select(`
+      id,
+      requester:profiles!requester_id(id, full_name, avatar_color),
+      recipient:profiles!recipient_id(id, full_name, avatar_color)
+    `)
+    .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
+
+  console.log('[Meetings] joinErr:', joinErr?.message ?? 'none')
+
+  // Build an extra profile map from the join result (may be null if join unsupported)
+  const joinProfileById: Record<string, any> = {}
+  if (!joinErr) {
+    for (const row of joinRows || []) {
+      const pick = (val: any) => Array.isArray(val) ? val[0] : val
+      const req = pick(row.requester)
+      const rec = pick(row.recipient)
+      if (req?.id) joinProfileById[req.id] = req
+      if (rec?.id) joinProfileById[rec.id] = rec
+    }
   }
 
+  // Merge join profiles into the main map
+  for (const [id, p] of Object.entries(joinProfileById)) {
+    if (!profileById[id]) profileById[id] = p
+  }
+
+  console.log('[Meetings] final profileById keys:', Object.keys(profileById))
+
+  // ── 5. Enrich meetings with "other" person ────────────────────────────────
   const enriched = (meetingRows || []).map((m: any) => {
     const isRequester = m.requester_id === user.id
     const otherId = isRequester ? m.recipient_id : m.requester_id
+    const other = profileById[otherId] ?? null
+    console.log('[Meetings] meeting', m.id, '→ otherId:', otherId, 'other:', JSON.stringify(other))
     return {
       id: m.id,
       title: m.purpose,
@@ -42,7 +93,7 @@ export default async function MeetingsPage() {
       location: m.location,
       zoom_link: m.zoom_link ?? null,
       notes: m.notes ?? null,
-      other: profileById[otherId] ?? null,
+      other,
       isOrganizer: isRequester,
       isPast: new Date(m.scheduled_at) < new Date(),
     }
@@ -50,25 +101,6 @@ export default async function MeetingsPage() {
 
   const upcoming = enriched.filter((m: any) => !m.isPast)
   const past = enriched.filter((m: any) => m.isPast).reverse()
-
-  // Fetch matches so the modal can populate the "meeting with" dropdown
-  const { data: matchRows } = await supabase
-    .from('matches')
-    .select('id, user_a_id, user_b_id')
-    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
-
-  const matchedUserIds = (matchRows || []).map((r: any) =>
-    r.user_a_id === user.id ? r.user_b_id : r.user_a_id
-  )
-
-  let matchedUsers: { id: string; full_name: string; title?: string; company?: string }[] = []
-  if (matchedUserIds.length > 0) {
-    const { data: matchedProfiles } = await supabase
-      .from('profiles')
-      .select('id, full_name, title, company')
-      .in('id', matchedUserIds)
-    matchedUsers = matchedProfiles || []
-  }
 
   return (
     <MeetingsClient
