@@ -57,7 +57,7 @@ export default async function IntroductionsPage() {
     .order('created_at', { ascending: false })
 
   // Step 1: get the active batch from introduction_batches
-  const { data: activeBatch } = await supabase
+  const { data: activeBatch, error: batchLookupError } = await supabase
     .from('introduction_batches')
     .select('id, batch_number')
     .eq('status', 'active')
@@ -101,6 +101,19 @@ export default async function IntroductionsPage() {
             Your curated batch of introductions, {firstName}.
           </p>
         </div>
+
+        {/* ── DEBUG PANEL ── remove once confirmed working ── */}
+        <div className="mb-6 bg-slate-900 text-green-400 text-xs font-mono rounded-xl p-4 space-y-2 overflow-x-auto">
+          <p className="text-slate-400 font-bold uppercase tracking-wide mb-2">🐛 Debug info</p>
+          <p><span className="text-slate-500">auth user.id:</span> {user.id}</p>
+          <p><span className="text-slate-500">introduction_batches error:</span> {batchLookupError ? batchLookupError.message : 'none'}</p>
+          <p><span className="text-slate-500">active batch id:</span> {activeBatch?.id ?? 'null — no active batch found'}</p>
+          <p><span className="text-slate-500">active batch_number:</span> {activeBatchNumber ?? 'null'}</p>
+          <p><span className="text-slate-500">batch_suggestions error:</span> {batchError ? batchError.message : 'none'}</p>
+          <p><span className="text-slate-500">batch_suggestions rows ({batchRows?.length ?? 0}):</span></p>
+          <pre className="whitespace-pre-wrap text-green-300">{JSON.stringify(batchRows, null, 2)}</pre>
+        </div>
+        {/* ── END DEBUG PANEL ── */}
 
         {/* Pending requests */}
         {pending && pending.length > 0 && (
