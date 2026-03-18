@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, ArrowRight, CheckCircle } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, CheckCircle, ShieldCheck } from 'lucide-react'
+import WaitlistForm from '@/components/WaitlistForm'
 
 export default async function Home() {
   const supabase = createClient()
@@ -50,40 +51,44 @@ export default async function Home() {
             <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
               Sign in
             </Link>
-            <Link href="/signup" className="text-sm font-semibold bg-[#1B2850] text-white px-4 py-2 rounded-lg hover:bg-[#2E4080] transition-colors">
-              Join Loque
-            </Link>
           </div>
         </div>
       </nav>
 
       <main className="flex-1">
-        {/* Hero */}
-        <section className="max-w-6xl mx-auto px-6 pt-24 pb-20 text-center">
-          <div className="inline-flex items-center gap-2 bg-[#FDF3E3] text-[#C4922A] text-xs font-semibold px-3 py-1.5 rounded-full mb-8 tracking-wide uppercase">
-            Professional Networking, Reimagined
-          </div>
-          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-slate-900 leading-[1.05] tracking-tight mb-6">
-            Your next opportunity
-            <br />
-            <span className="text-[#C4922A]">starts with an introduction.</span>
-          </h1>
-          <p className="text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed mb-10">
-            Loque is the professional network built on trust. Connect with the right people through warm introductions, not cold outreach.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              href="/signup"
-              className="inline-flex items-center justify-center gap-2 bg-[#1B2850] text-white text-sm font-semibold px-7 py-3.5 rounded-xl hover:bg-[#2E4080] transition-colors shadow-lg shadow-[#1B2850]/20"
-            >
-              Get started for free <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center text-sm font-semibold text-slate-700 px-7 py-3.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors"
-            >
-              Sign in to your account
-            </Link>
+        {/* Hero + Waitlist Form */}
+        <section className="bg-gradient-to-br from-[#1B2850] to-[#2E4080] py-20 lg:py-28">
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="grid lg:grid-cols-2 gap-14 items-center">
+              {/* Left: copy */}
+              <div>
+                <div className="inline-flex items-center gap-2 bg-white/10 text-white/80 text-xs font-semibold px-3 py-1.5 rounded-full mb-6 tracking-wide uppercase border border-white/20">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#C4922A]" />
+                  Loque is currently invite-only
+                </div>
+                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-[1.05] tracking-tight mb-5">
+                  Your next opportunity
+                  <br />
+                  <span className="text-[#C4922A]">starts with an introduction.</span>
+                </h1>
+                <p className="text-lg text-white/60 leading-relaxed mb-6">
+                  Loque is the professional network built on trust. Join the waitlist to request access.
+                </p>
+                <ul className="space-y-2.5">
+                  {benefits.map(b => (
+                    <li key={b} className="flex items-center gap-2.5 text-white/70 text-sm">
+                      <CheckCircle className="w-4 h-4 text-[#C4922A] flex-shrink-0" />
+                      {b}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Right: waitlist form */}
+              <div>
+                <WaitlistForm />
+              </div>
+            </div>
           </div>
         </section>
 
@@ -106,33 +111,27 @@ export default async function Home() {
           </div>
         </section>
 
-        {/* Benefits */}
+        {/* Why invite-only */}
         <section className="max-w-6xl mx-auto px-6 py-20">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div>
               <h2 className="text-3xl font-bold text-slate-900 mb-4">Networking the way it should be</h2>
-              <p className="text-slate-500 leading-relaxed mb-8">
+              <p className="text-slate-500 leading-relaxed mb-6">
                 Loque is built for professionals who believe that the best opportunities come from trusted connections — not spam, not cold emails, not follower counts.
               </p>
-              <ul className="space-y-3">
-                {benefits.map((b) => (
-                  <li key={b} className="flex items-center gap-3 text-slate-700">
-                    <CheckCircle className="w-5 h-5 text-[#C4922A] flex-shrink-0" />
-                    <span className="text-sm font-medium">{b}</span>
-                  </li>
-                ))}
-              </ul>
+              <p className="text-slate-500 leading-relaxed">
+                We personally review every application to maintain the quality of our network. When your spot is ready, we'll reach out.
+              </p>
             </div>
             <div className="bg-gradient-to-br from-[#1B2850] to-[#2E4080] rounded-3xl p-8 text-white">
-              <p className="text-[#C4922A] text-sm font-semibold uppercase tracking-wide mb-6">Ready to join?</p>
-              <p className="text-2xl font-bold mb-3 leading-snug">Join professionals who value meaningful connections.</p>
-              <p className="text-white/60 text-sm mb-8 leading-relaxed">Create your free account and start building your network on Loque today.</p>
-              <Link
-                href="/signup"
-                className="inline-flex items-center gap-2 bg-white text-[#1B2850] text-sm font-bold px-6 py-3 rounded-xl hover:bg-[#FDF3E3] transition-colors"
-              >
-                Create free account <ArrowRight className="w-4 h-4" />
-              </Link>
+              <div className="flex items-center gap-2 mb-5">
+                <ShieldCheck className="w-5 h-5 text-[#C4922A]" />
+                <span className="text-[#C4922A] text-sm font-semibold uppercase tracking-wide">Invite-only access</span>
+              </div>
+              <p className="text-2xl font-bold mb-3 leading-snug">Join a network built on trust and warm introductions.</p>
+              <p className="text-white/60 text-sm leading-relaxed">
+                Every member is vetted. Every introduction is meaningful. Apply above and we'll be in touch when your spot opens.
+              </p>
             </div>
           </div>
         </section>

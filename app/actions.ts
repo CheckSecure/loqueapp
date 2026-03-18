@@ -187,6 +187,41 @@ export async function saveOnboardingPreferences(prefs: {
   return { success: true }
 }
 
+export async function submitWaitlist(data: {
+  fullName: string
+  email: string
+  company: string
+  roleType: string
+  referral: string
+}) {
+  const supabase = createClient()
+  const { error } = await supabase.from('waitlist').insert({
+    full_name: data.fullName,
+    email: data.email,
+    company: data.company || null,
+    role_type: data.roleType || null,
+    referral_source: data.referral || null,
+    status: 'pending',
+  })
+  if (error) {
+    if (error.code === '23505') return { error: 'This email is already on the waitlist.' }
+    return { error: error.message }
+  }
+  return { success: true }
+}
+
+export async function adminApproveWaitlist(id: string) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+  const { error } = await supabase
+    .from('waitlist')
+    .update({ status: 'approved', approved_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/dashboard/admin')
+  return { success: true }
+}
+
 export async function scheduleMeeting(formData: FormData) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
