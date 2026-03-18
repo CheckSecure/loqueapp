@@ -21,7 +21,7 @@ export default function SignupPage() {
     setLoading(true)
     setError(null)
     const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { full_name: fullName } },
@@ -31,6 +31,12 @@ export default function SignupPage() {
       setLoading(false)
       return
     }
+    if (data.session) {
+      // Email confirmation is disabled — user is logged in immediately
+      router.push('/onboarding')
+      return
+    }
+    // Email confirmation is enabled — prompt user to check their inbox
     setSuccess(true)
     setLoading(false)
   }
