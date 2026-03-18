@@ -81,7 +81,7 @@ export async function adminGetPendingRequests() {
     ...requests.map(r => r.target_user_id),
   ].filter(Boolean)
 
-  const uniqueIds = [...new Set(allIds)]
+  const uniqueIds = Array.from(new Set(allIds))
 
   let profileMap: Record<string, any> = {}
   if (uniqueIds.length > 0) {
