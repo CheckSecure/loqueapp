@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { adminApproveWaitlist } from '@/app/actions'
-import { CheckCircle, Loader2, Clock, UserCheck } from 'lucide-react'
+import { adminApproveWaitlist, adminDeclineWaitlist } from '@/app/actions'
+import { CheckCircle, Loader2, Clock, UserCheck, XCircle } from 'lucide-react'
 
 interface WaitlistEntry {
   id: string
@@ -47,6 +47,14 @@ function StatusBadge({ status }: { status: string }) {
       </span>
     )
   }
+  if (status === 'declined') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full">
+        <XCircle className="w-2.5 h-2.5" />
+        Declined
+      </span>
+    )
+  }
   return (
     <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
       <Clock className="w-2.5 h-2.5" />
@@ -55,27 +63,30 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
+type ActionType = 'approve' | 'decline'
+
 export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] }) {
   const [entries, setEntries] = useState(initial)
-  const [loading, setLoading] = useState<Record<string, boolean>>({})
+  const [loading, setLoading] = useState<Record<string, ActionType>>({})
   const router = useRouter()
 
-  const handleApprove = async (id: string) => {
-    setLoading(prev => ({ ...prev, [id]: true }))
-    const result = await adminApproveWaitlist(id)
-    setLoading(prev => {
-      const next = { ...prev }
-      delete next[id]
-      return next
-    })
+  const handle = async (id: string, action: ActionType) => {
+    setLoading(prev => ({ ...prev, [id]: action }))
+    const result = action === 'approve'
+      ? await adminApproveWaitlist(id)
+      : await adminDeclineWaitlist(id)
+    setLoading(prev => { const next = { ...prev }; delete next[id]; return next })
     if (!result.error) {
-      setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'approved' } : e))
+      setEntries(prev => prev.map(e =>
+        e.id === id ? { ...e, status: action === 'approve' ? 'approved' : 'declined' } : e
+      ))
     }
     router.refresh()
   }
 
-  const pending = entries.filter(e => e.status !== 'approved')
+  const pending  = entries.filter(e => e.status === 'pending')
   const approved = entries.filter(e => e.status === 'approved')
+  const declined = entries.filter(e => e.status === 'declined')
 
   if (entries.length === 0) {
     return (
@@ -87,8 +98,8 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
     )
   }
 
-  const Table = ({ rows }: { rows: WaitlistEntry[] }) => (
-    <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
+  const Table = ({ rows, dimmed = false }: { rows: WaitlistEntry[]; dimmed?: boolean }) => (
+    <div className={`bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden ${dimmed ? 'opacity-60' : ''}`}>
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[700px]">
           <thead>
@@ -103,37 +114,53 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.map(entry => (
-              <tr key={entry.id} className="hover:bg-[#F5F6FB] transition-colors">
-                <td className="px-5 py-4">
-                  <p className="font-semibold text-slate-900 text-sm">{entry.full_name}</p>
-                  {entry.referral_source && (
-                    <p className="text-[11px] text-slate-400 mt-0.5">via: {entry.referral_source}</p>
-                  )}
-                </td>
-                <td className="px-5 py-4 text-sm text-slate-600">{entry.email}</td>
-                <td className="px-5 py-4 text-sm text-slate-600">{entry.company || '—'}</td>
-                <td className="px-5 py-4 text-sm text-slate-600">
-                  {entry.role_type ? (ROLE_LABELS[entry.role_type] ?? entry.role_type) : '—'}
-                </td>
-                <td className="px-5 py-4 text-xs text-slate-400">{formatDate(entry.created_at)}</td>
-                <td className="px-5 py-4"><StatusBadge status={entry.status} /></td>
-                <td className="px-5 py-4">
-                  {entry.status !== 'approved' && (
-                    <button
-                      disabled={!!loading[entry.id]}
-                      onClick={() => handleApprove(entry.id)}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#1B2850] hover:bg-[#2E4080] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-                    >
-                      {loading[entry.id]
-                        ? <Loader2 className="w-3 h-3 animate-spin" />
-                        : <CheckCircle className="w-3 h-3" />}
-                      Approve
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {rows.map(entry => {
+              const busy = loading[entry.id]
+              const actionable = entry.status === 'pending'
+              return (
+                <tr key={entry.id} className="hover:bg-[#F5F6FB] transition-colors">
+                  <td className="px-5 py-4">
+                    <p className="font-semibold text-slate-900 text-sm">{entry.full_name}</p>
+                    {entry.referral_source && (
+                      <p className="text-[11px] text-slate-400 mt-0.5">via: {entry.referral_source}</p>
+                    )}
+                  </td>
+                  <td className="px-5 py-4 text-sm text-slate-600">{entry.email}</td>
+                  <td className="px-5 py-4 text-sm text-slate-600">{entry.company || '—'}</td>
+                  <td className="px-5 py-4 text-sm text-slate-600">
+                    {entry.role_type ? (ROLE_LABELS[entry.role_type] ?? entry.role_type) : '—'}
+                  </td>
+                  <td className="px-5 py-4 text-xs text-slate-400">{formatDate(entry.created_at)}</td>
+                  <td className="px-5 py-4"><StatusBadge status={entry.status} /></td>
+                  <td className="px-5 py-4">
+                    {actionable && (
+                      <div className="flex items-center gap-2 justify-end">
+                        <button
+                          disabled={!!busy}
+                          onClick={() => handle(entry.id, 'approve')}
+                          className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#1B2850] hover:bg-[#2E4080] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                        >
+                          {busy === 'approve'
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <CheckCircle className="w-3 h-3" />}
+                          Approve
+                        </button>
+                        <button
+                          disabled={!!busy}
+                          onClick={() => handle(entry.id, 'decline')}
+                          className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                        >
+                          {busy === 'decline'
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <XCircle className="w-3 h-3" />}
+                          Decline
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -156,6 +183,14 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
             Approved · {approved.length}
           </h3>
           <Table rows={approved} />
+        </div>
+      )}
+      {declined.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
+            Declined · {declined.length}
+          </h3>
+          <Table rows={declined} dimmed />
         </div>
       )}
     </div>

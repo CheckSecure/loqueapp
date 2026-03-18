@@ -222,6 +222,18 @@ export async function adminApproveWaitlist(id: string) {
   return { success: true }
 }
 
+export async function adminDeclineWaitlist(id: string) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+  const { error } = await supabase
+    .from('waitlist')
+    .update({ status: 'declined' })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  revalidatePath('/dashboard/admin')
+  return { success: true }
+}
+
 export async function scheduleMeeting(formData: FormData) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
