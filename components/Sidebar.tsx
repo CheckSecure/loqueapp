@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, LogOut, Menu, X } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, LogOut, Menu, X, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
@@ -12,6 +12,7 @@ const navItems = [
   { href: '/dashboard/messages', label: 'Messages', icon: MessageSquare },
   { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar },
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
+  { href: '/dashboard/admin', label: 'Admin', icon: ShieldCheck },
 ]
 
 interface SidebarProps {

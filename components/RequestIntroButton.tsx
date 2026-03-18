@@ -1,32 +1,51 @@
 'use client'
 
 import { useState } from 'react'
-import { requestIntroduction } from '@/app/actions'
+import { submitIntroRequest } from '@/app/actions'
+import { CheckCircle, Loader2 } from 'lucide-react'
 
 export default function RequestIntroButton({ targetId }: { targetId: string }) {
   const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState('')
 
   const handleClick = async () => {
     setState('loading')
-    const result = await requestIntroduction(targetId)
-    setState(result.error ? 'error' : 'done')
+    const result = await submitIntroRequest(targetId)
+    if (result.error) {
+      setErrorMsg(result.error)
+      setState('error')
+    } else {
+      setState('done')
+    }
   }
 
   if (state === 'done') {
     return (
-      <div className="w-full text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 py-1.5 rounded-lg text-center">
-        Request sent!
+      <div className="mt-1">
+        <div className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 py-1.5 rounded-lg">
+          <CheckCircle className="w-3.5 h-3.5" />
+          Requested ✓
+        </div>
+        <p className="text-xs text-slate-400 text-center mt-1.5">
+          Request submitted — Cadre will facilitate this introduction
+        </p>
       </div>
     )
   }
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={state === 'loading'}
-      className="w-full text-xs font-semibold bg-indigo-600 text-white py-1.5 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-60"
-    >
-      {state === 'loading' ? 'Sending...' : state === 'error' ? 'Try again' : 'Request intro'}
-    </button>
+    <div className="mt-1">
+      <button
+        onClick={handleClick}
+        disabled={state === 'loading'}
+        className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold bg-indigo-600 text-white py-1.5 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-60"
+      >
+        {state === 'loading' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+        {state === 'loading' ? 'Submitting...' : state === 'error' ? 'Try again' : 'Request intro'}
+      </button>
+      {state === 'error' && errorMsg && (
+        <p className="text-xs text-red-500 text-center mt-1">{errorMsg}</p>
+      )}
+    </div>
   )
 }

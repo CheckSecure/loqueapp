@@ -53,6 +53,36 @@ export async function requestIntroduction(targetId: string) {
   return { success: true }
 }
 
+export async function submitIntroRequest(targetUserId: string, note?: string) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+  const { createIntroRequest } = await import('@/lib/introRequests')
+  const result = await createIntroRequest(user.id, user.email ?? '', targetUserId, note)
+  if (result.error) return { error: result.error }
+  revalidatePath('/dashboard/introductions')
+  return { success: true }
+}
+
+export async function adminApproveIntro(requestId: string) {
+  const { user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+  const { approveIntroRequest } = await import('@/lib/introRequests')
+  const result = await approveIntroRequest(requestId)
+  if (result.error) return { error: result.error }
+  revalidatePath('/dashboard/admin')
+  return { success: true }
+}
+
+export async function adminRejectIntro(requestId: string) {
+  const { user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+  const { rejectIntroRequest } = await import('@/lib/introRequests')
+  const result = await rejectIntroRequest(requestId)
+  if (result.error) return { error: result.error }
+  revalidatePath('/dashboard/admin')
+  return { success: true }
+}
+
 export async function updateIntroStatus(id: string, status: 'accepted' | 'declined') {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
