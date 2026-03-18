@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
+import MobileNav from '@/components/MobileNav'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -50,11 +51,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const credits: number = creditRow?.balance ?? 0
 
   return (
-    <div className="min-h-screen flex bg-slate-50">
-      <Sidebar displayName={displayName} email={user.email || ''} initials={initials} avatarColor={avatarColor} credits={credits} />
-      <main className="flex-1 min-w-0 overflow-auto">
-        {children}
-      </main>
-    </div>
+    <>
+      {/* Mobile header + bottom nav — rendered at root level so fixed positioning is reliable */}
+      <MobileNav credits={credits} />
+
+      {/* Main layout — desktop sidebar + content */}
+      <div className="min-h-screen md:flex bg-slate-50">
+        <Sidebar
+          displayName={displayName}
+          email={user.email || ''}
+          initials={initials}
+          avatarColor={avatarColor}
+          credits={credits}
+        />
+        <main className="flex-1 min-w-0 overflow-x-hidden">
+          {children}
+        </main>
+      </div>
+    </>
   )
 }

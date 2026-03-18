@@ -16,21 +16,21 @@ export default function IntroductionActions({ introId }: { introId: string }) {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <>
       <button
         disabled={!!loading}
         onClick={() => handle('accepted')}
-        className="text-xs font-semibold text-white bg-[#1B2850] hover:bg-[#2E4080] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+        className="flex-1 text-xs font-semibold text-white bg-[#1B2850] hover:bg-[#2E4080] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60 text-center"
       >
         {loading === 'accepted' ? '...' : 'Accept'}
       </button>
       <button
         disabled={!!loading}
         onClick={() => handle('declined')}
-        className="text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors disabled:opacity-60"
+        className="flex-1 text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors disabled:opacity-60 text-center"
       >
         {loading === 'declined' ? '...' : 'Decline'}
       </button>
-    </div>
+    </>
   )
 }

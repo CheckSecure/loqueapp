@@ -117,21 +117,23 @@ export default async function IntroductionsPage() {
                 const req = p.requester
                 const daysAgo = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000)
                 return (
-                  <div key={p.id} className="bg-white border border-amber-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-full ${pickColor(req.id)} flex items-center justify-center text-white text-xs font-bold`}>
+                  <div key={p.id} className="bg-white border border-amber-200 rounded-xl p-4 shadow-sm flex flex-col gap-3">
+                    {/* Top: avatar + name/role */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-9 h-9 rounded-full ${pickColor(req.id)} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
                         {getInitials(req.full_name)}
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{req.full_name || 'Unknown'}</p>
-                        <p className="text-xs text-slate-500">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-900 truncate">{req.full_name || 'Unknown'}</p>
+                        <p className="text-xs text-slate-500 truncate">
                           {[req.role, req.company].filter(Boolean).join(' at ') || 'No title yet'}
                         </p>
-                        {p.message && <p className="text-xs text-slate-400 mt-0.5 italic">"{p.message}"</p>}
+                        {p.message && <p className="text-xs text-slate-400 mt-0.5 italic line-clamp-2">"{p.message}"</p>}
                       </div>
+                      <span className="text-xs text-slate-400 flex-shrink-0">{daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-400">{daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}</span>
+                    {/* Bottom: actions — full width row */}
+                    <div className="flex items-center gap-2 border-t border-amber-100 pt-2.5">
                       <IntroductionActions introId={p.id} />
                     </div>
                   </div>
