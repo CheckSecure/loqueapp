@@ -80,14 +80,21 @@ export default async function IntroductionsPage() {
 
   const suggestedIds = (batchRows || []).map((r: any) => r.suggested_id).filter(Boolean)
 
+  console.log('[Introductions] batchRows:', JSON.stringify(batchRows))
+  console.log('[Introductions] suggestedIds:', suggestedIds)
+
   // Fetch the full profiles for those suggested IDs
   let profileMap: Record<string, any> = {}
   if (suggestedIds.length > 0) {
-    const { data: profileRows } = await supabase
+    const { data: suggestedProfiles, error: profilesError } = await supabase
       .from('profiles')
       .select('id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_color')
       .in('id', suggestedIds)
-    for (const p of profileRows || []) {
+
+    console.log('[Introductions] profilesError:', profilesError?.message ?? 'none')
+    console.log('[Introductions] suggestedProfiles:', JSON.stringify(suggestedProfiles))
+
+    for (const p of suggestedProfiles || []) {
       profileMap[p.id] = p
     }
   }
@@ -95,6 +102,8 @@ export default async function IntroductionsPage() {
   const suggestions = (batchRows || [])
     .map((r: any) => ({ rowId: r.id, profile: profileMap[r.suggested_id] }))
     .filter((r: any) => r.profile)
+
+  console.log('[Introductions] final suggestions count:', suggestions.length)
 
   return (
     <div className="p-6 md:p-8 pt-20 md:pt-8">
