@@ -44,6 +44,9 @@ export default async function Home() {
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <span className="text-xl font-bold text-[#1B2850] tracking-tight">Loque</span>
           <div className="flex items-center gap-3">
+            <Link href="/pricing" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
+              Pricing
+            </Link>
             <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
               Sign in
             </Link>

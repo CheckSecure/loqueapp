@@ -1,0 +1,12 @@
+Tell the Replit agent:
+"Build a pricing page at /pricing that is accessible from the landing page and the dashboard. The page should have a clean, premium navy and gold design matching the rest of the app. At the top include a Monthly/Annual billing toggle where Annual shows a 20% discount. Show three subscription tiers:
+Free — $0/month: 3 credits on signup, access to weekly introductions, basic profile, messaging with matches
+Professional — $49/month (or $39/month billed annually): 15 credits per month automatically added, priority matching, professional badge on profile, early access to new weekly batches. Mark this as 'Most Popular' with a highlighted navy border. Add note: 'Billed monthly · Cancel anytime'
+Executive — $99/month (or $79/month billed annually): Unlimited credits, priority matching, executive badge on profile, early access to new weekly batches, dedicated concierge introduction support. Add note: 'Billed monthly · Cancel anytime'
+Below the tiers show a 'Top up credits' section with three one-time purchase options: 5 credits for $9, 15 credits for $19, 30 credits for $35. These are one-time purchases with no auto-renewal.
+Add a FAQ section at the bottom with these questions and answers:
+What are credits? Credits are used to request meetings with other members. Each meeting request costs 1 credit.
+Do credits roll over? Subscription credits reset each month and do not roll over. Purchased credit packs never expire.
+Can I cancel anytime? Yes, you can cancel your subscription at any time with no penalties.
+What happens when I run out of credits? You can purchase a credit top-up pack or upgrade your plan.
+Add a 'View pricing' link in the landing page navigation bar. Add an 'Upgrade' link in the dashboard sidebar near the credits chip that goes to /pricing. All plan buttons should say 'Get started' or 'Upgrade now' and link to /signup for now. Add a note at the bottom: 'Secure payments powered by Stripe — coming soon.' The Professional plan should have a highlighted border and a 'Most Popular' badge.

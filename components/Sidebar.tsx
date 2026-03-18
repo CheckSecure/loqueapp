@@ -117,8 +117,14 @@ export default function Sidebar({ displayName, email, initials, avatarColor, ava
         })}
       </nav>
       <div className="px-3 pb-4 border-t border-slate-200 pt-4 space-y-3">
-        <div className="px-2">
+        <div className="px-2 flex items-center justify-between">
           <CreditsChip credits={credits} />
+          <Link
+            href="/pricing"
+            className="text-xs font-semibold text-[#C4922A] hover:text-[#b07d24] transition-colors"
+          >
+            Upgrade
+          </Link>
         </div>
         <div className="flex items-center gap-3 px-2">
           {avatarUrl ? (
