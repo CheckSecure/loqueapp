@@ -119,13 +119,49 @@ export async function approveIntroRequest(requestId: string) {
 
   if (updateErr) return { error: updateErr.message }
 
-  const { error: matchErr } = await supabase.from('matches').insert({
-    user_a_id: req.requester_id,
-    user_b_id: req.target_user_id,
-  })
+  // Create match (or find existing one if already created)
+  let matchId: string | null = null
 
-  if (matchErr && !matchErr.message.includes('duplicate')) {
-    return { error: `Approved but match failed: ${matchErr.message}` }
+  const { data: newMatch, error: matchErr } = await supabase
+    .from('matches')
+    .insert({ user_a_id: req.requester_id, user_b_id: req.target_user_id })
+    .select('id')
+    .single()
+
+  if (newMatch) {
+    matchId = newMatch.id
+  } else {
+    // Match may already exist — look it up
+    const { data: existing } = await supabase
+      .from('matches')
+      .select('id')
+      .or(
+        `and(user_a_id.eq.${req.requester_id},user_b_id.eq.${req.target_user_id}),` +
+        `and(user_a_id.eq.${req.target_user_id},user_b_id.eq.${req.requester_id})`
+      )
+      .limit(1)
+      .single()
+    if (existing) matchId = existing.id
+    else if (matchErr) return { error: `Match failed: ${matchErr.message}` }
+  }
+
+  if (!matchId) return { error: 'Could not create or find match' }
+
+  // Create a conversation linked to this match (if one doesn't already exist)
+  const { data: existingConv } = await supabase
+    .from('conversations')
+    .select('id')
+    .eq('match_id', matchId)
+    .limit(1)
+    .single()
+
+  if (!existingConv) {
+    const { error: convErr } = await supabase
+      .from('conversations')
+      .insert({ match_id: matchId })
+
+    console.log('[approveIntroRequest] conversation created for matchId:', matchId, 'error:', JSON.stringify(convErr))
+    if (convErr) return { error: `Approved but conversation failed: ${convErr.message}` }
   }
 
   return { success: true }

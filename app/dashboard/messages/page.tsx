@@ -51,6 +51,22 @@ export default async function MessagesPage() {
       for (const p of profileRows || []) profileById[p.id] = p
     }
 
+    // Step 4b: auto-create conversations for matches that don't have one yet
+    const matchIdsWithConvs = new Set((convRows || []).map((c: any) => c.match_id))
+    for (const m of matchRows || []) {
+      if (!matchIdsWithConvs.has(m.id)) {
+        const { data: newConv } = await supabase
+          .from('conversations')
+          .insert({ match_id: m.id })
+          .select('id, match_id, created_at')
+          .single()
+        if (newConv) {
+          // Add with empty messages array
+          ;(convRows as any[])?.push({ ...newConv, messages: [] })
+        }
+      }
+    }
+
     // Step 5: assemble conversation objects
     for (const c of convRows || []) {
       const match = matchMap[c.match_id]

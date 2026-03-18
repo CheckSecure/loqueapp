@@ -104,11 +104,15 @@ export async function sendMessage(conversationId: string, content: string) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
+  console.log('[sendMessage] conversationId:', conversationId, 'sender_id:', user.id)
+
   const { error } = await supabase.from('messages').insert({
     conversation_id: conversationId,
     sender_id: user.id,
     content,
   })
+
+  console.log('[sendMessage] insert error:', JSON.stringify(error))
 
   if (error) return { error: error.message }
   revalidatePath('/dashboard/messages')
