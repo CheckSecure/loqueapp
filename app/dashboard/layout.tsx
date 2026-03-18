@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import pool from '@/lib/db'
 
 const AVATAR_COLORS = [
   'bg-violet-500','bg-emerald-500','bg-amber-500','bg-rose-500',
@@ -18,22 +17,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const color = pickColor(user.id)
-  const metaName = user.user_metadata?.full_name as string ?? null
-
-  // Upsert profile in Replit PostgreSQL
-  await pool.query(
-    `INSERT INTO profiles (id, full_name, avatar_color)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (id) DO NOTHING`,
-    [user.id, metaName, color]
+  // Ensure a profile row exists for this user
+  await supabase.from('profiles').upsert(
+    {
+      id: user.id,
+      full_name: user.user_metadata?.full_name ?? null,
+      avatar_color: pickColor(user.id),
+    },
+    { onConflict: 'id', ignoreDuplicates: true }
   )
 
-  const { rows } = await pool.query(
-    'SELECT full_name, avatar_color FROM profiles WHERE id = $1',
-    [user.id]
-  )
-  const profile = rows[0]
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name, avatar_color')
+    .eq('id', user.id)
+    .single()
 
   const displayName = profile?.full_name || user.email?.split('@')[0] || 'You'
   const initials = displayName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()

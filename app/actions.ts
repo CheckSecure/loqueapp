@@ -2,16 +2,15 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import pool from '@/lib/db'
 
-async function getAuthUser() {
+async function getSupabaseAndUser() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  return user
+  return { supabase, user }
 }
 
 export async function updateProfile(formData: FormData) {
-  const user = await getAuthUser()
+  const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
   const expertise = (formData.get('expertise') as string || '')
@@ -19,119 +18,107 @@ export async function updateProfile(formData: FormData) {
   const introPref = (formData.get('intro_preferences') as string || '')
     .split(',').map(s => s.trim()).filter(Boolean)
 
-  await pool.query(
-    `UPDATE profiles SET
-       full_name = $2, role = $3, company = $4, location = $5, bio = $6,
-       expertise = $7, intro_preferences = $8, open_to_intros = $9,
-       linkedin_url = $10, twitter_url = $11, website_url = $12, updated_at = now()
-     WHERE id = $1`,
-    [
-      user.id,
-      formData.get('full_name') as string || null,
-      formData.get('role') as string || null,
-      formData.get('company') as string || null,
-      formData.get('location') as string || null,
-      formData.get('bio') as string || null,
-      expertise,
-      introPref,
-      formData.get('open_to_intros') === 'true',
-      formData.get('linkedin_url') as string || null,
-      formData.get('twitter_url') as string || null,
-      formData.get('website_url') as string || null,
-    ]
-  )
+  const { error } = await supabase.from('profiles').upsert({
+    id: user.id,
+    full_name: formData.get('full_name') as string || null,
+    role: formData.get('role') as string || null,
+    company: formData.get('company') as string || null,
+    location: formData.get('location') as string || null,
+    bio: formData.get('bio') as string || null,
+    expertise,
+    intro_preferences: introPref,
+    open_to_intros: formData.get('open_to_intros') === 'true',
+    linkedin_url: formData.get('linkedin_url') as string || null,
+    twitter_url: formData.get('twitter_url') as string || null,
+    website_url: formData.get('website_url') as string || null,
+    updated_at: new Date().toISOString(),
+  })
 
+  if (error) return { error: error.message }
   revalidatePath('/dashboard/profile')
   return { success: true }
 }
 
 export async function requestIntroduction(targetId: string) {
-  const user = await getAuthUser()
+  const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  try {
-    await pool.query(
-      `INSERT INTO introductions (requester_id, target_id) VALUES ($1, $2)
-       ON CONFLICT (requester_id, target_id) DO NOTHING`,
-      [user.id, targetId]
-    )
-    revalidatePath('/dashboard/introductions')
-    return { success: true }
-  } catch (err: any) {
-    return { error: err.message }
-  }
+  const { error } = await supabase.from('introductions').insert({
+    requester_id: user.id,
+    target_id: targetId,
+  })
+
+  if (error) return { error: error.message }
+  revalidatePath('/dashboard/introductions')
+  return { success: true }
 }
 
 export async function updateIntroStatus(id: string, status: 'accepted' | 'declined') {
-  const user = await getAuthUser()
+  const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  await pool.query(
-    `UPDATE introductions SET status = $1, updated_at = now()
-     WHERE id = $2 AND target_id = $3`,
-    [status, id, user.id]
-  )
+  const { error } = await supabase
+    .from('introductions')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('target_id', user.id)
+
+  if (error) return { error: error.message }
   revalidatePath('/dashboard/introductions')
   return { success: true }
 }
 
 export async function sendMessage(conversationId: string, content: string) {
-  const user = await getAuthUser()
+  const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  try {
-    await pool.query(
-      `INSERT INTO messages (conversation_id, sender_id, content) VALUES ($1, $2, $3)`,
-      [conversationId, user.id, content]
-    )
-    revalidatePath('/dashboard/messages')
-    return { success: true }
-  } catch (err: any) {
-    return { error: err.message }
-  }
+  const { error } = await supabase.from('messages').insert({
+    conversation_id: conversationId,
+    sender_id: user.id,
+    content,
+  })
+
+  if (error) return { error: error.message }
+  revalidatePath('/dashboard/messages')
+  return { success: true }
 }
 
 export async function createConversation(otherUserId: string) {
-  const user = await getAuthUser()
+  const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  try {
-    const { rows } = await pool.query(
-      `INSERT INTO conversations DEFAULT VALUES RETURNING id`
-    )
-    const convId = rows[0].id
-    await pool.query(
-      `INSERT INTO conversation_participants (conversation_id, user_id) VALUES ($1, $2), ($1, $3)`,
-      [convId, user.id, otherUserId]
-    )
-    revalidatePath('/dashboard/messages')
-    return { conversationId: convId }
-  } catch (err: any) {
-    return { error: err.message }
-  }
+  const { data: conv, error: convErr } = await supabase
+    .from('conversations')
+    .insert({})
+    .select('id')
+    .single()
+
+  if (convErr || !conv) return { error: convErr?.message }
+
+  await supabase.from('conversation_participants').insert([
+    { conversation_id: conv.id, user_id: user.id },
+    { conversation_id: conv.id, user_id: otherUserId },
+  ])
+
+  revalidatePath('/dashboard/messages')
+  return { conversationId: conv.id }
 }
 
 export async function scheduleMeeting(formData: FormData) {
-  const user = await getAuthUser()
+  const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  try {
-    await pool.query(
-      `INSERT INTO meetings (title, organizer_id, attendee_id, scheduled_at, duration_minutes, meeting_type, location)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        formData.get('title') as string,
-        user.id,
-        formData.get('attendee_id') as string || null,
-        formData.get('scheduled_at') as string,
-        parseInt(formData.get('duration_minutes') as string || '30'),
-        formData.get('meeting_type') as string || 'video',
-        formData.get('location') as string || null,
-      ]
-    )
-    revalidatePath('/dashboard/meetings')
-    return { success: true }
-  } catch (err: any) {
-    return { error: err.message }
-  }
+  const { error } = await supabase.from('meetings').insert({
+    organizer_id: user.id,
+    title: formData.get('title') as string,
+    attendee_id: formData.get('attendee_id') as string || null,
+    scheduled_at: formData.get('scheduled_at') as string,
+    duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
+    meeting_type: formData.get('meeting_type') as string || 'video',
+    location: formData.get('location') as string || null,
+  })
+
+  if (error) return { error: error.message }
+  revalidatePath('/dashboard/meetings')
+  return { success: true }
 }

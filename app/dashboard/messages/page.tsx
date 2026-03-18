@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import MessagesClient from '@/components/MessagesClient'
-import pool from '@/lib/db'
 
 export const metadata = { title: 'Messages | Cadre' }
 
@@ -10,51 +9,49 @@ export default async function MessagesPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Fetch all conversations the user is part of
-  const { rows: convRows } = await pool.query(
-    `SELECT DISTINCT cp.conversation_id
-     FROM conversation_participants cp
-     WHERE cp.user_id = $1`,
-    [user.id]
-  )
+  // Get all conversations this user participates in
+  const { data: participantRows } = await supabase
+    .from('conversation_participants')
+    .select('conversation_id')
+    .eq('user_id', user.id)
 
+  const conversationIds = (participantRows || []).map(r => r.conversation_id)
   const conversations: any[] = []
 
-  for (const row of convRows) {
-    const cid = row.conversation_id
+  if (conversationIds.length > 0) {
+    // Fetch conversations with nested participants + messages
+    const { data: convData } = await supabase
+      .from('conversations')
+      .select(`
+        id,
+        created_at,
+        conversation_participants(user_id, profiles(id, full_name, role, company, avatar_color)),
+        messages(id, content, sender_id, created_at)
+      `)
+      .in('id', conversationIds)
 
-    // Get other participant
-    const { rows: otherRows } = await pool.query(
-      `SELECT p.id, p.full_name, p.role, p.company, p.avatar_color
-       FROM conversation_participants cp
-       JOIN profiles p ON p.id = cp.user_id
-       WHERE cp.conversation_id = $1 AND cp.user_id != $2
-       LIMIT 1`,
-      [cid, user.id]
+    for (const c of convData || []) {
+      const otherParticipant = (c.conversation_participants as any[])
+        ?.find((p: any) => p.user_id !== user.id)?.profiles
+
+      const sortedMessages = [...((c.messages as any[]) || [])].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      )
+      const lastMsg = sortedMessages[sortedMessages.length - 1]
+
+      conversations.push({
+        id: c.id,
+        other: otherParticipant || null,
+        messages: sortedMessages,
+        lastMessage: lastMsg?.content || '',
+        lastTime: lastMsg?.created_at || c.created_at,
+      })
+    }
+
+    conversations.sort((a, b) =>
+      new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime()
     )
-
-    // Get messages
-    const { rows: msgRows } = await pool.query(
-      `SELECT id, content, sender_id, created_at
-       FROM messages
-       WHERE conversation_id = $1
-       ORDER BY created_at ASC`,
-      [cid]
-    )
-
-    const lastMsg = msgRows[msgRows.length - 1]
-    conversations.push({
-      id: cid,
-      other: otherRows[0] || null,
-      messages: msgRows,
-      lastMessage: lastMsg?.content || '',
-      lastTime: lastMsg?.created_at || new Date(0).toISOString(),
-    })
   }
-
-  conversations.sort((a, b) =>
-    new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime()
-  )
 
   return <MessagesClient conversations={conversations} currentUserId={user.id} />
 }

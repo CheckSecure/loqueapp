@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import MeetingsClient from '@/components/MeetingsClient'
-import pool from '@/lib/db'
 
 export const metadata = { title: 'Meetings | Cadre' }
 
@@ -10,24 +9,19 @@ export default async function MeetingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { rows } = await pool.query(
-    `SELECT m.id, m.title, m.scheduled_at, m.duration_minutes, m.meeting_type, m.location,
-            m.organizer_id,
-            pa.id as att_id, pa.full_name as att_name, pa.avatar_color as att_color,
-            po.id as org_id, po.full_name as org_name, po.avatar_color as org_color
-     FROM meetings m
-     LEFT JOIN profiles pa ON pa.id = m.attendee_id
-     LEFT JOIN profiles po ON po.id = m.organizer_id
-     WHERE m.organizer_id = $1 OR m.attendee_id = $1
-     ORDER BY m.scheduled_at ASC`,
-    [user.id]
-  )
+  const { data: meetings } = await supabase
+    .from('meetings')
+    .select(`
+      id, title, scheduled_at, duration_minutes, meeting_type, location, organizer_id,
+      organizer:profiles!organizer_id(id, full_name, avatar_color),
+      attendee:profiles!attendee_id(id, full_name, avatar_color)
+    `)
+    .or(`organizer_id.eq.${user.id},attendee_id.eq.${user.id}`)
+    .order('scheduled_at', { ascending: true })
 
-  const enriched = rows.map((m: any) => {
+  const enriched = (meetings || []).map((m: any) => {
     const isOrganizer = m.organizer_id === user.id
-    const other = isOrganizer
-      ? (m.att_id ? { id: m.att_id, full_name: m.att_name, avatar_color: m.att_color } : null)
-      : { id: m.org_id, full_name: m.org_name, avatar_color: m.org_color }
+    const other = isOrganizer ? m.attendee : m.organizer
     return {
       id: m.id,
       title: m.title,
@@ -35,7 +29,7 @@ export default async function MeetingsPage() {
       duration_minutes: m.duration_minutes,
       meeting_type: m.meeting_type,
       location: m.location,
-      other,
+      other: other || null,
       isOrganizer,
       isPast: new Date(m.scheduled_at) < new Date(),
     }

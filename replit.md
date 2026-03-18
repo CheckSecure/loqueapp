@@ -1,95 +1,74 @@
 # Cadre — Professional Networking App
 
-A Next.js 14 professional networking app with Supabase authentication and Replit PostgreSQL for application data.
+A Next.js 14 professional networking app backed entirely by Supabase.
 
 ## Stack
 
 - **Framework**: Next.js 14 (App Router)
-- **Authentication**: Supabase (`@supabase/ssr`, `@supabase/supabase-js`)
-- **Database**: Replit built-in PostgreSQL (`pg` package, `DATABASE_URL` env)
+- **Authentication**: Supabase (`@supabase/ssr`)
+- **Database**: Supabase PostgreSQL (all tables)
 - **Styling**: Tailwind CSS
 - **Language**: TypeScript
 
-## Architecture
-
-- **Supabase** handles authentication only (login, signup, JWT session management)
-- **Replit PostgreSQL** stores all application data: profiles, introductions, conversations, messages, meetings
-- Server components query the database directly via the `pg` pool in `lib/db.ts`
-- Client components call server actions in `app/actions.ts` for mutations
-
-## Important Note on Supabase Credentials
+## Important: Supabase Credential Swap
 
 The Supabase secrets were entered in swapped order in Replit Secrets:
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` secret → contains the project URL
-- `NEXT_PUBLIC_SUPABASE_URL` secret → contains the anon key (JWT)
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` secret → actually holds the **project URL**
+- `NEXT_PUBLIC_SUPABASE_URL` secret → actually holds the **anon key** (JWT)
 
-All Supabase client files in `lib/supabase/` read the env vars in reverse order to compensate.
+All Supabase client files (`lib/supabase/client.ts`, `lib/supabase/server.ts`) intentionally read the env vars in reverse order to compensate. **Do not "fix" this or authentication will break.**
 
-## Database Schema
+## Database Schema (in Supabase)
 
-Tables in Replit PostgreSQL:
-- `profiles` — user profiles (id = Supabase user UUID)
-- `introductions` — intro requests between users (pending/accepted/declined)
+- `profiles` — user profiles (id = Supabase auth user UUID, auto-created via trigger)
+- `introductions` — intro requests between users (status: pending/accepted/declined)
 - `conversations` — message threads
 - `conversation_participants` — many-to-many: users ↔ conversations
-- `messages` — individual messages within conversations
+- `messages` — individual messages in conversations
 - `meetings` — scheduled calls and in-person meetings
 
-Run migrations: `node scripts/migrate.js`
+## Architecture
+
+- Server components call Supabase directly via `lib/supabase/server.ts`
+- Client components call server actions in `app/actions.ts` for mutations
+- Auth session is handled via cookie-based Supabase SSR client
+- RLS policies on all tables enforce user-level data isolation
 
 ## Project Structure
 
 ```
 app/
-  layout.tsx                        # Root layout with Inter font
+  layout.tsx                        # Root layout
   page.tsx                          # Public landing page
-  globals.css                       # Tailwind base styles
   login/page.tsx                    # Sign-in page
   signup/page.tsx                   # Sign-up page
-  auth/callback/route.ts            # Supabase OAuth callback
-  actions.ts                        # All server actions (mutations via pg)
+  auth/callback/route.ts            # Supabase email confirmation handler
+  actions.ts                        # All server actions (Supabase mutations)
   dashboard/
-    layout.tsx                      # Protected layout — upserts profile, passes sidebar data
+    layout.tsx                      # Protected — checks auth, upserts profile, renders sidebar
     page.tsx                        # Redirects to /dashboard/introductions
-    introductions/page.tsx          # Real data from PostgreSQL
-    messages/page.tsx               # Real data from PostgreSQL
-    meetings/page.tsx               # Real data from PostgreSQL
-    profile/page.tsx                # Real data from PostgreSQL
+    introductions/page.tsx          # Pending requests + profile suggestions
+    messages/page.tsx               # Conversations list + message thread
+    meetings/page.tsx               # Upcoming + past meetings
+    profile/page.tsx                # Editable user profile
 components/
-  Sidebar.tsx                       # Responsive sidebar with nav + sign-out
-  IntroductionActions.tsx           # Accept/Decline buttons (client)
-  RequestIntroButton.tsx            # Request intro button (client)
-  MessagesClient.tsx                # Full messaging UI (client)
-  MeetingsClient.tsx                # Meetings list + calendar toggle (client)
-  ScheduleMeetingModal.tsx          # Schedule meeting form (client)
-  ProfileForm.tsx                   # Profile edit form (client)
+  Sidebar.tsx                       # Responsive nav sidebar with sign-out
+  IntroductionActions.tsx           # Accept/Decline buttons (client component)
+  RequestIntroButton.tsx            # Request intro button (client component)
+  MessagesClient.tsx                # Full messaging UI (client component)
+  MeetingsClient.tsx                # Meetings list + schedule modal (client component)
+  ScheduleMeetingModal.tsx          # Schedule meeting form modal
+  ProfileForm.tsx                   # Profile edit form (client component)
 lib/
-  db.ts                             # pg Pool using DATABASE_URL
   supabase/
-    client.ts                       # Browser Supabase client (keys swapped)
-    server.ts                       # Server Supabase client (keys swapped)
-  utils.ts                          # cn() helper
-middleware.ts                       # Pass-through (auth handled per-page)
-scripts/
-  migrate.js                        # Database migration script
+    client.ts                       # Browser Supabase client (env vars swapped intentionally)
+    server.ts                       # Server Supabase client (env vars swapped intentionally)
+  utils.ts                          # cn() Tailwind helper
+middleware.ts                       # Pass-through middleware (auth handled per-page)
 ```
 
 ## Running
 
 ```bash
 npm run dev   # starts on port 5000
-node scripts/migrate.js  # run DB migrations
 ```
-
-## Pages
-
-| Route | Access | Description |
-|-------|--------|-------------|
-| `/` | Public | Landing page |
-| `/login` | Public | Sign in |
-| `/signup` | Public | Create account |
-| `/dashboard/introductions` | Protected | Browse & request warm introductions |
-| `/dashboard/messages` | Protected | Conversations with connections |
-| `/dashboard/meetings` | Protected | Scheduled calls and meetings |
-| `/dashboard/profile` | Protected | Edit your professional profile |
-| `/auth/callback` | Public | Supabase email confirmation handler |
