@@ -113,6 +113,9 @@ export default function MeetingsClient({
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-slate-900 truncate">{m.title}</p>
+          {m.other?.full_name && (
+            <p className="text-xs text-slate-400 truncate mt-0.5">with {m.other.full_name}</p>
+          )}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
             <span className="flex items-center gap-1 text-xs text-slate-500">
               <Clock className="w-3 h-3" />

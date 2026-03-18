@@ -18,7 +18,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Check onboarding — redirect new users before they see the dashboard
   const { data: prefs } = await supabase
     .from('user_preferences')
     .select('onboarding_completed')
@@ -30,7 +29,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect('/onboarding')
   }
 
-  // Ensure a profile row exists for this user
   await supabase.from('profiles').upsert(
     {
       id: user.id,
@@ -50,12 +48,53 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const avatarColor = profile?.avatar_color || 'bg-[#1B2850]'
   const credits: number = creditRow?.balance ?? 0
 
+  // Unread message count — messages from others in the user's conversations
+  let unreadCount = 0
+  try {
+    const { data: matchRows } = await supabase
+      .from('matches')
+      .select('id')
+      .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
+
+    const matchIds = (matchRows || []).map((r: any) => r.id)
+
+    if (matchIds.length > 0) {
+      const { data: convRows } = await supabase
+        .from('conversations')
+        .select('id')
+        .in('match_id', matchIds)
+
+      const convIds = (convRows || []).map((r: any) => r.id)
+
+      if (convIds.length > 0) {
+        // Try with read_at IS NULL first (works if column exists)
+        const { count, error } = await supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .in('conversation_id', convIds)
+          .neq('sender_id', user.id)
+          .is('read_at', null)
+
+        if (!error) {
+          unreadCount = count ?? 0
+        } else {
+          // Fallback: count all messages from others (no read_at column yet)
+          const { count: fallbackCount } = await supabase
+            .from('messages')
+            .select('id', { count: 'exact', head: true })
+            .in('conversation_id', convIds)
+            .neq('sender_id', user.id)
+          unreadCount = fallbackCount ?? 0
+        }
+      }
+    }
+  } catch {
+    unreadCount = 0
+  }
+
   return (
     <>
-      {/* Mobile header + bottom nav — rendered at root level so fixed positioning is reliable */}
-      <MobileNav credits={credits} />
-
-      {/* Main layout — desktop sidebar + content */}
+      <MobileNav credits={credits} unreadCount={unreadCount} />
       <div className="min-h-screen md:flex bg-slate-50">
         <Sidebar
           displayName={displayName}

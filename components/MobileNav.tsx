@@ -65,7 +65,7 @@ function CreditsChip({ credits }: { credits: number }) {
   )
 }
 
-export default function MobileNav({ credits }: { credits: number }) {
+export default function MobileNav({ credits, unreadCount = 0 }: { credits: number; unreadCount?: number }) {
   const pathname = usePathname()
 
   return (
@@ -80,6 +80,8 @@ export default function MobileNav({ credits }: { credits: number }) {
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 flex h-16">
         {bottomNavItems.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
+          const isMessages = href === '/dashboard/messages'
+          const showBadge = isMessages && unreadCount > 0
           return (
             <Link
               key={href}
@@ -89,7 +91,14 @@ export default function MobileNav({ credits }: { credits: number }) {
               {active && (
                 <span className="absolute top-0 left-3 right-3 h-0.5 rounded-full bg-[#C4922A]" />
               )}
-              <Icon className={cn('w-5 h-5', active ? 'text-[#C4922A]' : 'text-slate-400')} />
+              <span className="relative inline-flex">
+                <Icon className={cn('w-5 h-5', active ? 'text-[#C4922A]' : 'text-slate-400')} />
+                {showBadge && (
+                  <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </span>
               <span className={cn('text-[10px] font-medium', active ? 'text-[#C4922A]' : 'text-slate-400')}>
                 {label}
               </span>
