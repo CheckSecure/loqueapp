@@ -1,10 +1,39 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { Search, Briefcase, MapPin, Inbox } from 'lucide-react'
+import { Search, Briefcase, MapPin, Inbox, BookOpen, Star, Users } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
 import RequestIntroButton from '@/components/RequestIntroButton'
 
 export const metadata = { title: 'Introductions | Cadre' }
+
+const AVATAR_COLORS = [
+  'bg-violet-500','bg-emerald-500','bg-amber-500','bg-rose-500',
+  'bg-cyan-500','bg-indigo-500','bg-pink-500','bg-teal-500',
+]
+
+function pickColor(id: string) {
+  const n = (id || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  return AVATAR_COLORS[n % AVATAR_COLORS.length]
+}
+
+function getInitials(name?: string) {
+  return (name || '?').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+}
+
+function Tag({ children, color = 'slate' }: { children: React.ReactNode; color?: string }) {
+  const styles: Record<string, string> = {
+    slate:  'bg-slate-50 text-slate-600 border-slate-100',
+    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
+    violet: 'bg-violet-50 text-violet-700 border-violet-100',
+    emerald:'bg-emerald-50 text-emerald-700 border-emerald-100',
+    amber:  'bg-amber-50 text-amber-700 border-amber-100',
+  }
+  return (
+    <span className={`text-xs border px-2 py-0.5 rounded-full ${styles[color] || styles.slate}`}>
+      {children}
+    </span>
+  )
+}
 
 export default async function IntroductionsPage() {
   const supabase = createClient()
@@ -19,7 +48,7 @@ export default async function IntroductionsPage() {
 
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
 
-  // Pending requests where I'm the target
+  // Pending intro requests where I'm the target (from introductions table)
   const { data: pending } = await supabase
     .from('introductions')
     .select('id, message, created_at, requester:profiles!requester_id(id, full_name, role, company, avatar_color)')
@@ -27,32 +56,49 @@ export default async function IntroductionsPage() {
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
 
-  // Collect IDs already connected to (to exclude from suggestions)
-  const { data: myIntros } = await supabase
-    .from('introductions')
-    .select('requester_id, target_id')
-    .or(`requester_id.eq.${user.id},target_id.eq.${user.id}`)
+  // Get the latest batch number for this user
+  const { data: latestBatch } = await supabase
+    .from('batch_suggestions')
+    .select('batch_number')
+    .eq('recipient_id', user.id)
+    .order('batch_number', { ascending: false })
+    .limit(1)
 
-  const connectedIds = [
-    user.id,
-    ...(myIntros || []).map(i => i.requester_id),
-    ...(myIntros || []).map(i => i.target_id),
-  ]
+  const activeBatchNumber = latestBatch?.[0]?.batch_number ?? 8
 
-  // Suggested profiles
-  const { data: suggestions } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, company, location, expertise, avatar_color')
-    .eq('open_to_intros', true)
-    .not('id', 'in', `(${connectedIds.join(',')})`)
-    .limit(6)
+  // Get the suggested_ids from batch_suggestions for this user + batch
+  const { data: batchRows, error: batchError } = await supabase
+    .from('batch_suggestions')
+    .select('id, suggested_id')
+    .eq('recipient_id', user.id)
+    .eq('batch_number', activeBatchNumber)
+
+  const suggestedIds = (batchRows || []).map((r: any) => r.suggested_id).filter(Boolean)
+
+  // Fetch the full profiles for those suggested IDs
+  let profileMap: Record<string, any> = {}
+  if (suggestedIds.length > 0) {
+    const { data: profileRows } = await supabase
+      .from('profiles')
+      .select('id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_color')
+      .in('id', suggestedIds)
+    for (const p of profileRows || []) {
+      profileMap[p.id] = p
+    }
+  }
+
+  const suggestions = (batchRows || [])
+    .map((r: any) => ({ rowId: r.id, profile: profileMap[r.suggested_id] }))
+    .filter((r: any) => r.profile)
 
   return (
     <div className="p-6 md:p-8 pt-20 md:pt-8">
       <div className="max-w-4xl">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-slate-900">Introductions</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Warm connections curated for you, {firstName}.</p>
+          <p className="text-slate-500 text-sm mt-0.5">
+            Your curated batch of introductions, {firstName}.
+          </p>
         </div>
 
         {/* Pending requests */}
@@ -65,12 +111,11 @@ export default async function IntroductionsPage() {
               {pending.map((p: any) => {
                 const req = p.requester
                 const daysAgo = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000)
-                const initials = req.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'
                 return (
                   <div key={p.id} className="bg-white border border-amber-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-full ${req.avatar_color || 'bg-indigo-500'} flex items-center justify-center text-white text-xs font-bold`}>
-                        {initials}
+                      <div className={`w-9 h-9 rounded-full ${req.avatar_color || pickColor(req.id)} flex items-center justify-center text-white text-xs font-bold`}>
+                        {getInitials(req.full_name)}
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-slate-900">{req.full_name || 'Unknown'}</p>
@@ -96,55 +141,102 @@ export default async function IntroductionsPage() {
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Search professionals by name, role, or company..."
+            placeholder="Search by name, role, or company..."
             className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
           />
         </div>
 
-        {/* Suggestions */}
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Suggested for you</h2>
-        {(!suggestions || suggestions.length === 0) ? (
+        {/* Batch suggestions */}
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+            Your introductions · Batch {activeBatchNumber}
+          </h2>
+          <span className="text-xs text-slate-400">{suggestions.length} match{suggestions.length !== 1 ? 'es' : ''}</span>
+        </div>
+
+        {suggestions.length === 0 ? (
           <div className="bg-white border border-slate-100 rounded-xl p-12 text-center shadow-sm">
             <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Inbox className="w-6 h-6 text-slate-400" />
             </div>
-            <p className="text-sm font-semibold text-slate-700 mb-1">No suggestions yet</p>
-            <p className="text-xs text-slate-400">As more people join Cadre, you'll see introduction suggestions here.</p>
+            <p className="text-sm font-semibold text-slate-700 mb-1">No suggestions in this batch</p>
+            <p className="text-xs text-slate-400">
+              {batchError
+                ? `Query error: ${batchError.message}`
+                : 'Your next batch of introductions will appear here.'}
+            </p>
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 gap-4">
-            {suggestions.map((s: any) => (
-              <div key={s.id} className="bg-white border border-slate-100 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3">
-                <div className="flex items-start gap-3">
-                  <div className={`w-10 h-10 rounded-full ${s.avatar_color || 'bg-indigo-500'} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>
-                    {s.full_name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || '?'}
+            {suggestions.map((row: any) => {
+              const s = row.profile
+              const key = row.rowId || s.id
+              const avatarColor = s.avatar_color || pickColor(s.id)
+              const interests = Array.isArray(s.interests)
+                ? s.interests
+                : typeof s.interests === 'string' && s.interests
+                  ? s.interests.split(',').map((i: string) => i.trim()).filter(Boolean)
+                  : []
+
+              return (
+                <div
+                  key={key}
+                  className="bg-white border border-slate-100 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3"
+                >
+                  {/* Header */}
+                  <div className="flex items-start gap-3">
+                    <div className={`w-11 h-11 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>
+                      {getInitials(s.full_name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{s.full_name || 'New member'}</p>
+                      {(s.title || s.company) && (
+                        <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
+                          <Briefcase className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{[s.title, s.company].filter(Boolean).join(' at ')}</span>
+                        </div>
+                      )}
+                      {s.location && (
+                        <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
+                          <MapPin className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{s.location}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-900 truncate">{s.full_name || 'New member'}</p>
-                    {(s.role || s.company) && (
-                      <div className="flex items-center gap-1 text-xs text-slate-500">
-                        <Briefcase className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate">{[s.role, s.company].filter(Boolean).join(' at ')}</span>
-                      </div>
-                    )}
-                    {s.location && (
-                      <div className="flex items-center gap-1 text-xs text-slate-400">
-                        <MapPin className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate">{s.location}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {s.expertise && s.expertise.length > 0 && (
+
+                  {/* Bio */}
+                  {s.bio && (
+                    <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">{s.bio}</p>
+                  )}
+
+                  {/* Badges */}
                   <div className="flex flex-wrap gap-1.5">
-                    {s.expertise.slice(0, 4).map((tag: string) => (
-                      <span key={tag} className="text-xs bg-slate-50 text-slate-600 border border-slate-100 px-2 py-0.5 rounded-full">{tag}</span>
-                    ))}
+                    {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
+                    {s.role_type && <Tag color="violet">{s.role_type}</Tag>}
+                    {s.mentorship_role && (
+                      <Tag color="emerald">
+                        <span className="flex items-center gap-1">
+                          <Star className="w-2.5 h-2.5" />
+                          {s.mentorship_role}
+                        </span>
+                      </Tag>
+                    )}
                   </div>
-                )}
-                <RequestIntroButton targetId={s.id} />
-              </div>
-            ))}
+
+                  {/* Interests */}
+                  {interests.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {interests.slice(0, 5).map((tag: string) => (
+                        <Tag key={tag}>{tag}</Tag>
+                      ))}
+                    </div>
+                  )}
+
+                  <RequestIntroButton targetId={s.id} />
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
