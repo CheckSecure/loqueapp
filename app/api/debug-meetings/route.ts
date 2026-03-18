@@ -13,7 +13,7 @@ export async function GET() {
 
   const { data: profiles, error: pErr } = await supabase
     .from('profiles')
-    .select('id, full_name, avatar_color')
+    .select('id, full_name')
     .in('id', [
       ...(meetings || []).map((m: any) => m.requester_id),
       ...(meetings || []).map((m: any) => m.recipient_id),

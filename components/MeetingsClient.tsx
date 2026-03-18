@@ -14,7 +14,7 @@ interface Meeting {
   location?: string
   zoom_link?: string | null
   notes?: string | null
-  other?: { id: string; full_name: string; avatar_color?: string } | null
+  other?: { id: string; full_name: string } | null
   isOrganizer: boolean
   isPast: boolean
 }
@@ -83,6 +83,16 @@ function initials(name?: string) {
   return name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?'
 }
 
+const AVATAR_COLORS = [
+  'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
+  'bg-cyan-600','bg-teal-600','bg-pink-500','bg-slate-600',
+]
+function pickColor(id?: string) {
+  if (!id) return 'bg-[#1B2850]'
+  const n = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  return AVATAR_COLORS[n % AVATAR_COLORS.length]
+}
+
 interface MatchedUser {
   id: string
   full_name: string
@@ -133,7 +143,7 @@ export default function MeetingsClient({
           </div>
         </div>
         {m.other && (
-          <div className={`w-7 h-7 rounded-full ${m.other.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
+          <div className={`w-7 h-7 rounded-full ${pickColor(m.other.id)} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
             {initials(m.other.full_name)}
           </div>
         )}
