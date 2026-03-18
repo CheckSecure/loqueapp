@@ -19,19 +19,25 @@ export async function createIntroRequest(
   note?: string,
 ) {
   const supabase = createClient()
+  console.log('[createIntroRequest] authUserId:', authUserId, 'authUserEmail:', authUserEmail, 'targetUserId:', targetUserId)
+
   const requesterId = await resolveProfileId(supabase, authUserId, authUserEmail)
+  console.log('[createIntroRequest] resolved requesterId:', requesterId)
 
   if (requesterId === targetUserId) {
+    console.log('[createIntroRequest] self-request rejected')
     return { error: 'You cannot request an introduction to yourself.' }
   }
 
-  const { data: existing } = await supabase
+  const { data: existing, error: dupErr } = await supabase
     .from('intro_requests')
     .select('id')
     .eq('requester_id', requesterId)
     .eq('target_user_id', targetUserId)
     .eq('status', 'pending')
     .limit(1)
+
+  console.log('[createIntroRequest] duplicate check — existing:', existing, 'error:', dupErr?.message)
 
   if (existing && existing.length > 0) {
     return { error: 'You already have a pending request for this person.' }
@@ -43,6 +49,8 @@ export async function createIntroRequest(
     status: 'pending',
     note: note || null,
   })
+
+  console.log('[createIntroRequest] insert error:', error?.message, 'code:', error?.code, 'details:', error?.details)
 
   if (error) return { error: error.message }
   return { success: true }

@@ -2,6 +2,11 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import {
+  createIntroRequest,
+  approveIntroRequest,
+  rejectIntroRequest,
+} from '@/lib/introRequests'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -54,9 +59,8 @@ export async function requestIntroduction(targetId: string) {
 }
 
 export async function submitIntroRequest(targetUserId: string, note?: string) {
-  const { supabase, user } = await getSupabaseAndUser()
+  const { user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
-  const { createIntroRequest } = await import('@/lib/introRequests')
   const result = await createIntroRequest(user.id, user.email ?? '', targetUserId, note)
   if (result.error) return { error: result.error }
   revalidatePath('/dashboard/introductions')
@@ -66,7 +70,6 @@ export async function submitIntroRequest(targetUserId: string, note?: string) {
 export async function adminApproveIntro(requestId: string) {
   const { user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
-  const { approveIntroRequest } = await import('@/lib/introRequests')
   const result = await approveIntroRequest(requestId)
   if (result.error) return { error: result.error }
   revalidatePath('/dashboard/admin')
@@ -76,7 +79,6 @@ export async function adminApproveIntro(requestId: string) {
 export async function adminRejectIntro(requestId: string) {
   const { user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
-  const { rejectIntroRequest } = await import('@/lib/introRequests')
   const result = await rejectIntroRequest(requestId)
   if (result.error) return { error: result.error }
   revalidatePath('/dashboard/admin')
