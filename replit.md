@@ -20,7 +20,7 @@ All Supabase client files (`lib/supabase/client.ts`, `lib/supabase/server.ts`) i
 
 ## Database Schema (in Supabase)
 
-- `profiles` — user profiles (id = Supabase auth user UUID, auto-created via trigger)
+- `profiles` — user profiles (id = Supabase auth user UUID). Columns: `full_name, title, company, location, bio, expertise, intro_preferences, open_to_intros, seniority, role_type, mentorship_role`. **No `avatar_color` column** — avatar colors are computed from the user ID via `pickColor()` in each component.
 - `introductions` — intro requests between users (status: pending/accepted/declined)
 - `conversations` — message threads
 - `conversation_participants` — many-to-many: users ↔ conversations
@@ -49,14 +49,17 @@ app/
     page.tsx                        # Redirects to /dashboard/introductions
     introductions/page.tsx          # Pending requests + profile suggestions
     messages/page.tsx               # Conversations list + message thread
-    meetings/page.tsx               # Upcoming + past meetings
+    meetings/page.tsx               # Upcoming + past meetings (clickable cards → detail modal)
     profile/page.tsx                # Editable user profile
+    profile/[id]/page.tsx           # Read-only member profile view
 components/
   Sidebar.tsx                       # Responsive nav sidebar with sign-out
+  MobileNav.tsx                     # Mobile top header + bottom tab nav
   IntroductionActions.tsx           # Accept/Decline buttons (client component)
   RequestIntroButton.tsx            # Request intro button (client component)
   MessagesClient.tsx                # Full messaging UI (client component)
-  MeetingsClient.tsx                # Meetings list + schedule modal (client component)
+  MeetingsClient.tsx                # Meetings list + schedule modal + detail modal
+  MeetingDetailModal.tsx            # Slide-up/side-panel meeting detail view
   ScheduleMeetingModal.tsx          # Schedule meeting form modal
   ProfileForm.tsx                   # Profile edit form (client component)
 lib/

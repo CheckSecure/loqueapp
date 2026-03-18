@@ -1,23 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Calendar, Clock, Video, Plus, MapPin, ChevronLeft, ChevronRight, Users } from 'lucide-react'
+import { Calendar, Clock, Video, Plus, MapPin, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ScheduleMeetingModal from './ScheduleMeetingModal'
+import MeetingDetailModal, { MeetingDetail } from './MeetingDetailModal'
 
-interface Meeting {
-  id: string
-  title: string
-  scheduled_at: string
-  duration_minutes: number
-  meeting_type: string
-  location?: string
-  zoom_link?: string | null
-  notes?: string | null
-  other?: { id: string; full_name: string } | null
-  isOrganizer: boolean
-  isPast: boolean
-}
+interface Meeting extends MeetingDetail {}
 
 function toICSDate(iso: string) {
   return iso.replace(/[-:]/g, '').replace(/\.\d{3}/, '').replace('Z', 'Z')
@@ -27,31 +16,19 @@ function downloadICS(m: Meeting) {
   const start = new Date(m.scheduled_at)
   const end = new Date(start.getTime() + m.duration_minutes * 60000)
   const now = new Date()
-  const uid = `cadre-meeting-${m.id}@cadre.app`
-  const description = [
-    m.notes,
-    m.zoom_link ? `Meeting link: ${m.zoom_link}` : '',
-  ].filter(Boolean).join('\\n')
-
+  const description = [m.notes, m.zoom_link ? `Meeting link: ${m.zoom_link}` : ''].filter(Boolean).join('\\n')
   const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Cadre//Cadre Networking//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-    'BEGIN:VEVENT',
-    `UID:${uid}`,
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Cadre//Cadre Networking//EN',
+    'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+    `UID:cadre-meeting-${m.id}@cadre.app`,
     `DTSTAMP:${toICSDate(now.toISOString())}`,
     `DTSTART:${toICSDate(start.toISOString())}`,
     `DTEND:${toICSDate(end.toISOString())}`,
     `SUMMARY:${m.title}`,
     description ? `DESCRIPTION:${description}` : '',
     m.zoom_link ? `URL:${m.zoom_link}` : '',
-    m.zoom_link ? `LOCATION:${m.zoom_link}` : '',
-    'END:VEVENT',
-    'END:VCALENDAR',
+    'END:VEVENT', 'END:VCALENDAR',
   ].filter(Boolean).join('\r\n')
-
   const blob = new Blob([lines], { type: 'text/calendar;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -66,7 +43,6 @@ function formatDate(iso: string) {
   const today = new Date()
   const tomorrow = new Date(today)
   tomorrow.setDate(today.getDate() + 1)
-
   if (d.toDateString() === today.toDateString()) return 'Today'
   if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow'
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
@@ -84,8 +60,8 @@ function initials(name?: string) {
 }
 
 const AVATAR_COLORS = [
-  'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
-  'bg-cyan-600','bg-teal-600','bg-pink-500','bg-slate-600',
+  'bg-[#1B2850]', 'bg-[#2E4080]', 'bg-amber-500', 'bg-rose-500',
+  'bg-cyan-600', 'bg-teal-600', 'bg-pink-500', 'bg-slate-600',
 ]
 function pickColor(id?: string) {
   if (!id) return 'bg-[#1B2850]'
@@ -112,10 +88,21 @@ export default function MeetingsClient({
   matchedUsers: MatchedUser[]
 }) {
   const [view, setView] = useState<'list' | 'calendar'>('list')
-  const [showModal, setShowModal] = useState(false)
+  const [showSchedule, setShowSchedule] = useState(false)
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null)
 
   const MeetingCard = ({ m, faded }: { m: Meeting; faded?: boolean }) => (
-    <div className={cn('bg-white border border-slate-100 rounded-xl p-4 md:p-5 shadow-sm flex flex-col gap-3', faded && 'opacity-60')}>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => setSelectedMeeting(m)}
+      onKeyDown={e => e.key === 'Enter' && setSelectedMeeting(m)}
+      className={cn(
+        'bg-white border border-slate-100 rounded-xl p-4 md:p-5 shadow-sm flex flex-col gap-3 cursor-pointer',
+        'hover:border-slate-200 hover:shadow-md transition-all',
+        faded && 'opacity-60'
+      )}
+    >
       {/* Top row: icon + info + avatar */}
       <div className="flex items-start gap-3">
         <div className={cn('w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5', faded ? 'bg-slate-100' : 'bg-[#F5F6FB]')}>
@@ -148,11 +135,12 @@ export default function MeetingsClient({
           </div>
         )}
       </div>
-      {/* Action buttons row */}
+
+      {/* Action buttons row — stop propagation so they don't open the detail modal */}
       {!faded && (
         <div className="flex items-center gap-2 pt-1 border-t border-slate-50">
           <button
-            onClick={() => downloadICS(m)}
+            onClick={e => { e.stopPropagation(); downloadICS(m) }}
             className="flex-1 text-xs font-semibold border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:border-slate-300 hover:text-slate-800 transition-colors text-center"
           >
             + Calendar
@@ -162,6 +150,7 @@ export default function MeetingsClient({
               href={m.zoom_link}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
               className="flex-1 text-xs font-semibold bg-[#1B2850] text-white px-3 py-1.5 rounded-lg hover:bg-[#2E4080] transition-colors text-center"
             >
               Join meeting
@@ -196,7 +185,7 @@ export default function MeetingsClient({
               ))}
             </div>
             <button
-              onClick={() => setShowModal(true)}
+              onClick={() => setShowSchedule(true)}
               className="flex items-center gap-2 bg-[#1B2850] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#2E4080] transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -233,7 +222,7 @@ export default function MeetingsClient({
                 <p className="text-sm font-semibold text-slate-600 mb-1">No upcoming meetings</p>
                 <p className="text-xs text-slate-400 mb-4">Schedule a call with someone in your network.</p>
                 <button
-                  onClick={() => setShowModal(true)}
+                  onClick={() => setShowSchedule(true)}
                   className="text-xs font-semibold bg-[#1B2850] text-white px-4 py-2 rounded-lg hover:bg-[#2E4080] transition-colors"
                 >
                   Schedule meeting
@@ -257,10 +246,17 @@ export default function MeetingsClient({
         </div>
       </div>
 
-      {showModal && (
+      {showSchedule && (
         <ScheduleMeetingModal
-          onClose={() => setShowModal(false)}
+          onClose={() => setShowSchedule(false)}
           matchedUsers={matchedUsers}
+        />
+      )}
+
+      {selectedMeeting && (
+        <MeetingDetailModal
+          meeting={selectedMeeting}
+          onClose={() => setSelectedMeeting(null)}
         />
       )}
     </div>
