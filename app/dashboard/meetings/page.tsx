@@ -9,7 +9,7 @@ export default async function MeetingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: meetings } = await supabase
+  const { data: meetings, error: meetingsErr } = await supabase
     .from('meetings')
     .select(`
       id, title, scheduled_at, duration_minutes, meeting_type, location, organizer_id,
@@ -18,6 +18,10 @@ export default async function MeetingsPage() {
     `)
     .or(`organizer_id.eq.${user.id},attendee_id.eq.${user.id}`)
     .order('scheduled_at', { ascending: true })
+
+  console.log('[Meetings] user.id:', user.id)
+  console.log('[Meetings] error:', meetingsErr?.message ?? 'none')
+  console.log('[Meetings] rows returned:', meetings?.length ?? 0, JSON.stringify(meetings?.map(m => m.title)))
 
   const enriched = (meetings || []).map((m: any) => {
     const isOrganizer = m.organizer_id === user.id

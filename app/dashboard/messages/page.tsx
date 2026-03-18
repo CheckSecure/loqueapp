@@ -10,10 +10,14 @@ export default async function MessagesPage() {
   if (!user) redirect('/login')
 
   // Get all conversations this user participates in
-  const { data: participantRows } = await supabase
+  const { data: participantRows, error: partErr } = await supabase
     .from('conversation_participants')
     .select('conversation_id')
     .eq('user_id', user.id)
+
+  console.log('[Messages] user.id:', user.id)
+  console.log('[Messages] conversation_participants error:', partErr?.message ?? 'none')
+  console.log('[Messages] participantRows:', JSON.stringify(participantRows))
 
   const conversationIds = (participantRows || []).map(r => r.conversation_id)
   const conversations: any[] = []
