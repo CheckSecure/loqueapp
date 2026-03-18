@@ -88,6 +88,25 @@ export async function adminRejectIntro(requestId: string) {
   return { success: true }
 }
 
+export async function saveAvatarUrl(avatarUrl: string) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ avatar_url: avatarUrl })
+    .eq('id', user.id)
+
+  if (error) {
+    console.error('[saveAvatarUrl] error:', error.message)
+    return { error: error.message }
+  }
+
+  revalidatePath('/dashboard/profile')
+  revalidatePath('/dashboard')
+  return { success: true }
+}
+
 export async function updateIntroStatus(id: string, status: 'accepted' | 'declined') {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }

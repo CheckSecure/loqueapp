@@ -2,8 +2,8 @@
 
 import { useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { saveAvatarUrl } from '@/app/actions'
 import { Camera, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
-import Image from 'next/image'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]', 'bg-[#2E4080]', 'bg-amber-500', 'bg-rose-500',
@@ -81,13 +81,10 @@ export default function AvatarUpload({
 
       const finalUrl = `${publicUrl}?t=${Date.now()}`
 
-      const { error: saveErr } = await supabase
-        .from('profiles')
-        .update({ avatar_url: finalUrl })
-        .eq('id', userId)
-
-      if (saveErr) {
-        setError(`Could not save URL: ${saveErr.message}`)
+      const result = await saveAvatarUrl(finalUrl)
+      if (result.error) {
+        setError(`Could not save photo: ${result.error}`)
+        setPreviewUrl(initialAvatarUrl ?? null)
         return
       }
 
