@@ -90,26 +90,39 @@ export async function GET() {
       .limit(1)
       .single()
 
+    // 3. Use existing conv or create a new one
+    let convId: string
     if (existingConv) {
-      results[def.label] = { skipped: true, reason: 'conversation already exists', matchId, conversationId: existingConv.id }
-      continue
+      convId = existingConv.id
+    } else {
+      const { data: conv, error: convErr } = await supabase
+        .from('conversations')
+        .insert({ match_id: matchId })
+        .select('id')
+        .single()
+
+      if (convErr || !conv) {
+        results[def.label] = { error: `conversation: ${convErr?.message ?? 'unknown'}` }
+        continue
+      }
+      convId = conv.id
     }
 
-    // 3. Create a conversation linked to that match
-    const { data: conv, error: convErr } = await supabase
-      .from('conversations')
-      .insert({ match_id: matchId })
+    // 4. Check if messages already exist for this conversation
+    const { data: existingMsgs } = await supabase
+      .from('messages')
       .select('id')
-      .single()
+      .eq('conversation_id', convId)
+      .limit(1)
 
-    if (convErr || !conv) {
-      results[def.label] = { error: `conversation: ${convErr?.message ?? 'unknown'}` }
+    if (existingMsgs && existingMsgs.length > 0) {
+      results[def.label] = { skipped: true, reason: 'messages already exist', matchId, conversationId: convId }
       continue
     }
 
-    // 4. Insert messages with realistic timestamps
+    // 5. Insert messages with realistic timestamps
     const msgInserts = def.messages.map((m, i) => ({
-      conversation_id: conv.id,
+      conversation_id: convId,
       sender_id: m.from === 'alex' ? user.id : def.otherId,
       content: m.text,
       created_at: new Date(baseTime + i * 4 * 60 * 60 * 1000).toISOString(),
@@ -119,7 +132,7 @@ export async function GET() {
 
     results[def.label] = msgErr
       ? { error: `messages: ${msgErr.message}` }
-      : { matchId, conversationId: conv.id, messages: msgInserts.length }
+      : { matchId, conversationId: convId, messages: msgInserts.length }
   }
 
   // ── MEETINGS ─────────────────────────────────────────────────────────────

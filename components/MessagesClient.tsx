@@ -29,8 +29,11 @@ interface Conversation {
   lastTime: string
 }
 
-function timeAgo(date: string) {
-  const diff = Date.now() - new Date(date).getTime()
+function timeAgo(date: string | null | undefined) {
+  if (!date) return ''
+  const ms = new Date(date).getTime()
+  if (isNaN(ms)) return ''
+  const diff = Date.now() - ms
   const m = Math.floor(diff / 60000)
   if (m < 1) return 'just now'
   if (m < 60) return `${m}m ago`

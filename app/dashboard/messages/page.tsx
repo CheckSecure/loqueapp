@@ -25,7 +25,7 @@ export default async function MessagesPage() {
     // Step 2: get conversations linked to those matches (with messages)
     const { data: convRows, error: convErr } = await supabase
       .from('conversations')
-      .select('id, match_id, messages(id, content, sender_id, created_at)')
+      .select('id, match_id, created_at, messages(id, content, sender_id, created_at)')
       .in('match_id', matchIds)
 
     console.log('[Messages] convErr:', convErr?.message ?? 'none')
