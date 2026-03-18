@@ -6,7 +6,10 @@ import { saveOnboardingPreferences } from '@/app/actions'
 import { ChevronRight, ChevronLeft, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const WHO_TO_MEET = ['In-house attorneys', 'Law firm partners', 'Legal ops', 'Consultants', 'Legal tech founders']
+const WHO_TO_MEET = [
+  'In-house attorneys', 'Law firm partners', 'Legal ops', 'Consultants', 'Legal tech founders',
+  'Executive / C-Suite', 'Investor / VC', 'Government / Policy', 'Finance Professional', 'Healthcare Professional',
+]
 const SENIORITY = ['Junior', 'Mid-level', 'Senior', 'Executive']
 const REASONS = ['Business development', 'Mentorship', 'Learning', 'Referrals', 'Collaboration', 'Hiring']
 const MENTORSHIP_TOPICS = ['Career growth', 'In-house transition', 'Legal tech', 'Leadership', 'BD']

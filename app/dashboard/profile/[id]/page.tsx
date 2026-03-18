@@ -76,6 +76,11 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
     regulatory: 'Regulatory Affairs',
     government: 'Government Affairs',
     other: 'Other',
+    'Executive / C-Suite': 'Executive / C-Suite',
+    'Investor / VC': 'Investor / VC',
+    'Government / Policy': 'Government / Policy',
+    'Finance Professional': 'Finance Professional',
+    'Healthcare Professional': 'Healthcare Professional',
   }
   const mentorshipLabel: Record<string, string> = {
     mentor: 'Open to mentoring',
