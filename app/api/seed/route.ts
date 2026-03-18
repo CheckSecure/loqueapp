@@ -52,22 +52,53 @@ export async function GET() {
   const baseTime = Date.now() - 7 * 24 * 60 * 60 * 1000
 
   for (const def of conversationDefs) {
-    // 1. Create a match between Alexandra and the other user
-    const { data: match, error: matchErr } = await supabase
+    // 1. Try to insert match; if it already exists, fetch the existing one
+    let matchId: string | null = null
+
+    const { data: newMatch, error: matchInsertErr } = await supabase
       .from('matches')
       .insert({ user_a_id: user.id, user_b_id: def.otherId })
       .select('id')
       .single()
 
-    if (matchErr || !match) {
-      results[def.label] = { error: `match: ${matchErr?.message ?? 'unknown'}` }
+    if (newMatch) {
+      matchId = newMatch.id
+    } else {
+      // Duplicate — look up the existing match (try both orderings)
+      const { data: existingMatch } = await supabase
+        .from('matches')
+        .select('id')
+        .or(
+          `and(user_a_id.eq.${user.id},user_b_id.eq.${def.otherId}),` +
+          `and(user_a_id.eq.${def.otherId},user_b_id.eq.${user.id})`
+        )
+        .limit(1)
+        .single()
+
+      if (!existingMatch) {
+        results[def.label] = { error: `match: ${matchInsertErr?.message ?? 'unknown'}` }
+        continue
+      }
+      matchId = existingMatch.id
+    }
+
+    // 2. Check if a conversation already exists for this match
+    const { data: existingConv } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('match_id', matchId)
+      .limit(1)
+      .single()
+
+    if (existingConv) {
+      results[def.label] = { skipped: true, reason: 'conversation already exists', matchId, conversationId: existingConv.id }
       continue
     }
 
-    // 2. Create a conversation linked to that match
+    // 3. Create a conversation linked to that match
     const { data: conv, error: convErr } = await supabase
       .from('conversations')
-      .insert({ match_id: match.id })
+      .insert({ match_id: matchId })
       .select('id')
       .single()
 
@@ -76,7 +107,7 @@ export async function GET() {
       continue
     }
 
-    // 3. Insert messages with realistic timestamps
+    // 4. Insert messages with realistic timestamps
     const msgInserts = def.messages.map((m, i) => ({
       conversation_id: conv.id,
       sender_id: m.from === 'alex' ? user.id : def.otherId,
@@ -88,7 +119,7 @@ export async function GET() {
 
     results[def.label] = msgErr
       ? { error: `messages: ${msgErr.message}` }
-      : { matchId: match.id, conversationId: conv.id, messages: msgInserts.length }
+      : { matchId, conversationId: conv.id, messages: msgInserts.length }
   }
 
   // ── MEETINGS ─────────────────────────────────────────────────────────────
@@ -137,6 +168,21 @@ export async function GET() {
   ]
 
   for (const def of meetingDefs) {
+    // Skip if a meeting with same requester/recipient/purpose already exists
+    const { data: existing } = await supabase
+      .from('meetings')
+      .select('id')
+      .eq('requester_id', def.row.requester_id)
+      .eq('recipient_id', def.row.recipient_id)
+      .eq('purpose', def.row.purpose)
+      .limit(1)
+      .single()
+
+    if (existing) {
+      results[def.label] = { skipped: true, reason: 'meeting already exists', id: existing.id }
+      continue
+    }
+
     const { error: mtgErr } = await supabase.from('meetings').insert(def.row)
     results[def.label] = mtgErr
       ? { error: mtgErr.message }
