@@ -12,7 +12,7 @@ export default async function MeetingsPage() {
   // Meetings where user is requester or recipient
   const { data: meetingRows } = await supabase
     .from('meetings')
-    .select('id, purpose, format, status, scheduled_at, duration_minutes, location, requester_id, recipient_id')
+    .select('id, purpose, format, status, scheduled_at, duration_minutes, location, zoom_link, notes, requester_id, recipient_id')
     .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
     .order('scheduled_at', { ascending: true })
 
@@ -40,6 +40,8 @@ export default async function MeetingsPage() {
       meeting_type: m.format,
       status: m.status,
       location: m.location,
+      zoom_link: m.zoom_link ?? null,
+      notes: m.notes ?? null,
       other: profileById[otherId] ?? null,
       isOrganizer: isRequester,
       isPast: new Date(m.scheduled_at) < new Date(),

@@ -189,6 +189,7 @@ export async function scheduleMeeting(formData: FormData) {
     scheduled_at,
     duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
     notes: (formData.get('notes') as string) || null,
+    zoom_link: (formData.get('zoom_link') as string) || null,
   })
 
   if (error) return { error: error.message }

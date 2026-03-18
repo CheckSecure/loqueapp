@@ -12,9 +12,53 @@ interface Meeting {
   duration_minutes: number
   meeting_type: string
   location?: string
+  zoom_link?: string | null
+  notes?: string | null
   other?: { id: string; full_name: string; avatar_color?: string } | null
   isOrganizer: boolean
   isPast: boolean
+}
+
+function toICSDate(iso: string) {
+  return iso.replace(/[-:]/g, '').replace(/\.\d{3}/, '').replace('Z', 'Z')
+}
+
+function downloadICS(m: Meeting) {
+  const start = new Date(m.scheduled_at)
+  const end = new Date(start.getTime() + m.duration_minutes * 60000)
+  const now = new Date()
+  const uid = `cadre-meeting-${m.id}@cadre.app`
+  const description = [
+    m.notes,
+    m.zoom_link ? `Meeting link: ${m.zoom_link}` : '',
+  ].filter(Boolean).join('\\n')
+
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Cadre//Cadre Networking//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${toICSDate(now.toISOString())}`,
+    `DTSTART:${toICSDate(start.toISOString())}`,
+    `DTEND:${toICSDate(end.toISOString())}`,
+    `SUMMARY:${m.title}`,
+    description ? `DESCRIPTION:${description}` : '',
+    m.zoom_link ? `URL:${m.zoom_link}` : '',
+    m.zoom_link ? `LOCATION:${m.zoom_link}` : '',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean).join('\r\n')
+
+  const blob = new Blob([lines], { type: 'text/calendar;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${m.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 function formatDate(iso: string) {
@@ -89,10 +133,24 @@ export default function MeetingsClient({
             {initials(m.other.full_name)}
           </div>
         )}
-        {!faded && m.meeting_type === 'video' && (
-          <button className="text-xs font-semibold bg-[#1B2850] text-white px-3 py-1.5 rounded-lg hover:bg-[#2E4080] transition-colors">
-            Join
+        {!faded && (
+          <button
+            onClick={() => downloadICS(m)}
+            title="Add to calendar"
+            className="text-xs font-semibold border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:border-slate-300 hover:text-slate-800 transition-colors"
+          >
+            + Calendar
           </button>
+        )}
+        {!faded && m.zoom_link && (
+          <a
+            href={m.zoom_link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-semibold bg-[#1B2850] text-white px-3 py-1.5 rounded-lg hover:bg-[#2E4080] transition-colors"
+          >
+            Join
+          </a>
         )}
       </div>
     </div>

@@ -154,6 +154,19 @@ export default function ScheduleMeetingModal({
             </div>
           </div>
 
+          {/* Meeting link */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Meeting link <span className="text-slate-400 font-normal text-xs ml-1">optional</span>
+            </label>
+            <input
+              name="zoom_link"
+              type="url"
+              placeholder="Zoom, Google Meet, or Teams URL"
+              className={fieldClass}
+            />
+          </div>
+
           {/* Notes */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
