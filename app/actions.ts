@@ -26,7 +26,7 @@ export async function updateProfile(formData: FormData) {
   const { error } = await supabase.from('profiles').upsert({
     id: user.id,
     full_name: formData.get('full_name') as string || null,
-    role: formData.get('role') as string || null,
+    title: formData.get('title') as string || null,
     company: formData.get('company') as string || null,
     location: formData.get('location') as string || null,
     bio: formData.get('bio') as string || null,
@@ -36,6 +36,9 @@ export async function updateProfile(formData: FormData) {
     linkedin_url: formData.get('linkedin_url') as string || null,
     twitter_url: formData.get('twitter_url') as string || null,
     website_url: formData.get('website_url') as string || null,
+    seniority: formData.get('seniority') as string || null,
+    role_type: formData.get('role_type') as string || null,
+    mentorship_role: formData.get('mentorship_role') as string || null,
     updated_at: new Date().toISOString(),
   })
 

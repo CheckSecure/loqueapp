@@ -1,13 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Camera, Briefcase, MapPin, Linkedin, Twitter, Link as LinkIcon, Loader2, CheckCircle } from 'lucide-react'
+import { Linkedin, Twitter, Link as LinkIcon, Loader2, CheckCircle } from 'lucide-react'
 import { updateProfile } from '@/app/actions'
 
 interface Profile {
   id: string
   full_name?: string
-  role?: string
+  title?: string
   company?: string
   location?: string
   bio?: string
@@ -18,6 +18,9 @@ interface Profile {
   twitter_url?: string
   website_url?: string
   avatar_color?: string
+  seniority?: string
+  role_type?: string
+  mentorship_role?: string
 }
 
 const INTRO_PREFS = ['Investors', 'Founders', 'Potential hires', 'Collaborators', 'Mentors', 'Customers']
@@ -95,10 +98,10 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Job title</label>
             <input
-              name="role"
+              name="title"
               type="text"
-              defaultValue={profile?.role || ''}
-              placeholder="Product Manager"
+              defaultValue={profile?.title || ''}
+              placeholder="VP & General Counsel"
               className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
             />
           </div>
@@ -135,6 +138,44 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
         </div>
       </div>
 
+      {/* Professional details */}
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6 space-y-4">
+        <h3 className="text-sm font-semibold text-slate-900">Professional details</h3>
+        <p className="text-xs text-slate-400 -mt-1">Used to match you with relevant introductions.</p>
+        <div className="grid sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Seniority</label>
+            <input
+              name="seniority"
+              type="text"
+              defaultValue={profile?.seniority || ''}
+              placeholder="Executive"
+              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Role type</label>
+            <input
+              name="role_type"
+              type="text"
+              defaultValue={profile?.role_type || ''}
+              placeholder="In-house Counsel"
+              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Mentorship role</label>
+            <input
+              name="mentorship_role"
+              type="text"
+              defaultValue={profile?.mentorship_role || ''}
+              placeholder="Mentor"
+              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Expertise */}
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6">
         <h3 className="text-sm font-semibold text-slate-900 mb-1">Expertise</h3>
@@ -143,7 +184,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
           name="expertise"
           type="text"
           defaultValue={(profile?.expertise || []).join(', ')}
-          placeholder="Product Strategy, B2B SaaS, Growth"
+          placeholder="M&A, Securities Law, Corporate Governance"
           className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
         />
       </div>

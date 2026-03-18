@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { Search, Briefcase, MapPin, Inbox, BookOpen, Star, Users } from 'lucide-react'
+import { Search, Briefcase, MapPin, Inbox, Star, Sparkles } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
 import RequestIntroButton from '@/components/RequestIntroButton'
 
@@ -73,7 +73,7 @@ export default async function IntroductionsPage() {
   const { data: batchRows, error: batchError } = activeBatch
     ? await supabase
         .from('batch_suggestions')
-        .select('id, suggested_id')
+        .select('id, suggested_id, reason')
         .eq('batch_id', activeBatch.id)
         .eq('recipient_id', profileId)
     : { data: [], error: null }
@@ -93,7 +93,7 @@ export default async function IntroductionsPage() {
   }
 
   const suggestions = (batchRows || [])
-    .map((r: any) => ({ rowId: r.id, profile: profileMap[r.suggested_id] }))
+    .map((r: any) => ({ rowId: r.id, profile: profileMap[r.suggested_id], reason: r.reason }))
     .filter((r: any) => r.profile)
 
   return (
@@ -185,6 +185,7 @@ export default async function IntroductionsPage() {
               const s = row.profile
               const key = row.rowId || s.id
               const avatarColor = pickColor(s.id)
+              const reason = row.reason as string | null | undefined
               const interests = Array.isArray(s.interests)
                 ? s.interests
                 : typeof s.interests === 'string' && s.interests
@@ -243,6 +244,14 @@ export default async function IntroductionsPage() {
                       {interests.slice(0, 5).map((tag: string) => (
                         <Tag key={tag}>{tag}</Tag>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Why this match */}
+                  {reason && (
+                    <div className="flex items-start gap-2 bg-[#FDF3E3] border border-[#C4922A]/20 rounded-lg px-3 py-2.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#C4922A] flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-slate-600 italic leading-relaxed">{reason}</p>
                     </div>
                   )}
 
