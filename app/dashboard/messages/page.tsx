@@ -25,7 +25,7 @@ export default async function MessagesPage() {
       .select(`
         id,
         created_at,
-        conversation_participants(user_id, profiles(id, full_name, role, company, avatar_color)),
+        conversation_participants(user_id, profiles(id, full_name, role, company)),
         messages(id, content, sender_id, created_at)
       `)
       .in('id', conversationIds)

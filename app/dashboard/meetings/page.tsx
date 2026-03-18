@@ -13,8 +13,8 @@ export default async function MeetingsPage() {
     .from('meetings')
     .select(`
       id, title, scheduled_at, duration_minutes, meeting_type, location, organizer_id,
-      organizer:profiles!organizer_id(id, full_name, avatar_color),
-      attendee:profiles!attendee_id(id, full_name, avatar_color)
+      organizer:profiles!organizer_id(id, full_name),
+      attendee:profiles!attendee_id(id, full_name)
     `)
     .or(`organizer_id.eq.${user.id},attendee_id.eq.${user.id}`)
     .order('scheduled_at', { ascending: true })
