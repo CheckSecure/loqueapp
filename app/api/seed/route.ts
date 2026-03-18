@@ -100,10 +100,11 @@ export async function GET() {
       row: {
         requester_id: user.id,
         recipient_id: SARAH_ID,
-        title: 'M&A Diligence Strategy Call',
+        purpose: 'M&A diligence strategy call',
+        format: 'video',
+        status: 'scheduled',
         scheduled_at: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
         duration_minutes: 45,
-        purpose: 'video',
         location: 'Zoom',
       },
     },
@@ -112,10 +113,11 @@ export async function GET() {
       row: {
         requester_id: user.id,
         recipient_id: PRIYA_ID,
-        title: 'Legal Ops Framework Discussion',
+        purpose: 'Legal ops framework discussion',
+        format: 'video',
+        status: 'scheduled',
         scheduled_at: new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000).toISOString(),
         duration_minutes: 30,
-        purpose: 'video',
         location: 'Google Meet',
       },
     },
@@ -124,10 +126,11 @@ export async function GET() {
       row: {
         requester_id: JAMES_ID,
         recipient_id: user.id,
-        title: 'In-House Team Scaling: Lessons from Apex',
+        purpose: 'In-house team scaling: lessons from Apex',
+        format: 'video',
+        status: 'completed',
         scheduled_at: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
         duration_minutes: 60,
-        purpose: 'video',
         location: 'Zoom',
       },
     },
@@ -137,7 +140,7 @@ export async function GET() {
     const { error: mtgErr } = await supabase.from('meetings').insert(def.row)
     results[def.label] = mtgErr
       ? { error: mtgErr.message }
-      : { ok: true, title: def.row.title }
+      : { ok: true, purpose: def.row.purpose }
   }
 
   return NextResponse.json({ userId: user.id, results })

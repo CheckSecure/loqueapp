@@ -110,11 +110,12 @@ export async function scheduleMeeting(formData: FormData) {
 
   const { error } = await supabase.from('meetings').insert({
     requester_id: user.id,
-    title: formData.get('title') as string,
     recipient_id: formData.get('attendee_id') as string || null,
+    purpose: formData.get('title') as string,
+    format: formData.get('meeting_type') as string || 'video',
+    status: 'scheduled',
     scheduled_at: formData.get('scheduled_at') as string,
     duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
-    purpose: formData.get('meeting_type') as string || 'video',
     location: formData.get('location') as string || null,
   })
 
