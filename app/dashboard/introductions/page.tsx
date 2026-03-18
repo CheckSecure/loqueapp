@@ -56,22 +56,23 @@ export default async function IntroductionsPage() {
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
 
-  // Get the latest batch number for this user
-  const { data: latestBatch } = await supabase
-    .from('batch_suggestions')
-    .select('batch_number')
-    .eq('recipient_id', user.id)
-    .order('batch_number', { ascending: false })
-    .limit(1)
+  // Step 1: get the active batch from introduction_batches
+  const { data: activeBatch } = await supabase
+    .from('introduction_batches')
+    .select('id, batch_number')
+    .eq('status', 'active')
+    .single()
 
-  const activeBatchNumber = latestBatch?.[0]?.batch_number ?? 8
+  const activeBatchNumber = activeBatch?.batch_number ?? null
 
-  // Get the suggested_ids from batch_suggestions for this user + batch
-  const { data: batchRows, error: batchError } = await supabase
-    .from('batch_suggestions')
-    .select('id, suggested_id')
-    .eq('recipient_id', user.id)
-    .eq('batch_number', activeBatchNumber)
+  // Step 2: get suggestions for this user in the active batch
+  const { data: batchRows, error: batchError } = activeBatch
+    ? await supabase
+        .from('batch_suggestions')
+        .select('id, suggested_id')
+        .eq('batch_id', activeBatch.id)
+        .eq('recipient_id', user.id)
+    : { data: [], error: null }
 
   const suggestedIds = (batchRows || []).map((r: any) => r.suggested_id).filter(Boolean)
 
@@ -149,9 +150,13 @@ export default async function IntroductionsPage() {
         {/* Batch suggestions */}
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-            Your introductions · Batch {activeBatchNumber}
+            {activeBatchNumber != null
+              ? `Your introductions · Batch ${activeBatchNumber}`
+              : 'Your introductions'}
           </h2>
-          <span className="text-xs text-slate-400">{suggestions.length} match{suggestions.length !== 1 ? 'es' : ''}</span>
+          {suggestions.length > 0 && (
+            <span className="text-xs text-slate-400">{suggestions.length} match{suggestions.length !== 1 ? 'es' : ''}</span>
+          )}
         </div>
 
         {suggestions.length === 0 ? (
@@ -159,11 +164,15 @@ export default async function IntroductionsPage() {
             <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Inbox className="w-6 h-6 text-slate-400" />
             </div>
-            <p className="text-sm font-semibold text-slate-700 mb-1">No suggestions in this batch</p>
+            <p className="text-sm font-semibold text-slate-700 mb-1">
+              {!activeBatch ? 'No active batch right now' : 'No suggestions in this batch'}
+            </p>
             <p className="text-xs text-slate-400">
               {batchError
-                ? `Query error: ${batchError.message}`
-                : 'Your next batch of introductions will appear here.'}
+                ? `Could not load suggestions: ${batchError.message}`
+                : !activeBatch
+                  ? 'Your next batch of introductions will appear here once it goes live.'
+                  : 'Check back soon — your curated matches will show up here.'}
             </p>
           </div>
         ) : (
