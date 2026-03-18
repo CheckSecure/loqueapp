@@ -1,0 +1,180 @@
+'use client'
+
+import { useState } from 'react'
+import { Calendar, Clock, Video, Plus, MapPin, ChevronLeft, ChevronRight, Users } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import ScheduleMeetingModal from './ScheduleMeetingModal'
+
+interface Meeting {
+  id: string
+  title: string
+  scheduled_at: string
+  duration_minutes: number
+  meeting_type: string
+  location?: string
+  other?: { id: string; full_name: string; avatar_color?: string } | null
+  isOrganizer: boolean
+  isPast: boolean
+}
+
+function formatDate(iso: string) {
+  const d = new Date(iso)
+  const today = new Date()
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+
+  if (d.toDateString() === today.toDateString()) return 'Today'
+  if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow'
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function formatTime(iso: string, duration: number) {
+  const d = new Date(iso)
+  const end = new Date(d.getTime() + duration * 60000)
+  const fmt = (dt: Date) => dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return `${fmt(d)} – ${fmt(end)}`
+}
+
+function initials(name?: string) {
+  return name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?'
+}
+
+export default function MeetingsClient({
+  upcoming,
+  past,
+  currentUserId,
+}: {
+  upcoming: Meeting[]
+  past: Meeting[]
+  currentUserId: string
+}) {
+  const [view, setView] = useState<'list' | 'calendar'>('list')
+  const [showModal, setShowModal] = useState(false)
+
+  const MeetingCard = ({ m, faded }: { m: Meeting; faded?: boolean }) => (
+    <div className={cn('bg-white border border-slate-100 rounded-xl p-5 shadow-sm flex items-center gap-4', faded && 'opacity-60')}>
+      <div className={cn('w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0', faded ? 'bg-slate-100' : 'bg-indigo-50')}>
+        <Calendar className={cn('w-5 h-5', faded ? 'text-slate-400' : 'text-indigo-600')} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-slate-900 truncate">{m.title}</p>
+        <div className="flex flex-wrap items-center gap-3 mt-1">
+          <span className="flex items-center gap-1 text-xs text-slate-500">
+            <Clock className="w-3 h-3" />
+            {formatDate(m.scheduled_at)} · {formatTime(m.scheduled_at, m.duration_minutes)}
+          </span>
+          {m.meeting_type === 'video' ? (
+            <span className="flex items-center gap-1 text-xs text-indigo-600 font-medium">
+              <Video className="w-3 h-3" /> Video call
+            </span>
+          ) : m.location ? (
+            <span className="flex items-center gap-1 text-xs text-slate-500">
+              <MapPin className="w-3 h-3" /> {m.location}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {m.other && (
+          <div className={`w-7 h-7 rounded-full ${m.other.avatar_color || 'bg-indigo-500'} flex items-center justify-center text-white text-xs font-bold`}>
+            {initials(m.other.full_name)}
+          </div>
+        )}
+        {!faded && m.meeting_type === 'video' && (
+          <button className="text-xs font-semibold bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 transition-colors">
+            Join
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="p-6 md:p-8 pt-20 md:pt-8">
+      <div className="max-w-3xl">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Meetings</h1>
+            <p className="text-slate-500 text-sm mt-0.5">Your scheduled conversations and calls.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex bg-slate-100 p-0.5 rounded-lg">
+              {(['list', 'calendar'] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md capitalize transition-colors',
+                    view === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  )}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-2 bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Schedule
+            </button>
+          </div>
+        </div>
+
+        {view === 'calendar' && (
+          <div className="bg-white border border-slate-100 rounded-xl shadow-sm mb-8 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}
+              </h2>
+              <div className="flex items-center gap-1">
+                <button className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"><ChevronLeft className="w-4 h-4 text-slate-500" /></button>
+                <button className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"><ChevronRight className="w-4 h-4 text-slate-500" /></button>
+              </div>
+            </div>
+            <div className="p-4 text-center text-sm text-slate-400">
+              Calendar view coming soon. Switch to list to see your meetings.
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Upcoming</h2>
+            {upcoming.length === 0 ? (
+              <div className="bg-white border border-slate-100 rounded-xl p-10 text-center shadow-sm">
+                <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Calendar className="w-5 h-5 text-slate-400" />
+                </div>
+                <p className="text-sm font-semibold text-slate-600 mb-1">No upcoming meetings</p>
+                <p className="text-xs text-slate-400 mb-4">Schedule a call with someone in your network.</p>
+                <button
+                  onClick={() => setShowModal(true)}
+                  className="text-xs font-semibold bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  Schedule meeting
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {upcoming.map(m => <MeetingCard key={m.id} m={m} />)}
+              </div>
+            )}
+          </div>
+
+          {past.length > 0 && (
+            <div>
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Past</h2>
+              <div className="space-y-3">
+                {past.map(m => <MeetingCard key={m.id} m={m} faded />)}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showModal && <ScheduleMeetingModal onClose={() => setShowModal(false)} />}
+    </div>
+  )
+}
