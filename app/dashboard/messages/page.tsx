@@ -9,34 +9,54 @@ export default async function MessagesPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Get all conversations this user participates in
-  const { data: participantRows, error: partErr } = await supabase
-    .from('conversation_participants')
-    .select('conversation_id')
-    .eq('user_id', user.id)
+  // Step 1: get all matches for this user
+  const { data: matchRows, error: matchErr } = await supabase
+    .from('matches')
+    .select('id, user1_id, user2_id')
+    .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
 
-  console.log('[Messages] user.id:', user.id)
-  console.log('[Messages] conversation_participants error:', partErr?.message ?? 'none')
-  console.log('[Messages] participantRows:', JSON.stringify(participantRows))
+  console.log('[Messages] matchErr:', matchErr?.message ?? 'none')
+  console.log('[Messages] matches:', JSON.stringify(matchRows))
 
-  const conversationIds = (participantRows || []).map(r => r.conversation_id)
+  const matchIds = (matchRows || []).map((m: any) => m.id)
   const conversations: any[] = []
 
-  if (conversationIds.length > 0) {
-    // Fetch conversations with nested participants + messages
-    const { data: convData } = await supabase
+  if (matchIds.length > 0) {
+    // Step 2: get conversations linked to those matches (with messages)
+    const { data: convRows, error: convErr } = await supabase
       .from('conversations')
-      .select(`
-        id,
-        created_at,
-        conversation_participants(user_id, profiles(id, full_name, role, company)),
-        messages(id, content, sender_id, created_at)
-      `)
-      .in('id', conversationIds)
+      .select('id, match_id, messages(id, content, sender_id, created_at)')
+      .in('match_id', matchIds)
 
-    for (const c of convData || []) {
-      const otherParticipant = (c.conversation_participants as any[])
-        ?.find((p: any) => p.user_id !== user.id)?.profiles
+    console.log('[Messages] convErr:', convErr?.message ?? 'none')
+    console.log('[Messages] conversations:', convRows?.length ?? 0)
+
+    // Step 3: collect the other user IDs from each match
+    const matchMap: Record<string, { user1_id: string; user2_id: string }> = {}
+    for (const m of matchRows || []) {
+      matchMap[m.id] = { user1_id: m.user1_id, user2_id: m.user2_id }
+    }
+
+    const otherIds = (matchRows || []).map((m: any) =>
+      m.user1_id === user.id ? m.user2_id : m.user1_id
+    ).filter(Boolean)
+
+    // Step 4: fetch other users' profiles
+    let profileById: Record<string, any> = {}
+    if (otherIds.length > 0) {
+      const { data: profileRows } = await supabase
+        .from('profiles')
+        .select('id, full_name, title, company')
+        .in('id', otherIds)
+      for (const p of profileRows || []) profileById[p.id] = p
+    }
+
+    // Step 5: assemble conversation objects
+    for (const c of convRows || []) {
+      const match = matchMap[c.match_id]
+      if (!match) continue
+      const otherId = match.user1_id === user.id ? match.user2_id : match.user1_id
+      const other = profileById[otherId] ?? null
 
       const sortedMessages = [...((c.messages as any[]) || [])].sort(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -45,7 +65,7 @@ export default async function MessagesPage() {
 
       conversations.push({
         id: c.id,
-        other: otherParticipant || null,
+        other,
         messages: sortedMessages,
         lastMessage: lastMsg?.content || '',
         lastTime: lastMsg?.created_at || c.created_at,

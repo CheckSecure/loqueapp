@@ -9,23 +9,33 @@ export default async function MeetingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: meetings, error: meetingsErr } = await supabase
+  // Step 1: get all meetings where user is organizer or attendee
+  const { data: meetingRows, error: meetingsErr } = await supabase
     .from('meetings')
-    .select(`
-      id, title, scheduled_at, duration_minutes, meeting_type, location, organizer_id,
-      organizer:profiles!organizer_id(id, full_name),
-      attendee:profiles!attendee_id(id, full_name)
-    `)
+    .select('id, title, scheduled_at, duration_minutes, meeting_type, location, organizer_id, attendee_id')
     .or(`organizer_id.eq.${user.id},attendee_id.eq.${user.id}`)
     .order('scheduled_at', { ascending: true })
 
-  console.log('[Meetings] user.id:', user.id)
   console.log('[Meetings] error:', meetingsErr?.message ?? 'none')
-  console.log('[Meetings] rows returned:', meetings?.length ?? 0, JSON.stringify(meetings?.map(m => m.title)))
+  console.log('[Meetings] rows:', meetingRows?.length ?? 0)
 
-  const enriched = (meetings || []).map((m: any) => {
+  // Step 2: collect the other user IDs and look up their profiles
+  const otherIds = (meetingRows || []).map((m: any) =>
+    m.organizer_id === user.id ? m.attendee_id : m.organizer_id
+  ).filter(Boolean)
+
+  let profileById: Record<string, any> = {}
+  if (otherIds.length > 0) {
+    const { data: profileRows } = await supabase
+      .from('profiles')
+      .select('id, full_name, title, company')
+      .in('id', otherIds)
+    for (const p of profileRows || []) profileById[p.id] = p
+  }
+
+  const enriched = (meetingRows || []).map((m: any) => {
     const isOrganizer = m.organizer_id === user.id
-    const other = isOrganizer ? m.attendee : m.organizer
+    const otherId = isOrganizer ? m.attendee_id : m.organizer_id
     return {
       id: m.id,
       title: m.title,
@@ -33,7 +43,7 @@ export default async function MeetingsPage() {
       duration_minutes: m.duration_minutes,
       meeting_type: m.meeting_type,
       location: m.location,
-      other: other || null,
+      other: profileById[otherId] ?? null,
       isOrganizer,
       isPast: new Date(m.scheduled_at) < new Date(),
     }
