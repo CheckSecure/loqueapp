@@ -127,7 +127,7 @@ export default function MessagesClient({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-0.5">
                     <p className="text-sm font-semibold text-slate-900 truncate">{c.other?.full_name || 'Unknown'}</p>
-                    <span className="text-xs text-slate-400 ml-2 flex-shrink-0">{timeAgo(c.lastTime)}</span>
+                    <span suppressHydrationWarning className="text-xs text-slate-400 ml-2 flex-shrink-0">{timeAgo(c.lastTime)}</span>
                   </div>
                   <p className="text-xs text-slate-500 truncate">{c.lastMessage || 'No messages yet'}</p>
                 </div>
@@ -172,7 +172,7 @@ export default function MessagesClient({
                           : 'bg-white text-slate-800 border border-slate-100 shadow-sm rounded-bl-sm'
                       )}>
                         <p>{m.content}</p>
-                        <p className={cn('text-xs mt-1', isMe ? 'text-indigo-200' : 'text-slate-400')}>
+                        <p suppressHydrationWarning className={cn('text-xs mt-1', isMe ? 'text-indigo-200' : 'text-slate-400')}>
                           {formatTime(m.created_at)}
                         </p>
                       </div>
