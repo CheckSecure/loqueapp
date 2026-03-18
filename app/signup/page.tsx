@@ -32,11 +32,19 @@ export default function SignupPage() {
       return
     }
     if (data.session) {
-      // Email confirmation is disabled — user is logged in immediately
       router.push('/onboarding')
       return
     }
-    // Email confirmation is enabled — prompt user to check their inbox
+
+    // PKCE flow: session may be set via cookies rather than returned inline.
+    // Explicitly check whether a session now exists before showing the email prompt.
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session) {
+      router.push('/onboarding')
+      return
+    }
+
+    // Genuinely no session — email confirmation is required
     setSuccess(true)
     setLoading(false)
   }
