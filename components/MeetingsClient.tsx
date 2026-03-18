@@ -39,14 +39,23 @@ function initials(name?: string) {
   return name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?'
 }
 
+interface MatchedUser {
+  id: string
+  full_name: string
+  title?: string
+  company?: string
+}
+
 export default function MeetingsClient({
   upcoming,
   past,
   currentUserId,
+  matchedUsers,
 }: {
   upcoming: Meeting[]
   past: Meeting[]
   currentUserId: string
+  matchedUsers: MatchedUser[]
 }) {
   const [view, setView] = useState<'list' | 'calendar'>('list')
   const [showModal, setShowModal] = useState(false)
@@ -174,7 +183,12 @@ export default function MeetingsClient({
         </div>
       </div>
 
-      {showModal && <ScheduleMeetingModal onClose={() => setShowModal(false)} />}
+      {showModal && (
+        <ScheduleMeetingModal
+          onClose={() => setShowModal(false)}
+          matchedUsers={matchedUsers}
+        />
+      )}
     </div>
   )
 }

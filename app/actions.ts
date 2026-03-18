@@ -172,15 +172,23 @@ export async function scheduleMeeting(formData: FormData) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
+  const date = formData.get('date') as string
+  const time = formData.get('time') as string
+  const scheduled_at = date && time ? new Date(`${date}T${time}:00`).toISOString() : null
+
+  const recipientId = (formData.get('recipient_id') as string || '').trim()
+  if (!recipientId) return { error: 'Please select who you are meeting with.' }
+  if (!scheduled_at) return { error: 'Please provide a valid date and time.' }
+
   const { error } = await supabase.from('meetings').insert({
     requester_id: user.id,
-    recipient_id: formData.get('attendee_id') as string || null,
-    purpose: formData.get('title') as string,
-    format: formData.get('meeting_type') as string || 'video',
-    status: 'scheduled',
-    scheduled_at: formData.get('scheduled_at') as string,
+    recipient_id: recipientId,
+    purpose: formData.get('purpose') as string,
+    format: formData.get('format') as string || 'virtual',
+    status: 'requested',
+    scheduled_at,
     duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
-    location: formData.get('location') as string || null,
+    notes: (formData.get('notes') as string) || null,
   })
 
   if (error) return { error: error.message }
