@@ -114,7 +114,7 @@ export async function scheduleMeeting(formData: FormData) {
     recipient_id: formData.get('attendee_id') as string || null,
     scheduled_at: formData.get('scheduled_at') as string,
     duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
-    meeting_type: formData.get('meeting_type') as string || 'video',
+    purpose: formData.get('meeting_type') as string || 'video',
     location: formData.get('location') as string || null,
   })
 
