@@ -183,7 +183,7 @@ export async function scheduleMeeting(formData: FormData) {
   const { error } = await supabase.from('meetings').insert({
     requester_id: user.id,
     recipient_id: recipientId,
-    purpose: formData.get('purpose') as string,
+    purpose: (formData.get('title') as string || '').trim() || (formData.get('purpose') as string),
     format: formData.get('format') as string || 'virtual',
     status: 'requested',
     scheduled_at,

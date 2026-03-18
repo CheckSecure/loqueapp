@@ -81,6 +81,19 @@ export default function ScheduleMeetingModal({
             </select>
           </div>
 
+          {/* Title */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Meeting title <span className="text-slate-400 font-normal text-xs ml-1">optional</span>
+            </label>
+            <input
+              name="title"
+              type="text"
+              placeholder="e.g. Intro call, Strategy discussion…"
+              className={fieldClass}
+            />
+          </div>
+
           {/* Purpose */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
