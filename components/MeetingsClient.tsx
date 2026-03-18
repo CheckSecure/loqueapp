@@ -105,59 +105,62 @@ export default function MeetingsClient({
   const [showModal, setShowModal] = useState(false)
 
   const MeetingCard = ({ m, faded }: { m: Meeting; faded?: boolean }) => (
-    <div className={cn('bg-white border border-slate-100 rounded-xl p-5 shadow-sm flex items-center gap-4', faded && 'opacity-60')}>
-      <div className={cn('w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0', faded ? 'bg-slate-100' : 'bg-[#F5F6FB]')}>
-        <Calendar className={cn('w-5 h-5', faded ? 'text-slate-400' : 'text-[#1B2850]')} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-slate-900 truncate">{m.title}</p>
-        <div className="flex flex-wrap items-center gap-3 mt-1">
-          <span className="flex items-center gap-1 text-xs text-slate-500">
-            <Clock className="w-3 h-3" />
-            {formatDate(m.scheduled_at)} · {formatTime(m.scheduled_at, m.duration_minutes)}
-          </span>
-          {m.meeting_type === 'video' ? (
-            <span className="flex items-center gap-1 text-xs text-[#1B2850] font-medium">
-              <Video className="w-3 h-3" /> Video call
-            </span>
-          ) : m.location ? (
-            <span className="flex items-center gap-1 text-xs text-slate-500">
-              <MapPin className="w-3 h-3" /> {m.location}
-            </span>
-          ) : null}
+    <div className={cn('bg-white border border-slate-100 rounded-xl p-4 md:p-5 shadow-sm flex flex-col gap-3', faded && 'opacity-60')}>
+      {/* Top row: icon + info + avatar */}
+      <div className="flex items-start gap-3">
+        <div className={cn('w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5', faded ? 'bg-slate-100' : 'bg-[#F5F6FB]')}>
+          <Calendar className={cn('w-4 h-4', faded ? 'text-slate-400' : 'text-[#1B2850]')} />
         </div>
-      </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-slate-900 truncate">{m.title}</p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+            <span className="flex items-center gap-1 text-xs text-slate-500">
+              <Clock className="w-3 h-3" />
+              {formatDate(m.scheduled_at)} · {formatTime(m.scheduled_at, m.duration_minutes)}
+            </span>
+            {m.meeting_type === 'virtual' || m.meeting_type === 'video' ? (
+              <span className="flex items-center gap-1 text-xs text-[#1B2850] font-medium">
+                <Video className="w-3 h-3" /> Virtual
+              </span>
+            ) : m.location ? (
+              <span className="flex items-center gap-1 text-xs text-slate-500">
+                <MapPin className="w-3 h-3" /> {m.location}
+              </span>
+            ) : null}
+          </div>
+        </div>
         {m.other && (
-          <div className={`w-7 h-7 rounded-full ${m.other.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xs font-bold`}>
+          <div className={`w-7 h-7 rounded-full ${m.other.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
             {initials(m.other.full_name)}
           </div>
         )}
-        {!faded && (
+      </div>
+      {/* Action buttons row */}
+      {!faded && (
+        <div className="flex items-center gap-2 pt-1 border-t border-slate-50">
           <button
             onClick={() => downloadICS(m)}
-            title="Add to calendar"
-            className="text-xs font-semibold border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:border-slate-300 hover:text-slate-800 transition-colors"
+            className="flex-1 text-xs font-semibold border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:border-slate-300 hover:text-slate-800 transition-colors text-center"
           >
             + Calendar
           </button>
-        )}
-        {!faded && m.zoom_link && (
-          <a
-            href={m.zoom_link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs font-semibold bg-[#1B2850] text-white px-3 py-1.5 rounded-lg hover:bg-[#2E4080] transition-colors"
-          >
-            Join
-          </a>
-        )}
-      </div>
+          {m.zoom_link && (
+            <a
+              href={m.zoom_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 text-xs font-semibold bg-[#1B2850] text-white px-3 py-1.5 rounded-lg hover:bg-[#2E4080] transition-colors text-center"
+            >
+              Join meeting
+            </a>
+          )}
+        </div>
+      )}
     </div>
   )
 
   return (
-    <div className="p-6 md:p-8 pt-20 md:pt-8">
+    <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
       <div className="max-w-3xl">
         <div className="flex items-center justify-between mb-8">
           <div>
