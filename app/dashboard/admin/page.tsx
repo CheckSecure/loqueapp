@@ -11,6 +11,7 @@ export default async function AdminPage() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+  if (user.email !== 'bizdev91@gmail.com') redirect('/dashboard/introductions')
 
   const { data: pending } = await adminGetPendingRequests()
 

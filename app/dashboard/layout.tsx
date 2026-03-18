@@ -47,6 +47,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const avatarColor = pickColor(user.id)
   const avatarUrl: string | null = (profile as any)?.avatar_url ?? null
   const credits: number = creditRow?.balance ?? 0
+  const isAdmin = user.email === 'bizdev91@gmail.com'
 
   // Unread message count — messages from others in the user's conversations
   let unreadCount = 0
@@ -103,6 +104,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           avatarColor={avatarColor}
           avatarUrl={avatarUrl}
           credits={credits}
+          isAdmin={isAdmin}
         />
         <main className="flex-1 min-w-0 overflow-x-hidden">
           {children}
