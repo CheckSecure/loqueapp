@@ -20,7 +20,7 @@ export default function IntroductionActions({ introId }: { introId: string }) {
       <button
         disabled={!!loading}
         onClick={() => handle('accepted')}
-        className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+        className="text-xs font-semibold text-white bg-[#1B2850] hover:bg-[#2E4080] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
       >
         {loading === 'accepted' ? '...' : 'Accept'}
       </button>

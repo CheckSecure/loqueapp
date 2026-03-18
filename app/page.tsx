@@ -42,12 +42,12 @@ export default async function Home() {
     <div className="min-h-screen bg-white flex flex-col">
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <span className="text-xl font-bold text-slate-900 tracking-tight">Cadre</span>
+          <span className="text-xl font-bold text-[#1B2850] tracking-tight">Cadre</span>
           <div className="flex items-center gap-3">
             <Link href="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
               Sign in
             </Link>
-            <Link href="/signup" className="text-sm font-semibold bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">
+            <Link href="/signup" className="text-sm font-semibold bg-[#1B2850] text-white px-4 py-2 rounded-lg hover:bg-[#2E4080] transition-colors">
               Join Cadre
             </Link>
           </div>
@@ -57,13 +57,13 @@ export default async function Home() {
       <main className="flex-1">
         {/* Hero */}
         <section className="max-w-6xl mx-auto px-6 pt-24 pb-20 text-center">
-          <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 text-xs font-semibold px-3 py-1.5 rounded-full mb-8 tracking-wide uppercase">
+          <div className="inline-flex items-center gap-2 bg-[#FDF3E3] text-[#C4922A] text-xs font-semibold px-3 py-1.5 rounded-full mb-8 tracking-wide uppercase">
             Professional Networking, Reimagined
           </div>
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-slate-900 leading-[1.05] tracking-tight mb-6">
             Your next opportunity
             <br />
-            <span className="text-indigo-600">starts with an introduction.</span>
+            <span className="text-[#C4922A]">starts with an introduction.</span>
           </h1>
           <p className="text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed mb-10">
             Cadre is the professional network built on trust. Connect with the right people through warm introductions, not cold outreach.
@@ -71,7 +71,7 @@ export default async function Home() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               href="/signup"
-              className="inline-flex items-center justify-center gap-2 bg-indigo-600 text-white text-sm font-semibold px-7 py-3.5 rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
+              className="inline-flex items-center justify-center gap-2 bg-[#1B2850] text-white text-sm font-semibold px-7 py-3.5 rounded-xl hover:bg-[#2E4080] transition-colors shadow-lg shadow-[#1B2850]/20"
             >
               Get started for free <ArrowRight className="w-4 h-4" />
             </Link>
@@ -85,15 +85,15 @@ export default async function Home() {
         </section>
 
         {/* Features */}
-        <section className="bg-slate-50 py-20">
+        <section className="bg-[#F5F6FB] py-20">
           <div className="max-w-6xl mx-auto px-6">
             <h2 className="text-3xl font-bold text-slate-900 text-center mb-3">Everything you need to grow professionally</h2>
             <p className="text-slate-500 text-center mb-12 max-w-xl mx-auto">Four focused tools designed to help you build meaningful professional relationships.</p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {features.map(({ icon: Icon, title, description }) => (
                 <div key={title} className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center mb-4">
-                    <Icon className="w-5 h-5 text-indigo-600" />
+                  <div className="w-10 h-10 bg-[#FDF3E3] rounded-xl flex items-center justify-center mb-4">
+                    <Icon className="w-5 h-5 text-[#C4922A]" />
                   </div>
                   <h3 className="font-semibold text-slate-900 mb-2">{title}</h3>
                   <p className="text-sm text-slate-500 leading-relaxed">{description}</p>
@@ -114,19 +114,19 @@ export default async function Home() {
               <ul className="space-y-3">
                 {benefits.map((b) => (
                   <li key={b} className="flex items-center gap-3 text-slate-700">
-                    <CheckCircle className="w-5 h-5 text-indigo-600 flex-shrink-0" />
+                    <CheckCircle className="w-5 h-5 text-[#C4922A] flex-shrink-0" />
                     <span className="text-sm font-medium">{b}</span>
                   </li>
                 ))}
               </ul>
             </div>
-            <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-3xl p-8 text-white">
-              <p className="text-indigo-200 text-sm font-semibold uppercase tracking-wide mb-6">Ready to join?</p>
+            <div className="bg-gradient-to-br from-[#1B2850] to-[#2E4080] rounded-3xl p-8 text-white">
+              <p className="text-[#C4922A] text-sm font-semibold uppercase tracking-wide mb-6">Ready to join?</p>
               <p className="text-2xl font-bold mb-3 leading-snug">Join professionals who value meaningful connections.</p>
-              <p className="text-indigo-200 text-sm mb-8 leading-relaxed">Create your free account and start building your Cadre today.</p>
+              <p className="text-white/60 text-sm mb-8 leading-relaxed">Create your free account and start building your Cadre today.</p>
               <Link
                 href="/signup"
-                className="inline-flex items-center gap-2 bg-white text-indigo-700 text-sm font-bold px-6 py-3 rounded-xl hover:bg-indigo-50 transition-colors"
+                className="inline-flex items-center gap-2 bg-white text-[#1B2850] text-sm font-bold px-6 py-3 rounded-xl hover:bg-[#FDF3E3] transition-colors"
               >
                 Create free account <ArrowRight className="w-4 h-4" />
               </Link>

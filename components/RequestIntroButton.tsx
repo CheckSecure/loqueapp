@@ -22,7 +22,7 @@ export default function RequestIntroButton({ targetId }: { targetId: string }) {
   if (state === 'done') {
     return (
       <div className="mt-1">
-        <div className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 py-1.5 rounded-lg">
+        <div className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-[#C4922A] bg-[#FDF3E3] border border-[#C4922A]/30 py-1.5 rounded-lg">
           <CheckCircle className="w-3.5 h-3.5" />
           Requested ✓
         </div>
@@ -38,7 +38,7 @@ export default function RequestIntroButton({ targetId }: { targetId: string }) {
       <button
         onClick={handleClick}
         disabled={state === 'loading'}
-        className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold bg-indigo-600 text-white py-1.5 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-60"
+        className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold bg-[#1B2850] text-white py-1.5 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60"
       >
         {state === 'loading' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
         {state === 'loading' ? 'Submitting...' : state === 'error' ? 'Try again' : 'Request intro'}

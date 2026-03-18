@@ -7,8 +7,8 @@ import RequestIntroButton from '@/components/RequestIntroButton'
 export const metadata = { title: 'Introductions | Cadre' }
 
 const AVATAR_COLORS = [
-  'bg-violet-500','bg-emerald-500','bg-amber-500','bg-rose-500',
-  'bg-cyan-500','bg-indigo-500','bg-pink-500','bg-teal-500',
+  'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
+  'bg-cyan-600','bg-teal-600','bg-pink-500','bg-slate-600',
 ]
 
 function pickColor(id: string) {
@@ -23,9 +23,9 @@ function getInitials(name?: string) {
 function Tag({ children, color = 'slate' }: { children: React.ReactNode; color?: string }) {
   const styles: Record<string, string> = {
     slate:  'bg-slate-50 text-slate-600 border-slate-100',
-    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
-    violet: 'bg-violet-50 text-violet-700 border-violet-100',
-    emerald:'bg-emerald-50 text-emerald-700 border-emerald-100',
+    indigo: 'bg-[#F5F6FB] text-[#1B2850] border-[#1B2850]/10',
+    violet: 'bg-slate-50 text-slate-600 border-slate-100',
+    emerald:'bg-[#FDF3E3] text-[#C4922A] border-[#C4922A]/20',
     amber:  'bg-amber-50 text-amber-700 border-amber-100',
   }
   return (
@@ -147,7 +147,7 @@ export default async function IntroductionsPage() {
           <input
             type="text"
             placeholder="Search by name, role, or company..."
-            className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+            className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
           />
         </div>
 

@@ -37,7 +37,7 @@ export default function Sidebar({ displayName, email, initials, avatarColor }: S
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       <div className="px-5 py-6 border-b border-slate-200">
-        <span className="text-lg font-bold text-slate-900">Cadre</span>
+        <span className="text-lg font-bold text-[#1B2850] tracking-tight">Cadre</span>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map(({ href, label, icon: Icon }) => {
@@ -49,7 +49,7 @@ export default function Sidebar({ displayName, email, initials, avatarColor }: S
               onClick={() => setMobileOpen(false)}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                active ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                active ? 'bg-[#1B2850] text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               )}
             >
               <Icon className="w-4 h-4 flex-shrink-0" />
@@ -85,7 +85,7 @@ export default function Sidebar({ displayName, email, initials, avatarColor }: S
         <SidebarContent />
       </aside>
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
-        <span className="text-lg font-bold text-slate-900">Cadre</span>
+        <span className="text-lg font-bold text-[#1B2850] tracking-tight">Cadre</span>
         <button onClick={() => setMobileOpen(true)} className="p-1 text-slate-600">
           <Menu className="w-5 h-5" />
         </button>

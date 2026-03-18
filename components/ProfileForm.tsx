@@ -37,7 +37,6 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
     setSaved(false)
     setError(null)
     const formData = new FormData(e.currentTarget)
-    // Append intro preferences as comma-separated
     formData.set('intro_preferences', introPref.join(','))
     const result = await updateProfile(formData)
     setLoading(false)
@@ -53,11 +52,11 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Avatar + status */}
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="h-20 bg-gradient-to-r from-indigo-500 to-violet-600" />
+        <div className="h-20 bg-gradient-to-r from-[#1B2850] to-[#2E4080]" />
         <div className="px-6 pb-6">
           <div className="flex items-end justify-between -mt-8 mb-4">
             <div className="relative">
-              <div className={`w-16 h-16 rounded-xl ${profile?.avatar_color || 'bg-indigo-600'} flex items-center justify-center text-white text-xl font-bold border-4 border-white shadow-sm`}>
+              <div className={`w-16 h-16 rounded-xl ${profile?.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xl font-bold border-4 border-white shadow-sm`}>
                 {initials}
               </div>
             </div>
@@ -68,7 +67,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
                 name="open_to_intros"
                 value="true"
                 defaultChecked={profile?.open_to_intros ?? true}
-                className="w-4 h-4 accent-indigo-600"
+                className="w-4 h-4 accent-[#C4922A]"
               />
               <label htmlFor="open_to_intros" className="text-xs font-medium text-slate-600 cursor-pointer">
                 Open to introductions
@@ -89,7 +88,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
             type="text"
             defaultValue={profile?.full_name || ''}
             placeholder="Jane Smith"
-            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
           />
         </div>
         <div className="grid sm:grid-cols-2 gap-4">
@@ -100,7 +99,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
               type="text"
               defaultValue={profile?.role || ''}
               placeholder="Product Manager"
-              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
             />
           </div>
           <div>
@@ -110,7 +109,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
               type="text"
               defaultValue={profile?.company || ''}
               placeholder="Acme Inc."
-              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
             />
           </div>
         </div>
@@ -121,7 +120,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
             type="text"
             defaultValue={profile?.location || ''}
             placeholder="San Francisco, CA"
-            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
           />
         </div>
         <div>
@@ -131,7 +130,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
             rows={3}
             defaultValue={profile?.bio || ''}
             placeholder="Tell your professional story..."
-            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none"
+            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition resize-none"
           />
         </div>
       </div>
@@ -145,7 +144,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
           type="text"
           defaultValue={(profile?.expertise || []).join(', ')}
           placeholder="Product Strategy, B2B SaaS, Growth"
-          className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+          className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
         />
       </div>
 
@@ -166,7 +165,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
               type="url"
               defaultValue={(profile as any)?.[name] || ''}
               placeholder={placeholder}
-              className="flex-1 px-3.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="flex-1 px-3.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
             />
           </div>
         ))}
@@ -181,7 +180,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
             <label key={pref} className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                className="w-4 h-4 accent-indigo-600 rounded"
+                className="w-4 h-4 accent-[#C4922A] rounded"
                 checked={introPref.includes(pref)}
                 onChange={(e) =>
                   setIntroPref(prev =>
@@ -201,13 +200,13 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
         <button
           type="submit"
           disabled={loading}
-          className="flex items-center gap-2 bg-indigo-600 text-white text-sm font-semibold px-6 py-2.5 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-60"
+          className="flex items-center gap-2 bg-[#1B2850] text-white text-sm font-semibold px-6 py-2.5 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60"
         >
           {loading && <Loader2 className="w-4 h-4 animate-spin" />}
           Save profile
         </button>
         {saved && (
-          <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
+          <span className="flex items-center gap-1.5 text-sm text-[#C4922A] font-medium">
             <CheckCircle className="w-4 h-4" />
             Saved!
           </span>

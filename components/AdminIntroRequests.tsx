@@ -14,8 +14,8 @@ interface Request {
 }
 
 const AVATAR_COLORS = [
-  'bg-violet-500','bg-emerald-500','bg-amber-500','bg-rose-500',
-  'bg-cyan-500','bg-indigo-500','bg-pink-500','bg-teal-500',
+  'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
+  'bg-cyan-600','bg-teal-600','bg-pink-500','bg-slate-600',
 ]
 
 function pickColor(id: string) {
@@ -82,7 +82,7 @@ export default function AdminIntroRequests({ initial }: { initial: Request[] }) 
   if (requests.length === 0) {
     return (
       <div className="bg-white border border-slate-100 rounded-xl p-12 text-center shadow-sm">
-        <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+        <CheckCircle className="w-10 h-10 text-[#C4922A] mx-auto mb-3" />
         <p className="text-sm font-semibold text-slate-700">No pending requests</p>
         <p className="text-xs text-slate-400 mt-1">All intro requests have been handled.</p>
       </div>
@@ -93,7 +93,7 @@ export default function AdminIntroRequests({ initial }: { initial: Request[] }) 
     <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-100 bg-slate-50">
+          <tr className="border-b border-slate-100 bg-[#F5F6FB]">
             <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Requester</th>
             <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Requesting intro to</th>
             <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Note</th>
@@ -105,7 +105,7 @@ export default function AdminIntroRequests({ initial }: { initial: Request[] }) 
           {requests.map(r => {
             const busy = loading[r.id]
             return (
-              <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+              <tr key={r.id} className="hover:bg-[#F5F6FB] transition-colors">
                 <td className="px-5 py-4">
                   <ProfileCell profile={r.requester} />
                 </td>
@@ -125,7 +125,7 @@ export default function AdminIntroRequests({ initial }: { initial: Request[] }) 
                     <button
                       disabled={!!busy}
                       onClick={() => handle(r.id, 'approve')}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                      className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#1B2850] hover:bg-[#2E4080] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
                     >
                       {busy === 'approve'
                         ? <Loader2 className="w-3 h-3 animate-spin" />

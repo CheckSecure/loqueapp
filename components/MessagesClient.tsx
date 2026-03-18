@@ -71,7 +71,6 @@ export default function MessagesClient({
     setInput('')
     setSending(true)
 
-    // Optimistic update
     const optimistic: Message = {
       id: `tmp-${Date.now()}`,
       content,
@@ -99,7 +98,7 @@ export default function MessagesClient({
             <input
               type="text"
               placeholder="Search messages..."
-              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
             />
           </div>
         </div>
@@ -117,11 +116,11 @@ export default function MessagesClient({
                 key={c.id}
                 onClick={() => selectConversation(c)}
                 className={cn(
-                  'w-full text-left px-4 py-3.5 hover:bg-slate-50 transition-colors flex items-start gap-3',
-                  selected?.id === c.id && 'bg-indigo-50'
+                  'w-full text-left px-4 py-3.5 hover:bg-[#F5F6FB] transition-colors flex items-start gap-3',
+                  selected?.id === c.id && 'bg-[#F5F6FB] border-l-2 border-[#1B2850]'
                 )}
               >
-                <div className={`w-9 h-9 rounded-full ${c.other?.avatar_color || 'bg-indigo-500'} flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5`}>
+                <div className={`w-9 h-9 rounded-full ${c.other?.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5`}>
                   {initials(c.other?.full_name)}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -138,11 +137,11 @@ export default function MessagesClient({
       </div>
 
       {/* Message thread */}
-      <div className="hidden md:flex flex-1 flex-col bg-slate-50">
+      <div className="hidden md:flex flex-1 flex-col bg-[#F5F6FB]">
         {selected ? (
           <>
             <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-full ${selected.other?.avatar_color || 'bg-indigo-500'} flex items-center justify-center text-white text-xs font-bold`}>
+              <div className={`w-9 h-9 rounded-full ${selected.other?.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xs font-bold`}>
                 {initials(selected.other?.full_name)}
               </div>
               <div>
@@ -168,11 +167,11 @@ export default function MessagesClient({
                       <div className={cn(
                         'max-w-xs lg:max-w-md px-4 py-2.5 rounded-2xl text-sm',
                         isMe
-                          ? 'bg-indigo-600 text-white rounded-br-sm'
+                          ? 'bg-[#1B2850] text-white rounded-br-sm'
                           : 'bg-white text-slate-800 border border-slate-100 shadow-sm rounded-bl-sm'
                       )}>
                         <p>{m.content}</p>
-                        <p suppressHydrationWarning className={cn('text-xs mt-1', isMe ? 'text-indigo-200' : 'text-slate-400')}>
+                        <p suppressHydrationWarning className={cn('text-xs mt-1', isMe ? 'text-white/60' : 'text-slate-400')}>
                           {formatTime(m.created_at)}
                         </p>
                       </div>
@@ -190,12 +189,12 @@ export default function MessagesClient({
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                   placeholder={`Message ${selected.other?.full_name?.split(' ')[0] || 'them'}...`}
-                  className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                  className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
                 />
                 <button
                   onClick={handleSend}
                   disabled={!input.trim() || sending}
-                  className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                  className="w-10 h-10 bg-[#1B2850] rounded-xl flex items-center justify-center hover:bg-[#2E4080] transition-colors disabled:opacity-50"
                 >
                   <Send className="w-4 h-4 text-white" />
                 </button>

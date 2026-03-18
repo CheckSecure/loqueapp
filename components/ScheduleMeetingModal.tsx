@@ -25,7 +25,6 @@ export default function ScheduleMeetingModal({ onClose }: { onClose: () => void 
     }
   }
 
-  // Default to 1 hour from now
   const defaultDateTime = new Date(Date.now() + 3600000).toISOString().slice(0, 16)
 
   return (
@@ -49,7 +48,7 @@ export default function ScheduleMeetingModal({ onClose }: { onClose: () => void 
               type="text"
               required
               placeholder="e.g. Intro call with Sarah"
-              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
             />
           </div>
 
@@ -60,7 +59,7 @@ export default function ScheduleMeetingModal({ onClose }: { onClose: () => void 
               type="datetime-local"
               required
               defaultValue={defaultDateTime}
-              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
             />
           </div>
 
@@ -70,7 +69,7 @@ export default function ScheduleMeetingModal({ onClose }: { onClose: () => void 
               <select
                 name="duration_minutes"
                 defaultValue="30"
-                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
               >
                 <option value="15">15 min</option>
                 <option value="30">30 min</option>
@@ -83,7 +82,7 @@ export default function ScheduleMeetingModal({ onClose }: { onClose: () => void 
               <select
                 name="meeting_type"
                 defaultValue="video"
-                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
               >
                 <option value="video">Video call</option>
                 <option value="in-person">In person</option>
@@ -97,14 +96,14 @@ export default function ScheduleMeetingModal({ onClose }: { onClose: () => void 
               name="location"
               type="text"
               placeholder="Zoom link or venue address"
-              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-60 mt-2"
+            className="w-full flex items-center justify-center gap-2 bg-[#1B2850] text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60 mt-2"
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             Schedule meeting

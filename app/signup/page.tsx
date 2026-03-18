@@ -39,14 +39,14 @@ export default function SignupPage() {
     return (
       <div className="min-h-screen flex items-center justify-center px-6">
         <div className="max-w-sm w-full text-center">
-          <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
-            <CheckCircle className="w-7 h-7 text-green-600" />
+          <div className="w-14 h-14 bg-[#FDF3E3] rounded-full flex items-center justify-center mx-auto mb-5">
+            <CheckCircle className="w-7 h-7 text-[#C4922A]" />
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
           <p className="text-slate-500 text-sm mb-6">
             We sent a confirmation link to <strong className="text-slate-700">{email}</strong>. Click it to activate your Cadre account.
           </p>
-          <Link href="/login" className="text-indigo-600 text-sm font-semibold hover:underline">
+          <Link href="/login" className="text-[#1B2850] text-sm font-semibold hover:underline">
             Back to sign in
           </Link>
         </div>
@@ -56,23 +56,23 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen flex">
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-600 to-indigo-900 flex-col justify-between p-12">
-        <Link href="/" className="text-2xl font-bold text-white">Cadre</Link>
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#1B2850] to-[#2E4080] flex-col justify-between p-12">
+        <Link href="/" className="text-2xl font-bold text-white tracking-tight">Cadre</Link>
         <div className="text-white">
           <p className="text-3xl font-bold mb-3 leading-snug">Join a network built on trust and warm introductions.</p>
-          <p className="text-indigo-200">Your next big opportunity is one introduction away.</p>
+          <p className="text-white/60">Your next big opportunity is one introduction away.</p>
         </div>
-        <p className="text-indigo-300 text-sm">© {new Date().getFullYear()} Cadre</p>
+        <p className="text-white/40 text-sm">© {new Date().getFullYear()} Cadre</p>
       </div>
 
       <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8">
-            <Link href="/" className="text-xl font-bold text-slate-900 lg:hidden block mb-6">Cadre</Link>
+            <Link href="/" className="text-xl font-bold text-[#1B2850] lg:hidden block mb-6 tracking-tight">Cadre</Link>
             <h2 className="text-2xl font-bold text-slate-900">Create your account</h2>
             <p className="mt-1 text-sm text-slate-500">
               Already have an account?{' '}
-              <Link href="/login" className="text-indigo-600 font-semibold hover:underline">Sign in</Link>
+              <Link href="/login" className="text-[#1B2850] font-semibold hover:underline">Sign in</Link>
             </p>
           </div>
 
@@ -91,7 +91,7 @@ export default function SignupPage() {
                 autoComplete="name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
                 placeholder="Jane Smith"
               />
             </div>
@@ -104,7 +104,7 @@ export default function SignupPage() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
                 placeholder="you@company.com"
               />
             </div>
@@ -118,7 +118,7 @@ export default function SignupPage() {
                 minLength={8}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
                 placeholder="Min. 8 characters"
               />
             </div>
@@ -126,7 +126,7 @@ export default function SignupPage() {
               type="submit"
               disabled={loading}
               className={cn(
-                'w-full flex items-center justify-center gap-2 bg-indigo-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-indigo-700 transition-colors mt-2',
+                'w-full flex items-center justify-center gap-2 bg-[#1B2850] text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-[#2E4080] transition-colors mt-2',
                 loading && 'opacity-70 cursor-not-allowed'
               )}
             >

@@ -3,8 +3,8 @@ import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 
 const AVATAR_COLORS = [
-  'bg-violet-500','bg-emerald-500','bg-amber-500','bg-rose-500',
-  'bg-cyan-500','bg-indigo-500','bg-pink-500','bg-teal-500',
+  'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
+  'bg-cyan-600','bg-teal-600','bg-pink-500','bg-slate-600',
 ]
 
 function pickColor(id: string) {
@@ -35,7 +35,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const displayName = profile?.full_name || user.email?.split('@')[0] || 'You'
   const initials = displayName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
-  const avatarColor = profile?.avatar_color || 'bg-indigo-500'
+  const avatarColor = profile?.avatar_color || 'bg-[#1B2850]'
 
   return (
     <div className="min-h-screen flex bg-slate-50">
