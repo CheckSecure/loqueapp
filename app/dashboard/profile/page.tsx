@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProfileForm from '@/components/ProfileForm'
+import pool from '@/lib/db'
 
 export const metadata = { title: 'Profile | Cadre' }
 
@@ -9,11 +10,11 @@ export default async function ProfilePage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .single()
+  const { rows } = await pool.query(
+    'SELECT * FROM profiles WHERE id = $1',
+    [user.id]
+  )
+  const profile = rows[0] || null
 
   return (
     <div className="p-6 md:p-8 pt-20 md:pt-8">

@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { Plus, Search, Star, Briefcase, MapPin, Users, Inbox } from 'lucide-react'
+import { Search, Briefcase, MapPin, Inbox } from 'lucide-react'
+import pool from '@/lib/db'
 import IntroductionActions from '@/components/IntroductionActions'
+import RequestIntroButton from '@/components/RequestIntroButton'
 
 export const metadata = { title: 'Introductions | Cadre' }
 
@@ -10,65 +12,76 @@ export default async function IntroductionsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const firstName = ((await supabase.from('profiles').select('full_name').eq('id', user.id).single()).data?.full_name as string)?.split(' ')[0] || 'there'
+  const { rows: profileRows } = await pool.query(
+    'SELECT full_name FROM profiles WHERE id = $1',
+    [user.id]
+  )
+  const firstName = profileRows[0]?.full_name?.split(' ')[0] || 'there'
 
   // Pending intro requests where I'm the target
-  const { data: pending } = await supabase
-    .from('introductions')
-    .select('id, message, created_at, requester:profiles!requester_id(id, full_name, role, company, avatar_color)')
-    .eq('target_id', user.id)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
+  const { rows: pending } = await pool.query(
+    `SELECT i.id, i.message, i.created_at,
+            p.id as req_id, p.full_name as req_name, p.role as req_role,
+            p.company as req_company, p.avatar_color as req_color
+     FROM introductions i
+     JOIN profiles p ON p.id = i.requester_id
+     WHERE i.target_id = $1 AND i.status = 'pending'
+     ORDER BY i.created_at DESC`,
+    [user.id]
+  )
 
-  // IDs I've already requested or received from
-  const { data: myIntros } = await supabase
-    .from('introductions')
-    .select('requester_id, target_id')
-    .or(`requester_id.eq.${user.id},target_id.eq.${user.id}`)
-
+  // IDs already connected (to exclude from suggestions)
+  const { rows: myIntros } = await pool.query(
+    `SELECT requester_id, target_id FROM introductions
+     WHERE requester_id = $1 OR target_id = $1`,
+    [user.id]
+  )
   const connectedIds = new Set([
     user.id,
-    ...(myIntros || []).map(i => i.requester_id),
-    ...(myIntros || []).map(i => i.target_id),
+    ...myIntros.map((r: any) => r.requester_id),
+    ...myIntros.map((r: any) => r.target_id),
   ])
+  const excludeList = [...connectedIds]
 
-  // Suggested profiles: other open users not yet connected
-  const { data: suggestions } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, company, location, expertise, avatar_color')
-    .eq('open_to_intros', true)
-    .not('id', 'in', `(${[...connectedIds].join(',')})`)
-    .limit(6)
+  // Suggested profiles
+  const { rows: suggestions } = await pool.query(
+    `SELECT id, full_name, role, company, location, expertise, avatar_color
+     FROM profiles
+     WHERE open_to_intros = true
+       AND id != ALL($1::uuid[])
+     LIMIT 6`,
+    [excludeList]
+  )
 
   return (
     <div className="p-6 md:p-8 pt-20 md:pt-8">
       <div className="max-w-4xl">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Introductions</h1>
-            <p className="text-slate-500 text-sm mt-0.5">Warm connections curated for you, {firstName}.</p>
-          </div>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-slate-900">Introductions</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Warm connections curated for you, {firstName}.</p>
         </div>
 
         {/* Pending requests */}
-        {(pending && pending.length > 0) && (
+        {pending.length > 0 && (
           <div className="mb-8">
             <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
               Pending requests · {pending.length}
             </h2>
             <div className="space-y-3">
               {pending.map((p: any) => {
-                const req = p.requester
                 const daysAgo = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000)
+                const initials = p.req_name?.split(' ').map((n: string) => n[0]).slice(0,2).join('').toUpperCase() || '?'
                 return (
                   <div key={p.id} className="bg-white border border-amber-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-full ${req.avatar_color || 'bg-indigo-500'} flex items-center justify-center text-white text-xs font-bold`}>
-                        {req.full_name?.split(' ').map((n: string) => n[0]).slice(0,2).join('').toUpperCase() || '?'}
+                      <div className={`w-9 h-9 rounded-full ${p.req_color || 'bg-indigo-500'} flex items-center justify-center text-white text-xs font-bold`}>
+                        {initials}
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-slate-900">{req.full_name || 'Unknown'}</p>
-                        <p className="text-xs text-slate-500">{[req.role, req.company].filter(Boolean).join(' at ') || 'No title yet'}</p>
+                        <p className="text-sm font-semibold text-slate-900">{p.req_name || 'Unknown'}</p>
+                        <p className="text-xs text-slate-500">
+                          {[p.req_role, p.req_company].filter(Boolean).join(' at ') || 'No title yet'}
+                        </p>
                         {p.message && <p className="text-xs text-slate-400 mt-0.5 italic">"{p.message}"</p>}
                       </div>
                     </div>
@@ -95,7 +108,7 @@ export default async function IntroductionsPage() {
 
         {/* Suggestions */}
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Suggested for you</h2>
-        {(!suggestions || suggestions.length === 0) ? (
+        {suggestions.length === 0 ? (
           <div className="bg-white border border-slate-100 rounded-xl p-12 text-center shadow-sm">
             <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Inbox className="w-6 h-6 text-slate-400" />
@@ -141,19 +154,5 @@ export default async function IntroductionsPage() {
         )}
       </div>
     </div>
-  )
-}
-
-function RequestIntroButton({ targetId }: { targetId: string }) {
-  return (
-    <form action={async () => {
-      'use server'
-      const { requestIntroduction } = await import('@/app/actions')
-      await requestIntroduction(targetId)
-    }}>
-      <button type="submit" className="w-full text-xs font-semibold bg-indigo-600 text-white py-1.5 rounded-lg hover:bg-indigo-700 transition-colors">
-        Request intro
-      </button>
-    </form>
   )
 }
