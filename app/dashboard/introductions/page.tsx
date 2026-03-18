@@ -96,6 +96,15 @@ export default async function IntroductionsPage() {
     .map((r: any) => ({ rowId: r.id, profile: profileMap[r.suggested_id], reason: r.reason }))
     .filter((r: any) => r.profile)
 
+  // Load existing intro requests so buttons persist their state across refreshes
+  const { data: existingRequests } = await supabase
+    .from('intro_requests')
+    .select('target_user_id')
+    .eq('requester_id', user.id)
+    .in('status', ['pending', 'approved', 'batched'])
+
+  const requestedIds = new Set((existingRequests || []).map((r: any) => r.target_user_id))
+
   return (
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
       <div className="max-w-4xl">
@@ -257,7 +266,7 @@ export default async function IntroductionsPage() {
                     </div>
                   )}
 
-                  <RequestIntroButton targetId={s.id} />
+                  <RequestIntroButton targetId={s.id} alreadyRequested={requestedIds.has(s.id)} />
                 </div>
               )
             })}

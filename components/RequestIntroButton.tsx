@@ -4,8 +4,16 @@ import { useState } from 'react'
 import { submitIntroRequest } from '@/app/actions'
 import { CheckCircle, Loader2 } from 'lucide-react'
 
-export default function RequestIntroButton({ targetId }: { targetId: string }) {
-  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+export default function RequestIntroButton({
+  targetId,
+  alreadyRequested = false,
+}: {
+  targetId: string
+  alreadyRequested?: boolean
+}) {
+  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>(
+    alreadyRequested ? 'done' : 'idle'
+  )
   const [errorMsg, setErrorMsg] = useState('')
 
   const handleClick = async () => {
