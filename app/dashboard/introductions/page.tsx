@@ -40,38 +40,42 @@ export default async function IntroductionsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profileRow } = await supabase
+  // Look up the profile by auth id OR email to get the correct profile id
+  const { data: profileRows } = await supabase
     .from('profiles')
-    .select('full_name')
-    .eq('id', user.id)
-    .single()
+    .select('id, full_name, email')
+    .or(`id.eq.${user.id},email.eq.${user.email}`)
+    .limit(1)
 
+  const profileRow = profileRows?.[0] ?? null
+  const profileId = profileRow?.id ?? user.id
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
 
   // Pending intro requests where I'm the target (from introductions table)
   const { data: pending } = await supabase
     .from('introductions')
     .select('id, message, created_at, requester:profiles!requester_id(id, full_name, role, company, avatar_color)')
-    .eq('target_id', user.id)
+    .eq('target_id', profileId)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
 
-  // Step 1: get the active batch from introduction_batches
-  const { data: activeBatch, error: batchLookupError } = await supabase
+  // Step 1: get the active batch — use limit(1) instead of single() to avoid coerce error
+  const { data: activeBatchRows, error: batchLookupError } = await supabase
     .from('introduction_batches')
     .select('id, batch_number')
     .eq('status', 'active')
-    .single()
+    .limit(1)
 
+  const activeBatch = activeBatchRows?.[0] ?? null
   const activeBatchNumber = activeBatch?.batch_number ?? null
 
-  // Step 2: get suggestions for this user in the active batch
+  // Step 2: get suggestions for this user in the active batch using profileId
   const { data: batchRows, error: batchError } = activeBatch
     ? await supabase
         .from('batch_suggestions')
         .select('id, suggested_id')
         .eq('batch_id', activeBatch.id)
-        .eq('recipient_id', user.id)
+        .eq('recipient_id', profileId)
     : { data: [], error: null }
 
   const suggestedIds = (batchRows || []).map((r: any) => r.suggested_id).filter(Boolean)
@@ -106,6 +110,8 @@ export default async function IntroductionsPage() {
         <div className="mb-6 bg-slate-900 text-green-400 text-xs font-mono rounded-xl p-4 space-y-2 overflow-x-auto">
           <p className="text-slate-400 font-bold uppercase tracking-wide mb-2">🐛 Debug info</p>
           <p><span className="text-slate-500">auth user.id:</span> {user.id}</p>
+          <p><span className="text-slate-500">auth user.email:</span> {user.email}</p>
+          <p><span className="text-slate-500">resolved profileId:</span> {profileId} {profileId === user.id ? '(same as auth id)' : '(DIFFERENT from auth id)'}</p>
           <p><span className="text-slate-500">introduction_batches error:</span> {batchLookupError ? batchLookupError.message : 'none'}</p>
           <p><span className="text-slate-500">active batch id:</span> {activeBatch?.id ?? 'null — no active batch found'}</p>
           <p><span className="text-slate-500">active batch_number:</span> {activeBatchNumber ?? 'null'}</p>
