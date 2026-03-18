@@ -143,6 +143,31 @@ export async function createConversation(otherUserId: string) {
   return { conversationId: conv.id }
 }
 
+export async function saveOnboardingPreferences(prefs: {
+  who_to_meet: string[]
+  preferred_seniority: string[]
+  reasons_to_connect: string[]
+  geographic_preference: string
+  open_to_virtual: boolean
+  open_to_in_person: boolean
+  mentorship_topics: string[]
+  meeting_cadence: string
+}) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase.from('user_preferences').upsert({
+    user_id: user.id,
+    ...prefs,
+    onboarding_completed: true,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' })
+
+  if (error) return { error: error.message }
+  revalidatePath('/dashboard/introductions')
+  return { success: true }
+}
+
 export async function scheduleMeeting(formData: FormData) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }

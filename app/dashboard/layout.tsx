@@ -17,6 +17,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  // Check onboarding — redirect new users before they see the dashboard
+  const { data: prefs } = await supabase
+    .from('user_preferences')
+    .select('onboarding_completed')
+    .eq('user_id', user.id)
+    .limit(1)
+    .single()
+
+  if (!prefs?.onboarding_completed) {
+    redirect('/onboarding')
+  }
+
   // Ensure a profile row exists for this user
   await supabase.from('profiles').upsert(
     {
