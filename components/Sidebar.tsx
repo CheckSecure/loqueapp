@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Users, MessageSquare, Calendar, UserCircle, LogOut, Menu, X, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 const navItems = [
   { href: '/dashboard/introductions', label: 'Introductions', icon: Users },
@@ -20,9 +20,72 @@ interface SidebarProps {
   email: string
   initials: string
   avatarColor: string
+  credits: number
 }
 
-export default function Sidebar({ displayName, email, initials, avatarColor }: SidebarProps) {
+function CreditsChip({ credits }: { credits: number }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const chipStyle =
+    credits === 0
+      ? 'bg-red-50 text-red-600 border-red-200'
+      : credits < 5
+      ? 'bg-amber-50 text-amber-600 border-amber-200'
+      : 'bg-[#FDF3E3] text-[#C4922A] border-[#e8c88a]'
+
+  const label =
+    credits === 0
+      ? 'No credits remaining'
+      : `✦ ${credits} credit${credits === 1 ? '' : 's'}`
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold transition-opacity hover:opacity-80',
+          chipStyle
+        )}
+      >
+        {label}
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full left-0 mb-2 w-60 bg-white border border-slate-200 rounded-xl shadow-lg p-3.5 z-50">
+          <p className="text-xs font-semibold text-slate-800 mb-1">Meeting credits</p>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Credits are used to request meetings. Purchase more credits to continue connecting.
+          </p>
+          {credits < 5 && (
+            <p className={cn(
+              'text-xs font-medium mt-2',
+              credits === 0 ? 'text-red-600' : 'text-amber-600'
+            )}>
+              {credits === 0 ? 'You have no credits left.' : `Only ${credits} credit${credits === 1 ? '' : 's'} remaining.`}
+            </p>
+          )}
+          <div className="mt-3 pt-2.5 border-t border-slate-100">
+            <button className="text-xs font-semibold text-[#1B2850] hover:text-[#2E4080] transition-colors">
+              Purchase credits →
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Sidebar({ displayName, email, initials, avatarColor, credits }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -58,8 +121,11 @@ export default function Sidebar({ displayName, email, initials, avatarColor }: S
           )
         })}
       </nav>
-      <div className="px-3 pb-4 border-t border-slate-200 pt-4">
-        <div className="flex items-center gap-3 px-2 mb-3">
+      <div className="px-3 pb-4 border-t border-slate-200 pt-4 space-y-3">
+        <div className="px-2">
+          <CreditsChip credits={credits} />
+        </div>
+        <div className="flex items-center gap-3 px-2">
           <div className={`w-8 h-8 rounded-full ${avatarColor} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
             {initials}
           </div>

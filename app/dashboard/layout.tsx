@@ -39,19 +39,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
     { onConflict: 'id', ignoreDuplicates: true }
   )
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name, avatar_color')
-    .eq('id', user.id)
-    .single()
+  const [{ data: profile }, { data: creditRow }] = await Promise.all([
+    supabase.from('profiles').select('full_name, avatar_color').eq('id', user.id).single(),
+    supabase.from('meeting_credits').select('balance').eq('user_id', user.id).single(),
+  ])
 
   const displayName = profile?.full_name || user.email?.split('@')[0] || 'You'
   const initials = displayName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
   const avatarColor = profile?.avatar_color || 'bg-[#1B2850]'
+  const credits: number = creditRow?.balance ?? 0
 
   return (
     <div className="min-h-screen flex bg-slate-50">
-      <Sidebar displayName={displayName} email={user.email || ''} initials={initials} avatarColor={avatarColor} />
+      <Sidebar displayName={displayName} email={user.email || ''} initials={initials} avatarColor={avatarColor} credits={credits} />
       <main className="flex-1 min-w-0 overflow-auto">
         {children}
       </main>
