@@ -18,57 +18,47 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError(null)
-
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-
     if (error) {
       setError(error.message)
       setLoading(false)
       return
     }
-
-    router.push('/dashboard')
+    router.push('/dashboard/introductions')
     router.refresh()
   }
 
   return (
     <div className="min-h-screen flex">
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-cadre-600 to-cadre-800 flex-col items-center justify-center p-12">
-        <div className="max-w-md text-white">
-          <span className="text-3xl font-bold tracking-tight">Cadre</span>
-          <p className="mt-6 text-cadre-100 text-lg leading-relaxed">
-            Welcome back. Your team is waiting for you.
-          </p>
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-600 to-indigo-900 flex-col justify-between p-12">
+        <Link href="/" className="text-2xl font-bold text-white">Cadre</Link>
+        <div className="text-white">
+          <p className="text-3xl font-bold mb-3 leading-snug">Welcome back to your professional network.</p>
+          <p className="text-indigo-200">Your introductions, messages, and meetings are waiting.</p>
         </div>
+        <p className="text-indigo-300 text-sm">© {new Date().getFullYear()} Cadre</p>
       </div>
 
-      <div className="flex-1 flex items-center justify-center px-4 py-12 sm:px-8">
+      <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8">
-            <Link href="/" className="text-xl font-bold text-cadre-600 lg:hidden">
-              Cadre
-            </Link>
-            <h2 className="mt-4 text-2xl font-bold text-gray-900">Sign in</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Don&apos;t have an account?{' '}
-              <Link href="/signup" className="text-cadre-600 font-medium hover:underline">
-                Sign up
-              </Link>
+            <Link href="/" className="text-xl font-bold text-slate-900 lg:hidden block mb-6">Cadre</Link>
+            <h2 className="text-2xl font-bold text-slate-900">Sign in</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              New to Cadre?{' '}
+              <Link href="/signup" className="text-indigo-600 font-semibold hover:underline">Create an account</Link>
             </p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-4">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
                 {error}
               </div>
             )}
-
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
-                Email
-              </label>
+              <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1.5">Email address</label>
               <input
                 id="email"
                 type="email"
@@ -76,19 +66,13 @@ export default function LoginPage() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cadre-500 focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
                 placeholder="you@example.com"
               />
             </div>
-
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                  Password
-                </label>
-                <Link href="/forgot-password" className="text-xs text-cadre-600 hover:underline">
-                  Forgot password?
-                </Link>
+                <label htmlFor="password" className="block text-sm font-medium text-slate-700">Password</label>
               </div>
               <input
                 id="password"
@@ -97,16 +81,15 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cadre-500 focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
                 placeholder="••••••••"
               />
             </div>
-
             <button
               type="submit"
               disabled={loading}
               className={cn(
-                'w-full flex items-center justify-center gap-2 bg-cadre-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-cadre-700 transition-colors',
+                'w-full flex items-center justify-center gap-2 bg-indigo-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-indigo-700 transition-colors mt-2',
                 loading && 'opacity-70 cursor-not-allowed'
               )}
             >

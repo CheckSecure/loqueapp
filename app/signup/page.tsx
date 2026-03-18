@@ -4,14 +4,14 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Loader2 } from 'lucide-react'
+import { Loader2, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function SignupPage() {
   const router = useRouter()
+  const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [fullName, setFullName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -20,40 +20,33 @@ export default function SignupPage() {
     e.preventDefault()
     setLoading(true)
     setError(null)
-
     const supabase = createClient()
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: { full_name: fullName },
-      },
+      options: { data: { full_name: fullName } },
     })
-
     if (error) {
       setError(error.message)
       setLoading(false)
       return
     }
-
     setSuccess(true)
     setLoading(false)
   }
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="min-h-screen flex items-center justify-center px-6">
         <div className="max-w-sm w-full text-center">
           <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
-            <svg className="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
+            <CheckCircle className="w-7 h-7 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Check your email</h2>
-          <p className="text-gray-500 text-sm mb-6">
-            We sent a confirmation link to <strong>{email}</strong>. Click the link to activate your account.
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
+          <p className="text-slate-500 text-sm mb-6">
+            We sent a confirmation link to <strong className="text-slate-700">{email}</strong>. Click it to activate your Cadre account.
           </p>
-          <Link href="/login" className="text-cadre-600 text-sm font-medium hover:underline">
+          <Link href="/login" className="text-indigo-600 text-sm font-semibold hover:underline">
             Back to sign in
           </Link>
         </div>
@@ -63,41 +56,34 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen flex">
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-cadre-600 to-cadre-800 flex-col items-center justify-center p-12">
-        <div className="max-w-md text-white">
-          <span className="text-3xl font-bold tracking-tight">Cadre</span>
-          <p className="mt-6 text-cadre-100 text-lg leading-relaxed">
-            Join thousands of teams who use Cadre to stay aligned and move fast.
-          </p>
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-600 to-indigo-900 flex-col justify-between p-12">
+        <Link href="/" className="text-2xl font-bold text-white">Cadre</Link>
+        <div className="text-white">
+          <p className="text-3xl font-bold mb-3 leading-snug">Join a network built on trust and warm introductions.</p>
+          <p className="text-indigo-200">Your next big opportunity is one introduction away.</p>
         </div>
+        <p className="text-indigo-300 text-sm">© {new Date().getFullYear()} Cadre</p>
       </div>
 
-      <div className="flex-1 flex items-center justify-center px-4 py-12 sm:px-8">
+      <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8">
-            <Link href="/" className="text-xl font-bold text-cadre-600 lg:hidden">
-              Cadre
-            </Link>
-            <h2 className="mt-4 text-2xl font-bold text-gray-900">Create your account</h2>
-            <p className="mt-1 text-sm text-gray-500">
+            <Link href="/" className="text-xl font-bold text-slate-900 lg:hidden block mb-6">Cadre</Link>
+            <h2 className="text-2xl font-bold text-slate-900">Create your account</h2>
+            <p className="mt-1 text-sm text-slate-500">
               Already have an account?{' '}
-              <Link href="/login" className="text-cadre-600 font-medium hover:underline">
-                Sign in
-              </Link>
+              <Link href="/login" className="text-indigo-600 font-semibold hover:underline">Sign in</Link>
             </p>
           </div>
 
-          <form onSubmit={handleSignup} className="space-y-5">
+          <form onSubmit={handleSignup} className="space-y-4">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
                 {error}
               </div>
             )}
-
             <div>
-              <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1.5">
-                Full name
-              </label>
+              <label htmlFor="fullName" className="block text-sm font-medium text-slate-700 mb-1.5">Full name</label>
               <input
                 id="fullName"
                 type="text"
@@ -105,15 +91,12 @@ export default function SignupPage() {
                 autoComplete="name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cadre-500 focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
                 placeholder="Jane Smith"
               />
             </div>
-
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
-                Email
-              </label>
+              <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1.5">Work email</label>
               <input
                 id="email"
                 type="email"
@@ -121,15 +104,12 @@ export default function SignupPage() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cadre-500 focus:border-transparent transition"
-                placeholder="you@example.com"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                placeholder="you@company.com"
               />
             </div>
-
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
-                Password
-              </label>
+              <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
               <input
                 id="password"
                 type="password"
@@ -138,27 +118,23 @@ export default function SignupPage() {
                 minLength={8}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cadre-500 focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
                 placeholder="Min. 8 characters"
               />
             </div>
-
             <button
               type="submit"
               disabled={loading}
               className={cn(
-                'w-full flex items-center justify-center gap-2 bg-cadre-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-cadre-700 transition-colors',
+                'w-full flex items-center justify-center gap-2 bg-indigo-600 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-indigo-700 transition-colors mt-2',
                 loading && 'opacity-70 cursor-not-allowed'
               )}
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Create account
             </button>
-
-            <p className="text-xs text-gray-400 text-center">
-              By signing up, you agree to our{' '}
-              <span className="text-gray-600">Terms of Service</span> and{' '}
-              <span className="text-gray-600">Privacy Policy</span>.
+            <p className="text-xs text-slate-400 text-center">
+              By joining, you agree to our Terms of Service and Privacy Policy.
             </p>
           </form>
         </div>
