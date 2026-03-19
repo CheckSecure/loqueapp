@@ -70,6 +70,24 @@ lib/
 middleware.ts                       # Pass-through middleware (auth handled per-page)
 ```
 
+## Email (Resend)
+
+- Invite emails are sent via [Resend](https://resend.com) using `lib/email.ts`
+- The `RESEND_API_KEY` secret is stored in Replit Secrets (not via the Resend integration — user dismissed it)
+- **Do not use the Resend Replit integration** (`connector:ccfg_resend_01K69QKYK789WN202XSE3QS17V`) — use the secret directly
+- Emails are triggered when admin clicks "Invite" on an approved waitlist entry
+
+## Pending SQL Migrations (run in Supabase SQL editor)
+
+```sql
+-- 1. Add subscription_tier to profiles (for AdminUsers tier display)
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS subscription_tier text DEFAULT 'free';
+
+-- 2. Add accepted_at and expires_at to introductions (for credit edge cases)
+ALTER TABLE introductions ADD COLUMN IF NOT EXISTS accepted_at timestamptz;
+ALTER TABLE introductions ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+```
+
 ## Running
 
 ```bash
