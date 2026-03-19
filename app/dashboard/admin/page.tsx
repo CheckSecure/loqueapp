@@ -117,12 +117,17 @@ export default async function AdminPage() {
           <AdminWaitlist initial={waitlistEntries ?? []} />
         </section>
 
-        {/* Pending intro requests */}
+        {/* Intro requests */}
         <section>
-          <div className="mb-4">
+          <div className="mb-4 flex items-center gap-2">
             <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-              Pending intro requests · {pending?.length ?? 0}
+              Intro requests · {pending?.length ?? 0} total
             </h2>
+            {(pending ?? []).filter((r: any) => r.status === 'pending').length > 0 && (
+              <span className="text-[10px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                {(pending ?? []).filter((r: any) => r.status === 'pending').length} pending
+              </span>
+            )}
           </div>
           <AdminIntroRequests initial={pending ?? []} />
         </section>

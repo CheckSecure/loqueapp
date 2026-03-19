@@ -71,8 +71,8 @@ export async function adminGetPendingRequests() {
   const { data: requests, error } = await supabase
     .from('intro_requests')
     .select('id, requester_id, target_user_id, status, note, created_at')
-    .eq('status', 'pending')
     .order('created_at', { ascending: false })
+    .limit(200)
 
   if (error || !requests) return { data: [], error }
 
@@ -87,7 +87,7 @@ export async function adminGetPendingRequests() {
   if (uniqueIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, title, company')
+      .select('id, full_name, title, company, role_type')
       .in('id', uniqueIds)
     for (const p of profiles ?? []) profileMap[p.id] = p
   }
@@ -112,14 +112,58 @@ export async function approveIntroRequest(requestId: string) {
 
   if (fetchErr || !req) return { error: fetchErr?.message ?? 'Request not found' }
 
+  // Check requester's credit balance before creating the match
+  const { data: creditRow } = await supabase
+    .from('meeting_credits')
+    .select('balance')
+    .eq('user_id', req.requester_id)
+    .single()
+
+  const balance = creditRow?.balance ?? 0
+
+  if (balance < 1) {
+    // No credits — set a hold and mark accordingly
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    await supabase
+      .from('intro_requests')
+      .update({
+        status: 'accepted_pending_payment',
+        accepted_at: new Date().toISOString(),
+        expires_at: expiresAt,
+        credit_hold: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', requestId)
+    return { success: true, status: 'accepted_pending_payment' }
+  }
+
+  // Approve the request and mark credit as charged
   const { error: updateErr } = await supabase
     .from('intro_requests')
-    .update({ status: 'approved', updated_at: new Date().toISOString() })
+    .update({
+      status: 'approved',
+      accepted_at: new Date().toISOString(),
+      credit_charged: true,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', requestId)
 
   if (updateErr) return { error: updateErr.message }
 
-  // Create match (or find existing one if already created)
+  // Deduct 1 credit from the requester
+  await supabase
+    .from('meeting_credits')
+    .update({ balance: balance - 1 })
+    .eq('user_id', req.requester_id)
+
+  // Log the credit transaction
+  await supabase.from('credit_transactions').insert({
+    user_id: req.requester_id,
+    amount: -1,
+    description: 'Introduction approved — match created',
+  })
+
+  // Create match (matches = source of truth for active connections)
   let matchId: string | null = null
 
   const { data: newMatch, error: matchErr } = await supabase
@@ -147,7 +191,7 @@ export async function approveIntroRequest(requestId: string) {
 
   if (!matchId) return { error: 'Could not create or find match' }
 
-  // Create a conversation linked to this match (if one doesn't already exist)
+  // Create conversation linked to this match
   const { data: existingConv } = await supabase
     .from('conversations')
     .select('id')
@@ -164,7 +208,7 @@ export async function approveIntroRequest(requestId: string) {
     if (convErr) return { error: `Approved but conversation failed: ${convErr.message}` }
   }
 
-  return { success: true }
+  return { success: true, status: 'approved' }
 }
 
 export async function rejectIntroRequest(requestId: string) {

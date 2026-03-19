@@ -72,16 +72,16 @@ export async function submitIntroRequest(targetUserId: string, note?: string) {
 
 export async function adminApproveIntro(requestId: string) {
   const { user } = await getSupabaseAndUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
   const result = await approveIntroRequest(requestId)
   if (result.error) return { error: result.error }
   revalidatePath('/dashboard/admin')
-  return { success: true }
+  return { success: true, status: (result as any).status ?? 'approved' }
 }
 
 export async function adminRejectIntro(requestId: string) {
   const { user } = await getSupabaseAndUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
   const result = await rejectIntroRequest(requestId)
   if (result.error) return { error: result.error }
   revalidatePath('/dashboard/admin')
