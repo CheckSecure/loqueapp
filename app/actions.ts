@@ -51,9 +51,9 @@ export async function requestIntroduction(targetId: string) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { error } = await supabase.from('introductions').insert({
+  const { error } = await supabase.from('intro_requests').insert({
     requester_id: user.id,
-    target_id: targetId,
+    target_user_id: targetId,
   })
 
   if (error) return { error: error.message }
@@ -113,21 +113,21 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
 
   if (status === 'declined') {
     const { error } = await supabase
-      .from('introductions')
+      .from('intro_requests')
       .update({ status: 'declined', updated_at: new Date().toISOString() })
       .eq('id', id)
-      .eq('target_id', user.id)
+      .eq('target_user_id', user.id)
     if (error) return { error: error.message }
     revalidatePath('/dashboard/introductions')
     return { success: true, status: 'declined' }
   }
 
-  // Accepting — fetch the intro to find the requester
+  // Accepting — fetch the request to find the requester
   const { data: intro, error: fetchErr } = await supabase
-    .from('introductions')
-    .select('id, requester_id, target_id')
+    .from('intro_requests')
+    .select('id, requester_id, target_user_id')
     .eq('id', id)
-    .eq('target_id', user.id)
+    .eq('target_user_id', user.id)
     .single()
 
   if (fetchErr || !intro) return { error: 'Introduction not found.' }
@@ -142,15 +142,21 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
   const balance = creditRow?.balance ?? 0
 
   if (balance < 1) {
-    // No credits — mark as pending_payment; hold open for 7 days
+    // No credits — mark as accepted_pending_payment; hold open for 7 days
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     const { error: holdErr } = await supabase
-      .from('introductions')
-      .update({ status: 'accepted_pending_payment', accepted_at: new Date().toISOString(), expires_at: expiresAt, updated_at: new Date().toISOString() })
+      .from('intro_requests')
+      .update({
+        status: 'accepted_pending_payment',
+        accepted_at: new Date().toISOString(),
+        expires_at: expiresAt,
+        credit_hold: true,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', id)
     if (holdErr) return { error: holdErr.message }
     revalidatePath('/dashboard/introductions')
-    return { success: true, status: 'accepted_pending_payment', requesterName: null }
+    return { success: true, status: 'accepted_pending_payment' }
   }
 
   // Deduct 1 credit from the requester
@@ -168,10 +174,15 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
     description: 'Connection accepted — introduction made',
   })
 
-  // Mark introduction as accepted
+  // Mark intro_request as accepted + flag credit as charged
   const { error: updateErr } = await supabase
-    .from('introductions')
-    .update({ status: 'accepted', accepted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .from('intro_requests')
+    .update({
+      status: 'accepted',
+      accepted_at: new Date().toISOString(),
+      credit_charged: true,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', id)
 
   if (updateErr) return { error: updateErr.message }
@@ -180,7 +191,7 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
   let matchId: string | null = null
   const { data: newMatch } = await supabase
     .from('matches')
-    .insert({ user_a_id: intro.requester_id, user_b_id: intro.target_id })
+    .insert({ user_a_id: intro.requester_id, user_b_id: intro.target_user_id })
     .select('id')
     .single()
 
@@ -190,7 +201,7 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
     const { data: existing } = await supabase
       .from('matches')
       .select('id')
-      .or(`and(user_a_id.eq.${intro.requester_id},user_b_id.eq.${intro.target_id}),and(user_a_id.eq.${intro.target_id},user_b_id.eq.${intro.requester_id})`)
+      .or(`and(user_a_id.eq.${intro.requester_id},user_b_id.eq.${intro.target_user_id}),and(user_a_id.eq.${intro.target_user_id},user_b_id.eq.${intro.requester_id})`)
       .limit(1)
       .single()
     if (existing) matchId = existing.id

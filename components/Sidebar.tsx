@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, LogOut, ShieldCheck } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, LogOut, ShieldCheck, CreditCard } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
@@ -12,6 +12,7 @@ const navItems = [
   { href: '/dashboard/messages', label: 'Messages', icon: MessageSquare },
   { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar },
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
+  { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
 ]
 
 interface SidebarProps {
@@ -72,9 +73,9 @@ function CreditsChip({ credits }: { credits: number }) {
             </p>
           )}
           <div className="mt-3 pt-2.5 border-t border-slate-100">
-            <button className="text-xs font-semibold text-[#1B2850] hover:text-[#2E4080] transition-colors">
+            <Link href="/dashboard/billing" className="text-xs font-semibold text-[#1B2850] hover:text-[#2E4080] transition-colors">
               Purchase credits →
-            </button>
+            </Link>
           </div>
         </div>
       )}
@@ -132,7 +133,7 @@ export default function Sidebar({ displayName, email, initials, avatarColor, ava
         <div className="px-2 flex items-center justify-between">
           <CreditsChip credits={credits} />
           <Link
-            href="/pricing"
+            href="/dashboard/billing"
             className="text-xs font-semibold text-[#C4922A] hover:text-[#b07d24] transition-colors"
           >
             Upgrade

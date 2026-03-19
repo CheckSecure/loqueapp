@@ -51,11 +51,11 @@ export default async function IntroductionsPage() {
   const profileId = profileRow?.id ?? user.id
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
 
-  // Pending intro requests where I'm the target (from introductions table)
+  // Pending intro requests where I'm the target
   const { data: pending } = await supabase
-    .from('introductions')
-    .select('id, message, created_at, requester:profiles!requester_id(id, full_name, role, company, avatar_url)')
-    .eq('target_id', profileId)
+    .from('intro_requests')
+    .select('id, note, created_at, requester:profiles!requester_id(id, full_name, title, company, avatar_url)')
+    .eq('target_user_id', profileId)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
 
@@ -139,9 +139,9 @@ export default async function IntroductionsPage() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900 truncate">{req.full_name || 'Unknown'}</p>
                         <p className="text-xs text-slate-500 truncate">
-                          {[req.role, req.company].filter(Boolean).join(' at ') || 'No title yet'}
+                          {[req.title, req.company].filter(Boolean).join(' at ') || 'No title yet'}
                         </p>
-                        {p.message && <p className="text-xs text-slate-400 mt-0.5 italic line-clamp-2">"{p.message}"</p>}
+                        {p.note && <p className="text-xs text-slate-400 mt-0.5 italic line-clamp-2">"{p.note}"</p>}
                       </div>
                       <span className="text-xs text-slate-400 flex-shrink-0">{daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}</span>
                     </div>

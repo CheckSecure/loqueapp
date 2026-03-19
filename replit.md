@@ -80,13 +80,33 @@ middleware.ts                       # Pass-through middleware (auth handled per-
 ## Pending SQL Migrations (run in Supabase SQL editor)
 
 ```sql
--- 1. Add subscription_tier to profiles (for AdminUsers tier display)
+-- 1. Add Stripe billing columns to profiles
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS subscription_tier text DEFAULT 'free';
-
--- 2. Add accepted_at and expires_at to introductions (for credit edge cases)
-ALTER TABLE introductions ADD COLUMN IF NOT EXISTS accepted_at timestamptz;
-ALTER TABLE introductions ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS stripe_customer_id text;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS stripe_subscription_id text;
 ```
+
+Note: `intro_requests` table (confirmed schema) already has `accepted_at`, `expires_at`, `credit_charged`, `credit_hold` columns.
+
+## Stripe Products (created in Sandbox)
+
+Run `npx tsx scripts/seed-products.ts` to create products. Already seeded:
+- Professional: prod_UBAT5Wq1OJOLVR — $49/mo (price_1TCo8jDzhkMQwPCI9SltOae6), $470/yr (price_1TCo8jDzhkMQwPCIQAgwgycp)
+- Executive: prod_UBATGlFRDb2zYW — $99/mo (price_1TCo8kDzhkMQwPCIaHqkwsCx), $950/yr (price_1TCo8kDzhkMQwPCIy4vvfnr6)
+- Credit Pack 5: prod_UBAT1zlrQ25Obg — $25 (price_1TCo8lDzhkMQwPCIUcCY1Pqx)
+- Credit Pack 10: prod_UBATxFvRBCytxo — $45 (price_1TCo8lDzhkMQwPCI2a8CJPhf)
+- Credit Pack 25: prod_UBATHcAqStLjAZ — $99 (price_1TCo8mDzhkMQwPCInYyFuOOV)
+
+## Stripe Architecture (Next.js adaptation)
+
+The Stripe skill targets Express; this app uses Next.js API routes instead:
+- `app/api/stripe/checkout/route.ts` — creates Checkout Sessions
+- `app/api/stripe/webhook/route.ts` — processes Stripe webhooks + updates Supabase (tiers, credits)
+- `app/api/stripe/portal/route.ts` — creates Customer Portal sessions
+- `app/api/stripe/publishable-key/route.ts` — serves publishable key to client
+- `lib/stripe/stripeClient.ts` — Stripe SDK with Replit connection credentials
+- `lib/stripe/products.ts` — fetches live products+prices from Stripe API
+- `scripts/seed-products.ts` — idempotent product/price creation script
 
 ## Running
 
