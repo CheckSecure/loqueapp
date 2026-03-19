@@ -111,15 +111,228 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { error } = await supabase
+  if (status === 'declined') {
+    const { error } = await supabase
+      .from('introductions')
+      .update({ status: 'declined', updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('target_id', user.id)
+    if (error) return { error: error.message }
+    revalidatePath('/dashboard/introductions')
+    return { success: true, status: 'declined' }
+  }
+
+  // Accepting — fetch the intro to find the requester
+  const { data: intro, error: fetchErr } = await supabase
     .from('introductions')
-    .update({ status, updated_at: new Date().toISOString() })
+    .select('id, requester_id, target_id')
     .eq('id', id)
     .eq('target_id', user.id)
+    .single()
 
-  if (error) return { error: error.message }
+  if (fetchErr || !intro) return { error: 'Introduction not found.' }
+
+  // Check requester's credit balance
+  const { data: creditRow } = await supabase
+    .from('meeting_credits')
+    .select('balance')
+    .eq('user_id', intro.requester_id)
+    .single()
+
+  const balance = creditRow?.balance ?? 0
+
+  if (balance < 1) {
+    // No credits — mark as pending_payment; hold open for 7 days
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    const { error: holdErr } = await supabase
+      .from('introductions')
+      .update({ status: 'accepted_pending_payment', accepted_at: new Date().toISOString(), expires_at: expiresAt, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (holdErr) return { error: holdErr.message }
+    revalidatePath('/dashboard/introductions')
+    return { success: true, status: 'accepted_pending_payment', requesterName: null }
+  }
+
+  // Deduct 1 credit from the requester
+  const { error: deductErr } = await supabase
+    .from('meeting_credits')
+    .update({ balance: balance - 1 })
+    .eq('user_id', intro.requester_id)
+
+  if (deductErr) return { error: `Could not charge credit: ${deductErr.message}` }
+
+  // Log the credit transaction
+  await supabase.from('credit_transactions').insert({
+    user_id: intro.requester_id,
+    amount: -1,
+    description: 'Connection accepted — introduction made',
+  })
+
+  // Mark introduction as accepted
+  const { error: updateErr } = await supabase
+    .from('introductions')
+    .update({ status: 'accepted', accepted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', id)
+
+  if (updateErr) return { error: updateErr.message }
+
+  // Create match
+  let matchId: string | null = null
+  const { data: newMatch } = await supabase
+    .from('matches')
+    .insert({ user_a_id: intro.requester_id, user_b_id: intro.target_id })
+    .select('id')
+    .single()
+
+  if (newMatch) {
+    matchId = newMatch.id
+  } else {
+    const { data: existing } = await supabase
+      .from('matches')
+      .select('id')
+      .or(`and(user_a_id.eq.${intro.requester_id},user_b_id.eq.${intro.target_id}),and(user_a_id.eq.${intro.target_id},user_b_id.eq.${intro.requester_id})`)
+      .limit(1)
+      .single()
+    if (existing) matchId = existing.id
+  }
+
+  // Create conversation if match was made
+  if (matchId) {
+    const { data: existingConv } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('match_id', matchId)
+      .limit(1)
+      .single()
+    if (!existingConv) {
+      await supabase.from('conversations').insert({ match_id: matchId })
+    }
+  }
+
   revalidatePath('/dashboard/introductions')
-  return { success: true }
+  revalidatePath('/dashboard/messages')
+  return { success: true, status: 'accepted' }
+}
+
+export async function adminAdjustCredits(userId: string, delta: number, reason: string) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
+
+  const { data: current } = await supabase
+    .from('meeting_credits')
+    .select('balance')
+    .eq('user_id', userId)
+    .single()
+
+  const newBalance = Math.max(0, (current?.balance ?? 0) + delta)
+
+  const { error: updateErr } = await supabase
+    .from('meeting_credits')
+    .upsert({ user_id: userId, balance: newBalance }, { onConflict: 'user_id' })
+
+  if (updateErr) return { error: updateErr.message }
+
+  await supabase.from('credit_transactions').insert({
+    user_id: userId,
+    amount: delta,
+    description: reason || `Manual admin adjustment (${delta > 0 ? '+' : ''}${delta})`,
+  })
+
+  revalidatePath('/dashboard/admin')
+  return { success: true, newBalance }
+}
+
+export async function adminGenerateBatch() {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
+
+  // Deactivate any existing active batches
+  await supabase
+    .from('introduction_batches')
+    .update({ status: 'closed' })
+    .eq('status', 'active')
+
+  // Get the highest batch number
+  const { data: lastBatch } = await supabase
+    .from('introduction_batches')
+    .select('batch_number')
+    .order('batch_number', { ascending: false })
+    .limit(1)
+    .single()
+
+  const nextNumber = (lastBatch?.batch_number ?? 0) + 1
+
+  // Create the new batch
+  const { data: batch, error: batchErr } = await supabase
+    .from('introduction_batches')
+    .insert({ batch_number: nextNumber, status: 'active' })
+    .select('id')
+    .single()
+
+  if (batchErr || !batch) return { error: batchErr?.message ?? 'Failed to create batch' }
+
+  // Load all profiles with role_type
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, role_type, seniority')
+    .not('full_name', 'is', null)
+
+  if (!profiles || profiles.length < 2) return { error: 'Not enough profiles to match' }
+
+  const suggestions: { batch_id: string; recipient_id: string; suggested_id: string; reason: string }[] = []
+
+  // Simple matching: each user gets up to 3 suggestions based on complementary or same role_type
+  const COMPLEMENTARY: Record<string, string[]> = {
+    investor_vc:            ['executive_csuite', 'legal_tech_startup', 'finance_professional'],
+    executive_csuite:       ['investor_vc', 'strategy_consulting', 'government_policy'],
+    in_house_counsel:       ['legal_operations', 'compliance_risk', 'law_firm_attorney'],
+    law_firm_attorney:      ['in_house_counsel', 'legal_operations', 'executive_csuite'],
+    legal_operations:       ['in_house_counsel', 'legal_tech_startup', 'strategy_consulting'],
+    finance_professional:   ['investor_vc', 'executive_csuite', 'strategy_consulting'],
+    healthcare_professional:['government_policy', 'executive_csuite', 'investor_vc'],
+    government_policy:      ['government_affairs', 'regulatory_affairs', 'executive_csuite'],
+    government_affairs:     ['government_policy', 'regulatory_affairs', 'law_firm_attorney'],
+    regulatory_affairs:     ['government_affairs', 'compliance_risk', 'in_house_counsel'],
+    compliance_risk:        ['regulatory_affairs', 'in_house_counsel', 'privacy_data'],
+    privacy_data:           ['compliance_risk', 'legal_tech_startup', 'in_house_counsel'],
+    legal_tech_startup:     ['investor_vc', 'legal_operations', 'in_house_counsel'],
+    strategy_consulting:    ['executive_csuite', 'finance_professional', 'legal_operations'],
+    other:                  [],
+  }
+
+  for (const recipient of profiles) {
+    const pool = profiles.filter(p => p.id !== recipient.id)
+    const preferred = COMPLEMENTARY[recipient.role_type ?? ''] ?? []
+
+    // Sort: preferred role types first, then others
+    const sorted = pool.sort((a, b) => {
+      const aScore = preferred.includes(a.role_type ?? '') ? 1 : 0
+      const bScore = preferred.includes(b.role_type ?? '') ? 1 : 0
+      return bScore - aScore
+    })
+
+    const picks = sorted.slice(0, 3)
+    for (const pick of picks) {
+      const isComplementary = preferred.includes(pick.role_type ?? '')
+      const reason = isComplementary
+        ? `${pick.role_type?.replace(/_/g, ' ')} professionals often find strong alignment with your background.`
+        : `Expanding your network across disciplines can open unexpected doors.`
+      suggestions.push({
+        batch_id: batch.id,
+        recipient_id: recipient.id,
+        suggested_id: pick.id,
+        reason,
+      })
+    }
+  }
+
+  if (suggestions.length > 0) {
+    await supabase.from('batch_suggestions').insert(suggestions)
+  }
+
+  revalidatePath('/dashboard/introductions')
+  revalidatePath('/dashboard/admin')
+  return { success: true, batchNumber: nextNumber, suggestionCount: suggestions.length }
 }
 
 export async function sendMessage(conversationId: string, content: string) {
@@ -207,6 +420,33 @@ export async function submitWaitlist(data: {
     if (error.code === '23505') return { error: 'This email is already on the waitlist.' }
     return { error: error.message }
   }
+  return { success: true }
+}
+
+export async function adminSendWaitlistInvite(id: string) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
+
+  const { data: entry } = await supabase
+    .from('waitlist')
+    .select('full_name, email, status')
+    .eq('id', id)
+    .single()
+
+  if (!entry) return { error: 'Entry not found' }
+
+  const { sendInviteEmail } = await import('@/lib/email')
+  const result = await sendInviteEmail(entry.email, entry.full_name ?? 'there')
+
+  if (!result.success) return { error: result.error ?? 'Failed to send email' }
+
+  // Mark as approved + invited
+  await supabase
+    .from('waitlist')
+    .update({ status: 'approved', approved_at: new Date().toISOString() })
+    .eq('id', id)
+
+  revalidatePath('/dashboard/admin')
   return { success: true }
 }
 

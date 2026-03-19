@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { adminApproveWaitlist, adminDeclineWaitlist } from '@/app/actions'
-import { CheckCircle, Loader2, Clock, UserCheck, XCircle } from 'lucide-react'
+import { adminApproveWaitlist, adminDeclineWaitlist, adminSendWaitlistInvite } from '@/app/actions'
+import { CheckCircle, Loader2, Clock, UserCheck, XCircle, Mail } from 'lucide-react'
 
 interface WaitlistEntry {
   id: string
@@ -63,23 +63,31 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-type ActionType = 'approve' | 'decline'
+type ActionType = 'approve' | 'decline' | 'invite'
 
 export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] }) {
   const [entries, setEntries] = useState(initial)
   const [loading, setLoading] = useState<Record<string, ActionType>>({})
+  const [invited, setInvited] = useState<Record<string, boolean>>({})
   const router = useRouter()
 
   const handle = async (id: string, action: ActionType) => {
     setLoading(prev => ({ ...prev, [id]: action }))
-    const result = action === 'approve'
-      ? await adminApproveWaitlist(id)
-      : await adminDeclineWaitlist(id)
+    let result: { error?: string }
+    if (action === 'approve') result = await adminApproveWaitlist(id)
+    else if (action === 'decline') result = await adminDeclineWaitlist(id)
+    else result = await adminSendWaitlistInvite(id)
+
     setLoading(prev => { const next = { ...prev }; delete next[id]; return next })
     if (!result.error) {
-      setEntries(prev => prev.map(e =>
-        e.id === id ? { ...e, status: action === 'approve' ? 'approved' : 'declined' } : e
-      ))
+      if (action === 'approve') {
+        setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'approved' } : e))
+      } else if (action === 'decline') {
+        setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'declined' } : e))
+      } else {
+        setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'approved' } : e))
+        setInvited(prev => ({ ...prev, [id]: true }))
+      }
     }
     router.refresh()
   }
@@ -133,30 +141,48 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
                   <td className="px-5 py-4 text-xs text-slate-400">{formatDate(entry.created_at)}</td>
                   <td className="px-5 py-4"><StatusBadge status={entry.status} /></td>
                   <td className="px-5 py-4">
-                    {actionable && (
-                      <div className="flex items-center gap-2 justify-end">
-                        <button
-                          disabled={!!busy}
-                          onClick={() => handle(entry.id, 'approve')}
-                          className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#1B2850] hover:bg-[#2E4080] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-                        >
-                          {busy === 'approve'
-                            ? <Loader2 className="w-3 h-3 animate-spin" />
-                            : <CheckCircle className="w-3 h-3" />}
-                          Approve
-                        </button>
-                        <button
-                          disabled={!!busy}
-                          onClick={() => handle(entry.id, 'decline')}
-                          className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-                        >
-                          {busy === 'decline'
-                            ? <Loader2 className="w-3 h-3 animate-spin" />
-                            : <XCircle className="w-3 h-3" />}
-                          Decline
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2 justify-end">
+                      {actionable && (
+                        <>
+                          <button
+                            disabled={!!busy}
+                            onClick={() => handle(entry.id, 'approve')}
+                            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#1B2850] hover:bg-[#2E4080] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                          >
+                            {busy === 'approve' ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                            Approve
+                          </button>
+                          <button
+                            disabled={!!busy}
+                            onClick={() => handle(entry.id, 'invite')}
+                            className="flex items-center gap-1.5 text-xs font-semibold text-[#C4922A] border border-[#e8c88a] hover:bg-[#FDF3E3] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                          >
+                            {busy === 'invite' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                            Invite
+                          </button>
+                          <button
+                            disabled={!!busy}
+                            onClick={() => handle(entry.id, 'decline')}
+                            className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                          >
+                            {busy === 'decline' ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
+                            Decline
+                          </button>
+                        </>
+                      )}
+                      {entry.status === 'approved' && (
+                        invited[entry.id]
+                          ? <span className="text-xs text-green-600 font-semibold flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Sent</span>
+                          : <button
+                              disabled={!!busy}
+                              onClick={() => handle(entry.id, 'invite')}
+                              className="flex items-center gap-1.5 text-xs font-semibold text-[#C4922A] border border-[#e8c88a] hover:bg-[#FDF3E3] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                            >
+                              {busy === 'invite' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                              Send invite
+                            </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )

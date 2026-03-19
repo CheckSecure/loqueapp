@@ -1,0 +1,175 @@
+You are helping me build an elite professional networking app. 
+Here is the complete product spec. Implement everything described.
+
+---
+
+APP CONTEXT
+- Live at loqueapp.com (Replit project: GuiltyUnwrittenProgrammer)
+- Backend: Supabase (project: cadre-map)
+- Auth/admin locked to: bizdev91@gmail.com
+- Currently in invite-only waitlist mode
+- Demo accounts exist for testing
+
+---
+
+USER ROLES & TIERS
+
+Free tier:
+- Can browse and view profiles
+- Cannot initiate contact
+- Receives no curated recommendations
+- Must purchase credit packs to connect
+
+Professional ($49/mo):
+- Receives curated weekly match recommendations (pushed to them)
+- Included credits each month (15 credits/mo)
+- Can initiate connection requests
+
+Executive ($99/mo):
+- Same as Professional plus priority placement
+- Unlimited credits
+- More weekly recommendations
+- Can request specific introductions outside curated queue
+
+Credit packs (available to all tiers):
+- Purchasable à la carte
+
+---
+
+CONNECTION / INTRODUCTION FLOW
+
+Step 1 — Match surfaces
+  - Monthly subscribers receive curated weekly recommendations
+  - Free/credit users browse and manually find people
+
+Step 2 — Expression of interest
+  - User A clicks "Request Connection" on a profile
+  - No credit is charged yet
+  - Request enters pending state (7-day window)
+
+Step 3 — Mutual confirmation
+  - User B is notified of the connection request
+  - User B accepts or declines
+  - If User B accepts → 1 credit is charged to User A at this moment
+  - If User B declines → no charge, request closes
+
+Step 4 — Introduction made
+  - Both users can now message each other
+  - Meeting scheduling becomes available
+
+Credit edge cases:
+  - If User A has 0 credits when User B accepts, show message:
+    "Your connection request to [Name] is pending. Add credits to complete 
+    this connection." Hold the request open for 7 days from acceptance.
+  - If User A does not add credits within 7 days of User B accepting, 
+    the request expires and User B is notified it is no longer available.
+  - Credits are NEVER charged at meeting booking — only at mutual acceptance.
+
+---
+
+CURATED RECOMMENDATIONS (monthly subscribers only)
+
+- System generates weekly match recommendations per user
+- Recommendations are based on: role type, industry, goals (use simple 
+  matching logic for now — same industry or complementary roles)
+- User reviews recommendations and marks "Interested" or "Pass"
+- If both users mark "Interested" on each other, mutual match triggers
+- If only one is interested, no introduction happens and no credit charged
+- Recommendations refresh weekly
+
+---
+
+MESSAGING & MEETINGS
+
+- Messages between connected users persist indefinitely regardless of 
+  subscription status
+- If user downgrades to free, they can read past messages but cannot 
+  initiate new conversations
+- Meeting history persists indefinitely
+- Meeting scheduling available only between mutually connected users
+
+---
+
+ADMIN PANEL (bizdev91@gmail.com only)
+
+- View all waitlist applicants
+- Approve or hold applicants
+- View all active users and their tier
+- See pending connection requests
+- See credit balances per user
+- Manually adjust credits if needed
+- View basic platform stats: total users, active this week, 
+  connections made, meetings booked
+
+---
+
+WAITLIST & ONBOARDING
+
+- Waitlist applicants sit in queue until admin approves
+- On approval: admin clicks approve → Resend sends branded invite email 
+  from hello@[domain] with a unique signup link
+- New users complete profile on first login:
+  - Name, title, company, role type 
+    (Executive/C-Suite, Investor/VC, Government/Policy, 
+    Finance, Healthcare, Legal)
+  - Short bio
+  - What they're looking for (optional)
+  - Profile photo
+- Free tier activated on signup; user can upgrade via Stripe
+
+---
+
+PAYMENTS (Stripe)
+
+- Professional plan: $49/month recurring
+- Executive plan: $99/month recurring  
+- Credit packs: define denominations (e.g. 5 credits / 15 credits / 30 credits)
+- On subscription: credits reset monthly (Pro = 15, Executive = unlimited)
+- On downgrade/cancellation: credits stop replenishing, existing credits remain
+- Stripe webhook updates user tier in Supabase on payment events
+
+---
+
+PROFILE TYPES
+Role categories: Executive/C-Suite, Investor/VC, Government/Policy, 
+Finance, Healthcare, Legal
+
+---
+
+DATA PERSISTENCE RULES
+- All messages: permanent
+- All meeting records: permanent  
+- Connection history: permanent
+- Credits: persist across billing cycles (unused credits roll over)
+- Subscription status: updated in real time via Stripe webhook
+
+---
+
+CURRENT STATUS OF WHAT'S BUILT
+Already implemented:
+- Waitlist landing page
+- Admin panel (basic)
+- Pricing page
+- Full dashboard (Introductions, Messages, Meetings, Profile, Credits tabs)
+- Meeting scheduling with .ics and Zoom link generation
+- Profile photos
+- Credits system (basic)
+- Mobile responsive with bottom navigation
+
+Still needed:
+- Resend email integration (approve button → sends branded invite)
+- Stripe integration (subscriptions + credit packs)
+- Mutual matching logic (both-sides interest before introduction)
+- Credit charge trigger (fires on mutual acceptance, not on request)
+- Credit edge case handling (User A out of credits when User B accepts)
+- Weekly curated recommendation engine (simple matching to start)
+- Recommendation UI (weekly digest view for monthly subscribers)
+- Subscriber vs. free tier feature gating
+- Admin enhancements (credit adjustment, platform stats)
+- Stripe webhook handler (updates tier in Supabase)
+
+---
+
+Implement the items listed under "Still needed" without breaking 
+anything currently working. Check existing Supabase schema before 
+adding tables. Use the existing UI patterns already in the dashboard.
