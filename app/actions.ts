@@ -436,53 +436,70 @@ export async function submitWaitlist(data: {
 }
 
 export async function adminSendWaitlistInvite(id: string) {
-  const { supabase, user } = await getSupabaseAndUser()
-  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
-
-  const { data: entry } = await supabase
-    .from('waitlist')
-    .select('full_name, email, status')
-    .eq('id', id)
-    .single()
-
-  if (!entry) return { error: 'Entry not found' }
-
-  // Generate a Supabase magic invite link so the user sets their password
-  // and lands directly on their profile page
-  let inviteUrl = 'https://loqueapp.com/signup'
   try {
-    const adminClient = createAdminClient()
-    const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
-      type: 'invite',
-      email: entry.email,
-      options: {
-        redirectTo: 'https://loqueapp.com/auth/callback?next=/dashboard/profile',
-      },
-    })
-    if (linkError) {
-      console.error('[invite] generateLink error:', linkError.message)
-    } else if (linkData?.properties?.action_link) {
-      inviteUrl = linkData.properties.action_link
-      console.log('[invite] generated invite link for:', entry.email)
+    const { supabase, user } = await getSupabaseAndUser()
+    if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
+
+    console.log('[invite] function called, fetching waitlist entry:', id)
+
+    const { data: entry, error: entryError } = await supabase
+      .from('waitlist')
+      .select('full_name, email, status')
+      .eq('id', id)
+      .single()
+
+    if (entryError) {
+      console.error('[invite] failed to fetch entry:', entryError.message)
+      return { error: 'Entry not found' }
     }
-  } catch (err: any) {
-    console.error('[invite] admin client error:', err.message)
-    return { error: `Could not generate invite link: ${err.message}` }
+    if (!entry) return { error: 'Entry not found' }
+
+    console.log('[invite] function called for:', entry.email)
+
+    // Generate a Supabase magic invite link — falls back to /signup if it fails
+    let inviteUrl = 'https://loqueapp.com/signup'
+    console.log('[invite] generating Supabase invite link...')
+    try {
+      const adminClient = createAdminClient()
+      const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+        type: 'invite',
+        email: entry.email,
+        options: {
+          redirectTo: 'https://loqueapp.com/auth/callback?next=/dashboard/profile',
+        },
+      })
+      if (linkError) {
+        console.error('[invite] generateLink returned error:', linkError.message)
+      } else if (linkData?.properties?.action_link) {
+        inviteUrl = linkData.properties.action_link
+        console.log('[invite] link generated successfully:', !!inviteUrl)
+      } else {
+        console.warn('[invite] generateLink returned no action_link, falling back to /signup')
+      }
+    } catch (err: any) {
+      // Log but do NOT return — fall back to plain signup link and still send the email
+      console.error('[invite] admin client threw:', err.message)
+    }
+
+    console.log('[invite] calling Resend...')
+    const { sendInviteEmail } = await import('@/lib/email')
+    const result = await sendInviteEmail(entry.email, entry.full_name ?? 'there', inviteUrl)
+    console.log('[invite] Resend done — success:', result.success, 'error:', result.error ?? 'none')
+
+    if (!result.success) return { error: result.error ?? 'Failed to send email' }
+
+    // Mark as approved + invited
+    await supabase
+      .from('waitlist')
+      .update({ status: 'approved', approved_at: new Date().toISOString() })
+      .eq('id', id)
+
+    revalidatePath('/dashboard/admin')
+    return { success: true }
+  } catch (error: any) {
+    console.error('[invite] FAILED with unexpected error:', error?.message ?? error)
+    return { error: `Unexpected error: ${error?.message ?? 'unknown'}` }
   }
-
-  const { sendInviteEmail } = await import('@/lib/email')
-  const result = await sendInviteEmail(entry.email, entry.full_name ?? 'there', inviteUrl)
-
-  if (!result.success) return { error: result.error ?? 'Failed to send email' }
-
-  // Mark as approved + invited
-  await supabase
-    .from('waitlist')
-    .update({ status: 'approved', approved_at: new Date().toISOString() })
-    .eq('id', id)
-
-  revalidatePath('/dashboard/admin')
-  return { success: true }
 }
 
 export async function adminApproveWaitlist(id: string) {
