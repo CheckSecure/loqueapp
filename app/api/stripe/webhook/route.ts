@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     const stripe = await getUncachableStripeClient()
     const supabase = createClient()
 
-    const event = stripe.webhooks.constructEventUnsafe(payload, signature, '') as any
+    const event = JSON.parse(payload) as any
 
     if (['customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(event.type)) {
       const sub = event.data.object
