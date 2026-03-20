@@ -139,7 +139,18 @@ export default function Sidebar({
         })}
 
         {isAdmin && (
-          <Link href="/dashboard/admin">Admin</Link>
+          <Link
+            href="/dashboard/admin"
+            className={cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              pathname.startsWith('/dashboard/admin')
+                ? 'bg-[#1B2850] text-white'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            )}
+          >
+            <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+            Admin
+          </Link>
         )}
       </nav>
       <div className="px-3 pb-4 border-t border-slate-200 pt-4 space-y-3">
