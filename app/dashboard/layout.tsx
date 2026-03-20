@@ -18,14 +18,22 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile_check } = await supabase
-    .from('profiles')
-    .select('profile_complete')
-    .eq('id', user.id)
-    .single()
+  const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
-  if (!profile_check?.profile_complete) {
-    redirect('/onboarding')
+  if (user.email !== ADMIN_EMAIL) {
+    const { data: profileCheck } = await supabase
+      .from('profiles')
+      .select('profile_complete, full_name')
+      .eq('id', user.id)
+      .single()
+
+    // Only redirect to onboarding if:
+    // - no profile row exists at all, OR
+    // - profile_complete is false/null AND full_name is also null (truly new invited user)
+    const needsOnboarding = !profileCheck || (!profileCheck.profile_complete && !profileCheck.full_name)
+    if (needsOnboarding) {
+      redirect('/onboarding')
+    }
   }
 
   const [{ data: profile }, { data: creditRow }] = await Promise.all([
