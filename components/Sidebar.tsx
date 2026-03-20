@@ -102,6 +102,8 @@ export default function Sidebar({
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
+      console.log('Sidebar auth check - email:', user?.email)
+      console.log('Sidebar isAdmin result:', user?.email === ADMIN_EMAIL)
       setIsAdmin(user?.email === ADMIN_EMAIL)
     })
   }, [])
