@@ -69,7 +69,8 @@ export async function sendInviteEmail(
 </body>
 </html>`
 
-  console.log('[email] sending invite to:', to)
+  const FROM = 'Loque <hello@loqueapp.com>'
+  console.log('[email] sending invite — from:', FROM, 'to:', to)
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
@@ -79,25 +80,32 @@ export async function sendInviteEmail(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Loque <onboarding@resend.dev>',
+        from: FROM,
         to: [to],
         subject: `You're invited to join Loque`,
         html,
       }),
     })
 
-    const body = await res.text()
-    console.log('[email] Resend response status:', res.status, 'body:', body)
+    let body: string
+    try {
+      body = await res.text()
+    } catch {
+      body = '(could not read response body)'
+    }
+
+    console.log('[email] Resend status:', res.status)
+    console.log('[email] Resend full response body:', body)
 
     if (!res.ok) {
-      console.error('[email] Resend error:', body)
+      console.error('[email] Resend rejected the request — status:', res.status, '— body:', body)
       return { success: false, error: `Email API error: ${res.status} — ${body}` }
     }
 
     console.log('[email] invite sent successfully to:', to)
     return { success: true }
   } catch (err: any) {
-    console.error('[email] fetch failed:', err.message)
+    console.error('[email] fetch threw:', err.message)
     return { success: false, error: err.message }
   }
 }
