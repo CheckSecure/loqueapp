@@ -39,11 +39,8 @@ export async function GET(request: NextRequest) {
     console.error('[auth/callback] code exchange error:', error.message)
   }
 
-  // token_hash flow (invite links, email OTP)
+  // token_hash flow (email OTP, password reset — invites now use /auth/confirm)
   if (tokenHash && type) {
-    // Sign out the current session first so an existing session (e.g. admin)
-    // does not override the incoming invite token exchange.
-    await supabase.auth.signOut()
     const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type })
     if (!error) {
       console.log('[auth/callback] token_hash verify success, redirecting to:', next)
