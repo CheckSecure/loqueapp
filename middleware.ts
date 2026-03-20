@@ -1,14 +1,20 @@
+console.log('[middleware] file is loading')
+
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
 export async function middleware(request: NextRequest) {
+  console.log('[middleware] function called for:', request.nextUrl.pathname)
+
   const { pathname } = request.nextUrl
 
   if (!pathname.startsWith('/dashboard/admin')) {
     return NextResponse.next()
   }
+
+  console.log('[middleware] /dashboard/admin route hit — checking auth')
 
   const response = NextResponse.next()
 
@@ -34,16 +40,17 @@ export async function middleware(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser()
 
-    console.log('[middleware] /dashboard/admin — user email:', user?.email)
+    console.log('[middleware] user email:', user?.email)
 
     if (!user || user.email !== ADMIN_EMAIL) {
-      console.log('[middleware] blocking non-admin, redirecting')
+      console.log('[middleware] BLOCKING non-admin — redirecting')
       return NextResponse.redirect(new URL('/dashboard/introductions', request.url))
     }
 
+    console.log('[middleware] admin confirmed — allowing through')
     return response
   } catch (err) {
-    console.error('[middleware] auth error, blocking request:', err)
+    console.error('[middleware] ERROR in auth check — blocking:', err)
     return NextResponse.redirect(new URL('/dashboard/introductions', request.url))
   }
 }
