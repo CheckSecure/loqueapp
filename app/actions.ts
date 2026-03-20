@@ -485,6 +485,13 @@ export async function adminSendWaitlistInvite(id: string) {
     // Generate a Supabase magic invite link — completely non-blocking.
     // If it fails, times out, or throws for ANY reason, we skip it and use the fallback URL.
     let inviteUrl = 'https://loqueapp.com/signup'
+    // Diagnostic: confirm service role key and URL are present and look correct
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
+    console.log('[invite] SUPABASE_SERVICE_ROLE_KEY set:', !!serviceKey, '| prefix:', serviceKey.slice(0, 12))
+    console.log('[invite] supabase URL (from ANON_KEY slot) set:', !!supabaseUrl, '| prefix:', supabaseUrl.slice(0, 30))
+    console.log('[invite] URL looks like supabase.co:', supabaseUrl.includes('supabase.co'))
+
     console.log('[invite] attempting generateLink (non-blocking, 5s timeout)...')
     try {
       const generateLinkPromise = (async () => {
@@ -502,7 +509,7 @@ export async function adminSendWaitlistInvite(id: string) {
       if (result === null) {
         console.warn('[invite] generateLink timed out after 5s — using fallback URL')
       } else if (result.error) {
-        console.warn('[invite] generateLink error (non-fatal):', result.error.message, '— using fallback URL')
+        console.error('[invite] generateLink error (non-fatal):', JSON.stringify(result.error), '— using fallback URL')
       } else if (result.data?.properties?.action_link) {
         inviteUrl = result.data.properties.action_link
         // If Supabase Site URL is set to localhost, the action_link will also be localhost.
