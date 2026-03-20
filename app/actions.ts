@@ -479,7 +479,14 @@ export async function adminSendWaitlistInvite(id: string) {
         console.warn('[invite] generateLink error (non-fatal):', result.error.message, '— using fallback URL')
       } else if (result.data?.properties?.action_link) {
         inviteUrl = result.data.properties.action_link
-        console.log('[invite] generateLink succeeded')
+        // If Supabase Site URL is set to localhost, the action_link will also be localhost.
+        // Replace it with the production URL so the email link works for recipients.
+        if (/https?:\/\/localhost(:\d+)?/.test(inviteUrl)) {
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
+          inviteUrl = inviteUrl.replace(/https?:\/\/localhost(:\d+)?/, supabaseUrl)
+          console.warn('[invite] replaced localhost in action_link with production Supabase URL')
+        }
+        console.log('[invite] generateLink succeeded, action_link domain:', new URL(inviteUrl).hostname)
       } else {
         console.warn('[invite] generateLink returned no action_link — using fallback URL')
       }
