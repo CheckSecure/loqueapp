@@ -12,32 +12,40 @@ export async function middleware(request: NextRequest) {
 
   const response = NextResponse.next()
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options)
+            )
+          },
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          )
-        },
-      },
+      }
+    )
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    console.log('[middleware] /dashboard/admin — user email:', user?.email)
+
+    if (!user || user.email !== ADMIN_EMAIL) {
+      console.log('[middleware] blocking non-admin, redirecting')
+      return NextResponse.redirect(new URL('/dashboard/introductions', request.url))
     }
-  )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user || user.email !== ADMIN_EMAIL) {
+    return response
+  } catch (err) {
+    console.error('[middleware] auth error, blocking request:', err)
     return NextResponse.redirect(new URL('/dashboard/introductions', request.url))
   }
-
-  return response
 }
 
 export const config = {
