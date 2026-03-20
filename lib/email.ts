@@ -70,7 +70,9 @@ export async function sendInviteEmail(
 </html>`
 
   const FROM = 'Loque <hello@loqueapp.com>'
-  console.log('[email] sending invite — from:', FROM, 'to:', to)
+  // TODO: Remove this override when Resend account is upgraded
+  const TO = 'bizdev91@gmail.com'
+  console.log('[email] sending invite — from:', FROM, 'to (override):', TO, '(intended:', to, ')')
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
@@ -81,7 +83,7 @@ export async function sendInviteEmail(
       },
       body: JSON.stringify({
         from: FROM,
-        to: [to],
+        to: [TO],
         subject: `You're invited to join Loque`,
         html,
       }),
