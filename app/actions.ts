@@ -456,7 +456,7 @@ export async function adminSendWaitlistInvite(id: string) {
       type: 'invite',
       email: entry.email,
       options: {
-        redirectTo: 'https://loqueapp.com/dashboard/profile',
+        redirectTo: 'https://loqueapp.com/auth/callback?next=/dashboard/profile',
       },
     })
     if (linkError) {

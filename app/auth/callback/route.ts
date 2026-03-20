@@ -7,32 +7,48 @@ import type { NextRequest } from 'next/server'
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  const tokenHash = searchParams.get('token_hash')
+  const type = searchParams.get('type') as 'invite' | 'recovery' | 'email' | 'signup' | null
   const next = searchParams.get('next') ?? '/dashboard'
 
-  if (code) {
-    const cookieStore = cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll()
-          },
-          setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          },
+  const cookieStore = cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
         },
-      }
-    )
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
 
+  // PKCE code exchange (standard OAuth / magic link flow)
+  if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
+      console.log('[auth/callback] code exchange success, redirecting to:', next)
       return NextResponse.redirect(`${origin}${next}`)
     }
+    console.error('[auth/callback] code exchange error:', error.message)
   }
 
+  // token_hash flow (invite links, email OTP)
+  if (tokenHash && type) {
+    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type })
+    if (!error) {
+      console.log('[auth/callback] token_hash verify success, redirecting to:', next)
+      return NextResponse.redirect(`${origin}${next}`)
+    }
+    console.error('[auth/callback] token_hash verify error:', error.message)
+  }
+
+  console.error('[auth/callback] no valid code or token_hash — redirecting to login')
   return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
 }
