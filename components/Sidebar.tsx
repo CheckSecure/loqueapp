@@ -2,10 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, LogOut, CreditCard } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, LogOut, CreditCard, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
+
+const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
 const navItems = [
   { href: '/dashboard/introductions', label: 'Introductions', icon: Users },
@@ -22,8 +24,6 @@ interface SidebarProps {
   avatarColor: string
   avatarUrl?: string | null
   credits: number
-  /** Pre-rendered server component slot — only non-null when user is admin */
-  adminSlot?: React.ReactNode
 }
 
 function CreditsChip({ credits }: { credits: number }) {
@@ -91,10 +91,20 @@ export default function Sidebar({
   avatarColor,
   avatarUrl,
   credits,
-  adminSlot,
 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
+
+  // Verify admin status directly against the live Supabase session.
+  // Start as false so non-admins never see a flash of the link.
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setIsAdmin(user?.email === ADMIN_EMAIL)
+    })
+  }, [])
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -126,16 +136,19 @@ export default function Sidebar({
           )
         })}
 
-        {/* Admin link — only rendered when adminSlot is non-null (server-controlled) */}
-        {adminSlot != null && (
-          <div className={cn(
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-            pathname.startsWith('/dashboard/admin')
-              ? 'bg-[#1B2850] text-white [&_a]:text-white [&_svg]:text-white'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 [&_a]:text-slate-600 [&_a:hover]:text-slate-900'
-          )}>
-            {adminSlot}
-          </div>
+        {isAdmin && (
+          <Link
+            href="/dashboard/admin"
+            className={cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              pathname.startsWith('/dashboard/admin')
+                ? 'bg-[#1B2850] text-white'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            )}
+          >
+            <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+            Admin
+          </Link>
         )}
       </nav>
       <div className="px-3 pb-4 border-t border-slate-200 pt-4 space-y-3">

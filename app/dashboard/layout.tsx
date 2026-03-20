@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import MobileNav from '@/components/MobileNav'
-import AdminNavLink from '@/components/AdminNavLink'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -102,7 +101,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
           avatarColor={avatarColor}
           avatarUrl={avatarUrl}
           credits={credits}
-          adminSlot={<AdminNavLink />}
         />
         <main className="flex-1 min-w-0 overflow-x-hidden">
           {children}
