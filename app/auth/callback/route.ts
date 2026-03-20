@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
   const tokenHash = searchParams.get('token_hash')
   const type = searchParams.get('type') as 'invite' | 'recovery' | 'email' | 'signup' | null
-  const next = searchParams.get('next') ?? '/dashboard'
+  const next = searchParams.get('next') ?? '/onboarding'
 
   const cookieStore = cookies()
   const supabase = createServerClient(

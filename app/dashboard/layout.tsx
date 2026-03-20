@@ -18,24 +18,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: prefs } = await supabase
-    .from('user_preferences')
-    .select('onboarding_completed')
-    .eq('user_id', user.id)
-    .limit(1)
+  const { data: profile_check } = await supabase
+    .from('profiles')
+    .select('profile_complete')
+    .eq('id', user.id)
     .single()
 
-  if (!prefs?.onboarding_completed) {
+  if (!profile_check?.profile_complete) {
     redirect('/onboarding')
   }
-
-  await supabase.from('profiles').upsert(
-    {
-      id: user.id,
-      full_name: user.user_metadata?.full_name ?? null,
-    },
-    { onConflict: 'id', ignoreDuplicates: true }
-  )
 
   const [{ data: profile }, { data: creditRow }] = await Promise.all([
     supabase.from('profiles').select('full_name, avatar_url').eq('id', user.id).single(),
