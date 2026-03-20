@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import MobileNav from '@/components/MobileNav'
+import AdminNavLink from '@/components/AdminNavLink'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -47,7 +48,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const avatarColor = pickColor(user.id)
   const avatarUrl: string | null = (profile as any)?.avatar_url ?? null
   const credits: number = creditRow?.balance ?? 0
-  const isAdmin = user.email === 'bizdev91@gmail.com'
 
   // Unread message count — messages from others in the user's conversations
   let unreadCount = 0
@@ -68,7 +68,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
       const convIds = (convRows || []).map((r: any) => r.id)
 
       if (convIds.length > 0) {
-        // Try with read_at IS NULL first (works if column exists)
         const { count, error } = await supabase
           .from('messages')
           .select('id', { count: 'exact', head: true })
@@ -79,7 +78,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
         if (!error) {
           unreadCount = count ?? 0
         } else {
-          // Fallback: count all messages from others (no read_at column yet)
           const { count: fallbackCount } = await supabase
             .from('messages')
             .select('id', { count: 'exact', head: true })
@@ -104,7 +102,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           avatarColor={avatarColor}
           avatarUrl={avatarUrl}
           credits={credits}
-          isAdmin={isAdmin}
+          adminSlot={<AdminNavLink />}
         />
         <main className="flex-1 min-w-0 overflow-x-hidden">
           {children}

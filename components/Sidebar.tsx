@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, LogOut, ShieldCheck, CreditCard } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, LogOut, CreditCard } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
@@ -22,7 +22,8 @@ interface SidebarProps {
   avatarColor: string
   avatarUrl?: string | null
   credits: number
-  isAdmin?: boolean
+  /** Pre-rendered server component slot — only non-null when user is admin */
+  adminSlot?: React.ReactNode
 }
 
 function CreditsChip({ credits }: { credits: number }) {
@@ -83,7 +84,15 @@ function CreditsChip({ credits }: { credits: number }) {
   )
 }
 
-export default function Sidebar({ displayName, email, initials, avatarColor, avatarUrl, credits, isAdmin = false }: SidebarProps) {
+export default function Sidebar({
+  displayName,
+  email,
+  initials,
+  avatarColor,
+  avatarUrl,
+  credits,
+  adminSlot,
+}: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -116,17 +125,17 @@ export default function Sidebar({ displayName, email, initials, avatarColor, ava
             </Link>
           )
         })}
-        {isAdmin && (
-          <Link
-            href="/dashboard/admin"
-            className={cn(
-              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-              pathname.startsWith('/dashboard/admin') ? 'bg-[#1B2850] text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-            )}
-          >
-            <ShieldCheck className="w-4 h-4 flex-shrink-0" />
-            Admin
-          </Link>
+
+        {/* Admin link — only rendered when adminSlot is non-null (server-controlled) */}
+        {adminSlot != null && (
+          <div className={cn(
+            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+            pathname.startsWith('/dashboard/admin')
+              ? 'bg-[#1B2850] text-white [&_a]:text-white [&_svg]:text-white'
+              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 [&_a]:text-slate-600 [&_a:hover]:text-slate-900'
+          )}>
+            {adminSlot}
+          </div>
         )}
       </nav>
       <div className="px-3 pb-4 border-t border-slate-200 pt-4 space-y-3">
