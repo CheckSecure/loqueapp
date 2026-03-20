@@ -1,12 +1,15 @@
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 
-export async function sendInviteEmail(to: string, name: string): Promise<{ success: boolean; error?: string }> {
+export async function sendInviteEmail(
+  to: string,
+  name: string,
+  inviteUrl: string,
+): Promise<{ success: boolean; error?: string }> {
   if (!RESEND_API_KEY) {
-    console.warn('[email] RESEND_API_KEY not set — skipping invite email')
+    console.error('[email] RESEND_API_KEY not set — cannot send invite email')
     return { success: false, error: 'Email service not configured' }
   }
 
-  const signupUrl = `https://loqueapp.com/signup`
   const html = `
 <!DOCTYPE html>
 <html>
@@ -34,20 +37,20 @@ export async function sendInviteEmail(to: string, name: string): Promise<{ succe
                 We've reviewed your application and we're pleased to invite you to join Loque — the professional network built on trust and warm introductions.
               </p>
               <p style="margin:0 0 32px;font-size:15px;color:#64748b;line-height:1.6;">
-                Complete your profile and start connecting with professionals who value quality over quantity.
+                Click the button below to set your password and complete your profile. This link expires in 24 hours.
               </p>
               <!-- CTA -->
               <table cellpadding="0" cellspacing="0">
                 <tr>
                   <td style="background:#1B2850;border-radius:10px;">
-                    <a href="${signupUrl}" style="display:inline-block;padding:14px 32px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;">
+                    <a href="${inviteUrl}" style="display:inline-block;padding:14px 32px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;">
                       Accept your invitation →
                     </a>
                   </td>
                 </tr>
               </table>
               <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;">
-                Or copy this link: <a href="${signupUrl}" style="color:#1B2850;">${signupUrl}</a>
+                Or copy this link: <a href="${inviteUrl}" style="color:#1B2850;word-break:break-all;">${inviteUrl}</a>
               </p>
             </td>
           </tr>
@@ -66,6 +69,8 @@ export async function sendInviteEmail(to: string, name: string): Promise<{ succe
 </body>
 </html>`
 
+  console.log('[email] sending invite to:', to)
+
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -74,19 +79,22 @@ export async function sendInviteEmail(to: string, name: string): Promise<{ succe
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Loque <hello@loqueapp.com>',
+        from: 'Loque <onboarding@resend.dev>',
         to: [to],
         subject: `You're invited to join Loque`,
         html,
       }),
     })
 
+    const body = await res.text()
+    console.log('[email] Resend response status:', res.status, 'body:', body)
+
     if (!res.ok) {
-      const body = await res.text()
       console.error('[email] Resend error:', body)
-      return { success: false, error: `Email API error: ${res.status}` }
+      return { success: false, error: `Email API error: ${res.status} — ${body}` }
     }
 
+    console.log('[email] invite sent successfully to:', to)
     return { success: true }
   } catch (err: any) {
     console.error('[email] fetch failed:', err.message)

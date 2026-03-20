@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import {
   createIntroRequest,
@@ -446,8 +447,31 @@ export async function adminSendWaitlistInvite(id: string) {
 
   if (!entry) return { error: 'Entry not found' }
 
+  // Generate a Supabase magic invite link so the user sets their password
+  // and lands directly on their profile page
+  let inviteUrl = 'https://loqueapp.com/signup'
+  try {
+    const adminClient = createAdminClient()
+    const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+      type: 'invite',
+      email: entry.email,
+      options: {
+        redirectTo: 'https://loqueapp.com/dashboard/profile',
+      },
+    })
+    if (linkError) {
+      console.error('[invite] generateLink error:', linkError.message)
+    } else if (linkData?.properties?.action_link) {
+      inviteUrl = linkData.properties.action_link
+      console.log('[invite] generated invite link for:', entry.email)
+    }
+  } catch (err: any) {
+    console.error('[invite] admin client error:', err.message)
+    return { error: `Could not generate invite link: ${err.message}` }
+  }
+
   const { sendInviteEmail } = await import('@/lib/email')
-  const result = await sendInviteEmail(entry.email, entry.full_name ?? 'there')
+  const result = await sendInviteEmail(entry.email, entry.full_name ?? 'there', inviteUrl)
 
   if (!result.success) return { error: result.error ?? 'Failed to send email' }
 
