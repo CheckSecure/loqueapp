@@ -463,7 +463,7 @@ export async function adminSendWaitlistInvite(id: string) {
 
 export async function adminApproveWaitlist(id: string) {
   const { supabase, user } = await getSupabaseAndUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
   const { error } = await supabase
     .from('waitlist')
     .update({ status: 'approved', approved_at: new Date().toISOString() })
@@ -475,7 +475,7 @@ export async function adminApproveWaitlist(id: string) {
 
 export async function adminDeclineWaitlist(id: string) {
   const { supabase, user } = await getSupabaseAndUser()
-  if (!user) return { error: 'Not authenticated' }
+  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
   const { error } = await supabase
     .from('waitlist')
     .update({ status: 'declined' })
