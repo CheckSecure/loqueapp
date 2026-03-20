@@ -456,32 +456,38 @@ export async function adminSendWaitlistInvite(id: string) {
 
     console.log('[invite] function called for:', entry.email)
 
-    // Generate a Supabase magic invite link — falls back to /signup if it fails
+    // Generate a Supabase magic invite link — completely non-blocking.
+    // If it fails, times out, or throws for ANY reason, we skip it and use the fallback URL.
     let inviteUrl = 'https://loqueapp.com/signup'
-    console.log('[invite] generating Supabase invite link...')
+    console.log('[invite] attempting generateLink (non-blocking, 5s timeout)...')
     try {
-      const adminClient = createAdminClient()
-      const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
-        type: 'invite',
-        email: entry.email,
-        options: {
-          redirectTo: 'https://loqueapp.com/auth/callback?next=/dashboard/profile',
-        },
-      })
-      if (linkError) {
-        console.error('[invite] generateLink returned error:', linkError.message)
-      } else if (linkData?.properties?.action_link) {
-        inviteUrl = linkData.properties.action_link
-        console.log('[invite] link generated successfully:', !!inviteUrl)
+      const generateLinkPromise = (async () => {
+        const adminClient = createAdminClient()
+        return adminClient.auth.admin.generateLink({
+          type: 'invite',
+          email: entry.email,
+          options: {
+            redirectTo: 'https://loqueapp.com/auth/callback?next=/dashboard/profile',
+          },
+        })
+      })()
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
+      const result = await Promise.race([generateLinkPromise, timeoutPromise])
+      if (result === null) {
+        console.warn('[invite] generateLink timed out after 5s — using fallback URL')
+      } else if (result.error) {
+        console.warn('[invite] generateLink error (non-fatal):', result.error.message, '— using fallback URL')
+      } else if (result.data?.properties?.action_link) {
+        inviteUrl = result.data.properties.action_link
+        console.log('[invite] generateLink succeeded')
       } else {
-        console.warn('[invite] generateLink returned no action_link, falling back to /signup')
+        console.warn('[invite] generateLink returned no action_link — using fallback URL')
       }
     } catch (err: any) {
-      // Log but do NOT return — fall back to plain signup link and still send the email
-      console.error('[invite] admin client threw:', err.message)
+      console.warn('[invite] generateLink threw (non-fatal):', err.message, '— using fallback URL')
     }
 
-    console.log('[invite] calling Resend...')
+    console.log('[invite] about to call sendInviteEmail with:', entry.email, inviteUrl)
     const { sendInviteEmail } = await import('@/lib/email')
     const result = await sendInviteEmail(entry.email, entry.full_name ?? 'there', inviteUrl)
     console.log('[invite] Resend done — success:', result.success, 'error:', result.error ?? 'none')
