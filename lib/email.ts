@@ -3,12 +3,14 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY
 export async function sendInviteEmail(
   to: string,
   name: string,
-  inviteUrl: string,
+  tempPassword: string,
 ): Promise<{ success: boolean; error?: string }> {
   if (!RESEND_API_KEY) {
     console.error('[email] RESEND_API_KEY not set — cannot send invite email')
     return { success: false, error: 'Email service not configured' }
   }
+
+  const loginUrl = 'https://andrel.app/login'
 
   const html = `
 <!DOCTYPE html>
@@ -36,21 +38,30 @@ export async function sendInviteEmail(
               <p style="margin:0 0 24px;font-size:15px;color:#64748b;line-height:1.6;">
                 We've reviewed your application and we're pleased to invite you to join Andrel — the professional network built on trust and warm introductions.
               </p>
-              <p style="margin:0 0 32px;font-size:15px;color:#64748b;line-height:1.6;">
-                Click the button below to set your password and complete your profile. This link expires in 24 hours.
-              </p>
+              <p style="margin:0 0 8px;font-size:15px;color:#64748b;line-height:1.6;">Use these credentials to sign in and complete your profile:</p>
+              <!-- Credentials box -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
+                <tr>
+                  <td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:20px 24px;">
+                    <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;">Email</p>
+                    <p style="margin:0 0 16px;font-size:15px;font-weight:600;color:#0f172a;">${to}</p>
+                    <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;">Temporary password</p>
+                    <p style="margin:0;font-size:18px;font-weight:800;color:#1B2850;letter-spacing:1px;">${tempPassword}</p>
+                  </td>
+                </tr>
+              </table>
               <!-- CTA -->
               <table cellpadding="0" cellspacing="0">
                 <tr>
                   <td style="background:#1B2850;border-radius:10px;">
-                    <a href="${inviteUrl}" style="display:inline-block;padding:14px 32px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;">
-                      Accept your invitation →
+                    <a href="${loginUrl}" style="display:inline-block;padding:14px 32px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;">
+                      Sign in to Andrel →
                     </a>
                   </td>
                 </tr>
               </table>
-              <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;">
-                Or copy this link: <a href="${inviteUrl}" style="color:#1B2850;word-break:break-all;">${inviteUrl}</a>
+              <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;line-height:1.6;">
+                After signing in you'll be asked to complete your profile. You can change your password in your profile settings at any time.
               </p>
             </td>
           </tr>

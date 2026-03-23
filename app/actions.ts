@@ -487,66 +487,67 @@ export async function adminSendWaitlistInvite(id: string) {
 
     console.log('[invite] function called for:', entry.email)
 
-    // Generate a Supabase invite link.
-    // NEXT_PUBLIC_SITE_URL must be set to the production app domain (e.g. https://andrel.app).
-    // The redirectTo URL must also be listed in Supabase Dashboard → Auth → URL Configuration → Redirect URLs.
-    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')
-    if (!siteUrl) {
-      console.error('[invite] NEXT_PUBLIC_SITE_URL is not set')
-      return { error: 'NEXT_PUBLIC_SITE_URL environment variable is not configured' }
-    }
+    // Generate a random temporary password and create (or update) the user account directly.
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    const tempPassword = 'Andrel-' + Array.from({ length: 6 }, () =>
+      chars[Math.floor(Math.random() * chars.length)]
+    ).join('')
 
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
     console.log('[invite] SUPABASE_SERVICE_ROLE_KEY set:', !!serviceKey, '| prefix:', serviceKey.slice(0, 12))
-    console.log('[invite] siteUrl:', siteUrl)
 
-    let inviteUrl: string
     try {
       const adminClient = createAdminClient()
-      const redirectTo = `${siteUrl}/auth/callback`
 
-      let { data, error: linkError } = await adminClient.auth.admin.generateLink({
-        type: 'invite',
+      const { error: createError } = await adminClient.auth.admin.createUser({
         email: entry.email,
-        options: { redirectTo },
+        password: tempPassword,
+        email_confirm: true,
       })
 
-      // 'invite' only works for users that don't yet exist in Supabase Auth.
-      // Fall back to 'magiclink' for existing users — it produces the same
-      // one-time login link and honours the same redirectTo.
-      if (linkError?.message?.toLowerCase().includes('already been registered')) {
-        console.log('[invite] user already exists, retrying with magiclink...')
-        ;({ data, error: linkError } = await adminClient.auth.admin.generateLink({
-          type: 'magiclink',
-          email: entry.email,
-          options: { redirectTo },
-        }))
-      }
+      if (createError) {
+        const alreadyExists =
+          createError.message.toLowerCase().includes('already been registered') ||
+          createError.message.toLowerCase().includes('already exists')
 
-      if (linkError) {
-        console.error('[invite] generateLink error:', JSON.stringify(linkError))
-        return { error: `Could not generate invite link: ${linkError.message}` }
+        if (alreadyExists) {
+          // User exists — find their auth UUID via profiles table and reset their password
+          console.log('[invite] user already exists, resetting password...')
+          const { data: profileRow } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('email', entry.email)
+            .single()
+
+          if (!profileRow?.id) {
+            console.error('[invite] could not find existing user in profiles by email')
+            return { error: 'User already exists but could not be found — contact support' }
+          }
+
+          const { error: updateError } = await adminClient.auth.admin.updateUserById(
+            profileRow.id,
+            { password: tempPassword }
+          )
+          if (updateError) {
+            console.error('[invite] updateUserById error:', updateError.message)
+            return { error: `Could not reset user password: ${updateError.message}` }
+          }
+          console.log('[invite] password reset for existing user:', entry.email)
+        } else {
+          console.error('[invite] createUser error:', createError.message)
+          return { error: `Could not create user account: ${createError.message}` }
+        }
+      } else {
+        console.log('[invite] new user created:', entry.email)
       }
-      if (!data?.properties?.action_link) {
-        console.error('[invite] generateLink returned no action_link')
-        return { error: 'Could not generate invite link: no action_link returned' }
-      }
-      inviteUrl = data.properties.action_link
-      // If Supabase Site URL is set to localhost, the redirect_to inside the action_link
-      // will also contain localhost — replace it with the production app URL.
-      if (inviteUrl.includes('localhost')) {
-        inviteUrl = inviteUrl.replace(/https?:\/\/localhost(:\d+)?/g, siteUrl)
-        console.warn('[invite] replaced localhost in action_link with siteUrl')
-      }
-      console.log('[invite] generateLink succeeded, action_link domain:', new URL(inviteUrl).hostname)
     } catch (err: any) {
-      console.error('[invite] generateLink threw:', err.message)
-      return { error: `Could not generate invite link: ${err.message}` }
+      console.error('[invite] admin operation threw:', err.message)
+      return { error: `Could not set up user account: ${err.message}` }
     }
 
-    console.log('[invite] about to call sendInviteEmail with:', entry.email, inviteUrl)
+    console.log('[invite] about to send invite email to:', entry.email)
     const { sendInviteEmail } = await import('@/lib/email')
-    const result = await sendInviteEmail(entry.email, entry.full_name ?? 'there', inviteUrl)
+    const result = await sendInviteEmail(entry.email, entry.full_name ?? 'there', tempPassword)
     console.log('[invite] Resend done — success:', result.success, 'error:', result.error ?? 'none')
 
     if (!result.success) return { error: result.error ?? 'Failed to send email' }
