@@ -1,6 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
 import type { CookieOptions } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
@@ -11,18 +10,19 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type') as 'invite' | 'recovery' | 'email' | 'signup' | null
   const next = searchParams.get('next') ?? '/onboarding'
 
-  const cookieStore = cookies()
+  const response = NextResponse.redirect(`${origin}${next}`)
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     {
       cookies: {
         getAll() {
-          return cookieStore.getAll()
+          return request.cookies.getAll()
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
+            response.cookies.set(name, value, options)
           )
         },
       },
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
       console.log('[auth/callback] code exchange success, redirecting to:', next)
-      return NextResponse.redirect(`${origin}${next}`)
+      return response
     }
     console.error('[auth/callback] code exchange error:', error.message)
   }
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type })
     if (!error) {
       console.log('[auth/callback] token_hash verify success, redirecting to:', next)
-      return NextResponse.redirect(`${origin}${next}`)
+      return response
     }
     console.error('[auth/callback] token_hash verify error:', error.message)
   }

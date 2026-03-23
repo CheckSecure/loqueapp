@@ -1,6 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
 import type { CookieOptions } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
@@ -16,26 +15,28 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=missing_token`)
   }
 
-  const cookieStore = cookies()
+  // Build the redirect response first so session cookies can be written onto it.
+  // Writing to next/headers cookies() in a Route Handler does NOT produce Set-Cookie
+  // headers — cookies must be set directly on the response object.
+  const response = NextResponse.redirect(`${origin}/onboarding`)
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     {
       cookies: {
         getAll() {
-          return cookieStore.getAll()
+          return request.cookies.getAll()
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
+            response.cookies.set(name, value, options)
           )
         },
       },
     }
   )
 
-  // verifyOtp with a valid invite token_hash creates a new session,
-  // overwriting any existing session cookie (e.g. the admin session).
   console.log('[auth/confirm] calling verifyOtp...')
   const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type })
 
@@ -44,6 +45,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=invite_invalid`)
   }
 
+  // Return the pre-built response — it now carries the new session cookies in
+  // its Set-Cookie headers, replacing any existing admin session in the browser.
   console.log('[auth/confirm] session established for:', data.user?.email)
-  return NextResponse.redirect(`${origin}/onboarding`)
+  return response
 }
