@@ -503,11 +503,26 @@ export async function adminSendWaitlistInvite(id: string) {
     let inviteUrl: string
     try {
       const adminClient = createAdminClient()
-      const { data, error: linkError } = await adminClient.auth.admin.generateLink({
+      const redirectTo = `${siteUrl}/auth/confirm`
+
+      let { data, error: linkError } = await adminClient.auth.admin.generateLink({
         type: 'invite',
         email: entry.email,
-        options: { redirectTo: `${siteUrl}/auth/confirm` },
+        options: { redirectTo },
       })
+
+      // 'invite' only works for users that don't yet exist in Supabase Auth.
+      // Fall back to 'magiclink' for existing users — it produces the same
+      // one-time login link and honours the same redirectTo.
+      if (linkError?.message?.toLowerCase().includes('already been registered')) {
+        console.log('[invite] user already exists, retrying with magiclink...')
+        ;({ data, error: linkError } = await adminClient.auth.admin.generateLink({
+          type: 'magiclink',
+          email: entry.email,
+          options: { redirectTo },
+        }))
+      }
+
       if (linkError) {
         console.error('[invite] generateLink error:', JSON.stringify(linkError))
         return { error: `Could not generate invite link: ${linkError.message}` }
