@@ -35,7 +35,7 @@ export default function RequestIntroButton({
           Requested ✓
         </div>
         <p className="text-xs text-slate-400 text-center mt-1.5">
-          Request submitted — Loque will facilitate this introduction
+          Request submitted — Andrel will facilitate this introduction
         </p>
       </div>
     )

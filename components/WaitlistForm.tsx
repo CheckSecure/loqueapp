@@ -130,7 +130,7 @@ export default function WaitlistForm() {
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-white/70 mb-1.5">How did you hear about Loque? <span className="text-white/30">(optional)</span></label>
+        <label className="block text-xs font-medium text-white/70 mb-1.5">How did you hear about Andrel? <span className="text-white/30">(optional)</span></label>
         <input
           type="text"
           value={referral}

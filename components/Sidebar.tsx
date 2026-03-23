@@ -118,7 +118,7 @@ export default function Sidebar({
   return (
     <aside className="hidden md:flex flex-col w-60 bg-white border-r border-slate-200 shrink-0">
       <div className="px-5 py-6 border-b border-slate-200">
-        <span className="text-lg font-bold text-[#1B2850] tracking-tight">Loque</span>
+        <span className="text-lg font-bold text-[#1B2850] tracking-tight">Andrel</span>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map(({ href, label, icon: Icon }) => {

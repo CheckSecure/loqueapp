@@ -25,7 +25,7 @@ export async function sendInviteEmail(
           <!-- Header -->
           <tr>
             <td style="background:linear-gradient(135deg,#1B2850,#2E4080);padding:32px 40px;">
-              <p style="margin:0;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">Loque</p>
+              <p style="margin:0;font-size:22px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">Andrel</p>
             </td>
           </tr>
           <!-- Body -->
@@ -34,7 +34,7 @@ export async function sendInviteEmail(
               <p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#C4922A;text-transform:uppercase;letter-spacing:1px;">Your invitation is ready</p>
               <h1 style="margin:0 0 16px;font-size:26px;font-weight:800;color:#0f172a;line-height:1.2;">You're in, ${name}.</h1>
               <p style="margin:0 0 24px;font-size:15px;color:#64748b;line-height:1.6;">
-                We've reviewed your application and we're pleased to invite you to join Loque — the professional network built on trust and warm introductions.
+                We've reviewed your application and we're pleased to invite you to join Andrel — the professional network built on trust and warm introductions.
               </p>
               <p style="margin:0 0 32px;font-size:15px;color:#64748b;line-height:1.6;">
                 Click the button below to set your password and complete your profile. This link expires in 24 hours.
@@ -58,7 +58,7 @@ export async function sendInviteEmail(
           <tr>
             <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 40px;">
               <p style="margin:0;font-size:12px;color:#94a3b8;">
-                © ${new Date().getFullYear()} Loque. You received this because you applied to join our waitlist.
+                © ${new Date().getFullYear()} Andrel. You received this because you applied to join our waitlist.
               </p>
             </td>
           </tr>
@@ -69,7 +69,7 @@ export async function sendInviteEmail(
 </body>
 </html>`
 
-  const FROM = 'Loque <hello@loqueapp.com>'
+  const FROM = 'Andrel <hello@loqueapp.com>'
   console.log('[email] sending invite — from:', FROM, 'to:', to)
 
   try {
@@ -82,7 +82,7 @@ export async function sendInviteEmail(
       body: JSON.stringify({
         from: FROM,
         to: [to],
-        subject: `You're invited to join Loque`,
+        subject: `You're invited to join Andrel`,
         html,
       }),
     })

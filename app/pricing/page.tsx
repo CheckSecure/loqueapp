@@ -86,7 +86,7 @@ export default function PricingPage() {
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="text-xl font-bold text-[#1B2850] tracking-tight">Loque</Link>
+          <Link href="/" className="text-xl font-bold text-[#1B2850] tracking-tight">Andrel</Link>
           <div className="flex items-center gap-3">
             <Link href="/pricing" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
               Pricing
@@ -95,7 +95,7 @@ export default function PricingPage() {
               Sign in
             </Link>
             <Link href="/signup" className="text-sm font-semibold bg-[#1B2850] text-white px-4 py-2 rounded-lg hover:bg-[#2E4080] transition-colors">
-              Join Loque
+              Join Andrel
             </Link>
           </div>
         </div>
@@ -317,7 +317,7 @@ export default function PricingPage() {
           <Shield className="w-3.5 h-3.5" />
           Secure payments powered by Stripe — coming soon.
         </div>
-        <p className="text-xs text-slate-300 mt-2">© {new Date().getFullYear()} Loque. All rights reserved.</p>
+        <p className="text-xs text-slate-300 mt-2">© {new Date().getFullYear()} Andrel. All rights reserved.</p>
       </footer>
     </div>
   )

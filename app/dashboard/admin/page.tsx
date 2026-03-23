@@ -8,7 +8,7 @@ import AdminUsers from '@/components/AdminUsers'
 import AdminBatchButton from '@/components/AdminBatchButton'
 import { ShieldCheck, Users, BarChart2, Sparkles } from 'lucide-react'
 
-export const metadata = { title: 'Admin | Loque' }
+export const metadata = { title: 'Admin | Andrel' }
 
 export default async function AdminPage() {
   const supabase = createClient()

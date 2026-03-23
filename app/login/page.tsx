@@ -32,21 +32,21 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex">
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#1B2850] to-[#2E4080] flex-col justify-between p-12">
-        <Link href="/" className="text-2xl font-bold text-white tracking-tight">Loque</Link>
+        <Link href="/" className="text-2xl font-bold text-white tracking-tight">Andrel</Link>
         <div className="text-white">
           <p className="text-3xl font-bold mb-3 leading-snug">Welcome back to your professional network.</p>
           <p className="text-white/60">Your introductions, messages, and meetings are waiting.</p>
         </div>
-        <p className="text-white/40 text-sm">© {new Date().getFullYear()} Loque</p>
+        <p className="text-white/40 text-sm">© {new Date().getFullYear()} Andrel</p>
       </div>
 
       <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8">
-            <Link href="/" className="text-xl font-bold text-[#1B2850] lg:hidden block mb-6 tracking-tight">Loque</Link>
+            <Link href="/" className="text-xl font-bold text-[#1B2850] lg:hidden block mb-6 tracking-tight">Andrel</Link>
             <h2 className="text-2xl font-bold text-slate-900">Sign in</h2>
             <p className="mt-1 text-sm text-slate-500">
-              New to Loque?{' '}
+              New to Andrel?{' '}
               <Link href="/signup" className="text-[#1B2850] font-semibold hover:underline">Create an account</Link>
             </p>
           </div>

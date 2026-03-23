@@ -43,7 +43,7 @@ export default async function Home() {
     <div className="min-h-screen bg-white flex flex-col">
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <span className="text-xl font-bold text-[#1B2850] tracking-tight">Loque</span>
+          <span className="text-xl font-bold text-[#1B2850] tracking-tight">Andrel</span>
           <div className="flex items-center gap-3">
             <Link href="/pricing" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
               Pricing
@@ -64,7 +64,7 @@ export default async function Home() {
               <div>
                 <div className="inline-flex items-center gap-2 bg-white/10 text-white/80 text-xs font-semibold px-3 py-1.5 rounded-full mb-6 tracking-wide uppercase border border-white/20">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#C4922A]" />
-                  Loque is currently invite-only
+                  Andrel is currently invite-only
                 </div>
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-[1.05] tracking-tight mb-5">
                   Your next opportunity
@@ -72,7 +72,7 @@ export default async function Home() {
                   <span className="text-[#C4922A]">starts with an introduction.</span>
                 </h1>
                 <p className="text-lg text-white/60 leading-relaxed mb-6">
-                  Loque is the professional network built on trust. Join the waitlist to request access.
+                  Andrel is the professional network built on trust. Join the waitlist to request access.
                 </p>
                 <ul className="space-y-2.5">
                   {benefits.map(b => (
@@ -117,7 +117,7 @@ export default async function Home() {
             <div>
               <h2 className="text-3xl font-bold text-slate-900 mb-4">Networking the way it should be</h2>
               <p className="text-slate-500 leading-relaxed mb-6">
-                Loque is built for professionals who believe that the best opportunities come from trusted connections — not spam, not cold emails, not follower counts.
+                Andrel is built for professionals who believe that the best opportunities come from trusted connections — not spam, not cold emails, not follower counts.
               </p>
               <p className="text-slate-500 leading-relaxed">
                 We personally review every application to maintain the quality of our network. When your spot is ready, we'll reach out.
@@ -138,7 +138,7 @@ export default async function Home() {
       </main>
 
       <footer className="border-t border-slate-100 py-8 text-center text-sm text-slate-400">
-        © {new Date().getFullYear()} Loque. All rights reserved.
+        © {new Date().getFullYear()} Andrel. All rights reserved.
       </footer>
     </div>
   )

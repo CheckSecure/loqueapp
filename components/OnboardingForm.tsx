@@ -99,7 +99,7 @@ export default function OnboardingForm() {
       <div className="w-full max-w-xl">
 
         <div className="text-center mb-8">
-          <span className="text-2xl font-bold text-[#1B2850] tracking-tight block mb-6">Loque</span>
+          <span className="text-2xl font-bold text-[#1B2850] tracking-tight block mb-6">Andrel</span>
           <h1 className="text-2xl font-bold text-slate-900 mb-2">Complete your profile</h1>
           <p className="text-slate-500 text-sm">
             Tell us about yourself so we can match you with the right people.

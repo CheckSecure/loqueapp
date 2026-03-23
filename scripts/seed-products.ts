@@ -1,5 +1,5 @@
 /**
- * Creates Loque's Stripe products and prices.
+ * Creates Andrel's Stripe products and prices.
  * Run once: npx tsx scripts/seed-products.ts
  * Safe to re-run — checks for existing products first.
  */
@@ -7,7 +7,7 @@ import { getUncachableStripeClient } from '../lib/stripe/stripeClient'
 
 async function createProducts() {
   const stripe = await getUncachableStripeClient()
-  console.log('Creating Loque products in Stripe...')
+  console.log('Creating Andrel products in Stripe...')
 
   // ── Professional ───────────────────────────────────────────────
   let proProduct
@@ -18,7 +18,7 @@ async function createProducts() {
   } else {
     proProduct = await stripe.products.create({
       name: 'Professional',
-      description: 'Full access to Loque introductions, messaging, and meeting scheduling.',
+      description: 'Full access to Andrel introductions, messaging, and meeting scheduling.',
       metadata: { tier: 'professional' },
     })
     console.log(`Created Professional: ${proProduct.id}`)

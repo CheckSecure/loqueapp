@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import OnboardingForm from '@/components/OnboardingForm'
 
-export const metadata = { title: 'Complete your profile | Loque' }
+export const metadata = { title: 'Complete your profile | Andrel' }
 
 export default async function OnboardingPage() {
   const supabase = createClient()

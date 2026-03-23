@@ -6,7 +6,7 @@ import ManageBillingButton from '@/components/ManageBillingButton'
 import { CreditCard, Zap, Crown, Star, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 
-export const metadata = { title: 'Billing | Loque' }
+export const metadata = { title: 'Billing | Andrel' }
 
 const TIER_ORDER = ['professional', 'executive']
 const PLAN_ICONS: Record<string, any> = { professional: Star, executive: Crown }

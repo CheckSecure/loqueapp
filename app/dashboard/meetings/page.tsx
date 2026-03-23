@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import MeetingsClient from '@/components/MeetingsClient'
 
-export const metadata = { title: 'Meetings | Loque' }
+export const metadata = { title: 'Meetings | Andrel' }
 
 export default async function MeetingsPage() {
   const supabase = createClient()
