@@ -482,49 +482,46 @@ export async function adminSendWaitlistInvite(id: string) {
 
     console.log('[invite] function called for:', entry.email)
 
-    // Generate a Supabase magic invite link — completely non-blocking.
-    // If it fails, times out, or throws for ANY reason, we skip it and use the fallback URL.
-    let inviteUrl = 'https://loqueapp.com/signup'
-    // Diagnostic: confirm service role key and URL are present and look correct
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
-    console.log('[invite] SUPABASE_SERVICE_ROLE_KEY set:', !!serviceKey, '| prefix:', serviceKey.slice(0, 12))
-    console.log('[invite] supabase URL (from ANON_KEY slot) set:', !!supabaseUrl, '| prefix:', supabaseUrl.slice(0, 30))
-    console.log('[invite] URL looks like supabase.co:', supabaseUrl.includes('supabase.co'))
+    // Generate a Supabase invite link.
+    // NEXT_PUBLIC_SITE_URL must be set to the production app domain (e.g. https://andrel.app).
+    // The redirectTo URL must also be listed in Supabase Dashboard → Auth → URL Configuration → Redirect URLs.
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')
+    if (!siteUrl) {
+      console.error('[invite] NEXT_PUBLIC_SITE_URL is not set')
+      return { error: 'NEXT_PUBLIC_SITE_URL environment variable is not configured' }
+    }
 
-    console.log('[invite] attempting generateLink (non-blocking, 5s timeout)...')
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+    console.log('[invite] SUPABASE_SERVICE_ROLE_KEY set:', !!serviceKey, '| prefix:', serviceKey.slice(0, 12))
+    console.log('[invite] siteUrl:', siteUrl)
+
+    let inviteUrl: string
     try {
-      const generateLinkPromise = (async () => {
-        const adminClient = createAdminClient()
-        return adminClient.auth.admin.generateLink({
-          type: 'invite',
-          email: entry.email,
-          options: {
-            redirectTo: 'https://loqueapp.com/auth/confirm',
-          },
-        })
-      })()
-      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
-      const result = await Promise.race([generateLinkPromise, timeoutPromise])
-      if (result === null) {
-        console.warn('[invite] generateLink timed out after 5s — using fallback URL')
-      } else if (result.error) {
-        console.error('[invite] generateLink error (non-fatal):', JSON.stringify(result.error), '— using fallback URL')
-      } else if (result.data?.properties?.action_link) {
-        inviteUrl = result.data.properties.action_link
-        // If Supabase Site URL is set to localhost, the action_link will also be localhost.
-        // Replace it with the production URL so the email link works for recipients.
-        if (/https?:\/\/localhost(:\d+)?/.test(inviteUrl)) {
-          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
-          inviteUrl = inviteUrl.replace(/https?:\/\/localhost(:\d+)?/, supabaseUrl)
-          console.warn('[invite] replaced localhost in action_link with production Supabase URL')
-        }
-        console.log('[invite] generateLink succeeded, action_link domain:', new URL(inviteUrl).hostname)
-      } else {
-        console.warn('[invite] generateLink returned no action_link — using fallback URL')
+      const adminClient = createAdminClient()
+      const { data, error: linkError } = await adminClient.auth.admin.generateLink({
+        type: 'invite',
+        email: entry.email,
+        options: { redirectTo: `${siteUrl}/auth/confirm` },
+      })
+      if (linkError) {
+        console.error('[invite] generateLink error:', JSON.stringify(linkError))
+        return { error: `Could not generate invite link: ${linkError.message}` }
       }
+      if (!data?.properties?.action_link) {
+        console.error('[invite] generateLink returned no action_link')
+        return { error: 'Could not generate invite link: no action_link returned' }
+      }
+      inviteUrl = data.properties.action_link
+      // If Supabase Site URL is set to localhost, the redirect_to inside the action_link
+      // will also contain localhost — replace it with the production app URL.
+      if (inviteUrl.includes('localhost')) {
+        inviteUrl = inviteUrl.replace(/https?:\/\/localhost(:\d+)?/g, siteUrl)
+        console.warn('[invite] replaced localhost in action_link with siteUrl')
+      }
+      console.log('[invite] generateLink succeeded, action_link domain:', new URL(inviteUrl).hostname)
     } catch (err: any) {
-      console.warn('[invite] generateLink threw (non-fatal):', err.message, '— using fallback URL')
+      console.error('[invite] generateLink threw:', err.message)
+      return { error: `Could not generate invite link: ${err.message}` }
     }
 
     console.log('[invite] about to call sendInviteEmail with:', entry.email, inviteUrl)
