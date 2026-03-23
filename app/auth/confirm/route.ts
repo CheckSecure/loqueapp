@@ -8,7 +8,8 @@ export async function GET(request: NextRequest) {
   console.log('[auth/confirm] url:', request.url)
 
   try {
-    const { searchParams, origin } = new URL(request.url)
+    const { searchParams } = new URL(request.url)
+    const origin = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '') || new URL(request.url).origin
     const tokenHash = searchParams.get('token_hash')
     const type = (searchParams.get('type') ?? 'invite') as 'invite' | 'recovery' | 'email' | 'signup'
 
