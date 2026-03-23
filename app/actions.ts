@@ -503,7 +503,7 @@ export async function adminSendWaitlistInvite(id: string) {
     let inviteUrl: string
     try {
       const adminClient = createAdminClient()
-      const redirectTo = `${siteUrl}/auth/confirm`
+      const redirectTo = `${siteUrl}/auth/callback?next=/onboarding`
 
       let { data, error: linkError } = await adminClient.auth.admin.generateLink({
         type: 'invite',
