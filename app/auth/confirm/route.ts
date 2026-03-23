@@ -4,7 +4,8 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function GET(request: NextRequest) {
-  console.log('[auth/confirm] route hit, url:', request.url)
+  console.log('[auth/confirm] GET called')
+  console.log('[auth/confirm] url:', request.url)
 
   try {
     const { searchParams, origin } = new URL(request.url)
