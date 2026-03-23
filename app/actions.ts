@@ -463,10 +463,15 @@ export async function submitWaitlist(data: {
 
 export async function adminSendWaitlistInvite(id: string) {
   try {
+    console.log('[invite] function called, id:', id)
     const { supabase, user } = await getSupabaseAndUser()
-    if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
+    console.log('[invite] auth check — user email:', user?.email ?? 'null')
+    if (!user || user.email !== 'bizdev91@gmail.com') {
+      console.error('[invite] not authorized — user:', user?.email ?? 'null')
+      return { error: 'Not authorized' }
+    }
 
-    console.log('[invite] function called, fetching waitlist entry:', id)
+    console.log('[invite] fetching waitlist entry:', id)
 
     const { data: entry, error: entryError } = await supabase
       .from('waitlist')
