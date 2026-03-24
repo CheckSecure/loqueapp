@@ -541,6 +541,14 @@ export async function adminSendWaitlistInvite(id: string) {
         }
       } else {
         console.log('[invite] new user created:', entry.email)
+
+        // Seed 3 free credits for new user
+        const { data: newUser } = await adminClient.auth.admin.getUserByEmail(entry.email)
+        if (newUser?.user?.id) {
+          await supabase.from('meeting_credits').upsert({ user_id: newUser.user.id, balance: 3 })
+          await supabase.from('credit_transactions').insert({ user_id: newUser.user.id, delta: 3, reason: 'signup_bonus' })
+          console.log('[invite] seeded 3 credits for:', entry.email)
+        }
       }
     } catch (err: any) {
       console.error('[invite] admin operation threw:', err.message)
