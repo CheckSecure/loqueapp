@@ -501,7 +501,7 @@ export async function adminSendWaitlistInvite(id: string) {
     try {
       const adminClient = createAdminClient()
 
-      const { error: createError } = await adminClient.auth.admin.createUser({
+      const { data: createdUser, error: createError } = await adminClient.auth.admin.createUser({
         email: entry.email,
         password: tempPassword,
         email_confirm: true,
@@ -543,10 +543,10 @@ export async function adminSendWaitlistInvite(id: string) {
         console.log('[invite] new user created:', entry.email)
 
         // Seed 3 free credits for new user
-        const { data: newUser } = await adminClient.auth.admin.getUserByEmail(entry.email)
-        if (newUser?.user?.id) {
-          await supabase.from('meeting_credits').upsert({ user_id: newUser.user.id, balance: 3 })
-          await supabase.from('credit_transactions').insert({ user_id: newUser.user.id, delta: 3, reason: 'signup_bonus' })
+        const newUserId = createdUser?.user?.id
+        if (newUserId) {
+          await supabase.from('meeting_credits').upsert({ user_id: newUserId, balance: 3 })
+          await supabase.from('credit_transactions').insert({ user_id: newUserId, delta: 3, reason: 'signup_bonus' })
           console.log('[invite] seeded 3 credits for:', entry.email)
         }
       }
