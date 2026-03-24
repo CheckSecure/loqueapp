@@ -105,6 +105,7 @@ export default async function AdminPage() {
             </div>
             <AdminBatchButton />
           </div>
+        <AdminPendingBatches />
         </section>
 
         {/* Waitlist */}
