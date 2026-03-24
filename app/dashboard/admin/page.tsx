@@ -6,6 +6,7 @@ import AdminWaitlist from '@/components/AdminWaitlist'
 import AdminStats from '@/components/AdminStats'
 import AdminUsers from '@/components/AdminUsers'
 import AdminBatchButton from '@/components/AdminBatchButton'
+import AdminPendingBatches from '@/components/AdminPendingBatches'
 import { ShieldCheck, Users, BarChart2, Sparkles } from 'lucide-react'
 
 export const metadata = { title: 'Admin | Andrel' }
