@@ -106,7 +106,7 @@ export async function completeOnboarding(formData: FormData) {
     looking_for: (formData.get('looking_for') as string) || null,
     profile_complete: true,
     updated_at: new Date().toISOString(),
-  })
+  }, { onConflict: 'id' })
 
   if (error) {
     console.error('[completeOnboarding] error:', error.message)
