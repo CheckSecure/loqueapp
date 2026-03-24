@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { adminApproveWaitlist, adminDeclineWaitlist, adminSendWaitlistInvite } from '@/app/actions'
-import { CheckCircle, Loader2, Clock, UserCheck, XCircle, Mail } from 'lucide-react'
+import { CheckCircle, Loader2, Clock, UserCheck, XCircle, Mail, Send } from 'lucide-react'
 
 interface WaitlistEntry {
   id: string
@@ -39,26 +39,24 @@ function formatDate(d: string) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  if (status === 'approved') {
-    return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">
-        <UserCheck className="w-2.5 h-2.5" />
-        Approved
-      </span>
-    )
-  }
-  if (status === 'declined') {
-    return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full">
-        <XCircle className="w-2.5 h-2.5" />
-        Declined
-      </span>
-    )
-  }
+  if (status === 'approved') return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">
+      <UserCheck className="w-2.5 h-2.5" />Approved
+    </span>
+  )
+  if (status === 'invited') return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+      <Send className="w-2.5 h-2.5" />Invited
+    </span>
+  )
+  if (status === 'declined') return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full">
+      <XCircle className="w-2.5 h-2.5" />Declined
+    </span>
+  )
   return (
     <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
-      <Clock className="w-2.5 h-2.5" />
-      Pending
+      <Clock className="w-2.5 h-2.5" />Pending
     </span>
   )
 }
@@ -68,7 +66,6 @@ type ActionType = 'approve' | 'decline' | 'invite'
 export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] }) {
   const [entries, setEntries] = useState(initial)
   const [loading, setLoading] = useState<Record<string, ActionType>>({})
-  const [invited, setInvited] = useState<Record<string, boolean>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const router = useRouter()
 
@@ -89,8 +86,7 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
       } else if (action === 'decline') {
         setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'declined' } : e))
       } else {
-        setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'approved' } : e))
-        setInvited(prev => ({ ...prev, [id]: true }))
+        setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'invited' } : e))
       }
       router.refresh()
     }
@@ -98,6 +94,7 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
 
   const pending  = entries.filter(e => e.status === 'pending')
   const approved = entries.filter(e => e.status === 'approved')
+  const invitedList = entries.filter(e => e.status === 'invited')
   const declined = entries.filter(e => e.status === 'declined')
 
   if (entries.length === 0) {
@@ -128,7 +125,6 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
           <tbody className="divide-y divide-slate-100">
             {rows.map(entry => {
               const busy = loading[entry.id]
-              const actionable = entry.status === 'pending'
               return (
                 <tr key={entry.id} className="hover:bg-[#F5F6FB] transition-colors">
                   <td className="px-5 py-4">
@@ -147,45 +143,38 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
                   <td className="px-5 py-4">
                     <div className="flex flex-col items-end gap-1.5">
                       <div className="flex items-center gap-2 justify-end">
-                        {actionable && (
+                        {entry.status === 'pending' && (
                           <>
-                            <button
-                              disabled={!!busy}
-                              onClick={() => handle(entry.id, 'approve')}
-                              className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#1B2850] hover:bg-[#2E4080] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-                            >
+                            <button disabled={!!busy} onClick={() => handle(entry.id, 'approve')}
+                              className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#1B2850] hover:bg-[#2E4080] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60">
                               {busy === 'approve' ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
                               Approve
                             </button>
-                            <button
-                              disabled={!!busy}
-                              onClick={() => handle(entry.id, 'invite')}
-                              className="flex items-center gap-1.5 text-xs font-semibold text-[#C4922A] border border-[#e8c88a] hover:bg-[#FDF3E3] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-                            >
+                            <button disabled={!!busy} onClick={() => handle(entry.id, 'invite')}
+                              className="flex items-center gap-1.5 text-xs font-semibold text-[#C4922A] border border-[#e8c88a] hover:bg-[#FDF3E3] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60">
                               {busy === 'invite' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
                               Invite
                             </button>
-                            <button
-                              disabled={!!busy}
-                              onClick={() => handle(entry.id, 'decline')}
-                              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-                            >
+                            <button disabled={!!busy} onClick={() => handle(entry.id, 'decline')}
+                              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60">
                               {busy === 'decline' ? <Loader2 className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
                               Decline
                             </button>
                           </>
                         )}
                         {entry.status === 'approved' && (
-                          invited[entry.id]
-                            ? <span className="text-xs text-green-600 font-semibold flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Sent</span>
-                            : <button
-                                disabled={!!busy}
-                                onClick={() => handle(entry.id, 'invite')}
-                                className="flex items-center gap-1.5 text-xs font-semibold text-[#C4922A] border border-[#e8c88a] hover:bg-[#FDF3E3] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-                              >
-                                {busy === 'invite' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
-                                Send invite
-                              </button>
+                          <button disabled={!!busy} onClick={() => handle(entry.id, 'invite')}
+                            className="flex items-center gap-1.5 text-xs font-semibold text-[#C4922A] border border-[#e8c88a] hover:bg-[#FDF3E3] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60">
+                            {busy === 'invite' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                            Send invite
+                          </button>
+                        )}
+                        {entry.status === 'invited' && (
+                          <button disabled={!!busy} onClick={() => handle(entry.id, 'invite')}
+                            className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60">
+                            {busy === 'invite' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                            Resend
+                          </button>
                         )}
                       </div>
                       {errors[entry.id] && (
@@ -206,25 +195,25 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
     <div className="space-y-8">
       {pending.length > 0 && (
         <div>
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-            Pending · {pending.length}
-          </h3>
+          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Pending · {pending.length}</h3>
           <Table rows={pending} />
         </div>
       )}
       {approved.length > 0 && (
         <div>
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-            Approved · {approved.length}
-          </h3>
+          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Approved · {approved.length}</h3>
           <Table rows={approved} />
+        </div>
+      )}
+      {invitedList.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Invited · {invitedList.length}</h3>
+          <Table rows={invitedList} dimmed />
         </div>
       )}
       {declined.length > 0 && (
         <div>
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-            Declined · {declined.length}
-          </h3>
+          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Declined · {declined.length}</h3>
           <Table rows={declined} dimmed />
         </div>
       )}

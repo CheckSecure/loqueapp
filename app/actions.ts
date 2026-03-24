@@ -565,7 +565,7 @@ export async function adminSendWaitlistInvite(id: string) {
     // Mark as approved + invited
     await supabase
       .from('waitlist')
-      .update({ status: 'approved', approved_at: new Date().toISOString() })
+      .update({ status: 'invited', approved_at: new Date().toISOString() })
       .eq('id', id)
 
     revalidatePath('/dashboard/admin')
