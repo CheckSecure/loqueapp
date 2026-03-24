@@ -1,109 +1,114 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { getUncachableStripeClient, getStripeSync } from '@/lib/stripe/stripeClient'
-import { runMigrations } from 'stripe-replit-sync'
-
-let initialized = false
-
-async function ensureStripeInit() {
-  if (initialized) return
-  const databaseUrl = process.env.DATABASE_URL!
-  await runMigrations({ databaseUrl })
-  const sync = await getStripeSync()
-  const domain = process.env.REPLIT_DOMAINS?.split(',')[0]
-  await sync.findOrCreateManagedWebhook(`https://${domain}/api/stripe/webhook`)
-  sync.syncBackfill().catch((e: Error) => console.error('[stripe] backfill error:', e.message))
-  initialized = true
-}
+import { stripe } from '@/lib/stripe'
+import { createAdminClient } from '@/lib/supabase/admin'
+import Stripe from 'stripe'
 
 export async function POST(req: NextRequest) {
-  // Ensure stripe schema and webhook are set up
-  await ensureStripeInit().catch(e => console.error('[stripe] init error:', e.message))
+  const body = await req.text()
+  const sig = req.headers.get('stripe-signature')!
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
 
-  const payload = await req.text()
-  const signature = req.headers.get('stripe-signature') ?? ''
-
+  let event: Stripe.Event
   try {
-    const sync = await getStripeSync()
-    await sync.processWebhook(Buffer.from(payload), signature)
+    event = stripe.webhooks.constructEvent(body, sig, webhookSecret)
   } catch (err: any) {
-    console.error('[stripe/webhook] processWebhook error:', err.message)
-    return NextResponse.json({ error: err.message }, { status: 400 })
+    console.error('[webhook] signature verification failed:', err.message)
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  // Handle business-specific events: update Supabase on subscription changes
+  const adminClient = createAdminClient()
+
   try {
-    const stripe = await getUncachableStripeClient()
-    const supabase = createClient()
+    switch (event.type) {
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const sub = event.data.object as Stripe.Subscription
+        const customerId = sub.customer as string
+        const priceId = sub.items.data[0].price.id
+        const status = sub.status
+        const periodEnd = new Date(sub.current_period_end * 1000).toISOString()
 
-    const event = JSON.parse(payload) as any
-
-    if (['customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(event.type)) {
-      const sub = event.data.object
-      const customerId = sub.customer as string
-
-      // Find profile by stripe_customer_id
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('stripe_customer_id', customerId)
-        .single()
-
-      if (profile) {
-        const isActive = sub.status === 'active' || sub.status === 'trialing'
-        // Determine tier from price metadata
+        // Determine tier from price ID
         let tier = 'free'
-        const priceId = sub.items?.data?.[0]?.price?.id as string | undefined
-        if (priceId) {
-          const price = await stripe.prices.retrieve(priceId, { expand: ['product'] })
-          const productName = ((price.product as any)?.name ?? '').toLowerCase()
-          if (productName.includes('executive')) tier = 'executive'
-          else if (productName.includes('professional') || productName.includes('pro')) tier = 'professional'
+        if (priceId === process.env.STRIPE_PROFESSIONAL_MONTHLY_PRICE_ID ||
+            priceId === process.env.STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID) {
+          tier = 'professional'
+        } else if (priceId === process.env.STRIPE_EXECUTIVE_MONTHLY_PRICE_ID ||
+                   priceId === process.env.STRIPE_EXECUTIVE_ANNUAL_PRICE_ID) {
+          tier = 'executive'
         }
 
-        await supabase
+        // Only set active tier if subscription is active
+        const activeTier = ['active', 'trialing'].includes(status) ? tier : 'free'
+
+        const { data: profile } = await adminClient
           .from('profiles')
-          .update({
-            subscription_tier: isActive ? tier : 'free',
-            stripe_subscription_id: isActive ? sub.id : null,
-          })
-          .eq('id', profile.id)
-      }
-    }
+          .select('id, subscription_tier, meeting_credits(balance)')
+          .eq('stripe_customer_id', customerId)
+          .single()
 
-    // Handle one-time payment (credit packs): checkout.session.completed
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object
-      if (session.mode === 'payment' && session.payment_status === 'paid') {
-        const userId = session.metadata?.supabase_user_id
-        const creditsToAdd = parseInt(session.metadata?.credits ?? '0', 10)
+        if (profile) {
+          await adminClient.from('profiles').update({
+            subscription_tier: activeTier,
+            stripe_subscription_id: sub.id,
+            subscription_status: status,
+            current_period_end: periodEnd,
+          }).eq('stripe_customer_id', customerId)
 
-        if (userId && creditsToAdd > 0) {
-          // Fetch current balance
-          const { data: creditRow } = await supabase
-            .from('meeting_credits')
-            .select('balance')
-            .eq('user_id', userId)
-            .single()
+          // Top up credits if upgrading
+          const creditMap: Record<string, number> = { free: 3, professional: 15, executive: 30 }
+          const newCredits = creditMap[activeTier] ?? 3
+          await adminClient.from('meeting_credits')
+            .upsert({ user_id: profile.id, balance: newCredits }, { onConflict: 'user_id' })
 
-          const newBalance = (creditRow?.balance ?? 0) + creditsToAdd
-
-          await supabase
-            .from('meeting_credits')
-            .upsert({ user_id: userId, balance: newBalance }, { onConflict: 'user_id' })
-
-          await supabase.from('credit_transactions').insert({
-            user_id: userId,
-            amount: creditsToAdd,
-            description: `Credit pack purchase (${creditsToAdd} credits)`,
-          })
+          console.log(`[webhook] updated ${customerId} to tier: ${activeTier}`)
         }
+        break
+      }
+
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object as Stripe.Subscription
+        const customerId = sub.customer as string
+
+        await adminClient.from('profiles').update({
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+          stripe_subscription_id: null,
+          current_period_end: null,
+        }).eq('stripe_customer_id', customerId)
+
+        // Reset credits to free tier
+        const { data: profile } = await adminClient
+          .from('profiles')
+          .select('id')
+          .eq('stripe_customer_id', customerId)
+          .single()
+
+        if (profile) {
+          await adminClient.from('meeting_credits')
+            .upsert({ user_id: profile.id, balance: 3 }, { onConflict: 'user_id' })
+        }
+
+        console.log(`[webhook] subscription deleted for ${customerId}, downgraded to free`)
+        break
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice
+        const customerId = invoice.customer as string
+        await adminClient.from('profiles').update({
+          subscription_status: 'past_due',
+        }).eq('stripe_customer_id', customerId)
+        console.log(`[webhook] payment failed for ${customerId}`)
+        break
       }
     }
   } catch (err: any) {
-    // Log but don't fail — the webhook was already processed above
-    console.error('[stripe/webhook] business logic error:', err.message)
+    console.error('[webhook] handler error:', err.message)
+    return NextResponse.json({ error: 'Handler error' }, { status: 500 })
   }
 
   return NextResponse.json({ received: true })
 }
+
+export const config = { api: { bodyParser: false } }
