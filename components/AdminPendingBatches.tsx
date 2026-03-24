@@ -26,7 +26,7 @@ export default async function AdminPendingBatches() {
 
       const { data: profileRows } = await supabase
         .from('profiles')
-        .select('id, full_name, title, company, role_type')
+        .select('id, full_name, title, company, role_type, bio, email')
         .in('id', allIds)
 
       const profileMap: Record<string, any> = {}
