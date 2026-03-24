@@ -11,7 +11,7 @@ const FAQ = [
     items: [
       {
         q: 'What is Andrel?',
-        a: 'Andrel is an invite-only professional network built on trust and warm introductions. Every member is vetted, and every connection is intentional — no cold outreach, no noise.',
+        a: 'Andrel is an invite-only professional network built on trust and intentional introductions. Every member is vetted, every connection is curated — designed for professionals who value depth over volume.',
       },
       {
         q: 'How do I get invited?',
@@ -19,7 +19,7 @@ const FAQ = [
       },
       {
         q: 'How does the onboarding work?',
-        a: 'Once invited, you\'ll receive an email with a temporary password. You\'ll then set a permanent password, complete your profile, and tell us who you\'re looking to meet. The whole process takes about 3 minutes.',
+        a: 'Once invited, you\'ll receive an email with a temporary password. You\'ll set a permanent password, complete your profile, and tell us who you\'re looking to meet. The whole process takes about three minutes.',
       },
     ],
   },
@@ -28,15 +28,23 @@ const FAQ = [
     items: [
       {
         q: 'How does the introduction system work?',
-        a: 'Each week, our system surfaces a curated set of members who match your goals and background. You can request an introduction to anyone in your batch. If they accept, you\'re connected and can start a conversation.',
+        a: 'Each week, Andrel surfaces a curated set of members aligned with your goals and background. You can express interest in anyone in your batch. When there is strong mutual alignment, we facilitate the introduction — connecting you through a shared conversation thread.',
       },
       {
         q: 'How are matches chosen?',
-        a: 'Matches are based on your role, industry, stated goals, and who you\'re looking to meet. We prioritize quality over quantity — you\'ll see a small, thoughtful set of introductions each week rather than an overwhelming list.',
+        a: 'Matches are based on your role, industry, stated goals, and who you\'re looking to meet. The number of introductions you receive each week is based on your membership level. We prioritize quality over volume — every introduction is intentional.',
       },
       {
-        q: 'What happens after I accept an introduction?',
-        a: 'Once both parties accept, a conversation thread opens in your Messages. From there it\'s up to you — schedule a call, exchange ideas, or explore a collaboration.',
+        q: 'Can I request a specific introduction?',
+        a: 'Andrel does not support direct connection requests. Instead, you can express interest in members you\'re introduced to, and we factor that signal into future curation. This keeps the experience high-trust and free from the noise of unsolicited outreach.',
+      },
+      {
+        q: 'What happens after an introduction is facilitated?',
+        a: 'Once an introduction is made, a conversation thread opens in your Messages. From there, it\'s up to you — schedule a call, explore a collaboration, or simply exchange ideas.',
+      },
+      {
+        q: 'What if I\'m not interested in someone?',
+        a: 'You can pass on any introduction. Profiles you pass on will not reappear in your batch immediately, and you have the option to mark someone as "Do not show again" if you prefer never to see them resurface.',
       },
     ],
   },
@@ -45,15 +53,15 @@ const FAQ = [
     items: [
       {
         q: 'What are credits?',
-        a: 'Credits are used to request introductions. Each introduction request costs 1 credit. New members receive 3 free credits, and your balance is topped back up to 3 at the start of each month.',
+        a: 'Credits are used when an introduction is successfully facilitated — not when you express interest. You are only charged when a mutual connection is made. New members receive 3 free credits to start.',
       },
       {
         q: 'How do I get more credits?',
-        a: 'Your credits refill to 3 automatically on the 1st of each month. You can also purchase additional credits from the Billing section of your dashboard.',
+        a: 'Your credits refill at the start of each month. You can also purchase additional credits from the Billing section of your dashboard.',
       },
       {
         q: 'Do unused credits roll over?',
-        a: 'Credits top up to 3 each month — they don\'t stack beyond that. If you have 2 credits remaining, you\'ll be topped up to 3, not 5. This keeps the network active and ensures introductions are used intentionally.',
+        a: 'Credits top up each month rather than stack. This keeps the network active and ensures introductions remain intentional.',
       },
     ],
   },
@@ -62,15 +70,15 @@ const FAQ = [
     items: [
       {
         q: 'Who can see my profile?',
-        a: 'Your profile is only visible to other verified Andrel members. We do not show your information to the public, search engines, or third parties.',
+        a: 'Your profile is only visible to other verified Andrel members through curated introductions. There is no public browsing, no profile view tracking, and no exposure to non-members.',
       },
       {
         q: 'Can I control who I\'m matched with?',
-        a: 'Yes. Your intro preferences — set during onboarding and editable in your profile — guide who you\'re matched with. You also choose whether to accept or decline any introduction request.',
+        a: 'Yes. Your intro preferences — set during onboarding and editable in your profile — guide every match. You also choose whether to express interest in each introduction you receive.',
       },
       {
         q: 'How do I delete my account?',
-        a: 'You can delete your account at any time from Settings → Danger Zone. This permanently removes your profile, matches, and messages. If you change your mind, you\'d need to reapply to join.',
+        a: 'You can delete your account at any time from Settings → Danger Zone. This permanently removes your profile, matches, and messages. If you change your mind, you would need to reapply to join.',
       },
     ],
   },
@@ -104,7 +112,7 @@ export default function FAQPage() {
         <div className="text-center mb-12">
           <Link href="/" className="text-xl font-bold text-[#1B2850] tracking-tight block mb-8">Andrel</Link>
           <h1 className="text-3xl font-bold text-slate-900 mb-3">Frequently Asked Questions</h1>
-          <p className="text-slate-500">Everything you need to know about Andrel.</p>
+          <p className="text-slate-500 max-w-md mx-auto">Andrel is built for professionals who believe the right introduction can change everything.</p>
         </div>
 
         <div className="space-y-6">
