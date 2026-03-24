@@ -159,7 +159,7 @@ export default function AdminBatchReview({ batch }: { batch: Batch }) {
                         <p className="text-sm font-semibold text-slate-900">{s.suggested_profile.full_name}</p>
                         <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Score: {s.match_score}</span>
                         {s.suggested_profile.id && (
-                          
+                          <a
                             href={`/dashboard/profile?preview=${s.suggested_profile.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
