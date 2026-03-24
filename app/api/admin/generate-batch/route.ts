@@ -188,12 +188,13 @@ export async function POST(req: NextRequest) {
 
     for (const recipient of profiles) {
       const batchSize = TIER_BATCH_SIZES[recipient.subscription_tier ?? 'free'] ?? 3
-      const excluded = new Set([
+      const excludedArr = [
         recipient.id,
-        ...(hiddenMap[recipient.id] || []),
-        ...(passMap[recipient.id] || []),
-        ...(recentlyShownMap[recipient.id] || []),
-      ])
+        ...Array.from(hiddenMap[recipient.id] || []),
+        ...Array.from(passMap[recipient.id] || []),
+        ...Array.from(recentlyShownMap[recipient.id] || []),
+      ]
+      const excluded = new Set(excludedArr)
 
       // Score all candidates
       const scored = profiles
