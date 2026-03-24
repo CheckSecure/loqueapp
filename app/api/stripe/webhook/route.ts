@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
         const customerId = sub.customer as string
         const priceId = sub.items.data[0].price.id
         const status = sub.status
-        const periodEnd = new Date(sub.current_period_end * 1000).toISOString()
+        const periodEnd = new Date((sub as any).current_period_end * 1000).toISOString()
 
         // Determine tier from price ID
         let tier = 'free'
