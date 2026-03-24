@@ -43,13 +43,15 @@ export default async function IntroductionsPage() {
   // Look up the profile by auth id OR email to get the correct profile id
   const { data: profileRows } = await supabase
     .from('profiles')
-    .select('id, full_name, email')
+    .select('id, full_name, email, subscription_tier')
     .or(`id.eq.${user.id},email.eq.${user.email}`)
     .limit(1)
 
   const profileRow = profileRows?.[0] ?? null
   const profileId = profileRow?.id ?? user.id
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
+  const userTier = (profileRow as any)?.subscription_tier ?? 'free'
+  const isPaid = userTier !== 'free'
 
   // Pending intro requests where I'm the target
   const { data: pending } = await supabase
@@ -75,7 +77,7 @@ export default async function IntroductionsPage() {
         .from('batch_suggestions')
         .select('id, suggested_id, reason')
         .eq('batch_id', activeBatch.id)
-        .eq('recipient_id', profileId)
+        .eq('recipient_id', profileId).not('status', 'in', '(passed,hidden_permanent)')
     : { data: [], error: null }
 
   const suggestedIds = (batchRows || []).map((r: any) => r.suggested_id).filter(Boolean)
@@ -114,6 +116,23 @@ export default async function IntroductionsPage() {
             Your curated batch of introductions, {firstName}.
           </p>
         </div>
+
+        {/* Tier banner */}
+        {!isPaid && (
+          <div className="mb-6 flex items-center justify-between bg-[#FDF3E3] border border-[#C4922A]/20 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-[#C4922A] uppercase tracking-wide">Free</span>
+              <span className="text-xs text-slate-500">· Upgrade for priority matching and more introductions</span>
+            </div>
+            <a href="/dashboard/billing" className="text-xs font-semibold text-[#1B2850] hover:underline flex-shrink-0">Upgrade →</a>
+          </div>
+        )}
+        {isPaid && (
+          <div className="mb-6 flex items-center gap-2 bg-[#F5F6FB] border border-[#1B2850]/10 rounded-xl px-4 py-3">
+            <span className="text-xs font-semibold text-[#1B2850] uppercase tracking-wide capitalize">{userTier}</span>
+            <span className="text-xs text-slate-400">· Priority matching active</span>
+          </div>
+        )}
 
         {/* Pending requests */}
         {pending && pending.length > 0 && (
@@ -274,7 +293,7 @@ export default async function IntroductionsPage() {
                     </div>
                   )}
 
-                  <RequestIntroButton targetId={s.id} alreadyRequested={requestedIds.has(s.id)} />
+                  <RequestIntroButton targetId={s.id} alreadyRequested={requestedIds.has(s.id)} rowId={row.rowId} userTier={userTier} />
                 </div>
               )
             })}
