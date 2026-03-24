@@ -43,12 +43,13 @@ export default async function AdminPendingBatches() {
             suggestions: [],
           }
         }
-        groups[s.recipient_id].suggestions.push({
+        const sp = profileMap[s.suggested_id] ?? {}
+          groups[s.recipient_id].suggestions.push({
           id: s.id,
           suggested_id: s.suggested_id,
           reason: s.reason,
           match_score: s.match_score,
-          suggested_profile: profileMap[s.suggested_id] ?? {},
+          suggested_profile: { ...sp, id: s.suggested_id },
         })
       }
 
