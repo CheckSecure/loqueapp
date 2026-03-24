@@ -3,8 +3,9 @@
 import { useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { Suspense } from 'react'
 
-export default function AuthCallbackPage() {
+function AuthCallbackInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -13,8 +14,6 @@ export default function AuthCallbackPage() {
       const supabase = createClient()
       const next = searchParams.get('next') ?? '/onboarding'
 
-      // Magic link / invite: Supabase sends access_token + refresh_token as URL hash fragment.
-      // Hash fragments are only readable client-side — server route handlers never see them.
       const hash = window.location.hash
       if (hash) {
         const params = new URLSearchParams(hash.replace('#', ''))
@@ -38,7 +37,6 @@ export default function AuthCallbackPage() {
         }
       }
 
-      // PKCE code exchange (OAuth / Supabase email confirmation)
       const code = searchParams.get('code')
       if (code) {
         console.log('[auth/callback] code param found, exchanging for session')
@@ -52,7 +50,6 @@ export default function AuthCallbackPage() {
         return
       }
 
-      // token_hash flow (email OTP)
       const tokenHash = searchParams.get('token_hash')
       const type = searchParams.get('type') as any
       if (tokenHash && type) {
@@ -78,5 +75,17 @@ export default function AuthCallbackPage() {
     <div className="min-h-screen flex items-center justify-center bg-[#F5F6FB]">
       <p className="text-slate-500 text-sm">Signing you in…</p>
     </div>
+  )
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-[#F5F6FB]">
+        <p className="text-slate-500 text-sm">Signing you in…</p>
+      </div>
+    }>
+      <AuthCallbackInner />
+    </Suspense>
   )
 }
