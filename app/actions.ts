@@ -628,3 +628,15 @@ export async function scheduleMeeting(formData: FormData) {
   revalidatePath('/dashboard/meetings')
   return { success: true }
 }
+
+export async function passOnSuggestion(rowId: string, permanent: boolean) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  await supabase
+    .from('batch_suggestions')
+    .update({ status: permanent ? 'hidden_permanent' : 'passed' })
+    .eq('id', rowId)
+
+  return { success: true }
+}
