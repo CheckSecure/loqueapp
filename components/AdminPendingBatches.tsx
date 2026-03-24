@@ -20,9 +20,9 @@ export default async function AdminPendingBatches() {
         .eq('batch_id', batch.id)
         .eq('status', 'active')
 
-      const recipientIds = [...new Set((suggestions ?? []).map((s: any) => s.recipient_id))]
-      const suggestedIds = [...new Set((suggestions ?? []).map((s: any) => s.suggested_id))]
-      const allIds = [...new Set([...recipientIds, ...suggestedIds])]
+      const recipientIds = Array.from(new Set((suggestions ?? []).map((s: any) => s.recipient_id)))
+      const suggestedIds = Array.from(new Set((suggestions ?? []).map((s: any) => s.suggested_id)))
+      const allIds = Array.from(new Set([...recipientIds, ...suggestedIds]))
 
       const { data: profileRows } = await supabase
         .from('profiles')
