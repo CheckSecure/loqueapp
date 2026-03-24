@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, LogOut, CreditCard, ShieldCheck } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, LogOut, CreditCard, ShieldCheck, Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
@@ -15,6 +15,7 @@ const navItems = [
   { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar },
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
   { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
+  { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ]
 
 interface SidebarProps {
