@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
       .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise')
       .eq('profile_complete', true)
       .eq('is_active', true)
+      .neq('email', 'bizdev91@gmail.com')
 
     if (profilesError || !profiles || profiles.length < 2) {
       return NextResponse.json({ error: 'Not enough profiles to match' }, { status: 400 })
