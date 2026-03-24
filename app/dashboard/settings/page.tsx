@@ -12,8 +12,20 @@ export default function SettingsPage() {
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') return
+    setDeleting(true)
+    const supabase = createClient()
+    await supabase.rpc('delete_user_account')
+    await supabase.auth.signOut()
+    window.location.href = '/'
+  }
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
