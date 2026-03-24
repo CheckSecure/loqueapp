@@ -11,7 +11,7 @@ export async function GET() {
   console.log('[test-email] key prefix (first 8 chars):', apiKey.slice(0, 8))
 
   const payload = {
-    from: 'Andrel <hello@loqueapp.com>',
+    from: 'Andrel <hello@andrel.app>',
     to: ['bizdev91@gmail.com'],
     subject: 'Andrel test email',
     html: '<p>This is a test email from the Andrel invite system. If you see this, Resend is working.</p>',

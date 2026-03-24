@@ -80,7 +80,7 @@ export async function sendInviteEmail(
 </body>
 </html>`
 
-  const FROM = 'Andrel <hello@loqueapp.com>'
+  const FROM = 'Andrel <hello@andrel.app>'
   console.log('[email] sending invite — from:', FROM, 'to:', to)
 
   try {
