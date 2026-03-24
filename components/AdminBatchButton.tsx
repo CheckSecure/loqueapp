@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 
 export default function AdminBatchButton() {
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ batchId?: string; batchNumber?: number; totalSuggestions?: number; usersMatched?: number; error?: string } | null>(null)
+  const [result, setResult] = useState<any>(null)
   const router = useRouter()
 
   const handleGenerate = async () => {
