@@ -26,6 +26,7 @@ export async function updateProfile(formData: FormData) {
 
   const { error } = await supabase.from('profiles').upsert({
     id: user.id,
+    email: user.email,
     full_name: formData.get('full_name') as string || null,
     title: formData.get('title') as string || null,
     company: formData.get('company') as string || null,
@@ -95,6 +96,7 @@ export async function completeOnboarding(formData: FormData) {
 
   const { error } = await supabase.from('profiles').upsert({
     id: user.id,
+    email: user.email,
     full_name: (formData.get('full_name') as string) || null,
     title: (formData.get('title') as string) || null,
     company: (formData.get('company') as string) || null,
