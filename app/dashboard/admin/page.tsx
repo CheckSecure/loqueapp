@@ -6,6 +6,7 @@ import AdminWaitlist from '@/components/AdminWaitlist'
 import AdminStats from '@/components/AdminStats'
 import AdminUsers from '@/components/AdminUsers'
 import AdminBatchButton from '@/components/AdminBatchButton'
+import AdminMutualInterest from '@/components/AdminMutualInterest'
 import AdminPendingBatches from '@/components/AdminPendingBatches'
 import { ShieldCheck, Users, BarChart2, Sparkles } from 'lucide-react'
 
@@ -107,6 +108,35 @@ export default async function AdminPage() {
           </div>
         <AdminPendingBatches />
         </section>
+
+        {/* Mutual Interest */}
+        {(() => {
+          const requests = mutualRequests ?? []
+          const pairs: any[] = []
+          const seen = new Set<string>()
+          for (const r of requests) {
+            const reverse = requests.find((x: any) =>
+              x.requester_id === r.target_user_id && x.target_user_id === r.requester_id
+            )
+            if (reverse) {
+              const key = [r.requester_id, r.target_user_id].sort().join('-')
+              if (!seen.has(key)) {
+                seen.add(key)
+                pairs.push({
+                  user_a_id: r.requester_id,
+                  user_a_name: (r.requester as any)?.full_name ?? 'Unknown',
+                  user_a_role: (r.requester as any)?.role_type ?? '',
+                  user_b_id: r.target_user_id,
+                  user_b_name: (r.target as any)?.full_name ?? 'Unknown',
+                  user_b_role: (r.target as any)?.role_type ?? '',
+                  request_a_id: r.id,
+                  request_b_id: reverse.id,
+                })
+              }
+            }
+          }
+          return <AdminMutualInterest pairs={pairs} />
+        })()}
 
         {/* Waitlist */}
         <section className="mb-12">
