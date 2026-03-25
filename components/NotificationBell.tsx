@@ -132,6 +132,9 @@ export default function NotificationBell() {
             {notifications.map(n => (
               <div
                 key={n.id}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => e.key === 'Enter' && handleNotificationClick(n)}
                 onClick={() => handleNotificationClick(n)}
                 className={cn(
                   'px-4 py-3 transition-colors relative',
