@@ -87,7 +87,7 @@ export default function NotificationBell() {
       .eq('id', n.id)
     setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item))
     setOpen(false)
-    if (n.link) router.push(n.link)
+    if (n.link) window.location.href = n.link
   }
 
   return (
