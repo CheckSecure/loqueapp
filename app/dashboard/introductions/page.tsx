@@ -280,8 +280,8 @@ export default async function IntroductionsPage() {
         {pendingSuggestions.length > 0 && (
           <div>
             <div className="mb-3">
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Pending Introductions</h2>
-              <p className="text-xs text-slate-400 mt-0.5">We facilitate introductions when there's strong mutual alignment.</p>
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Under Review</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Andrel reviews these introductions and facilitates when there is strong alignment.</p>
             </div>
             <div className="grid sm:grid-cols-2 gap-4">
               {pendingSuggestions.map((row: any) => {
@@ -304,8 +304,8 @@ export default async function IntroductionsPage() {
                     <div className="flex items-center gap-2 bg-[#F5F6FB] border border-slate-100 rounded-lg px-3 py-2.5">
                       <Clock className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                       <div>
-                        <p className="text-xs font-semibold text-slate-600">Interest expressed ✓</p>
-                        <p className="text-xs text-slate-400">Andrel will facilitate this introduction when there's strong mutual alignment.</p>
+                        <p className="text-xs font-semibold text-slate-600">Under review</p>
+                        <p className="text-xs text-slate-400">Andrel is reviewing this introduction. We facilitate based on alignment, not direct requests.</p>
                       </div>
                     </div>
                   </div>

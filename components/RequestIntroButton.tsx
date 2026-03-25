@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { submitIntroRequest, passOnSuggestion } from '@/app/actions'
-import { CheckCircle, Loader2, X, EyeOff } from 'lucide-react'
+import { CheckCircle, Loader2, X, EyeOff, Sparkles } from 'lucide-react'
 import UpgradeModal from './UpgradeModal'
 
 export default function RequestIntroButton({
@@ -16,7 +16,7 @@ export default function RequestIntroButton({
   rowId?: string
   userTier?: string
 }) {
-  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error' | 'passed' | 'hidden'>(
+  const [state, setState] = useState<'idle' | 'loading' | 'signaling' | 'facilitating' | 'done' | 'error' | 'passed' | 'hidden'>(
     alreadyRequested ? 'done' : 'idle'
   )
   const [errorMsg, setErrorMsg] = useState('')
@@ -26,21 +26,30 @@ export default function RequestIntroButton({
 
   const handleRequest = async () => {
     setState('loading')
+    setErrorMsg('')
+
+    // Show "signaling" state briefly
+    await new Promise(r => setTimeout(r, 600))
+    setState('signaling')
+
     const result = await submitIntroRequest(targetId)
+
     if (result.error) {
       setErrorMsg(result.error)
       setState('error')
-    } else {
-      setState('done')
+      return
     }
+
+    // Show "facilitating" state briefly to reinforce Andrel is in control
+    setState('facilitating')
+    await new Promise(r => setTimeout(r, 1800))
+    setState('done')
   }
 
   const handlePass = async (permanent: boolean) => {
     setPassing(true)
     setShowPassMenu(false)
-    if (rowId) {
-      await passOnSuggestion(rowId, permanent)
-    }
+    if (rowId) await passOnSuggestion(rowId, permanent)
     setState(permanent ? 'hidden' : 'passed')
     setPassing(false)
   }
@@ -50,7 +59,29 @@ export default function RequestIntroButton({
   if (state === 'passed') {
     return (
       <div className="mt-1 text-center">
-        <p className="text-xs text-slate-400">Passed — this profile won't appear in your current batch.</p>
+        <p className="text-xs text-slate-400">Noted — this profile won't appear in your current batch.</p>
+      </div>
+    )
+  }
+
+  if (state === 'signaling') {
+    return (
+      <div className="mt-1">
+        <div className="w-full flex items-center justify-center gap-2 text-xs font-medium text-slate-500 bg-slate-50 border border-slate-100 py-2 rounded-lg">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          Recording your interest…
+        </div>
+      </div>
+    )
+  }
+
+  if (state === 'facilitating') {
+    return (
+      <div className="mt-1">
+        <div className="w-full flex items-center justify-center gap-2 text-xs font-medium text-[#C4922A] bg-[#FDF3E3] border border-[#C4922A]/20 py-2 rounded-lg">
+          <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+          Facilitating introduction…
+        </div>
       </div>
     )
   }
@@ -58,12 +89,12 @@ export default function RequestIntroButton({
   if (state === 'done') {
     return (
       <div className="mt-1">
-        <div className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-[#C4922A] bg-[#FDF3E3] border border-[#C4922A]/30 py-1.5 rounded-lg">
+        <div className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-[#C4922A] bg-[#FDF3E3] border border-[#C4922A]/30 py-2 rounded-lg">
           <CheckCircle className="w-3.5 h-3.5" />
           Interest expressed ✓
         </div>
-        <p className="text-xs text-slate-400 text-center mt-1.5">
-          Andrel will facilitate this introduction when there is strong mutual alignment.
+        <p className="text-xs text-slate-400 text-center mt-1.5 leading-relaxed">
+          Andrel will facilitate this introduction based on alignment.
         </p>
       </div>
     )
@@ -76,10 +107,10 @@ export default function RequestIntroButton({
         <button
           onClick={handleRequest}
           disabled={state === 'loading' || passing}
-          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-[#1B2850] text-white py-1.5 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60"
+          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-[#1B2850] text-white py-2 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60"
         >
           {state === 'loading' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          {state === 'loading' ? 'Submitting...' : state === 'error' ? 'Try again' : 'Express interest'}
+          {state === 'loading' ? 'Recording…' : state === 'error' ? 'Try again' : 'Express interest'}
         </button>
 
         <div className="relative">
@@ -99,7 +130,7 @@ export default function RequestIntroButton({
                 className="w-full text-left px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-2"
               >
                 <X className="w-3.5 h-3.5 text-slate-400" />
-                Pass for now
+                Not for me
               </button>
               <button
                 onClick={() => handlePass(true)}
