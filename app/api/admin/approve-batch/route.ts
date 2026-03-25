@@ -31,6 +31,14 @@ export async function POST(req: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+    // Notify all members of new batch
+    const { createNotificationsForAllUsers } = await import('@/lib/notifications')
+    await createNotificationsForAllUsers(
+      'new_batch',
+      'Your introductions are ready',
+      'Your curated introductions for this week are now available.',
+      '/dashboard/introductions'
+    )
     return NextResponse.json({ success: true })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

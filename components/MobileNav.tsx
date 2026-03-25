@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Users, MessageSquare, Calendar, UserCircle, MoreHorizontal, CreditCard, Settings, ShieldCheck, LogOut, X } from 'lucide-react'
+import NotificationBell from './NotificationBell'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -91,7 +92,10 @@ export default function MobileNav({ credits, unreadCount = 0 }: { credits: numbe
       {/* Top header */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-200 px-4 h-14 flex items-center justify-between">
         <span className="text-lg font-bold text-[#1B2850] tracking-tight">Andrel</span>
-        <CreditsChip credits={credits} />
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <CreditsChip credits={credits} />
+        </div>
       </div>
 
       {/* More slide-up menu */}

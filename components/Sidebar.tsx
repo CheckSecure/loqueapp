@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Users, MessageSquare, Calendar, UserCircle, LogOut, CreditCard, ShieldCheck, Settings } from 'lucide-react'
+import NotificationBell from './NotificationBell'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
@@ -156,6 +157,7 @@ export default function Sidebar({
       </nav>
       <div className="px-3 pb-4 border-t border-slate-200 pt-4 space-y-3">
         <div className="px-2 flex items-center justify-between">
+          <NotificationBell />
           <CreditsChip credits={credits} />
           <Link
             href="/dashboard/billing"

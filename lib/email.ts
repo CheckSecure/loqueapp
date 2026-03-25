@@ -120,3 +120,103 @@ export async function sendInviteEmail(
     return { success: false, error: err.message }
   }
 }
+
+export async function sendNewBatchEmail(email: string, firstName: string) {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_API_KEY}` },
+    body: JSON.stringify({
+      from: 'Andrel <hello@andrel.app>',
+      to: email,
+      subject: 'Your new introductions are ready',
+      html: `
+        <div style="font-family:Georgia,serif;max-width:560px;margin:0 auto;padding:40px 24px;background:#F5F6FB;">
+          <div style="background:white;border-radius:16px;padding:40px;border:1px solid #e8eaf0;">
+            <p style="font-size:22px;font-weight:bold;color:#1B2850;margin:0 0 8px;">Andrel</p>
+            <p style="color:#C4922A;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin:0 0 32px;">YOUR INTRODUCTIONS ARE READY</p>
+            <h2 style="font-size:20px;font-weight:bold;color:#1B2850;margin:0 0 12px;">Hello, ${firstName}.</h2>
+            <p style="color:#64748b;font-size:15px;line-height:1.6;margin:0 0 24px;">Your curated introductions for this week are now available. Each introduction has been selected based on your profile, goals, and alignment — not volume.</p>
+            <a href="https://andrel.app/dashboard/introductions" style="display:inline-block;background:#1B2850;color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">View your introductions →</a>
+            <p style="color:#94a3b8;font-size:12px;margin:32px 0 0;">© 2026 Andrel. You received this because you are a member.</p>
+          </div>
+        </div>
+      `,
+    }),
+  })
+  return res.ok
+}
+
+export async function sendIntroAcceptedEmail(email: string, firstName: string, matchName: string) {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_API_KEY}` },
+    body: JSON.stringify({
+      from: 'Andrel <hello@andrel.app>',
+      to: email,
+      subject: `Your introduction with ${matchName} has been made`,
+      html: `
+        <div style="font-family:Georgia,serif;max-width:560px;margin:0 auto;padding:40px 24px;background:#F5F6FB;">
+          <div style="background:white;border-radius:16px;padding:40px;border:1px solid #e8eaf0;">
+            <p style="font-size:22px;font-weight:bold;color:#1B2850;margin:0 0 8px;">Andrel</p>
+            <p style="color:#C4922A;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin:0 0 32px;">INTRODUCTION MADE</p>
+            <h2 style="font-size:20px;font-weight:bold;color:#1B2850;margin:0 0 12px;">Hello, ${firstName}.</h2>
+            <p style="color:#64748b;font-size:15px;line-height:1.6;margin:0 0 24px;">Your introduction with <strong>${matchName}</strong> has been facilitated. A conversation thread is now open in your Messages.</p>
+            <a href="https://andrel.app/dashboard/messages" style="display:inline-block;background:#1B2850;color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">Open conversation →</a>
+            <p style="color:#94a3b8;font-size:12px;margin:32px 0 0;">© 2026 Andrel. You received this because you are a member.</p>
+          </div>
+        </div>
+      `,
+    }),
+  })
+  return res.ok
+}
+
+export async function sendNewMessageEmail(email: string, firstName: string, senderName: string) {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_API_KEY}` },
+    body: JSON.stringify({
+      from: 'Andrel <hello@andrel.app>',
+      to: email,
+      subject: `New message from ${senderName}`,
+      html: `
+        <div style="font-family:Georgia,serif;max-width:560px;margin:0 auto;padding:40px 24px;background:#F5F6FB;">
+          <div style="background:white;border-radius:16px;padding:40px;border:1px solid #e8eaf0;">
+            <p style="font-size:22px;font-weight:bold;color:#1B2850;margin:0 0 8px;">Andrel</p>
+            <p style="color:#C4922A;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin:0 0 32px;">NEW MESSAGE</p>
+            <h2 style="font-size:20px;font-weight:bold;color:#1B2850;margin:0 0 12px;">Hello, ${firstName}.</h2>
+            <p style="color:#64748b;font-size:15px;line-height:1.6;margin:0 0 24px;"><strong>${senderName}</strong> sent you a message on Andrel.</p>
+            <a href="https://andrel.app/dashboard/messages" style="display:inline-block;background:#1B2850;color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">Read message →</a>
+            <p style="color:#94a3b8;font-size:12px;margin:32px 0 0;">© 2026 Andrel. You received this because you are a member.</p>
+          </div>
+        </div>
+      `,
+    }),
+  })
+  return res.ok
+}
+
+export async function sendMeetingScheduledEmail(email: string, firstName: string, withName: string) {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_API_KEY}` },
+    body: JSON.stringify({
+      from: 'Andrel <hello@andrel.app>',
+      to: email,
+      subject: `Meeting scheduled with ${withName}`,
+      html: `
+        <div style="font-family:Georgia,serif;max-width:560px;margin:0 auto;padding:40px 24px;background:#F5F6FB;">
+          <div style="background:white;border-radius:16px;padding:40px;border:1px solid #e8eaf0;">
+            <p style="font-size:22px;font-weight:bold;color:#1B2850;margin:0 0 8px;">Andrel</p>
+            <p style="color:#C4922A;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin:0 0 32px;">MEETING SCHEDULED</p>
+            <h2 style="font-size:20px;font-weight:bold;color:#1B2850;margin:0 0 12px;">Hello, ${firstName}.</h2>
+            <p style="color:#64748b;font-size:15px;line-height:1.6;margin:0 0 24px;">Your meeting with <strong>${withName}</strong> has been scheduled. Check your calendar for details.</p>
+            <a href="https://andrel.app/dashboard/meetings" style="display:inline-block;background:#1B2850;color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">View meeting →</a>
+            <p style="color:#94a3b8;font-size:12px;margin:32px 0 0;">© 2026 Andrel. You received this because you are a member.</p>
+          </div>
+        </div>
+      `,
+    }),
+  })
+  return res.ok
+}
