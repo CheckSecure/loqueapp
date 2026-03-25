@@ -41,6 +41,32 @@ export default async function AdminPage() {
     supabase.from('meeting_credits').select('user_id, balance'),
   ])
 
+  // Compute mutual interest pairs
+  const allRequests = mutualRequests ?? []
+  const mutualPairs: any[] = []
+  const seenPairs = new Set<string>()
+  for (const r of allRequests) {
+    const reverse = allRequests.find((x: any) =>
+      x.requester_id === r.target_user_id && x.target_user_id === r.requester_id
+    )
+    if (reverse) {
+      const key = [r.requester_id, r.target_user_id].sort().join('-')
+      if (!seenPairs.has(key)) {
+        seenPairs.add(key)
+        mutualPairs.push({
+          user_a_id: r.requester_id,
+          user_a_name: (r.requester as any)?.full_name ?? 'Unknown',
+          user_a_role: (r.requester as any)?.role_type ?? '',
+          user_b_id: r.target_user_id,
+          user_b_name: (r.target as any)?.full_name ?? 'Unknown',
+          user_b_role: (r.target as any)?.role_type ?? '',
+          request_a_id: r.id,
+          request_b_id: reverse.id,
+        })
+      }
+    }
+  }
+
   const creditMap: Record<string, number> = {}
   for (const row of creditRows ?? []) creditMap[row.user_id] = row.balance
 
@@ -112,33 +138,7 @@ export default async function AdminPage() {
         </section>
 
         {/* Mutual Interest */}
-        {(() => {
-          const requests = mutualRequests ?? []
-          const pairs: any[] = []
-          const seen = new Set<string>()
-          for (const r of requests) {
-            const reverse = requests.find((x: any) =>
-              x.requester_id === r.target_user_id && x.target_user_id === r.requester_id
-            )
-            if (reverse) {
-              const key = [r.requester_id, r.target_user_id].sort().join('-')
-              if (!seen.has(key)) {
-                seen.add(key)
-                pairs.push({
-                  user_a_id: r.requester_id,
-                  user_a_name: (r.requester as any)?.full_name ?? 'Unknown',
-                  user_a_role: (r.requester as any)?.role_type ?? '',
-                  user_b_id: r.target_user_id,
-                  user_b_name: (r.target as any)?.full_name ?? 'Unknown',
-                  user_b_role: (r.target as any)?.role_type ?? '',
-                  request_a_id: r.id,
-                  request_b_id: reverse.id,
-                })
-              }
-            }
-          }
-          return <AdminMutualInterest pairs={pairs} />
-        })()}
+        <AdminMutualInterest pairs={mutualPairs} />
 
         {/* Waitlist */}
         <section className="mb-12">
