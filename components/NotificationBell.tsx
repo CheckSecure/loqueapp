@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Bell, X, Check, CheckCheck } from 'lucide-react'
+import { Bell, X, CheckCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 interface Notification {
@@ -30,12 +31,11 @@ export default function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const ref = useRef<HTMLDivElement>(null)
+  const router = useRouter()
 
   const unreadCount = notifications.filter(n => !n.read_at).length
 
-  useEffect(() => {
-    loadNotifications()
-  }, [])
+  useEffect(() => { loadNotifications() }, [])
 
   useEffect(() => {
     if (!open) return
@@ -46,16 +46,11 @@ export default function NotificationBell() {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  // Real-time subscription
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
       .channel('notifications')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'notifications',
-      }, payload => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, payload => {
         setNotifications(prev => [payload.new as Notification, ...prev])
       })
       .subscribe()
@@ -84,24 +79,26 @@ export default function NotificationBell() {
     setNotifications(prev => prev.map(n => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })))
   }
 
-  const markRead = async (id: string) => {
+  const handleNotificationClick = async (n: Notification) => {
     const supabase = createClient()
     await supabase
       .from('notifications')
       .update({ read_at: new Date().toISOString() })
-      .eq('id', id)
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read_at: new Date().toISOString() } : n))
+      .eq('id', n.id)
+    setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item))
+    setOpen(false)
+    if (n.link) router.push(n.link)
   }
 
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => { setOpen(v => !v); if (!open) markAllRead() }}
-        className="relative p-2 text-slate-400 hover:text-slate-600 transition-colors"
+        onClick={() => { setOpen(v => !v) }}
+        className="relative p-1.5 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
       >
-        <Bell className="w-5 h-5" />
+        <Bell className="w-4 h-4" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+          <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -125,9 +122,7 @@ export default function NotificationBell() {
           </div>
 
           <div className="max-h-96 overflow-y-auto divide-y divide-slate-50">
-            {loading && (
-              <div className="px-4 py-8 text-center text-xs text-slate-400">Loading...</div>
-            )}
+            {loading && <div className="px-4 py-8 text-center text-xs text-slate-400">Loading...</div>}
             {!loading && notifications.length === 0 && (
               <div className="px-4 py-8 text-center">
                 <Bell className="w-6 h-6 text-slate-200 mx-auto mb-2" />
@@ -137,24 +132,23 @@ export default function NotificationBell() {
             {notifications.map(n => (
               <div
                 key={n.id}
-                className={cn('px-4 py-3 hover:bg-slate-50 transition-colors', !n.read_at && 'bg-[#FDF9F3]')}
+                onClick={() => handleNotificationClick(n)}
+                className={cn(
+                  'px-4 py-3 transition-colors relative',
+                  n.link ? 'cursor-pointer hover:bg-slate-50' : '',
+                  !n.read_at ? 'bg-[#FDF9F3]' : ''
+                )}
               >
-                {n.link ? (
-                  <Link href={n.link} onClick={() => { markRead(n.id); setOpen(false) }}>
-                    <p className="text-xs font-semibold text-slate-900 mb-0.5">{n.title}</p>
-                    <p className="text-xs text-slate-500 leading-relaxed">{n.body}</p>
-                    <p className="text-[10px] text-slate-400 mt-1">{timeAgo(n.created_at)}</p>
-                  </Link>
-                ) : (
-                  <div onClick={() => markRead(n.id)}>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-slate-900 mb-0.5">{n.title}</p>
                     <p className="text-xs text-slate-500 leading-relaxed">{n.body}</p>
                     <p className="text-[10px] text-slate-400 mt-1">{timeAgo(n.created_at)}</p>
                   </div>
-                )}
-                {!n.read_at && (
-                  <div className="w-1.5 h-1.5 bg-[#C4922A] rounded-full absolute right-4 top-1/2 -translate-y-1/2" />
-                )}
+                  {!n.read_at && (
+                    <div className="w-1.5 h-1.5 bg-[#C4922A] rounded-full flex-shrink-0 mt-1.5" />
+                  )}
+                </div>
               </div>
             ))}
           </div>
