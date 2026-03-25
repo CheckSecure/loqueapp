@@ -119,8 +119,9 @@ export default function Sidebar({
 
   return (
     <aside className="hidden md:flex flex-col w-60 bg-white border-r border-slate-200 shrink-0">
-      <div className="px-5 py-6 border-b border-slate-200">
+      <div className="px-5 py-6 border-b border-slate-200 flex items-center justify-between">
         <span className="text-lg font-bold text-[#1B2850] tracking-tight">Andrel</span>
+        <NotificationBell />
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map(({ href, label, icon: Icon }) => {
@@ -157,7 +158,6 @@ export default function Sidebar({
       </nav>
       <div className="px-3 pb-4 border-t border-slate-200 pt-4 space-y-3">
         <div className="px-2 flex items-center justify-between">
-          <NotificationBell />
           <CreditsChip credits={credits} />
           <Link
             href="/dashboard/billing"
