@@ -35,7 +35,7 @@ export default function AdminMutualInterest({ pairs }: { pairs: MutualPair[] }) 
       })
       const data = await res.json()
       if (data.success) {
-        setFacilitated(prev => new Set([...prev, key]))
+        setFacilitated(prev => new Set(Array.from(prev).concat(key)))
         router.refresh()
       }
     } catch (err) {
