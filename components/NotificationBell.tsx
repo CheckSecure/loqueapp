@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react'
 import { Bell, X, Check, CheckCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import Link from 'next/link'
 
 interface Notification {
   id: string
