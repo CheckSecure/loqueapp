@@ -2,37 +2,40 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Loader2, Check, Zap } from 'lucide-react'
+import { Loader2, Check, Zap, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 
-const PLANS = [
+const TIERS = [
   {
     tier: 'free',
     name: 'Free',
+    tagline: 'Explore the network',
+    description: 'Begin your Andrel journey with a curated set of introductions each week.',
     monthlyPrice: 0,
     annualPrice: 0,
-    credits: 3,
-    features: ['Curated introductions each week', '3 credits/month', 'Standard matching'],
+    highlight: false,
   },
   {
     tier: 'professional',
     name: 'Professional',
+    tagline: 'Build high-value relationships',
+    description: 'Priority matching with higher-quality members. More frequent introductions and greater visibility in the network.',
     monthlyPrice: 49,
     annualPrice: 470,
-    credits: 15,
-    features: ['Expanded introductions each week', '15 credits/month', 'Priority matching', 'Express interest in members'],
+    highlight: true,
     monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_PROFESSIONAL_MONTHLY_PRICE_ID,
     annualPriceId: process.env.NEXT_PUBLIC_STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID,
   },
   {
     tier: 'executive',
     name: 'Executive',
+    tagline: 'Access the highest-value connections',
+    description: 'Concierge-level curation. Top placement in the matching system. The most meaningful introductions, more often.',
     monthlyPrice: 99,
     annualPrice: 990,
-    credits: 30,
-    features: ['Maximum introductions each week', '30 credits/month', 'Highest priority matching', 'Concierge curation'],
+    highlight: false,
     monthlyPriceId: process.env.NEXT_PUBLIC_STRIPE_EXECUTIVE_MONTHLY_PRICE_ID,
     annualPriceId: process.env.NEXT_PUBLIC_STRIPE_EXECUTIVE_ANNUAL_PRICE_ID,
   },
@@ -43,6 +46,12 @@ const CREDIT_PACKS = [
   { name: '10 Credits', credits: 10, amount: 45, priceId: process.env.NEXT_PUBLIC_STRIPE_CREDIT_10_PRICE_ID },
   { name: '25 Credits', credits: 25, amount: 99, priceId: process.env.NEXT_PUBLIC_STRIPE_CREDIT_25_PRICE_ID },
 ]
+
+const TIER_VALUE: Record<string, string> = {
+  free: 'You have access to a curated set of introductions each week based on your profile and goals.',
+  professional: 'You receive priority matching with higher-quality members and increased visibility in the network.',
+  executive: 'You have top placement in the matching system with concierge-level curation and the highest-value introductions.',
+}
 
 function BillingInner() {
   const searchParams = useSearchParams()
@@ -61,12 +70,10 @@ function BillingInner() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-
       const [{ data: profile }, { data: creditRow }] = await Promise.all([
         supabase.from('profiles').select('subscription_tier, current_period_end').eq('id', user.id).single(),
         supabase.from('meeting_credits').select('balance').eq('user_id', user.id).single(),
       ])
-
       setCurrentTier(profile?.subscription_tier ?? 'free')
       setCredits(creditRow?.balance ?? 0)
       if (profile?.current_period_end) {
@@ -101,15 +108,15 @@ function BillingInner() {
   )
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-10 space-y-10">
+    <div className="max-w-2xl mx-auto px-6 py-10 space-y-10">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Billing</h1>
-        <p className="text-slate-500 text-sm mt-1">Manage your membership and credits.</p>
+        <h1 className="text-2xl font-bold text-slate-900">Membership</h1>
+        <p className="text-slate-500 text-sm mt-1">Your membership determines the quality, priority, and frequency of your introductions.</p>
       </div>
 
       {success && (
         <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 text-sm font-medium px-4 py-3 rounded-lg">
-          <Check className="w-4 h-4" /> Payment successful — your membership has been updated.
+          <Check className="w-4 h-4" /> Your membership has been updated.
         </div>
       )}
       {cancelled && (
@@ -118,29 +125,34 @@ function BillingInner() {
         </div>
       )}
 
-      {/* Current plan */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-        <div className="flex items-center justify-between mb-4">
+      {/* Current membership */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-900">Current Membership</h2>
-          {currentTier !== 'free' && periodEnd && (
-            <span className="text-xs text-slate-400">Renews {periodEnd}</span>
-          )}
         </div>
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-[#1B2850] flex items-center justify-center">
-            <Zap className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-slate-900 capitalize">{currentTier}</p>
-            <p className="text-xs text-slate-500">{credits} credits remaining</p>
+        <div className="px-6 py-5">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-xl bg-[#1B2850] flex items-center justify-center flex-shrink-0">
+              <Zap className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-sm font-bold text-slate-900 capitalize">{currentTier}</p>
+                {currentTier !== 'free' && periodEnd && (
+                  <span className="text-xs text-slate-400">· Renews {periodEnd}</span>
+                )}
+              </div>
+              <p className="text-sm text-slate-500 leading-relaxed">{TIER_VALUE[currentTier]}</p>
+              <p className="text-xs text-slate-400 mt-2">{credits} introduction credit{credits !== 1 ? 's' : ''} remaining</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Plan selector */}
+      {/* Tier selector */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-slate-900">Membership Plans</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Upgrade Membership</h2>
           <div className="flex items-center gap-2">
             <span className={cn('text-xs font-medium', !annual ? 'text-slate-900' : 'text-slate-400')}>Monthly</span>
             <button onClick={() => setAnnual(v => !v)} className={cn('relative w-9 h-5 rounded-full transition-colors', annual ? 'bg-[#1B2850]' : 'bg-slate-200')}>
@@ -151,37 +163,48 @@ function BillingInner() {
         </div>
 
         <div className="space-y-3">
-          {PLANS.map((plan) => {
+          {TIERS.map((plan) => {
             const isCurrent = currentTier === plan.tier
             const priceId = annual ? plan.annualPriceId : plan.monthlyPriceId
             return (
-              <div key={plan.tier} className={cn('bg-white rounded-xl border p-5 flex items-center justify-between gap-4', isCurrent ? 'border-[#1B2850] ring-1 ring-[#1B2850]' : 'border-slate-100')}>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-sm font-bold text-slate-900">{plan.name}</p>
-                    {isCurrent && <span className="text-xs bg-[#1B2850] text-white px-2 py-0.5 rounded-full">Current</span>}
-                  </div>
-                  <p className="text-xs text-slate-500">{plan.credits} credits/month · {plan.features[2]}</p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  {plan.monthlyPrice === 0 ? (
-                    <p className="text-sm font-bold text-slate-900">Free</p>
-                  ) : (
-                    <div>
-                      <p className="text-sm font-bold text-slate-900">${annual ? Math.round(plan.annualPrice / 12) : plan.monthlyPrice}<span className="text-xs font-normal text-slate-400">/mo</span></p>
-                      {annual && <p className="text-xs text-[#C4922A]">${plan.annualPrice}/yr</p>}
+              <div key={plan.tier} className={cn(
+                'bg-white rounded-xl border p-5',
+                isCurrent ? 'border-[#1B2850] ring-1 ring-[#1B2850]' : 'border-slate-100',
+                plan.highlight && !isCurrent ? 'shadow-md' : 'shadow-sm'
+              )}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-bold text-slate-900">{plan.name}</p>
+                      {isCurrent && <span className="text-xs bg-[#1B2850] text-white px-2 py-0.5 rounded-full">Current</span>}
+                      {plan.highlight && !isCurrent && <span className="text-xs bg-[#FDF3E3] text-[#C4922A] border border-[#C4922A]/20 px-2 py-0.5 rounded-full">Most popular</span>}
                     </div>
-                  )}
-                  {!isCurrent && plan.monthlyPrice > 0 && priceId && (
-                    <button
-                      onClick={() => handleCheckout(priceId, 'subscription')}
-                      disabled={!!checkingOut}
-                      className="mt-2 px-4 py-1.5 bg-[#1B2850] text-white text-xs font-semibold rounded-lg hover:bg-[#162040] transition-colors disabled:opacity-60 flex items-center gap-1.5"
-                    >
-                      {checkingOut === priceId && <Loader2 className="w-3 h-3 animate-spin" />}
-                      Upgrade
-                    </button>
-                  )}
+                    <p className="text-xs font-semibold text-[#C4922A] mb-1">{plan.tagline}</p>
+                    <p className="text-xs text-slate-500 leading-relaxed">{plan.description}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    {plan.monthlyPrice === 0 ? (
+                      <p className="text-sm font-bold text-slate-900">Free</p>
+                    ) : (
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">
+                          ${annual ? Math.round(plan.annualPrice / 12) : plan.monthlyPrice}
+                          <span className="text-xs font-normal text-slate-400">/mo</span>
+                        </p>
+                        {annual && <p className="text-xs text-[#C4922A]">${plan.annualPrice}/yr</p>}
+                      </div>
+                    )}
+                    {!isCurrent && plan.monthlyPrice > 0 && priceId && (
+                      <button
+                        onClick={() => handleCheckout(priceId, 'subscription')}
+                        disabled={!!checkingOut}
+                        className="mt-2 flex items-center gap-1 px-4 py-1.5 bg-[#1B2850] text-white text-xs font-semibold rounded-lg hover:bg-[#162040] transition-colors disabled:opacity-60"
+                      >
+                        {checkingOut === priceId ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
+                        Upgrade
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )
@@ -189,12 +212,15 @@ function BillingInner() {
         </div>
       </div>
 
-      {/* Credit packs */}
+      {/* Credits */}
       <div>
-        <h2 className="text-sm font-semibold text-slate-900 mb-4">Purchase Credits</h2>
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold text-slate-900">Introduction Credits</h2>
+          <p className="text-xs text-slate-500 mt-1">Credits are used when introductions are successfully facilitated. Use credits to unlock additional introductions when you want more access.</p>
+        </div>
         <div className="grid grid-cols-3 gap-3">
           {CREDIT_PACKS.map((pack) => (
-            <div key={pack.name} className="bg-white rounded-xl border border-slate-100 p-4 text-center">
+            <div key={pack.name} className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-center">
               <p className="text-lg font-bold text-slate-900 mb-0.5">{pack.credits}</p>
               <p className="text-xs text-slate-400 mb-3">credits</p>
               <p className="text-sm font-semibold text-slate-700 mb-3">${pack.amount}</p>
@@ -207,9 +233,7 @@ function BillingInner() {
                   {checkingOut === pack.priceId ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : 'Purchase'}
                 </button>
               ) : (
-                <button disabled className="w-full py-1.5 bg-slate-100 text-slate-400 text-xs font-semibold rounded-lg">
-                  Unavailable
-                </button>
+                <button disabled className="w-full py-1.5 bg-slate-100 text-slate-400 text-xs font-semibold rounded-lg">Unavailable</button>
               )}
             </div>
           ))}

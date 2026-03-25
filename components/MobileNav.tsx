@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, MoreHorizontal, CreditCard, Settings, ShieldCheck, LogOut, X } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, MoreHorizontal, CreditCard, Settings, ShieldCheck, LogOut, X, Network } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 import { cn } from '@/lib/utils'
 import { useState, useRef, useEffect } from 'react'
@@ -12,6 +12,7 @@ const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
 const bottomNavItems = [
   { href: '/dashboard/introductions', label: 'Intros', icon: Users },
+  { href: '/dashboard/network', label: 'Network', icon: Network },
   { href: '/dashboard/messages', label: 'Messages', icon: MessageSquare },
   { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar },
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
