@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { adminGetPendingRequests } from '@/lib/introRequests'
 import AdminIntroRequests from '@/components/AdminIntroRequests'
