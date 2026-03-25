@@ -45,15 +45,15 @@ export default async function AdminPage() {
   // Compute mutual interest pairs
   const allRequests = mutualRequests ?? []
   const mutualPairs: any[] = []
-  const seenPairs = new Set<string>()
+  const seenPairs: string[] = []
   for (const r of allRequests) {
     const reverse = allRequests.find((x: any) =>
       x.requester_id === r.target_user_id && x.target_user_id === r.requester_id
     )
     if (reverse) {
       const key = [r.requester_id, r.target_user_id].sort().join('-')
-      if (!seenPairs.has(key)) {
-        seenPairs.add(key)
+      if (!seenPairs.includes(key)) {
+        seenPairs.push(key)
         mutualPairs.push({
           user_a_id: r.requester_id,
           user_a_name: (r.requester as any)?.full_name ?? 'Unknown',
