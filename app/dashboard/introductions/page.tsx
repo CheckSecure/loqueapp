@@ -108,13 +108,13 @@ export default async function IntroductionsPage() {
   const pendingInBatchIds = newSuggestionIds.filter((id: string) => requestedIds.has(id))
 
   // Also get pending profiles from expressed interest not in current batch
-  const allPendingIds = [...new Set([
+  const allPendingIds = Array.from(new Set([
     ...pendingInBatchIds,
     ...(existingRequests || []).map((r: any) => r.target_user_id),
-  ])]
+  ]))
 
   // Fetch all profiles needed
-  const allNeededIds = [...new Set([...newSuggestionIds, ...allPendingIds])].filter(Boolean)
+  const allNeededIds = Array.from(new Set([...newSuggestionIds, ...allPendingIds])).filter(Boolean)
   let profileMap: Record<string, any> = {}
   if (allNeededIds.length > 0) {
     const { data: profiles } = await supabase
