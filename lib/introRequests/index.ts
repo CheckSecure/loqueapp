@@ -49,6 +49,35 @@ export async function createIntroRequest(
   console.log('[createIntroRequest] insert result — error:', JSON.stringify(error))
 
   if (error) return { error: error.message }
+
+  // Auto-match: check if target has already expressed interest in requester
+  const { data: reverseRequest } = await supabase
+    .from('intro_requests')
+    .select('id')
+    .eq('requester_id', targetUserId)
+    .eq('target_user_id', authUserId)
+    .eq('status', 'pending')
+    .limit(1)
+    .single()
+
+  if (reverseRequest?.id) {
+    console.log('[createIntroRequest] mutual interest detected — auto-matching')
+    // Get the newly created request
+    const { data: newRequest } = await supabase
+      .from('intro_requests')
+      .select('id')
+      .eq('requester_id', authUserId)
+      .eq('target_user_id', targetUserId)
+      .eq('status', 'pending')
+      .limit(1)
+      .single()
+
+    if (newRequest?.id) {
+      // Approve both requests
+      await approveIntroRequest(newRequest.id)
+    }
+  }
+
   return { success: true }
 }
 

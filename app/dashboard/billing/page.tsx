@@ -12,7 +12,7 @@ const TIERS = [
     tier: 'free',
     name: 'Free',
     tagline: 'Explore the network',
-    description: 'Begin your Andrel journey with a curated set of introductions each week.',
+    bullets: ['Curated introductions each week', '3 introduction credits per month', 'Standard matching priority'],
     monthlyPrice: 0,
     annualPrice: 0,
     highlight: false,
@@ -21,7 +21,7 @@ const TIERS = [
     tier: 'professional',
     name: 'Professional',
     tagline: 'Build high-value relationships',
-    description: 'Priority matching with higher-quality members. More frequent introductions and greater visibility in the network.',
+    bullets: ['Priority matching with higher-quality members', 'More frequent introductions each week', 'Increased visibility in the network'],
     monthlyPrice: 49,
     annualPrice: 470,
     highlight: true,
@@ -32,7 +32,7 @@ const TIERS = [
     tier: 'executive',
     name: 'Executive',
     tagline: 'Access the highest-value connections',
-    description: 'Concierge-level curation. Top placement in the matching system. The most meaningful introductions, more often.',
+    bullets: ['Concierge-level curation by the Andrel team', 'Top placement in the matching system', 'The most meaningful introductions, more often'],
     monthlyPrice: 99,
     annualPrice: 990,
     highlight: false,
@@ -179,8 +179,15 @@ function BillingInner() {
                       {isCurrent && <span className="text-xs bg-[#1B2850] text-white px-2 py-0.5 rounded-full">Current</span>}
                       {plan.highlight && !isCurrent && <span className="text-xs bg-[#FDF3E3] text-[#C4922A] border border-[#C4922A]/20 px-2 py-0.5 rounded-full">Most popular</span>}
                     </div>
-                    <p className="text-xs font-semibold text-[#C4922A] mb-1">{plan.tagline}</p>
-                    <p className="text-xs text-slate-500 leading-relaxed">{plan.description}</p>
+                    <p className="text-xs font-semibold text-[#C4922A] mb-2">{plan.tagline}</p>
+                    <ul className="space-y-1">
+                      {(plan as any).bullets?.map((b: string) => (
+                        <li key={b} className="flex items-start gap-1.5 text-xs text-slate-500">
+                          <span className="text-[#C4922A] mt-0.5 flex-shrink-0">✦</span>
+                          {b}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                   <div className="text-right flex-shrink-0">
                     {plan.monthlyPrice === 0 ? (
