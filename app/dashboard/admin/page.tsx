@@ -20,6 +20,7 @@ export default async function AdminPage() {
 
   // Fetch all data in parallel
   const [
+    { data: mutualRequests },
     { data: pending },
     { data: waitlistEntries },
     { count: totalUsers },
@@ -29,6 +30,7 @@ export default async function AdminPage() {
     { data: profileRows },
     { data: creditRows },
   ] = await Promise.all([
+    supabase.from('intro_requests').select('id, requester_id, target_user_id, requester:profiles!requester_id(full_name, role_type), target:profiles!target_user_id(full_name, role_type)').eq('status', 'pending'),
     adminGetPendingRequests(),
     supabase.from('waitlist').select('id, full_name, email, company, role_type, referral_source, status, created_at').order('created_at', { ascending: false }),
     supabase.from('profiles').select('*', { count: 'exact', head: true }),
