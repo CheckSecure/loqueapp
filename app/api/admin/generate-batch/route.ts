@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getUserScore } from '@/lib/scoring'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -46,6 +47,11 @@ function scoreMatch(recipient: any, candidate: any): number {
   // 5. Tier boost — higher tier candidates get priority
   const tierBoost: Record<string, number> = { executive: 15, professional: 8, free: 0 }
   score += tierBoost[candidate.subscription_tier] ?? 0
+
+  // 6. Andrel score boost (passed in via candidate object)
+  if (candidate.andrelScore) {
+    score += Math.round(candidate.andrelScore * 0.1) // up to 10 points from score
+  }
 
   // 6. Seniority diversity bonus (avoid same seniority always)
   if (recipient.seniority !== candidate.seniority) {
