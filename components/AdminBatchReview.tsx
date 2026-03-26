@@ -176,6 +176,14 @@ export default function AdminBatchReview({ batch }: { batch: Batch }) {
             {approving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
             {approving ? 'Approving...' : 'Approve & Go Live'}
           </button>
+          <button
+            onClick={handleDeleteBatch}
+            disabled={deletingBatch}
+            className="flex items-center gap-2 text-sm font-semibold text-red-500 border border-red-200 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60"
+          >
+            {deletingBatch ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            Delete
+          </button>
         </div>
 
         {/* Per-user groups */}
