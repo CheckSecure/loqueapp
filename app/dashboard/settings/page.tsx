@@ -15,9 +15,42 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [newEmail, setNewEmail] = useState('')
+  const [emailPassword, setEmailPassword] = useState('')
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [emailSuccess, setEmailSuccess] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [deleting, setDeleting] = useState(false)
+
+  const handleChangeEmail = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setEmailError(null)
+    setEmailSuccess(false)
+    if (!newEmail || !newEmail.includes('@')) { setEmailError('Please enter a valid email address'); return }
+    if (!emailPassword) { setEmailError('Please enter your current password to confirm'); return }
+    setEmailSaving(true)
+    const supabase = createClient()
+    // Re-authenticate first
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) { setEmailError('Not authenticated'); setEmailSaving(false); return }
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: emailPassword,
+    })
+    if (signInError) { setEmailError('Incorrect password'); setEmailSaving(false); return }
+    // Update email
+    const { error: updateError } = await supabase.auth.updateUser({ email: newEmail })
+    if (updateError) { setEmailError(updateError.message); setEmailSaving(false); return }
+    // Update profiles table
+    await supabase.from('profiles').update({ email: newEmail }).eq('id', user.id)
+    setEmailSuccess(true)
+    setNewEmail('')
+    setEmailPassword('')
+    setEmailSaving(false)
+  }
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,6 +89,56 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
         <p className="text-slate-500 text-sm mt-1">Manage your account and preferences.</p>
       </div>
+
+      {/* Change Email */}
+      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Change Email</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Update the email address associated with your account.</p>
+        </div>
+        <form onSubmit={handleChangeEmail} className="px-6 py-5 space-y-4">
+          {emailSuccess && (
+            <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 px-4 py-3 rounded-lg">
+              <CheckCircle className="w-4 h-4 flex-shrink-0" />
+              Check your new email address for a confirmation link.
+            </div>
+          )}
+          {emailError && (
+            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-100 px-4 py-3 rounded-lg">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              {emailError}
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">New email address</label>
+            <input
+              type="email"
+              value={newEmail}
+              onChange={e => setNewEmail(e.target.value)}
+              placeholder="new@email.com"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Current password (to confirm)</label>
+            <input
+              type="password"
+              value={emailPassword}
+              onChange={e => setEmailPassword(e.target.value)}
+              placeholder="Enter your current password"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={emailSaving}
+            className="flex items-center gap-2 px-5 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040] transition-colors disabled:opacity-60"
+          >
+            {emailSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+            {emailSaving ? 'Updating…' : 'Update email'}
+          </button>
+        </form>
+      </section>
 
       {/* Change Password */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">

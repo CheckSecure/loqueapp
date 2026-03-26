@@ -13,7 +13,6 @@ export async function DELETE(req: NextRequest) {
 
   const { batchId } = await req.json()
   const adminClient = createAdminClient()
-
   await adminClient.from('batch_suggestions').delete().eq('batch_id', batchId)
   await adminClient.from('introduction_batches').delete().eq('id', batchId)
 

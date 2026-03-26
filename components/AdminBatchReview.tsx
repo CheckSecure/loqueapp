@@ -40,6 +40,7 @@ export default function AdminBatchReview({ batch }: { batch: Batch }) {
   const router = useRouter()
   const [groups, setGroups] = useState<RecipientGroup[]>(batch.groups)
   const [approving, setApproving] = useState(false)
+  const [deletingBatch, setDeletingBatch] = useState(false)
   const [approved, setApproved] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [removing, setRemoving] = useState<string | null>(null)
@@ -88,6 +89,22 @@ export default function AdminBatchReview({ batch }: { batch: Batch }) {
       console.error('Failed to approve batch')
     }
     setApproving(false)
+  }
+
+  const handleDeleteBatch = async () => {
+    if (!confirm('Delete this entire batch? This cannot be undone.')) return
+    setDeletingBatch(true)
+    try {
+      await fetch('/api/admin/delete-batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchId: batch.id }),
+      })
+      router.refresh()
+    } catch (err) {
+      console.error('Failed to delete batch')
+    }
+    setDeletingBatch(false)
   }
 
   if (approved) {
