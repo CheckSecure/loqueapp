@@ -138,6 +138,19 @@ export default async function AdminPage() {
         <AdminPendingBatches />
         </section>
 
+        {/* Score computation */}
+        <div className="mb-8 flex items-center justify-between bg-white border border-slate-100 rounded-xl px-5 py-4 shadow-sm">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Andrel Scores</p>
+            <p className="text-xs text-slate-400 mt-0.5">Internal scores updated daily. Influences match quality and exposure.</p>
+          </div>
+          <form action="/api/admin/compute-scores" method="POST">
+            <button type="submit" className="text-xs font-semibold text-[#1B2850] border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
+              Compute now
+            </button>
+          </form>
+        </div>
+
         {/* Mutual Interest */}
         <AdminMutualInterest pairs={mutualPairs} />
 
