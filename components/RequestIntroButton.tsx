@@ -20,6 +20,7 @@ export default function RequestIntroButton({
     alreadyRequested ? 'done' : 'idle'
   )
   const [errorMsg, setErrorMsg] = useState('')
+  const [outOfCredits, setOutOfCredits] = useState(false)
   const [showPassMenu, setShowPassMenu] = useState(false)
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [passing, setPassing] = useState(false)
@@ -35,6 +36,11 @@ export default function RequestIntroButton({
     const result = await submitIntroRequest(targetId)
 
     if (result.error) {
+      if (result.error.toLowerCase().includes('credit')) {
+        setOutOfCredits(true)
+        setState('idle')
+        return
+      }
       setErrorMsg(result.error)
       setState('error')
       return
@@ -52,6 +58,25 @@ export default function RequestIntroButton({
     if (rowId) await passOnSuggestion(rowId, permanent)
     setState(permanent ? 'hidden' : 'passed')
     setPassing(false)
+  }
+
+  if (outOfCredits) {
+    return (
+      <div className="mt-1 space-y-2">
+        <div className="w-full text-center bg-[#FDF3E3] border border-[#C4922A]/20 rounded-lg px-3 py-2.5">
+          <p className="text-xs font-semibold text-slate-700">New introductions are waiting</p>
+          <p className="text-xs text-slate-500 mt-0.5">Unlock your next introductions to connect with this member.</p>
+        </div>
+        <div className="flex gap-2">
+          <a href="/dashboard/billing" className="flex-1 text-center text-xs font-semibold text-white bg-[#1B2850] py-2 rounded-lg hover:bg-[#162040] transition-colors">
+            Get credits
+          </a>
+          <a href="/dashboard/billing" className="flex-1 text-center text-xs font-semibold text-[#C4922A] border border-[#C4922A]/30 py-2 rounded-lg hover:bg-[#FDF3E3] transition-colors">
+            Upgrade
+          </a>
+        </div>
+      </div>
+    )
   }
 
   if (state === 'hidden') return null

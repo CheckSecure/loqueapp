@@ -39,6 +39,29 @@ export async function createIntroRequest(
     return { error: 'You already have a pending request for this person.' }
   }
 
+  // Check active interest limit (max 5 concurrent)
+  const { count: activeCount } = await supabase
+    .from('intro_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('requester_id', authUserId)
+    .eq('status', 'pending')
+
+  if ((activeCount ?? 0) >= 5) {
+    return { error: 'You have reached the maximum of 5 active interests. Withdraw one to express interest in someone new.' }
+  }
+
+  // Soft rate limit: max 5 new interests per 24 hours
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { count: recentCount } = await supabase
+    .from('intro_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('requester_id', authUserId)
+    .gte('created_at', oneDayAgo)
+
+  if ((recentCount ?? 0) >= 5) {
+    return { error: 'You've expressed interest in 5 people today. Check back tomorrow.' }
+  }
+
   const { error } = await supabase.from('intro_requests').insert({
     requester_id: authUserId,
     target_user_id: targetUserId,
