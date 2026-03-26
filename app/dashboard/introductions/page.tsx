@@ -283,48 +283,6 @@ export default async function IntroductionsPage() {
           )}
         </div>
 
-        {/* SECTION 2 — Pending Introductions */}
-        {pendingSuggestions.length > 0 && (
-          <div>
-            <div className="mb-3">
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Under Review</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Andrel reviews these introductions and facilitates when there is strong alignment.</p>
-            </div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              {pendingSuggestions.map((row: any) => {
-                const s = row.profile
-                return (
-                  <div key={s.id} className="bg-white border border-slate-100 rounded-xl p-5 shadow-sm flex flex-col gap-3 opacity-80">
-                    <div className="flex items-start gap-3">
-                      <Avatar profile={s} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 truncate">{s.full_name || 'New member'}</p>
-                        {(s.title || s.company) && (
-                          <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
-                            <Briefcase className="w-3 h-3 flex-shrink-0" />
-                            <span className="truncate">{[s.title, s.company].filter(Boolean).join(' at ')}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {s.bio && <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{s.bio}</p>}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-2 bg-[#F5F6FB] border border-slate-100 rounded-lg px-3 py-2.5 flex-1">
-                        <Clock className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs font-semibold text-slate-600">Under review</p>
-                          <p className="text-xs text-slate-400">Andrel is reviewing this introduction. We facilitate based on alignment, not direct requests.</p>
-                        </div>
-                      </div>
-                      <WithdrawInterestButton targetId={s.id} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   )
 }
