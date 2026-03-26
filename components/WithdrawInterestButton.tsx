@@ -2,13 +2,10 @@
 
 import { useState } from 'react'
 import { X, Loader2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 
 export default function WithdrawInterestButton({ targetId }: { targetId: string }) {
   const [confirming, setConfirming] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [withdrawn, setWithdrawn] = useState(false)
-  const router = useRouter()
 
   const handleWithdraw = async () => {
     setLoading(true)
@@ -20,8 +17,11 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
       })
       const data = await res.json()
       if (data.success) {
-        setWithdrawn(true)
-        router.refresh()
+        // Hide the parent card immediately
+        const card = document.querySelector(`[data-target-id="${targetId}"]`)
+        if (card) {
+          card.classList.add('hidden')
+        }
       }
     } catch (err) {
       console.error('Failed to withdraw interest')
@@ -29,8 +29,6 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
     setLoading(false)
     setConfirming(false)
   }
-
-  if (withdrawn) return null
 
   if (confirming) {
     return (

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { Briefcase, MapPin, Inbox, Star, Sparkles, Clock } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
 import WithdrawInterestButton from '@/components/WithdrawInterestButton'
+import IntroductionCard from '@/components/IntroductionCard'
 import RequestIntroButton from '@/components/RequestIntroButton'
 
 export const metadata = { title: 'Introductions | Andrel' }
@@ -93,7 +94,7 @@ export default async function IntroductionsPage() {
         .not('status', 'in', '(passed,hidden_permanent)')
     : { data: [], error: null }
 
-  // Already expressed interest (across all batches)
+  // Already expressed interest (across all batches) - exclude rescinded
   const { data: existingRequests } = await supabase
     .from('intro_requests')
     .select('target_user_id, created_at')
@@ -103,39 +104,32 @@ export default async function IntroductionsPage() {
 
   const requestedIds = new Set((existingRequests || []).map((r: any) => r.target_user_id))
 
-  // Split suggestions: new (not yet expressed interest) vs pending
-  const newSuggestionIds = (newRows || []).map((r: any) => r.suggested_id).filter(Boolean)
-  const newIds = newSuggestionIds.filter((id: string) => !requestedIds.has(id))
-  const pendingInBatchIds = newSuggestionIds.filter((id: string) => requestedIds.has(id))
-
-  // Also get pending profiles from expressed interest not in current batch
-  const allPendingIds = Array.from(new Set([
-    ...pendingInBatchIds,
-    ...(existingRequests || []).map((r: any) => r.target_user_id),
-  ]))
+  // All batch suggestions with their interest status
+  const allSuggestionIds = (newRows || []).map((r: any) => r.suggested_id).filter(Boolean)
 
   // Fetch all profiles needed
-  const allNeededIds = Array.from(new Set([...newSuggestionIds, ...allPendingIds])).filter(Boolean)
   let profileMap: Record<string, any> = {}
-  if (allNeededIds.length > 0) {
+  if (allSuggestionIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
       .select('id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url')
-      .in('id', allNeededIds)
+      .in('id', allSuggestionIds)
     for (const p of profiles || []) profileMap[p.id] = p
   }
 
   const rowMap: Record<string, any> = {}
   for (const r of newRows || []) rowMap[r.suggested_id] = r
 
-  const newSuggestions = newIds
-    .map((id: string) => ({ rowId: rowMap[id]?.id, profile: profileMap[id], reason: rowMap[id]?.reason }))
+  // All suggestions with their state
+  const allSuggestions = allSuggestionIds
+    .map((id: string) => ({ 
+      rowId: rowMap[id]?.id, 
+      profile: profileMap[id], 
+      reason: rowMap[id]?.reason,
+      alreadyRequested: requestedIds.has(id)
+    }))
     .filter((r: any) => r.profile)
 
-  const pendingSuggestions = allPendingIds
-    .map((id: string) => ({ profile: profileMap[id] }))
-    .filter((r: any) => r.profile)
-    .filter((r: any, i: number, arr: any[]) => arr.findIndex((x: any) => x.profile.id === r.profile.id) === i)
 
   return (
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
@@ -204,18 +198,18 @@ export default async function IntroductionsPage() {
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">Review and express interest — Andrel facilitates when there's strong mutual alignment.</p>
             </div>
-            {newSuggestions.length > 0 && (
-              <span className="text-xs text-slate-400">{newSuggestions.length} new</span>
+            {allSuggestions.length > 0 && (
+              <span className="text-xs text-slate-400">{allSuggestions.length} new</span>
             )}
           </div>
 
-          {newSuggestions.length === 0 ? (
+          {allSuggestions.length === 0 ? (
             <div className="bg-white border border-slate-100 rounded-xl p-12 text-center shadow-sm">
               <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Inbox className="w-6 h-6 text-slate-400" />
               </div>
               <p className="text-sm font-semibold text-slate-700 mb-1">
-                {!activeBatch ? 'No active batch right now' : 'You\'ve reviewed all introductions this week'}
+                {!activeBatch ? 'No active batch right now' : 'You have reviewed all introductions this week'}
               </p>
               <p className="text-xs text-slate-400">
                 {!activeBatch
@@ -225,7 +219,7 @@ export default async function IntroductionsPage() {
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 gap-4">
-              {newSuggestions.map((row: any) => {
+              {allSuggestions.map((row: any) => {
                 const s = row.profile
                 const interests = Array.isArray(s.interests)
                   ? s.interests
@@ -233,44 +227,56 @@ export default async function IntroductionsPage() {
                     ? s.interests.split(',').map((i: string) => i.trim()).filter(Boolean)
                     : []
                 return (
-                  <div key={row.rowId || s.id} className="bg-white border border-slate-100 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3">
-                    <div className="flex items-start gap-3">
-                      <Avatar profile={s} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 truncate">{s.full_name || 'New member'}</p>
-                        {(s.title || s.company) && (
-                          <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
-                            <Briefcase className="w-3 h-3 flex-shrink-0" />
-                            <span className="truncate">{[s.title, s.company].filter(Boolean).join(' at ')}</span>
-                          </div>
-                        )}
-                        {s.location && (
-                          <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
-                            <MapPin className="w-3 h-3 flex-shrink-0" />
-                            <span className="truncate">{s.location}</span>
-                          </div>
-                        )}
+                  <IntroductionCard key={row.rowId || s.id} targetId={s.id}>
+                    <div className="bg-white border border-slate-100 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3">
+                      <div className="flex items-start gap-3">
+                        <Avatar profile={s} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{s.full_name || 'New member'}</p>
+                          {(s.title || s.company) && (
+                            <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
+                              <Briefcase className="w-3 h-3 flex-shrink-0" />
+                              <span className="truncate">{[s.title, s.company].filter(Boolean).join(' at ')}</span>
+                            </div>
+                          )}
+                          {s.location && (
+                            <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
+                              <MapPin className="w-3 h-3 flex-shrink-0" />
+                              <span className="truncate">{s.location}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    {s.bio && <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">{s.bio}</p>}
-                    <div className="flex flex-wrap gap-1.5">
-                      {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
-                      {s.role_type && <Tag color="violet">{s.role_type}</Tag>}
-                      {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
-                    </div>
-                    {interests.length > 0 && (
+                      {s.bio && <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">{s.bio}</p>}
                       <div className="flex flex-wrap gap-1.5">
-                        {interests.slice(0, 5).map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
+                        {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
+                        {s.role_type && <Tag color="violet">{s.role_type}</Tag>}
+                        {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
                       </div>
-                    )}
-                    {row.reason && (
-                      <div className="flex items-start gap-2 bg-[#FDF3E3] border border-[#C4922A]/20 rounded-lg px-3 py-2.5">
-                        <Sparkles className="w-3.5 h-3.5 text-[#C4922A] flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-slate-600 italic leading-relaxed">{row.reason}</p>
-                      </div>
-                    )}
-                    <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={userTier} />
-                  </div>
+                      {interests.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {interests.slice(0, 5).map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
+                        </div>
+                      )}
+                      {row.reason && (
+                        <div className="flex items-start gap-2 bg-[#FDF3E3] border border-[#C4922A]/20 rounded-lg px-3 py-2.5">
+                          <Sparkles className="w-3.5 h-3.5 text-[#C4922A] flex-shrink-0 mt-0.5" />
+                          <p className="text-xs text-slate-600 italic leading-relaxed">{row.reason}</p>
+                        </div>
+                      )}
+                      {row.alreadyRequested ? (
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-xs text-emerald-600 font-medium">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                            Interest expressed
+                          </div>
+                          <WithdrawInterestButton targetId={s.id} />
+                        </div>
+                      ) : (
+                        <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={userTier} />
+                      )}
+                    </div>
+                  </IntroductionCard>
                 )
               })}
             </div>
