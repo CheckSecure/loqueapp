@@ -59,7 +59,7 @@ export async function createIntroRequest(
     .gte('created_at', oneDayAgo)
 
   if ((recentCount ?? 0) >= 5) {
-    return { error: 'You've expressed interest in 5 people today. Check back tomorrow.' }
+    return { error: 'You have expressed interest in 5 people today. Check back tomorrow.' }
   }
 
   const { error } = await supabase.from('intro_requests').insert({
