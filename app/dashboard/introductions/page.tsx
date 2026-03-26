@@ -283,6 +283,7 @@ export default async function IntroductionsPage() {
           )}
         </div>
 
+      </div>
     </div>
   )
 }
