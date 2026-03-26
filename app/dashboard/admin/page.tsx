@@ -9,6 +9,7 @@ import AdminUsers from '@/components/AdminUsers'
 import AdminBatchButton from '@/components/AdminBatchButton'
 import AdminMutualInterest from '@/components/AdminMutualInterest'
 import ComputeScoresButton from '@/components/ComputeScoresButton'
+import AdminMemberList from '@/components/AdminMemberList'
 import AdminPendingBatches from '@/components/AdminPendingBatches'
 import { ShieldCheck, Users, BarChart2, Sparkles } from 'lucide-react'
 
@@ -39,7 +40,7 @@ export default async function AdminPage() {
     supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('updated_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
     supabase.from('matches').select('*', { count: 'exact', head: true }),
     supabase.from('meetings').select('*', { count: 'exact', head: true }),
-    supabase.from('profiles').select('id, full_name, email, role_type, subscription_tier').order('full_name'),
+    supabase.from('profiles').select('id, full_name, email, role_type, subscription_tier, admin_priority, seniority').order('full_name'),
     supabase.from('meeting_credits').select('user_id, balance'),
   ])
 
@@ -78,6 +79,8 @@ export default async function AdminPage() {
     email: p.email,
     role_type: p.role_type,
     subscription_tier: p.subscription_tier ?? 'free',
+    admin_priority: p.admin_priority ?? 'standard',
+    seniority: p.seniority ?? '',
     balance: creditMap[p.id] ?? 0,
   }))
 
