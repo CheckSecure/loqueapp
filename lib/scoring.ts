@@ -31,7 +31,11 @@ function classifyCompany(company: string): number {
 // ─────────────────────────────────────────────
 const SENIORITY_SCORES: Record<string, number> = {
   'Executive / C-Suite': 100,
+  'Executive': 100,
+  'C-Suite': 100,
   'VP / SVP': 85,
+  'VP': 85,
+  'SVP': 85,
   'Director': 70,
   'Senior': 55,
   'Mid-level': 40,
