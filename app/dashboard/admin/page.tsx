@@ -117,7 +117,7 @@ export default async function AdminPage() {
               </h2>
             </div>
           </div>
-          <AdminUsers users={users} />
+          <AdminMemberList members={users} />
         </section>
 
         {/* Intro batch generation */}
