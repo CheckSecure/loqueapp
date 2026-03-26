@@ -19,14 +19,18 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
       })
       const data = await res.json()
       if (data.success) {
-        // Refresh to show updated state - card reverts to "Express Interest" view
-        router.refresh()
+        // Force a full page reload to show updated state
+        window.location.reload()
+      } else {
+        console.error('Withdraw failed:', data.error)
+        setLoading(false)
+        setConfirming(false)
       }
     } catch (err) {
-      console.error('Failed to withdraw interest')
+      console.error('Failed to withdraw interest:', err)
+      setLoading(false)
+      setConfirming(false)
     }
-    setLoading(false)
-    setConfirming(false)
   }
 
   if (confirming) {
