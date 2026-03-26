@@ -48,9 +48,12 @@ function scoreMatch(recipient: any, candidate: any): number {
   const tierBoost: Record<string, number> = { executive: 15, professional: 8, free: 0 }
   score += tierBoost[candidate.subscription_tier] ?? 0
 
-  // 6. Andrel score boost (passed in via candidate object)
-  if (candidate.andrelScore) {
-    score += Math.round(candidate.andrelScore * 0.1) // up to 10 points from score
+  // 6. Network Value Score boost (up to 15 pts) + Responsiveness boost (up to 5 pts)
+  if (candidate.networkValueScore) {
+    score += Math.round((candidate.networkValueScore / 100) * 15)
+  }
+  if (candidate.responsivenessScore) {
+    score += Math.round((candidate.responsivenessScore / 100) * 5)
   }
 
   // 6. Seniority diversity bonus (avoid same seniority always)
