@@ -110,9 +110,9 @@ export default async function NetworkPage() {
                     <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{profile.bio}</p>
                   )}
 
-                  <div className="text-xs text-slate-400">
-                    Connected {connectedDate}
-                  </div>
+                  {connectedAt && connectedDate !== "January 1, 1970" && (
+                    <div className="text-xs text-slate-400">Connected {connectedDate}</div>
+                  )}
 
                   <div className="flex gap-2 pt-1 border-t border-slate-50">
                     <Link
