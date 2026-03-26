@@ -310,7 +310,7 @@ export default async function IntroductionsPage() {
                           <p className="text-xs text-slate-400">Andrel is reviewing this introduction. We facilitate based on alignment, not direct requests.</p>
                         </div>
                       </div>
-                      <WithdrawInterestButton targetId={s.profile.id} />
+                      <WithdrawInterestButton targetId={s.id} />
                     </div>
                   </div>
                 )
