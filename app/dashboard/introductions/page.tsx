@@ -4,6 +4,7 @@ import { Briefcase, MapPin, Inbox, Star, Sparkles, Clock } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
 import WithdrawInterestButton from '@/components/WithdrawInterestButton'
 import IntroductionCard from '@/components/IntroductionCard'
+import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
 
 export const metadata = { title: 'Introductions | Andrel' }
@@ -227,7 +228,7 @@ export default async function IntroductionsPage() {
                     ? s.interests.split(',').map((i: string) => i.trim()).filter(Boolean)
                     : []
                 return (
-                  <IntroductionCard key={row.rowId || s.id} targetId={s.id}>
+                  <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
                     <div className="bg-white border border-slate-100 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3">
                       <div className="flex items-start gap-3">
                         <Avatar profile={s} />
@@ -273,7 +274,10 @@ export default async function IntroductionsPage() {
                           <WithdrawInterestButton targetId={s.id} />
                         </div>
                       ) : (
-                        <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={userTier} />
+                        <div className="flex items-center justify-between gap-2">
+                          <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={userTier} />
+                          <HideSuggestionButton rowId={row.rowId} />
+                        </div>
                       )}
                     </div>
                   </IntroductionCard>

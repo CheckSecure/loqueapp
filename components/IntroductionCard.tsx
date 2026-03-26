@@ -1,20 +1,16 @@
 'use client'
 
-import { useState } from 'react'
-
 export default function IntroductionCard({ 
   children, 
-  targetId 
+  targetId,
+  rowId 
 }: { 
   children: React.ReactNode
   targetId: string
+  rowId?: string
 }) {
-  const [hidden, setHidden] = useState(false)
-
-  if (hidden) return null
-
   return (
-    <div data-target-id={targetId} className="intro-card-wrapper">
+    <div data-target-id={targetId} data-row-id={rowId || ''}>
       {children}
     </div>
   )

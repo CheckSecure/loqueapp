@@ -1,11 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { X, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 export default function WithdrawInterestButton({ targetId }: { targetId: string }) {
   const [confirming, setConfirming] = useState(false)
   const [loading, setLoading] = useState(false)
+  const router = useRouter()
 
   const handleWithdraw = async () => {
     setLoading(true)
@@ -17,11 +19,8 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
       })
       const data = await res.json()
       if (data.success) {
-        // Hide the parent card immediately
-        const card = document.querySelector(`[data-target-id="${targetId}"]`)
-        if (card) {
-          card.classList.add('hidden')
-        }
+        // Refresh to show updated state - card reverts to "Express Interest" view
+        router.refresh()
       }
     } catch (err) {
       console.error('Failed to withdraw interest')
@@ -32,13 +31,13 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
 
   if (confirming) {
     return (
-      <div className="flex items-center gap-1.5 flex-shrink-0">
+      <div className="flex items-center gap-1.5">
         <button
           onClick={handleWithdraw}
           disabled={loading}
-          className="text-xs font-semibold text-red-600 border border-red-200 px-2.5 py-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60"
+          className="text-xs font-semibold text-slate-600 border border-slate-200 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-60"
         >
-          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Confirm'}
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, withdraw'}
         </button>
         <button
           onClick={() => setConfirming(false)}
@@ -53,11 +52,10 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
   return (
     <button
       onClick={() => setConfirming(true)}
-      className="flex-shrink-0 text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 py-1 transition-colors"
+      className="text-xs text-slate-500 hover:text-slate-700 font-medium transition-colors"
       title="Withdraw interest"
     >
-      <X className="w-3.5 h-3.5" />
-      <span className="hidden sm:inline">Withdraw</span>
+      Withdraw
     </button>
   )
 }
