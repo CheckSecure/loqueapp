@@ -35,7 +35,7 @@ export default async function NetworkPage() {
   console.log('[network] profileId:', profileId, 'user.id:', user.id)
   const { data: matches, error: matchesError } = await supabase
     .from('matches')
-    .select('id, user_a_id, user_b_id, created_at')
+    .select('id, user_a_id, user_b_id')
     .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`)
 
   console.log('[network] matches found:', matches?.length ?? 0, 'error:', JSON.stringify(matchesError))
@@ -54,7 +54,7 @@ export default async function NetworkPage() {
 
   const connections = (matches || []).map((m: any) => {
     const otherId = m.user_a_id === profileId ? m.user_b_id : m.user_a_id
-    return { matchId: m.id, profile: profileMap[otherId], connectedAt: m.created_at }
+    return { matchId: m.id, profile: profileMap[otherId], connectedAt: null }
   }).filter((c: any) => c.profile)
 
   return (
