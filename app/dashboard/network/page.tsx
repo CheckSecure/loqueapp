@@ -37,7 +37,6 @@ export default async function NetworkPage() {
     .from('matches')
     .select('id, user_a_id, user_b_id, created_at')
     .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`)
-    .order('created_at', { ascending: false })
 
   console.log('[network] matches found:', matches?.length ?? 0, 'error:', JSON.stringify(matchesError))
   const matchedUserIds = (matches || []).map((m: any) =>
