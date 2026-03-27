@@ -11,13 +11,13 @@ export async function POST(req: NextRequest) {
 
     const { targetId } = await req.json()
 
-    // Only allow rescinding pending requests — never accepted/matched ones
+    // Delete intro_request regardless of status (pending, batched, or approved)
     const { error } = await supabase
       .from('intro_requests')
       .delete()
       .eq('requester_id', user.id)
       .eq('target_user_id', targetId)
-      .eq('status', 'pending')
+      .in('status', ['pending', 'batched', 'approved'])
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ success: true })
