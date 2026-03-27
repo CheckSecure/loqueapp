@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    // Get user auth from regular client
+    const userClient = createClient()
+    const { data: { user } } = await userClient.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
     const { targetId } = await req.json()
-
-    // Delete ALL intro_requests for this target (regardless of status)
-    const { data, error } = await supabase
+    
+    // Use admin client to bypass RLS
+    const adminClient = createAdminClient()
+    const { data, error } = await adminClient
       .from('intro_requests')
       .delete()
       .eq('requester_id', user.id)
