@@ -16,7 +16,9 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
         body: JSON.stringify({ targetId }),
       })
       const data = await res.json()
+      console.log('Withdraw response:', data)
       if (data.success) {
+        await new Promise(resolve => setTimeout(resolve, 2000)) // Wait 2 seconds
         window.location.reload()
       }
     } catch (err) {
