@@ -95,12 +95,11 @@ export default async function IntroductionsPage() {
         .not('status', 'in', '(passed,hidden_permanent)')
     : { data: [], error: null }
 
-  // Already expressed interest (across all batches) - exclude rescinded
+  // Already expressed interest (across all batches)
   const { data: existingRequests } = await supabase
     .from('intro_requests')
     .select('target_user_id, created_at')
     .eq('requester_id', user.id)
-    .in('status', ['pending', 'approved', 'batched'])
     .order('created_at', { ascending: false })
 
   const requestedIds = new Set((existingRequests || []).map((r: any) => r.target_user_id))
