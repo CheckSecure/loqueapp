@@ -11,16 +11,19 @@ export async function POST(req: NextRequest) {
 
     const { targetId } = await req.json()
 
-    // Delete intro_request regardless of status (pending, batched, or approved)
-    const { error } = await supabase
+    // Delete intro_request regardless of status
+    const { data, error, count } = await supabase
       .from('intro_requests')
       .delete()
       .eq('requester_id', user.id)
       .eq('target_user_id', targetId)
       .in('status', ['pending', 'batched', 'approved'])
+      .select()
+
+    console.log('Delete result:', { deleted: data?.length || 0, targetId })
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, deleted: data?.length || 0 })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
