@@ -8,25 +8,18 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
   const [loading, setLoading] = useState(false)
 
   const handleWithdraw = async () => {
-    alert('Withdraw clicked! targetId: ' + targetId)
     setLoading(true)
     try {
-      const res = await fetch('/api/intro/rescind', {
+      await fetch('/api/intro/rescind', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetId }),
       })
-      const data = await res.json()
-      console.log('Withdraw response:', data)
-      alert('API response: ' + JSON.stringify(data))
-      if (data.success) {
-        window.location.reload()
-      }
+      window.location.reload()
     } catch (err) {
-      console.error('Failed to withdraw:', err)
-      alert('Error: ' + err)
+      console.error('Withdraw failed:', err)
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   if (confirming) {
