@@ -8,6 +8,7 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
   const [loading, setLoading] = useState(false)
 
   const handleWithdraw = async () => {
+    alert('Withdraw clicked! targetId: ' + targetId)
     setLoading(true)
     try {
       const res = await fetch('/api/intro/rescind', {
@@ -17,12 +18,13 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
       })
       const data = await res.json()
       console.log('Withdraw response:', data)
+      alert('API response: ' + JSON.stringify(data))
       if (data.success) {
-        await new Promise(resolve => setTimeout(resolve, 2000)) // Wait 2 seconds
         window.location.reload()
       }
     } catch (err) {
       console.error('Failed to withdraw:', err)
+      alert('Error: ' + err)
     }
     setLoading(false)
   }
