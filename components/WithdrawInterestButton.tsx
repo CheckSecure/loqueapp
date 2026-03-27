@@ -2,12 +2,10 @@
 
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 
 export default function WithdrawInterestButton({ targetId }: { targetId: string }) {
   const [confirming, setConfirming] = useState(false)
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
 
   const handleWithdraw = async () => {
     setLoading(true)
@@ -19,18 +17,12 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
       })
       const data = await res.json()
       if (data.success) {
-        // Force a full page reload to show updated state
         window.location.reload()
-      } else {
-        console.error('Withdraw failed:', data.error)
-        setLoading(false)
-        setConfirming(false)
       }
     } catch (err) {
-      console.error('Failed to withdraw interest:', err)
-      setLoading(false)
-      setConfirming(false)
+      console.error('Failed to withdraw:', err)
     }
+    setLoading(false)
   }
 
   if (confirming) {
@@ -57,7 +49,6 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
     <button
       onClick={() => setConfirming(true)}
       className="text-xs text-slate-500 hover:text-slate-700 font-medium transition-colors"
-      title="Withdraw interest"
     >
       Withdraw
     </button>
