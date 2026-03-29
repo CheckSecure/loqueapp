@@ -275,16 +275,16 @@ export async function approveIntroRequest(requestId: string) {
   const notifications = [
     {
       user_id: req.requester_id,
-      type: 'match_created',
+      type: 'intro_accepted',
       title: 'New Connection!',
-      message: `You're now connected with ${targetProfile?.full_name || 'your match'}. Start a conversation in your Network.`,
+      body: `You're now connected with ${targetProfile?.full_name || 'your match'}. Start a conversation in your Network.`,
       link: '/dashboard/network',
     },
     {
       user_id: req.target_user_id,
-      type: 'match_created',
+      type: 'intro_accepted',
       title: 'New Connection!',
-      message: `You're now connected with ${requesterProfile?.full_name || 'your match'}. Start a conversation in your Network.`,
+      body: `You're now connected with ${requesterProfile?.full_name || 'your match'}. Start a conversation in your Network.`,
       link: '/dashboard/network',
     },
   ]
@@ -295,6 +295,8 @@ export async function approveIntroRequest(requestId: string) {
 
   if (notifErr) {
     console.warn('[approveIntroRequest] notification insert failed (non-fatal):', notifErr.message)
+  } else {
+    console.log('[approveIntroRequest] notifications sent to both users')
   }
 
   // ── 6. Now mark the intro_request as approved ─────────────────────────────
