@@ -29,6 +29,15 @@ export async function POST(req: NextRequest) {
     const aId = userAId || introRequest.requester_id
     const bId = userBId || introRequest.target_user_id
 
+    // Get both user names for notifications
+    const { data: profiles } = await adminClient
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', [aId, bId])
+
+    const userA = profiles?.find(p => p.id === aId)
+    const userB = profiles?.find(p => p.id === bId)
+
     // Check if match already exists
     const { data: existingMatch } = await adminClient
       .from('matches')
@@ -64,6 +73,34 @@ export async function POST(req: NextRequest) {
 
     if (!existingConv) {
       await adminClient.from('conversations').insert({ match_id: matchId })
+    }
+
+    // Send notifications to both users
+    const notifications = [
+      {
+        user_id: aId,
+        type: 'intro_accepted',
+        title: 'New Connection!',
+        body: `You're now connected with ${userB?.full_name || 'your match'}. Start a conversation in your Network.`,
+        link: '/dashboard/network',
+      },
+      {
+        user_id: bId,
+        type: 'intro_accepted',
+        title: 'New Connection!',
+        body: `You're now connected with ${userA?.full_name || 'your match'}. Start a conversation in your Network.`,
+        link: '/dashboard/network',
+      },
+    ]
+
+    const { error: notifErr } = await adminClient
+      .from('notifications')
+      .insert(notifications)
+
+    if (notifErr) {
+      console.warn('[facilitate] notification insert failed:', notifErr.message)
+    } else {
+      console.log('[facilitate] notifications sent to both users')
     }
 
     // Mark both requests as accepted
