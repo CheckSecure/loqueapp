@@ -203,7 +203,6 @@ export async function approveIntroRequest(requestId: string) {
   }
 
   // ── 3. Create the match FIRST (before touching status or credits) ─────────
-  //    If this fails we haven't changed anything else yet.
   let matchId: string | null = null
 
   const { data: newMatch, error: matchInsertErr } = await supabase
@@ -216,7 +215,6 @@ export async function approveIntroRequest(requestId: string) {
     matchId = newMatch.id
     console.log('[approveIntroRequest] match created:', matchId)
   } else {
-    // Unique constraint violation — match already exists; look it up
     const { data: existingMatch, error: lookupErr } = await supabase
       .from('matches')
       .select('id')
@@ -231,11 +229,19 @@ export async function approveIntroRequest(requestId: string) {
       matchId = existingMatch.id
       console.log('[approveIntroRequest] existing match found:', matchId)
     } else {
-      // Genuine failure — cannot create or find match; abort before touching intro_request
       console.error('[approveIntroRequest] match insert failed:', matchInsertErr?.message, '| lookup failed:', lookupErr?.message)
       return { error: `Could not create match: ${matchInsertErr?.message ?? 'unknown error'}` }
     }
   }
+
+  // ── 3.5. Get both user names for notifications ────────────────────────────
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, full_name')
+    .in('id', [req.requester_id, req.target_user_id])
+
+  const requesterProfile = profiles?.find(p => p.id === req.requester_id)
+  const targetProfile = profiles?.find(p => p.id === req.target_user_id)
 
   // ── 4. Ensure a conversation exists for this match ────────────────────────
   const { data: existingConv, error: convLookupErr } = await supabase
@@ -257,8 +263,6 @@ export async function approveIntroRequest(requestId: string) {
       .single()
 
     if (convInsertErr) {
-      // Non-fatal: the messages page auto-creates conversations on load.
-      // Log it prominently but do not fail the entire approval.
       console.error('[approveIntroRequest] conversation insert failed (match still created):', convInsertErr.message, '| match_id:', matchId)
     } else {
       console.log('[approveIntroRequest] conversation created:', newConv?.id, 'for match:', matchId)
@@ -267,7 +271,33 @@ export async function approveIntroRequest(requestId: string) {
     console.log('[approveIntroRequest] conversation already exists:', existingConv.id)
   }
 
-  // ── 5. Now mark the intro_request as approved ─────────────────────────────
+  // ── 5. Send notifications to both users ───────────────────────────────────
+  const notifications = [
+    {
+      user_id: req.requester_id,
+      type: 'match_created',
+      title: 'New Connection!',
+      message: `You're now connected with ${targetProfile?.full_name || 'your match'}. Start a conversation in your Network.`,
+      link: '/dashboard/network',
+    },
+    {
+      user_id: req.target_user_id,
+      type: 'match_created',
+      title: 'New Connection!',
+      message: `You're now connected with ${requesterProfile?.full_name || 'your match'}. Start a conversation in your Network.`,
+      link: '/dashboard/network',
+    },
+  ]
+
+  const { error: notifErr } = await supabase
+    .from('notifications')
+    .insert(notifications)
+
+  if (notifErr) {
+    console.warn('[approveIntroRequest] notification insert failed (non-fatal):', notifErr.message)
+  }
+
+  // ── 6. Now mark the intro_request as approved ─────────────────────────────
   const { error: updateErr } = await supabase
     .from('intro_requests')
     .update({
@@ -283,7 +313,7 @@ export async function approveIntroRequest(requestId: string) {
     return { error: `Match created but status update failed: ${updateErr.message}` }
   }
 
-  // ── 6. Deduct 1 credit from the requester ────────────────────────────────
+  // ── 7. Deduct 1 credit from the requester ────────────────────────────────
   const { error: deductErr } = await supabase
     .from('meeting_credits')
     .update({ balance: balance - 1 })
@@ -293,11 +323,11 @@ export async function approveIntroRequest(requestId: string) {
     console.error('[approveIntroRequest] credit deduction failed (non-fatal):', deductErr.message)
   }
 
-  // ── 7. Log the credit transaction ─────────────────────────────────────────
+  // ── 8. Log the credit transaction ─────────────────────────────────────────
   const { error: txErr } = await supabase.from('credit_transactions').insert({
     user_id: req.requester_id,
     amount: -1,
-    description: 'Introduction approved — match created',
+    type: 'deduction',
   })
 
   if (txErr) {
