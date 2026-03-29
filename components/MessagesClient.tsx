@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Send, Search, MessageSquare, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { sendMessage } from '@/app/actions'
@@ -60,16 +60,17 @@ export default function MessagesClient({
   const [localMessages, setLocalMessages] = useState<Message[]>([])
   const router = useRouter()
 
-  const selectConversation = (c: Conversation) => {
+  const selectConversation = useCallback((c: Conversation) => {
     setSelected(c)
     setLocalMessages(c.messages)
     setInput('')
     setMobilePanel('thread')
-  }
+  }, [])
 
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     if (!input.trim() || !selected || sending) return
     const content = input.trim()
+    const conversationId = selected.id
     setInput('')
     setSending(true)
 
@@ -80,10 +81,13 @@ export default function MessagesClient({
       created_at: new Date().toISOString(),
     }
     setLocalMessages(prev => [...prev, optimistic])
-    await sendMessage(selected.id, content)
+    
+    await sendMessage(conversationId, content)
     setSending(false)
-    router.refresh()
-  }
+    
+    // Refresh in background without forcing component re-render
+    setTimeout(() => router.refresh(), 100)
+  }, [input, selected, sending, currentUserId, router])
 
   const initials = (name?: string) =>
     name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?'
