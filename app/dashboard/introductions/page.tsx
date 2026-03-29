@@ -275,10 +275,7 @@ export default async function IntroductionsPage() {
                           <WithdrawInterestButton targetId={s.id} />
                         </div>
                       ) : (
-                        <div className="flex items-center justify-between gap-2">
-                          <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={userTier} />
-                          <HideSuggestionButton rowId={row.rowId} />
-                        </div>
+                        <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={userTier} />
                       )}
                     </div>
                   </IntroductionCard>
