@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Send, Search, MessageSquare, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { sendMessage } from '@/app/actions'
-import { useRouter } from 'next/navigation'
 
 interface Profile {
   id: string
@@ -55,23 +54,24 @@ export default function MessagesClient({
 }) {
   const [selected, setSelected] = useState<Conversation | null>(null)
   const [mobilePanel, setMobilePanel] = useState<'list' | 'thread'>('list')
-  const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [localMessages, setLocalMessages] = useState<Message[]>([])
-  const router = useRouter()
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const selectConversation = useCallback((c: Conversation) => {
     setSelected(c)
     setLocalMessages(c.messages)
-    setInput('')
+    if (inputRef.current) inputRef.current.value = ''
     setMobilePanel('thread')
   }, [])
 
   const handleSend = useCallback(async () => {
-    if (!input.trim() || !selected || sending) return
-    const content = input.trim()
+    if (!inputRef.current || !selected || sending) return
+    const content = inputRef.current.value.trim()
+    if (!content) return
+    
     const conversationId = selected.id
-    setInput('')
+    inputRef.current.value = ''
     setSending(true)
 
     const optimistic: Message = {
@@ -84,10 +84,7 @@ export default function MessagesClient({
     
     await sendMessage(conversationId, content)
     setSending(false)
-    
-    // Refresh in background without forcing component re-render
-    setTimeout(() => router.refresh(), 100)
-  }, [input, selected, sending, currentUserId, router])
+  }, [selected, sending, currentUserId])
 
   const initials = (name?: string) =>
     name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?'
@@ -201,16 +198,15 @@ export default function MessagesClient({
           <div className="bg-white border-t border-slate-200 px-4 py-3">
             <div className="flex items-center gap-3">
               <input
+                ref={inputRef}
                 type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                 placeholder={`Message ${selected.other?.full_name?.split(' ')[0] || 'them'}...`}
                 className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
               />
               <button
                 onClick={handleSend}
-                disabled={!input.trim() || sending}
+                disabled={sending}
                 className="w-10 h-10 bg-[#1B2850] rounded-xl flex items-center justify-center hover:bg-[#2E4080] transition-colors disabled:opacity-50"
               >
                 <Send className="w-4 h-4 text-white" />
