@@ -5,13 +5,13 @@ import { Send, Search, MessageSquare, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { sendMessage } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
 
 interface Profile {
   id: string
   full_name: string
   role?: string
   company?: string
-  avatar_color?: string
 }
 
 interface Message {
@@ -61,6 +61,7 @@ export default function MessagesClient({
   const [localMessages, setLocalMessages] = useState<Message[]>([])
   const [localUnreadCounts, setLocalUnreadCounts] = useState<Record<string, number>>({})
   const inputRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
 
   // Initialize unread counts
   useEffect(() => {
@@ -84,7 +85,10 @@ export default function MessagesClient({
     
     // Update local count
     setLocalUnreadCounts(prev => ({ ...prev, [conversationId]: 0 }))
-  }, [currentUserId])
+    
+    // Refresh to update Sidebar count
+    router.refresh()
+  }, [currentUserId, router])
 
   const selectConversation = useCallback((c: Conversation) => {
     setSelected(c)
@@ -160,7 +164,7 @@ export default function MessagesClient({
                 )}
               >
                 <div className="relative">
-                  <div className={`w-9 h-9 rounded-full ${c.other?.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5`}>
+                  <div className={`w-9 h-9 rounded-full bg-[#1B2850] flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5`}>
                     {initials(c.other?.full_name)}
                   </div>
                   {unreadCount > 0 && (
@@ -208,7 +212,7 @@ export default function MessagesClient({
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className={`w-9 h-9 rounded-full ${selected.other?.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
+            <div className={`w-9 h-9 rounded-full bg-[#1B2850] flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
               {initials(selected.other?.full_name)}
             </div>
             <div>
