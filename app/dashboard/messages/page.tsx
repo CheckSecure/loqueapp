@@ -9,6 +9,8 @@ export default async function MessagesPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  console.log('[Messages] Current user:', user.id)
+
   // Step 1: get all matches for this user
   const { data: matchRows, error: matchErr } = await supabase
     .from('matches')
@@ -41,15 +43,23 @@ export default async function MessagesPage() {
       m.user_a_id === user.id ? m.user_b_id : m.user_a_id
     ).filter(Boolean)
 
+    console.log('[Messages] otherIds to fetch:', otherIds)
+
     // Step 4: fetch other users' profiles
     let profileById: Record<string, any> = {}
     if (otherIds.length > 0) {
-      const { data: profileRows } = await supabase
+      const { data: profileRows, error: profileErr } = await supabase
         .from('profiles')
         .select('id, full_name, title, company, avatar_color')
         .in('id', otherIds)
+      
+      console.log('[Messages] profileErr:', profileErr?.message ?? 'none')
+      console.log('[Messages] profileRows:', JSON.stringify(profileRows))
+      
       for (const p of profileRows || []) profileById[p.id] = p
     }
+
+    console.log('[Messages] profileById:', JSON.stringify(profileById))
 
     // Step 4b: auto-create conversations for matches that don't have one yet
     const matchIdsWithConvs = new Set((convRows || []).map((c: any) => c.match_id))
@@ -73,6 +83,8 @@ export default async function MessagesPage() {
       if (!match) continue
       const otherId = match.user_a_id === user.id ? match.user_b_id : match.user_a_id
       const other = profileById[otherId] ?? null
+
+      console.log('[Messages] otherId:', otherId, 'profile:', other)
 
       const sortedMessages = [...((c.messages as any[]) || [])].sort(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
