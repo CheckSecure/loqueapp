@@ -339,83 +339,74 @@ export async function adminGenerateBatch() {
     other:                  [],
   }
 
-  const suggestions: { batch_id: string; recipient_id: string; suggested_id: string; reason: string }[] = []
-  const userSuggestionCount: Record<string, number> = {}
-
-  // Track suggestions to avoid duplicates
-  const addSuggestion = (recipientId: string, suggestedId: string, reason: string) => {
-    // Skip if already suggested
-    const exists = suggestions.some(
-      s => s.recipient_id === recipientId && s.suggested_id === suggestedId
-    )
-    if (exists) return false
-
-    // Skip if recipient already has 5 suggestions
-    if ((userSuggestionCount[recipientId] ?? 0) >= 5) return false
-
-    suggestions.push({
-      batch_id: batch.id,
-      recipient_id: recipientId,
-      suggested_id: suggestedId,
-      reason,
-    })
-    userSuggestionCount[recipientId] = (userSuggestionCount[recipientId] ?? 0) + 1
-    return true
+  // STEP 1: Generate mutual pairs (not individual suggestions)
+  interface Pair {
+    userA: string
+    userB: string
+    reasonA: string // why userA should meet userB
+    reasonB: string // why userB should meet userA
+    score: number   // higher = better match
   }
 
-  // FIRST PASS: Generate complementary mutual pairs
+  const pairs: Pair[] = []
+  const userSuggestionCount: Record<string, number> = {}
+
+  // Generate all possible pairs with scores
   for (let i = 0; i < profiles.length; i++) {
-    const userA = profiles[i]
-    const preferredRoles = COMPLEMENTARY[userA.role_type ?? ''] ?? []
+    for (let j = i + 1; j < profiles.length; j++) {
+      const userA = profiles[i]
+      const userB = profiles[j]
 
-    // Find compatible matches for userA
-    const compatible = profiles
-      .filter(p => p.id !== userA.id)
-      .filter(p => preferredRoles.includes(p.role_type ?? ''))
-      .slice(0, 3) // Top 3 for userA
+      const aPreferred = COMPLEMENTARY[userA.role_type ?? ''] ?? []
+      const bPreferred = COMPLEMENTARY[userB.role_type ?? ''] ?? []
 
-    for (const userB of compatible) {
-      const isComplementary = preferredRoles.includes(userB.role_type ?? '')
-      const reason = isComplementary
+      const aLikesB = aPreferred.includes(userB.role_type ?? '')
+      const bLikesA = bPreferred.includes(userA.role_type ?? '')
+
+      // Score: 2 points if mutual complementary, 1 point if one-way, 0 if neither
+      const score = (aLikesB ? 1 : 0) + (bLikesA ? 1 : 0)
+
+      const reasonA = aLikesB
         ? `${userB.role_type?.replace(/_/g, ' ')} professionals often find strong alignment with your background.`
         : `Expanding your network across disciplines can open unexpected doors.`
 
-      // Add A → B
-      addSuggestion(userA.id, userB.id, reason)
-
-      // Add B → A (mutual suggestion)
-      const userBPreferred = COMPLEMENTARY[userB.role_type ?? ''] ?? []
-      const isMutuallyComplementary = userBPreferred.includes(userA.role_type ?? '')
-      const mutualReason = isMutuallyComplementary
+      const reasonB = bLikesA
         ? `${userA.role_type?.replace(/_/g, ' ')} professionals often find strong alignment with your background.`
         : `Expanding your network across disciplines can open unexpected doors.`
-      
-      addSuggestion(userB.id, userA.id, mutualReason)
+
+      pairs.push({ userA: userA.id, userB: userB.id, reasonA, reasonB, score })
     }
   }
 
-  // SECOND PASS: Fill remaining slots with ANY user AND add reciprocal
-  for (const user of profiles) {
-    const currentCount = userSuggestionCount[user.id] ?? 0
-    if (currentCount >= 3) continue
+  // STEP 2: Sort pairs by score (best matches first)
+  pairs.sort((a, b) => b.score - a.score)
 
-    const remaining = 3 - currentCount
-    const pool = profiles
-      .filter(p => p.id !== user.id)
-      .filter(p => !suggestions.some(s => s.recipient_id === user.id && s.suggested_id === p.id))
-      .slice(0, remaining)
+  // STEP 3: Greedily select pairs (users limited to 3 suggestions each)
+  const suggestions: { batch_id: string; recipient_id: string; suggested_id: string; reason: string }[] = []
 
-    for (const pick of pool) {
-      const reason = `Expanding your network across disciplines can open unexpected doors.`
-      
-      // Add user → pick
-      const added = addSuggestion(user.id, pick.id, reason)
-      
-      // Add pick → user (reciprocal for filler matches too!)
-      if (added) {
-        addSuggestion(pick.id, user.id, reason)
-      }
-    }
+  for (const pair of pairs) {
+    const countA = userSuggestionCount[pair.userA] ?? 0
+    const countB = userSuggestionCount[pair.userB] ?? 0
+
+    // Skip if either user already has 3 suggestions
+    if (countA >= 3 || countB >= 3) continue
+
+    // Add BOTH directions atomically
+    suggestions.push({
+      batch_id: batch.id,
+      recipient_id: pair.userA,
+      suggested_id: pair.userB,
+      reason: pair.reasonA,
+    })
+    suggestions.push({
+      batch_id: batch.id,
+      recipient_id: pair.userB,
+      suggested_id: pair.userA,
+      reason: pair.reasonB,
+    })
+
+    userSuggestionCount[pair.userA] = countA + 1
+    userSuggestionCount[pair.userB] = countB + 1
   }
 
   if (suggestions.length > 0) {
