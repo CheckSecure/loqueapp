@@ -320,9 +320,7 @@ export async function adminGenerateBatch() {
 
   if (!profiles || profiles.length < 2) return { error: 'Not enough profiles to match' }
 
-  const suggestions: { batch_id: string; recipient_id: string; suggested_id: string; reason: string }[] = []
-
-  // Simple matching: each user gets up to 3 suggestions based on complementary or same role_type
+  // Complementary role mapping
   const COMPLEMENTARY: Record<string, string[]> = {
     investor_vc:            ['executive_csuite', 'legal_tech_startup', 'finance_professional'],
     executive_csuite:       ['investor_vc', 'strategy_consulting', 'government_policy'],
@@ -341,29 +339,78 @@ export async function adminGenerateBatch() {
     other:                  [],
   }
 
-  for (const recipient of profiles) {
-    const pool = profiles.filter(p => p.id !== recipient.id)
-    const preferred = COMPLEMENTARY[recipient.role_type ?? ''] ?? []
+  const suggestions: { batch_id: string; recipient_id: string; suggested_id: string; reason: string }[] = []
+  const userSuggestionCount: Record<string, number> = {}
 
-    // Sort: preferred role types first, then others
-    const sorted = pool.sort((a, b) => {
-      const aScore = preferred.includes(a.role_type ?? '') ? 1 : 0
-      const bScore = preferred.includes(b.role_type ?? '') ? 1 : 0
-      return bScore - aScore
+  // Track suggestions to avoid duplicates
+  const addSuggestion = (recipientId: string, suggestedId: string, reason: string) => {
+    // Skip if already suggested
+    const exists = suggestions.some(
+      s => s.recipient_id === recipientId && s.suggested_id === suggestedId
+    )
+    if (exists) return false
+
+    // Skip if recipient already has 5 suggestions
+    if ((userSuggestionCount[recipientId] ?? 0) >= 5) return false
+
+    suggestions.push({
+      batch_id: batch.id,
+      recipient_id: recipientId,
+      suggested_id: suggestedId,
+      reason,
     })
+    userSuggestionCount[recipientId] = (userSuggestionCount[recipientId] ?? 0) + 1
+    return true
+  }
 
-    const picks = sorted.slice(0, 3)
-    for (const pick of picks) {
-      const isComplementary = preferred.includes(pick.role_type ?? '')
+  // Generate mutual pairs
+  for (let i = 0; i < profiles.length; i++) {
+    const userA = profiles[i]
+    const preferredRoles = COMPLEMENTARY[userA.role_type ?? ''] ?? []
+
+    // Find compatible matches for userA
+    const compatible = profiles
+      .filter(p => p.id !== userA.id)
+      .filter(p => preferredRoles.includes(p.role_type ?? ''))
+      .slice(0, 3) // Top 3 for userA
+
+    for (const userB of compatible) {
+      const isComplementary = preferredRoles.includes(userB.role_type ?? '')
       const reason = isComplementary
-        ? `${pick.role_type?.replace(/_/g, ' ')} professionals often find strong alignment with your background.`
+        ? `${userB.role_type?.replace(/_/g, ' ')} professionals often find strong alignment with your background.`
         : `Expanding your network across disciplines can open unexpected doors.`
-      suggestions.push({
-        batch_id: batch.id,
-        recipient_id: recipient.id,
-        suggested_id: pick.id,
-        reason,
-      })
+
+      // Add A → B
+      addSuggestion(userA.id, userB.id, reason)
+
+      // Add B → A (mutual suggestion)
+      const userBPreferred = COMPLEMENTARY[userB.role_type ?? ''] ?? []
+      const isMutuallyComplementary = userBPreferred.includes(userA.role_type ?? '')
+      const mutualReason = isMutuallyComplementary
+        ? `${userA.role_type?.replace(/_/g, ' ')} professionals often find strong alignment with your background.`
+        : `Expanding your network across disciplines can open unexpected doors.`
+      
+      addSuggestion(userB.id, userA.id, mutualReason)
+    }
+  }
+
+  // Fill remaining slots for users with < 3 suggestions
+  for (const user of profiles) {
+    const currentCount = userSuggestionCount[user.id] ?? 0
+    if (currentCount >= 3) continue
+
+    const remaining = 3 - currentCount
+    const pool = profiles
+      .filter(p => p.id !== user.id)
+      .filter(p => !suggestions.some(s => s.recipient_id === user.id && s.suggested_id === p.id))
+      .slice(0, remaining)
+
+    for (const pick of pool) {
+      addSuggestion(
+        user.id,
+        pick.id,
+        `Expanding your network across disciplines can open unexpected doors.`
+      )
     }
   }
 
