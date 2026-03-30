@@ -8,6 +8,7 @@ import {
   approveIntroRequest,
   rejectIntroRequest,
 } from '@/lib/introRequests'
+import { sendNewMessageEmail } from '@/lib/email'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -381,6 +382,7 @@ export async function sendMessage(conversationId: string, content: string) {
 
   console.log('[sendMessage] conversationId:', conversationId, 'sender_id:', user.id)
 
+  // Insert the message
   const { error } = await supabase.from('messages').insert({
     conversation_id: conversationId,
     sender_id: user.id,
@@ -390,6 +392,58 @@ export async function sendMessage(conversationId: string, content: string) {
   console.log('[sendMessage] insert error:', JSON.stringify(error))
 
   if (error) return { error: error.message }
+
+  // Get sender's name
+  const { data: senderProfile } = await supabase
+    .from('profiles')
+    .select('full_name')
+    .eq('id', user.id)
+    .single()
+
+  // Get conversation to find the match
+  const { data: conversation } = await supabase
+    .from('conversations')
+    .select('match_id')
+    .eq('id', conversationId)
+    .single()
+
+  if (conversation?.match_id) {
+    // Get the match to find the other user
+    const { data: match } = await supabase
+      .from('matches')
+      .select('user_a_id, user_b_id')
+      .eq('id', conversation.match_id)
+      .single()
+
+    if (match) {
+      // Determine recipient (the user who is NOT the sender)
+      const recipientId = match.user_a_id === user.id ? match.user_b_id : match.user_a_id
+
+      // Get recipient's profile
+      const { data: recipientProfile } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', recipientId)
+        .single()
+
+      // Send email notification
+      if (recipientProfile?.email && senderProfile?.full_name) {
+        try {
+          await sendNewMessageEmail(
+            recipientProfile.email,
+            recipientProfile.full_name || 'there',
+            senderProfile.full_name,
+            content
+          )
+          console.log('[sendMessage] email sent to:', recipientProfile.email)
+        } catch (emailError) {
+          console.error('[sendMessage] failed to send email:', emailError)
+          // Don't fail the message send if email fails
+        }
+      }
+    }
+  }
+
   revalidatePath('/dashboard/messages')
   return { success: true }
 }
