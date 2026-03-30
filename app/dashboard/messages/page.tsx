@@ -9,16 +9,11 @@ export default async function MessagesPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  console.log('[Messages] Current user:', user.id)
-
   // Step 1: get all matches for this user
   const { data: matchRows, error: matchErr } = await supabase
     .from('matches')
     .select('id, user_a_id, user_b_id')
     .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
-
-  console.log('[Messages] matchErr:', matchErr?.message ?? 'none')
-  console.log('[Messages] matches:', JSON.stringify(matchRows))
 
   const matchIds = (matchRows || []).map((m: any) => m.id)
   const conversations: any[] = []
@@ -30,9 +25,6 @@ export default async function MessagesPage() {
       .select('id, match_id, created_at, messages(id, content, sender_id, created_at, read_at)')
       .in('match_id', matchIds)
 
-    console.log('[Messages] convErr:', convErr?.message ?? 'none')
-    console.log('[Messages] conversations:', convRows?.length ?? 0)
-
     // Step 3: collect the other user IDs from each match
     const matchMap: Record<string, { user_a_id: string; user_b_id: string }> = {}
     for (const m of matchRows || []) {
@@ -43,23 +35,16 @@ export default async function MessagesPage() {
       m.user_a_id === user.id ? m.user_b_id : m.user_a_id
     ).filter(Boolean)
 
-    console.log('[Messages] otherIds to fetch:', otherIds)
-
     // Step 4: fetch other users' profiles
     let profileById: Record<string, any> = {}
     if (otherIds.length > 0) {
-      const { data: profileRows, error: profileErr } = await supabase
+      const { data: profileRows } = await supabase
         .from('profiles')
-        .select('id, full_name, title, company, avatar_color')
+        .select('id, full_name, title, company')
         .in('id', otherIds)
-      
-      console.log('[Messages] profileErr:', profileErr?.message ?? 'none')
-      console.log('[Messages] profileRows:', JSON.stringify(profileRows))
       
       for (const p of profileRows || []) profileById[p.id] = p
     }
-
-    console.log('[Messages] profileById:', JSON.stringify(profileById))
 
     // Step 4b: auto-create conversations for matches that don't have one yet
     const matchIdsWithConvs = new Set((convRows || []).map((c: any) => c.match_id))
@@ -71,7 +56,6 @@ export default async function MessagesPage() {
           .select('id, match_id, created_at')
           .single()
         if (newConv) {
-          // Add with empty messages array
           ;(convRows as any[])?.push({ ...newConv, messages: [] })
         }
       }
@@ -83,8 +67,6 @@ export default async function MessagesPage() {
       if (!match) continue
       const otherId = match.user_a_id === user.id ? match.user_b_id : match.user_a_id
       const other = profileById[otherId] ?? null
-
-      console.log('[Messages] otherId:', otherId, 'profile:', other)
 
       const sortedMessages = [...((c.messages as any[]) || [])].sort(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
