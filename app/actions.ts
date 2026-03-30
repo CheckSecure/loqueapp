@@ -363,7 +363,7 @@ export async function adminGenerateBatch() {
     return true
   }
 
-  // Generate mutual pairs
+  // FIRST PASS: Generate complementary mutual pairs
   for (let i = 0; i < profiles.length; i++) {
     const userA = profiles[i]
     const preferredRoles = COMPLEMENTARY[userA.role_type ?? ''] ?? []
@@ -394,7 +394,7 @@ export async function adminGenerateBatch() {
     }
   }
 
-  // Fill remaining slots for users with < 3 suggestions
+  // SECOND PASS: Fill remaining slots with ANY user AND add reciprocal
   for (const user of profiles) {
     const currentCount = userSuggestionCount[user.id] ?? 0
     if (currentCount >= 3) continue
@@ -406,11 +406,15 @@ export async function adminGenerateBatch() {
       .slice(0, remaining)
 
     for (const pick of pool) {
-      addSuggestion(
-        user.id,
-        pick.id,
-        `Expanding your network across disciplines can open unexpected doors.`
-      )
+      const reason = `Expanding your network across disciplines can open unexpected doors.`
+      
+      // Add user → pick
+      const added = addSuggestion(user.id, pick.id, reason)
+      
+      // Add pick → user (reciprocal for filler matches too!)
+      if (added) {
+        addSuggestion(pick.id, user.id, reason)
+      }
     }
   }
 
