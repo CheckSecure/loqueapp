@@ -25,7 +25,7 @@ export default async function MessagesPage() {
     // Step 2: get conversations linked to those matches (with messages)
     const { data: convRows, error: convErr } = await supabase
       .from('conversations')
-      .select('id, match_id, created_at, messages(id, content, sender_id, created_at)')
+      .select('id, match_id, created_at, messages(id, content, sender_id, created_at, read_at)')
       .in('match_id', matchIds)
 
     console.log('[Messages] convErr:', convErr?.message ?? 'none')
@@ -46,7 +46,7 @@ export default async function MessagesPage() {
     if (otherIds.length > 0) {
       const { data: profileRows } = await supabase
         .from('profiles')
-        .select('id, full_name, title, company')
+        .select('id, full_name, title, company, avatar_color')
         .in('id', otherIds)
       for (const p of profileRows || []) profileById[p.id] = p
     }
@@ -79,12 +79,18 @@ export default async function MessagesPage() {
       )
       const lastMsg = sortedMessages[sortedMessages.length - 1]
 
+      // Count unread messages from the other person
+      const unreadCount = sortedMessages.filter(
+        (m: any) => m.sender_id !== user.id && !m.read_at
+      ).length
+
       conversations.push({
         id: c.id,
         other,
         messages: sortedMessages,
         lastMessage: lastMsg?.content || '',
         lastTime: lastMsg?.created_at || c.created_at,
+        unreadCount,
       })
     }
 

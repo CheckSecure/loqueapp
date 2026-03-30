@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { Send, Search, MessageSquare, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { sendMessage } from '@/app/actions'
+import { createClient } from '@/lib/supabase/client'
 
 interface Profile {
   id: string
@@ -18,6 +19,7 @@ interface Message {
   content: string
   sender_id: string
   created_at: string
+  read_at?: string | null
 }
 
 interface Conversation {
@@ -26,6 +28,7 @@ interface Conversation {
   messages: Message[]
   lastMessage: string
   lastTime: string
+  unreadCount: number
 }
 
 function timeAgo(date: string | null | undefined) {
@@ -56,14 +59,44 @@ export default function MessagesClient({
   const [mobilePanel, setMobilePanel] = useState<'list' | 'thread'>('list')
   const [sending, setSending] = useState(false)
   const [localMessages, setLocalMessages] = useState<Message[]>([])
+  const [localUnreadCounts, setLocalUnreadCounts] = useState<Record<string, number>>({})
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Initialize unread counts
+  useEffect(() => {
+    const counts: Record<string, number> = {}
+    for (const c of conversations) {
+      counts[c.id] = c.unreadCount
+    }
+    setLocalUnreadCounts(counts)
+  }, [conversations])
+
+  const markAsRead = useCallback(async (conversationId: string) => {
+    const supabase = createClient()
+    
+    // Mark all unread messages in this conversation as read
+    await supabase
+      .from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('conversation_id', conversationId)
+      .neq('sender_id', currentUserId)
+      .is('read_at', null)
+    
+    // Update local count
+    setLocalUnreadCounts(prev => ({ ...prev, [conversationId]: 0 }))
+  }, [currentUserId])
 
   const selectConversation = useCallback((c: Conversation) => {
     setSelected(c)
     setLocalMessages(c.messages)
     if (inputRef.current) inputRef.current.value = ''
     setMobilePanel('thread')
-  }, [])
+    
+    // Mark messages as read
+    if (c.unreadCount > 0 || localUnreadCounts[c.id] > 0) {
+      markAsRead(c.id)
+    }
+  }, [markAsRead, localUnreadCounts])
 
   const handleSend = useCallback(async () => {
     if (!inputRef.current || !selected || sending) return
@@ -115,27 +148,47 @@ export default function MessagesClient({
             <p className="text-xs text-slate-400 mt-1">Accept an introduction to start a conversation.</p>
           </div>
         ) : (
-          conversations.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => selectConversation(c)}
-              className={cn(
-                'w-full text-left px-4 py-3.5 hover:bg-[#F5F6FB] transition-colors flex items-start gap-3',
-                selected?.id === c.id && 'bg-[#F5F6FB] border-l-2 border-[#1B2850]'
-              )}
-            >
-              <div className={`w-9 h-9 rounded-full ${c.other?.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5`}>
-                {initials(c.other?.full_name)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-0.5">
-                  <p className="text-sm font-semibold text-slate-900 truncate">{c.other?.full_name || 'Unknown'}</p>
-                  <span suppressHydrationWarning className="text-xs text-slate-400 ml-2 flex-shrink-0">{timeAgo(c.lastTime)}</span>
+          conversations.map((c) => {
+            const unreadCount = localUnreadCounts[c.id] ?? c.unreadCount
+            return (
+              <button
+                key={c.id}
+                onClick={() => selectConversation(c)}
+                className={cn(
+                  'w-full text-left px-4 py-3.5 hover:bg-[#F5F6FB] transition-colors flex items-start gap-3',
+                  selected?.id === c.id && 'bg-[#F5F6FB] border-l-2 border-[#1B2850]'
+                )}
+              >
+                <div className="relative">
+                  <div className={`w-9 h-9 rounded-full ${c.other?.avatar_color || 'bg-[#1B2850]'} flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-0.5`}>
+                    {initials(c.other?.full_name)}
+                  </div>
+                  {unreadCount > 0 && (
+                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                      {unreadCount}
+                    </div>
+                  )}
                 </div>
-                <p className="text-xs text-slate-500 truncate">{c.lastMessage || 'No messages yet'}</p>
-              </div>
-            </button>
-          ))
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <p className={cn(
+                      "text-sm truncate",
+                      unreadCount > 0 ? "font-bold text-slate-900" : "font-semibold text-slate-900"
+                    )}>
+                      {c.other?.full_name || 'Unknown'}
+                    </p>
+                    <span suppressHydrationWarning className="text-xs text-slate-400 ml-2 flex-shrink-0">{timeAgo(c.lastTime)}</span>
+                  </div>
+                  <p className={cn(
+                    "text-xs truncate",
+                    unreadCount > 0 ? "font-semibold text-slate-700" : "text-slate-500"
+                  )}>
+                    {c.lastMessage || 'No messages yet'}
+                  </p>
+                </div>
+              </button>
+            )
+          })
         )}
       </div>
     </div>
