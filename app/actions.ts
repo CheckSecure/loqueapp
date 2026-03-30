@@ -325,7 +325,7 @@ export async function adminGenerateBatch() {
     investor_vc:            ['executive_csuite', 'legal_tech_startup', 'finance_professional'],
     executive_csuite:       ['investor_vc', 'strategy_consulting', 'government_policy'],
     in_house_counsel:       ['legal_operations', 'compliance_risk', 'law_firm_attorney'],
-    law_firm_attorney:      ['in_house_counsel', 'legal_operations', 'executive_csuite'],
+    law_firm_attorney:      ['in_house_counsel', 'legal_operations', 'executive_csuite', 'investor_vc', 'finance_professional'],
     legal_operations:       ['in_house_counsel', 'legal_tech_startup', 'strategy_consulting'],
     finance_professional:   ['investor_vc', 'executive_csuite', 'strategy_consulting'],
     healthcare_professional:['government_policy', 'executive_csuite', 'investor_vc'],
