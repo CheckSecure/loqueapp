@@ -13,35 +13,7 @@ export async function POST(request: Request) {
   // Get the intro request
   const { data: introRequest, error: reqError } = await supabase
     .from('intro_requests')
-    .select(`
-      id,
-      requester_id,
-      target_id,
-      requester:profiles!intro_requests_requester_id_fkey(
-
-cd ~/loqueapp && cat > app/api/admin/facilitate-intro/route.ts << 'ENDOFFILE'
-import { createClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
-import { sendMatchCreatedEmail } from '@/lib/email'
-
-export async function POST(request: Request) {
-  const supabase = createClient()
-  const { requestId } = await request.json()
-
-  if (!requestId) {
-    return NextResponse.json({ error: 'Request ID required' }, { status: 400 })
-  }
-
-  // Get the intro request
-  const { data: introRequest, error: reqError } = await supabase
-    .from('intro_requests')
-    .select(`
-      id,
-      requester_id,
-      target_id,
-      requester:profiles!intro_requests_requester_id_fkey(id, full_name, email, role, company),
-      target:profiles!intro_requests_target_id_fkey(id, full_name, email, role, company)
-    `)
+    .select('id, requester_id, target_id, requester:profiles!intro_requests_requester_id_fkey(id, full_name, email, role, company), target:profiles!intro_requests_target_id_fkey(id, full_name, email, role, company)')
     .eq('id', requestId)
     .single()
 
