@@ -70,27 +70,39 @@ export default function MessagesClient({
       counts[c.id] = c.unreadCount
     }
     setLocalUnreadCounts(counts)
+    console.log('[MessagesClient] Initial unread counts:', counts)
   }, [conversations])
 
   const markAsRead = useCallback(async (conversationId: string) => {
     const supabase = createClient()
     
+    console.log('[MessagesClient] Marking as read for conversation:', conversationId, 'currentUserId:', currentUserId)
+    
     // Mark all unread messages in this conversation as read
-    await supabase
+    const { data, error } = await supabase
       .from('messages')
       .update({ read_at: new Date().toISOString() })
       .eq('conversation_id', conversationId)
       .neq('sender_id', currentUserId)
       .is('read_at', null)
+      .select()
+    
+    console.log('[MessagesClient] Mark as read result - updated rows:', data?.length, 'error:', error?.message)
     
     // Update local count
-    setLocalUnreadCounts(prev => ({ ...prev, [conversationId]: 0 }))
+    setLocalUnreadCounts(prev => {
+      const updated = { ...prev, [conversationId]: 0 }
+      console.log('[MessagesClient] Updated local counts:', updated)
+      return updated
+    })
     
     // Refresh to update Sidebar count
+    console.log('[MessagesClient] Calling router.refresh()')
     router.refresh()
   }, [currentUserId, router])
 
   const selectConversation = useCallback((c: Conversation) => {
+    console.log('[MessagesClient] Selecting conversation:', c.id, 'unreadCount:', c.unreadCount, 'localCount:', localUnreadCounts[c.id])
     setSelected(c)
     setLocalMessages(c.messages)
     if (inputRef.current) inputRef.current.value = ''
@@ -98,7 +110,10 @@ export default function MessagesClient({
     
     // Mark messages as read
     if (c.unreadCount > 0 || localUnreadCounts[c.id] > 0) {
+      console.log('[MessagesClient] Has unread messages, calling markAsRead')
       markAsRead(c.id)
+    } else {
+      console.log('[MessagesClient] No unread messages')
     }
   }, [markAsRead, localUnreadCounts])
 
