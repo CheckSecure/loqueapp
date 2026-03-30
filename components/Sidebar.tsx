@@ -27,6 +27,7 @@ interface SidebarProps {
   avatarColor: string
   avatarUrl?: string | null
   credits: number
+  unreadCount: number
 }
 
 function CreditsChip({ credits }: { credits: number }) {
@@ -94,19 +95,16 @@ export default function Sidebar({
   avatarColor,
   avatarUrl,
   credits,
+  unreadCount,
 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
 
-  // Verify admin status directly against the live Supabase session.
-  // Start as false so non-admins never see a flash of the link.
   const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
-      console.log('Sidebar auth check - email:', user?.email)
-      console.log('Sidebar isAdmin result:', user?.email === ADMIN_EMAIL)
       setIsAdmin(user?.email === ADMIN_EMAIL)
     })
   }, [])
@@ -127,17 +125,23 @@ export default function Sidebar({
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
+          const isMessages = href === '/dashboard/messages'
           return (
             <Link
               key={href}
               href={href}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative',
                 active ? 'bg-[#1B2850] text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               )}
             >
               <Icon className="w-4 h-4 flex-shrink-0" />
               {label}
+              {isMessages && unreadCount > 0 && (
+                <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </Link>
           )
         })}

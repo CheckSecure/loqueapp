@@ -27,9 +27,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
       .eq('id', user.id)
       .single()
 
-    // Only redirect to onboarding if:
-    // - no profile row exists at all, OR
-    // - profile_complete is false/null AND full_name is also null (truly new invited user)
     const needsOnboarding = !profileCheck || (!profileCheck.profile_complete && !profileCheck.full_name)
     if (needsOnboarding) {
       redirect('/onboarding')
@@ -47,7 +44,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const avatarUrl: string | null = (profile as any)?.avatar_url ?? null
   const credits: number = creditRow?.balance ?? 0
 
-  // Unread message count — messages from others in the user's conversations
+  // Unread message count
   let unreadCount = 0
   try {
     const { data: matchRows } = await supabase
@@ -100,6 +97,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           avatarColor={avatarColor}
           avatarUrl={avatarUrl}
           credits={credits}
+          unreadCount={unreadCount}
         />
         <main className="flex-1 min-w-0 overflow-x-hidden">
           {children}
