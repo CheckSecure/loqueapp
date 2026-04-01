@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   // Get the intro request
   const { data: introRequest, error: reqError } = await supabase
     .from('intro_requests')
-    .select('id, requester_id, target_id, requester:profiles!intro_requests_requester_id_fkey(id, full_name, email, role, company), target:profiles!intro_requests_target_id_fkey(id, full_name, email, role, company)')
+    .select('id, requester_id, target_user_id, requester:profiles!intro_requests_requester_id_fkey(id, full_name, email, role, company), target:profiles!intro_requests_target_user_id_fkey(id, full_name, email, role, company)')
     .eq('id', requestId)
     .single()
 
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     .from('matches')
     .insert({
       user_a_id: introRequest.requester_id,
-      user_b_id: introRequest.target_id,
+      user_b_id: introRequest.target_user_id,
     })
     .select()
     .single()
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       link: '/dashboard/network',
     },
     {
-      user_id: introRequest.target_id,
+      user_id: introRequest.target_user_id,
       type: 'intro_accepted',
       body: `Your introduction to ${requester.full_name} has been facilitated`,
       link: '/dashboard/network',
