@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getUserScore } from '@/lib/scoring'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -11,17 +10,26 @@ const TIER_BATCH_SIZES: Record<string, number> = {
   executive: 8,
 }
 
+// MINIMUM RELEVANCE THRESHOLD - pairs below this are not considered
+const MIN_RELEVANCE_SCORE = 40
+
+// MUTUAL MATCHING THRESHOLD - only top X% of pairs get bidirectional
+const MUTUAL_MATCH_PERCENTILE = 0.4 // Top 40% of pairs
+
+// DIVERSITY LIMITS - max % of batch from same role_type
+const MAX_SAME_ROLE_PERCENT = 0.4
+
 function scoreMatch(recipient: any, candidate: any): number {
   let score = 0
 
-  // 1. Intro preferences match — does recipient want to meet candidate's role type?
+  // 1. Intro preferences match
   const recipientPrefs: string[] = recipient.intro_preferences || []
   const candidateRole: string = candidate.role_type || ''
   if (recipientPrefs.some((p: string) => p.toLowerCase() === candidateRole.toLowerCase())) {
     score += 30
   }
 
-  // 2. Reverse — does candidate want to meet recipient's role type?
+  // 2. Reverse match
   const candidatePrefs: string[] = candidate.intro_preferences || []
   const recipientRole: string = recipient.role_type || ''
   if (candidatePrefs.some((p: string) => p.toLowerCase() === recipientRole.toLowerCase())) {
@@ -44,11 +52,11 @@ function scoreMatch(recipient: any, candidate: any): number {
     score += 25
   }
 
-  // 5. Tier boost — higher tier candidates get priority
+  // 5. Tier boost
   const tierBoost: Record<string, number> = { executive: 15, professional: 8, free: 0 }
   score += tierBoost[candidate.subscription_tier] ?? 0
 
-  // 6. Network Value Score boost (up to 15 pts) + Responsiveness boost (up to 5 pts)
+  // 6. Network scores
   if (candidate.networkValueScore) {
     score += Math.round((candidate.networkValueScore / 100) * 15)
   }
@@ -56,7 +64,7 @@ function scoreMatch(recipient: any, candidate: any): number {
     score += Math.round((candidate.responsivenessScore / 100) * 5)
   }
 
-  // 6. Seniority diversity bonus (avoid same seniority always)
+  // 7. Seniority diversity
   if (recipient.seniority !== candidate.seniority) {
     score += 5
   }
@@ -92,6 +100,30 @@ function generateReason(recipient: any, candidate: any): string {
   return `Curated based on your professional background and stated goals.`
 }
 
+function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low' {
+  const totalScore = (user.networkValueScore || 0) + (user.responsivenessScore || 0)
+  const sortedByScore = profiles
+    .map(p => (p.networkValueScore || 0) + (p.responsivenessScore || 0))
+    .sort((a, b) => b - a)
+  
+  const percentile = sortedByScore.indexOf(totalScore) / sortedByScore.length
+  
+  if (percentile <= 0.33) return 'high'
+  if (percentile <= 0.66) return 'mid'
+  return 'low'
+}
+
+interface PairScore {
+  userA: any
+  userB: any
+  scoreAtoB: number
+  scoreBtoA: number
+  mutualScore: number
+  relevanceScore: number
+  reasonAtoB: string
+  reasonBtoA: string
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = createClient()
@@ -102,10 +134,9 @@ export async function POST(req: NextRequest) {
 
     const adminClient = createAdminClient()
 
-    // Get all active, complete profiles
     const { data: profiles, error: profilesError } = await adminClient
       .from('profiles')
-      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise')
+      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore')
       .eq('profile_complete', true)
       .eq('is_active', true)
       .neq('email', 'bizdev91@gmail.com')
@@ -114,7 +145,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not enough profiles to match' }, { status: 400 })
     }
 
-    // Get next batch number
     const { data: lastBatch } = await adminClient
       .from('introduction_batches')
       .select('batch_number')
@@ -124,14 +154,12 @@ export async function POST(req: NextRequest) {
 
     const nextBatchNumber = (lastBatch?.batch_number ?? 0) + 1
 
-    // Get week dates
     const now = new Date()
     const monday = new Date(now)
     monday.setDate(now.getDate() - now.getDay() + 1)
     const sunday = new Date(monday)
     sunday.setDate(monday.getDate() + 6)
 
-    // Create the batch
     const { data: batch, error: batchError } = await adminClient
       .from('introduction_batches')
       .insert({
@@ -148,7 +176,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Failed to create batch: ${batchError?.message}` }, { status: 500 })
     }
 
-    // Get recent passes and hidden profiles per user (last 90 days)
     const ninetyDaysAgo = new Date()
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
 
@@ -170,7 +197,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Get recently shown profiles (last 2 batches) to avoid repetition
     const { data: recentBatches } = await adminClient
       .from('introduction_batches')
       .select('id')
@@ -193,60 +219,169 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Generate suggestions for each user
-    const allSuggestions: any[] = []
+    const highTierExposure: Record<string, number> = {}
+    const highTierUsers = profiles.filter(p => getUserTierCategory(p, profiles) === 'high')
+    for (const u of highTierUsers) {
+      highTierExposure[u.id] = 0
+    }
 
-    for (const recipient of profiles) {
-      const batchSize = TIER_BATCH_SIZES[recipient.subscription_tier ?? 'free'] ?? 3
-      const excludedArr = [
-        recipient.id,
-        ...Array.from(hiddenMap[recipient.id] || []),
-        ...Array.from(passMap[recipient.id] || []),
-        ...Array.from(recentlyShownMap[recipient.id] || []),
-      ]
-      const excluded = new Set(excludedArr)
-
-      // Score all candidates
-      const scored = profiles
-        .filter(p => !excluded.has(p.id))
-        .map(candidate => ({
-          candidate,
-          score: scoreMatch(recipient, candidate),
-          reason: generateReason(recipient, candidate),
-        }))
-        .sort((a, b) => b.score - a.score)
-
-      // Ensure diversity — limit same role_type to 40% of batch
-      const selected: typeof scored = []
-      const roleTypeCounts: Record<string, number> = {}
-      const maxPerRole = Math.ceil(batchSize * 0.4)
-
-      for (const item of scored) {
-        if (selected.length >= batchSize) break
-        const rt = item.candidate.role_type || 'unknown'
-        if ((roleTypeCounts[rt] || 0) >= maxPerRole) continue
-        selected.push(item)
-        roleTypeCounts[rt] = (roleTypeCounts[rt] || 0) + 1
+    const allPairs: PairScore[] = []
+    
+    for (let i = 0; i < profiles.length; i++) {
+      for (let j = i + 1; j < profiles.length; j++) {
+        const userA = profiles[i]
+        const userB = profiles[j]
+        
+        const aHiddenB = hiddenMap[userA.id]?.has(userB.id) || passMap[userA.id]?.has(userB.id)
+        const bHiddenA = hiddenMap[userB.id]?.has(userA.id) || passMap[userB.id]?.has(userA.id)
+        const aShownB = recentlyShownMap[userA.id]?.has(userB.id)
+        const bShownA = recentlyShownMap[userB.id]?.has(userA.id)
+        
+        if (aHiddenB || bHiddenA || aShownB || bShownA) continue
+        
+        const scoreAtoB = scoreMatch(userA, userB)
+        const scoreBtoA = scoreMatch(userB, userA)
+        const avgScore = (scoreAtoB + scoreBtoA) / 2
+        
+        if (avgScore < MIN_RELEVANCE_SCORE) continue
+        
+        allPairs.push({
+          userA,
+          userB,
+          scoreAtoB,
+          scoreBtoA,
+          mutualScore: scoreAtoB + scoreBtoA,
+          relevanceScore: avgScore,
+          reasonAtoB: generateReason(userA, userB),
+          reasonBtoA: generateReason(userB, userA),
+        })
       }
-
-      // Fill remaining slots without role diversity constraint
-      if (selected.length < batchSize) {
-        const selectedIds = new Set(selected.map(s => s.candidate.id))
-        for (const item of scored) {
-          if (selected.length >= batchSize) break
-          if (!selectedIds.has(item.candidate.id)) {
-            selected.push(item)
-            selectedIds.add(item.candidate.id)
+    }
+    
+    allPairs.sort((a, b) => {
+      if (Math.abs(a.relevanceScore - b.relevanceScore) > 10) {
+        return b.relevanceScore - a.relevanceScore
+      }
+      return b.mutualScore - a.mutualScore
+    })
+    
+    const mutualThreshold = allPairs[Math.floor(allPairs.length * MUTUAL_MATCH_PERCENTILE)]?.mutualScore || 0
+    const bidirectionalPairs = allPairs.filter(p => p.mutualScore >= mutualThreshold)
+    const onewayPairs = allPairs.filter(p => p.mutualScore < mutualThreshold)
+    
+    const userBatches: Record<string, any[]> = {}
+    const userBatchSizes: Record<string, number> = {}
+    const userRoleCounts: Record<string, Record<string, number>> = {}
+    
+    for (const profile of profiles) {
+      userBatches[profile.id] = []
+      userBatchSizes[profile.id] = TIER_BATCH_SIZES[profile.subscription_tier ?? 'free'] ?? 3
+      userRoleCounts[profile.id] = {}
+    }
+    
+    const assignedPairs = new Set<string>()
+    let mutualMatchesCreated = 0
+    
+    for (const pair of bidirectionalPairs) {
+      const { userA, userB, scoreAtoB, scoreBtoA, reasonAtoB, reasonBtoA } = pair
+      
+      const pairKey = [userA.id, userB.id].sort().join('-')
+      if (assignedPairs.has(pairKey)) continue
+      
+      const aHasSpace = userBatches[userA.id].length < userBatchSizes[userA.id]
+      const bHasSpace = userBatches[userB.id].length < userBatchSizes[userB.id]
+      
+      const aRoleB = userB.role_type || 'unknown'
+      const bRoleA = userA.role_type || 'unknown'
+      const aRoleCount = userRoleCounts[userA.id][aRoleB] || 0
+      const bRoleCount = userRoleCounts[userB.id][bRoleA] || 0
+      const aMaxPerRole = Math.ceil(userBatchSizes[userA.id] * MAX_SAME_ROLE_PERCENT)
+      const bMaxPerRole = Math.ceil(userBatchSizes[userB.id] * MAX_SAME_ROLE_PERCENT)
+      
+      const bIsHighTier = highTierExposure.hasOwnProperty(userB.id)
+      const aIsHighTier = highTierExposure.hasOwnProperty(userA.id)
+      const bOverExposed = bIsHighTier && highTierExposure[userB.id] >= 8
+      const aOverExposed = aIsHighTier && highTierExposure[userA.id] >= 8
+      
+      const canAddBoth = aHasSpace && bHasSpace && 
+                         aRoleCount < aMaxPerRole && bRoleCount < bMaxPerRole &&
+                         !bOverExposed && !aOverExposed
+      
+      if (canAddBoth) {
+        userBatches[userA.id].push({ suggested: userB, score: scoreAtoB, reason: reasonAtoB })
+        userBatches[userB.id].push({ suggested: userA, score: scoreBtoA, reason: reasonBtoA })
+        
+        userRoleCounts[userA.id][aRoleB] = aRoleCount + 1
+        userRoleCounts[userB.id][bRoleA] = bRoleCount + 1
+        
+        if (bIsHighTier) highTierExposure[userB.id]++
+        if (aIsHighTier) highTierExposure[userA.id]++
+        
+        assignedPairs.add(pairKey)
+        mutualMatchesCreated++
+      }
+    }
+    
+    const allCandidatePairs = [...onewayPairs, ...bidirectionalPairs]
+    
+    for (const recipient of profiles) {
+      const currentSize = userBatches[recipient.id].length
+      const targetSize = userBatchSizes[recipient.id]
+      const spotsLeft = targetSize - currentSize
+      
+      if (spotsLeft <= 0) continue
+      
+      const alreadyAssigned = new Set(userBatches[recipient.id].map(s => s.suggested.id))
+      
+      const candidates = allCandidatePairs
+        .filter(p => {
+          const isA = p.userA.id === recipient.id
+          const isB = p.userB.id === recipient.id
+          if (!isA && !isB) return false
+          
+          const suggested = isA ? p.userB : p.userA
+          if (alreadyAssigned.has(suggested.id)) return false
+          
+          const roleCount = userRoleCounts[recipient.id][suggested.role_type || 'unknown'] || 0
+          const maxPerRole = Math.ceil(targetSize * MAX_SAME_ROLE_PERCENT)
+          if (roleCount >= maxPerRole) return false
+          
+          const isHighTier = highTierExposure.hasOwnProperty(suggested.id)
+          if (isHighTier && highTierExposure[suggested.id] >= 8) return false
+          
+          return true
+        })
+        .map(p => {
+          const isA = p.userA.id === recipient.id
+          return {
+            suggested: isA ? p.userB : p.userA,
+            score: isA ? p.scoreAtoB : p.scoreBtoA,
+            reason: isA ? p.reasonAtoB : p.reasonBtoA,
           }
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, spotsLeft)
+      
+      for (const candidate of candidates) {
+        userBatches[recipient.id].push(candidate)
+        const roleType = candidate.suggested.role_type || 'unknown'
+        userRoleCounts[recipient.id][roleType] = (userRoleCounts[recipient.id][roleType] || 0) + 1
+        
+        if (highTierExposure.hasOwnProperty(candidate.suggested.id)) {
+          highTierExposure[candidate.suggested.id]++
         }
       }
-
-      for (let i = 0; i < selected.length; i++) {
-        const { candidate, score, reason } = selected[i]
+    }
+    
+    const allSuggestions: any[] = []
+    
+    for (const [recipientId, suggestions] of Object.entries(userBatches)) {
+      for (let i = 0; i < suggestions.length; i++) {
+        const { suggested, score, reason } = suggestions[i]
         allSuggestions.push({
           batch_id: batch.id,
-          recipient_id: recipient.id,
-          suggested_id: candidate.id,
+          recipient_id: recipientId,
+          suggested_id: suggested.id,
           reason,
           match_score: score,
           position: i + 1,
@@ -255,7 +390,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Insert all suggestions
     if (allSuggestions.length > 0) {
       const { error: suggestionsError } = await adminClient
         .from('batch_suggestions')
@@ -265,6 +399,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `Failed to insert suggestions: ${suggestionsError.message}` }, { status: 500 })
       }
     }
+    
+    const oneWayMatches = allSuggestions.length - (mutualMatchesCreated * 2)
+    const avgBatchSize = allSuggestions.length / profiles.length
 
     return NextResponse.json({
       success: true,
@@ -272,6 +409,15 @@ export async function POST(req: NextRequest) {
       batchNumber: nextBatchNumber,
       totalSuggestions: allSuggestions.length,
       usersMatched: profiles.length,
+      mutualOpportunities: mutualMatchesCreated,
+      oneWayMatches,
+      avgBatchSize: Math.round(avgBatchSize * 10) / 10,
+      qualityMetrics: {
+        relevanceThreshold: MIN_RELEVANCE_SCORE,
+        mutualMatchPercentile: MUTUAL_MATCH_PERCENTILE,
+        pairsConsidered: allPairs.length,
+        pairsQualified: bidirectionalPairs.length,
+      }
     })
   } catch (err: any) {
     console.error('[generate-batch] error:', err.message)
