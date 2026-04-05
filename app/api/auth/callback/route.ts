@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.redirect(`${origin}${next}`)
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    'https://cyjyutmtsovfnnbbluxc.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5anl1dG10c292Zm5uYmJsdXhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3OTc2ODIsImV4cCI6MjA4OTM3MzY4Mn0.-_yAw3vfssLwS0CGSZLCrrFlTsfGtXHPQmUOtQoF6S4',
     {
       cookies: {
         getAll() {
@@ -30,7 +30,6 @@ export async function GET(request: NextRequest) {
     }
   )
 
-  // PKCE code exchange (standard OAuth / magic link flow)
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
@@ -40,7 +39,6 @@ export async function GET(request: NextRequest) {
     console.error('[auth/callback] code exchange error:', error.message)
   }
 
-  // token_hash flow (email OTP, password reset — invites now use /auth/confirm)
   if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type })
     if (!error) {

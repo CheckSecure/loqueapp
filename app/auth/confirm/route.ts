@@ -20,14 +20,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${origin}/login?error=missing_token`)
     }
 
-    // Build the redirect response first so session cookies can be written onto it.
-    // Writing to next/headers cookies() in a Route Handler does NOT produce Set-Cookie
-    // headers — cookies must be set directly on the response object.
     const response = NextResponse.redirect(`${origin}/onboarding`)
 
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      'https://cyjyutmtsovfnnbbluxc.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5anl1dG10c292Zm5uYmJsdXhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3OTc2ODIsImV4cCI6MjA4OTM3MzY4Mn0.-_yAw3vfssLwS0CGSZLCrrFlTsfGtXHPQmUOtQoF6S4',
       {
         cookies: {
           getAll() {
@@ -60,8 +57,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${origin}/login?error=invite_invalid`)
     }
 
-    // Return the pre-built response — it now carries the new session cookies in
-    // its Set-Cookie headers, replacing any existing admin session in the browser.
     console.log('[auth/confirm] session established for:', data.user?.email)
     return response
   } catch (err: any) {
