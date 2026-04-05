@@ -10,28 +10,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Request ID required' }, { status: 400 })
   }
 
-  // DEBUG: Check who we are
-  const { data: { user } } = await supabase.auth.getUser()
-  console.log('[facilitate-intro] Current user:', user?.id, user?.email)
-
-  // DEBUG: Check if we can read intro_requests at all
-  const { data: allRequests, error: allError } = await supabase
-    .from('intro_requests')
-    .select('id')
-    .limit(5)
-  console.log('[facilitate-intro] Can read any requests?', allRequests?.length, 'Error:', allError)
-
   // Get the intro request
   const { data: introRequest, error: reqError } = await supabase
     .from('intro_requests')
-    .select('id, requester_id, target_user_id, requester:profiles!intro_requests_requester_id_fkey(id, full_name, email, role, company), target:profiles!intro_requests_target_user_id_fkey(id, full_name, email, role, company)')
+    .select('id, requester_id, target_user_id, requester:profiles!intro_requests_requester_id_fkey(id, full_name, email, role_type, company), target:profiles!intro_requests_target_user_id_fkey(id, full_name, email, role_type, company)')
     .eq('id', requestId)
     .single()
 
-  console.log('[facilitate-intro] Query result:', { introRequest, reqError })
-
   if (reqError || !introRequest) {
-    return NextResponse.json({ error: 'Request not found', debug: { reqError, requestId, userId: user?.id } }, { status: 404 })
+    return NextResponse.json({ error: 'Request not found' }, { status: 404 })
   }
 
   const requester = introRequest.requester as any
@@ -91,14 +78,14 @@ export async function POST(request: Request) {
         requester.email,
         requester.full_name,
         target.full_name,
-        target.role,
+        target.role_type,
         target.company
       ),
       sendMatchCreatedEmail(
         target.email,
         target.full_name,
         requester.full_name,
-        requester.role,
+        requester.role_type,
         requester.company
       ),
     ])
