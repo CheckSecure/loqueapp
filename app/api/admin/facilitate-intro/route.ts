@@ -10,7 +10,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Request ID required' }, { status: 400 })
   }
 
-  // Get the intro request
   const { data: introRequest, error: reqError } = await supabase
     .from('intro_requests')
     .select('id, requester_id, target_user_id, requester:profiles!intro_requests_requester_id_fkey(id, full_name, email, role_type, company), target:profiles!intro_requests_target_user_id_fkey(id, full_name, email, role_type, company)')
@@ -29,7 +28,6 @@ export async function POST(request: Request) {
     user_b_id: introRequest.target_user_id
   })
 
-  // Create match
   const { data: match, error: matchError } = await supabase
     .from('matches')
     .insert({
@@ -52,7 +50,6 @@ export async function POST(request: Request) {
     }, { status: 500 })
   }
 
-  // Create conversation
   const { error: convError } = await supabase
     .from('conversations')
     .insert({ match_id: match.id })
@@ -61,13 +58,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create conversation' }, { status: 500 })
   }
 
-  // Mark request as approved
   await supabase
     .from('intro_requests')
     .update({ status: 'approved' })
     .eq('id', requestId)
 
-  // Create notifications for both users with titles
   const notifications = [
     {
       user_id: introRequest.requester_id,
@@ -85,9 +80,14 @@ export async function POST(request: Request) {
     },
   ]
 
-  await supabase.from('notifications').insert(notifications)
+  console.log('[facilitate-intro] Inserting notifications:', notifications)
+  const { data: notifData, error: notifError } = await supabase
+    .from('notifications')
+    .insert(notifications)
+    .select()
+  
+  console.log('[facilitate-intro] Notification result:', { notifData, notifError })
 
-  // Send emails to both users
   try {
     await Promise.all([
       sendMatchCreatedEmail(
@@ -111,4 +111,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ success: true, match })
 }
-// Force rebuild
