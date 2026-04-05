@@ -90,10 +90,19 @@ export default function NotificationBell() {
     if (n.link) window.location.href = n.link
   }
 
+  // NEW: Mark all as read when bell is opened
+  const handleBellClick = async () => {
+    setOpen(v => !v)
+    if (!open && unreadCount > 0) {
+      // Mark all as read when opening
+      await markAllRead()
+    }
+  }
+
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => { setOpen(v => !v) }}
+        onClick={handleBellClick}
         className="relative p-1.5 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
       >
         <Bell className="w-4 h-4" />
@@ -108,17 +117,9 @@ export default function NotificationBell() {
         <div className="absolute left-0 top-full mt-2 w-80 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-900">Notifications</p>
-            <div className="flex items-center gap-2">
-              {unreadCount > 0 && (
-                <button onClick={markAllRead} className="text-xs text-slate-400 hover:text-[#1B2850] flex items-center gap-1 transition-colors">
-                  <CheckCheck className="w-3 h-3" />
-                  Mark all read
-                </button>
-              )}
-              <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           <div className="max-h-96 overflow-y-auto divide-y divide-slate-50">

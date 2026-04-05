@@ -68,6 +68,18 @@ export default async function IntroductionsPage() {
   const userTier = (profileRow as any)?.subscription_tier ?? 'free'
   const isPaid = userTier !== 'free'
 
+  // Get all existing matches for this user
+  const { data: existingMatches } = await supabase
+    .from('matches')
+    .select('user_a_id, user_b_id')
+    .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`)
+
+  const matchedUserIds = new Set(
+    (existingMatches || []).flatMap((m: any) => 
+      [m.user_a_id, m.user_b_id].filter(id => id !== profileId)
+    )
+  )
+
   // Pending intro requests where I'm the target
   const { data: pending } = await supabase
     .from('intro_requests')
@@ -104,8 +116,10 @@ export default async function IntroductionsPage() {
 
   const requestedIds = new Set((existingRequests || []).map((r: any) => r.target_user_id))
 
-  // All batch suggestions with their interest status
-  const allSuggestionIds = (newRows || []).map((r: any) => r.suggested_id).filter(Boolean)
+  // All batch suggestions with their interest status - EXCLUDE MATCHED USERS
+  const allSuggestionIds = (newRows || [])
+    .map((r: any) => r.suggested_id)
+    .filter((id: string) => id && !matchedUserIds.has(id))
 
   // Fetch all profiles needed
   let profileMap: Record<string, any> = {}
@@ -122,9 +136,9 @@ export default async function IntroductionsPage() {
 
   // All suggestions with their state
   const allSuggestions = allSuggestionIds
-    .map((id: string) => ({ 
-      rowId: rowMap[id]?.id, 
-      profile: profileMap[id], 
+    .map((id: string) => ({
+      rowId: rowMap[id]?.id,
+      profile: profileMap[id],
       reason: rowMap[id]?.reason,
       alreadyRequested: requestedIds.has(id)
     }))

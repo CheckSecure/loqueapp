@@ -42,13 +42,13 @@ export async function POST(request: Request) {
   console.log('[facilitate-intro] Match creation result:', { match, matchError })
 
   if (matchError) {
-    return NextResponse.json({ 
-      error: 'Failed to create match', 
-      debug: { 
+    return NextResponse.json({
+      error: 'Failed to create match',
+      debug: {
         matchError: matchError.message,
         code: matchError.code,
         details: matchError.details
-      } 
+      }
     }, { status: 500 })
   }
 
@@ -67,18 +67,20 @@ export async function POST(request: Request) {
     .update({ status: 'approved' })
     .eq('id', requestId)
 
-  // Create notifications for both users
+  // Create notifications for both users with titles
   const notifications = [
     {
       user_id: introRequest.requester_id,
-      type: 'intro_accepted',
-      body: `Your introduction to ${target.full_name} has been facilitated`,
+      type: 'new_connection',
+      title: 'New Connection',
+      body: `You're now connected with ${target.full_name}`,
       link: '/dashboard/network',
     },
     {
       user_id: introRequest.target_user_id,
-      type: 'intro_accepted',
-      body: `Your introduction to ${requester.full_name} has been facilitated`,
+      type: 'new_connection',
+      title: 'New Connection',
+      body: `You're now connected with ${requester.full_name}`,
       link: '/dashboard/network',
     },
   ]
