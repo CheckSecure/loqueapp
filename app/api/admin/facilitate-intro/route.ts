@@ -24,6 +24,11 @@ export async function POST(request: Request) {
   const requester = introRequest.requester as any
   const target = introRequest.target as any
 
+  console.log('[facilitate-intro] Creating match:', {
+    user_a_id: introRequest.requester_id,
+    user_b_id: introRequest.target_user_id
+  })
+
   // Create match
   const { data: match, error: matchError } = await supabase
     .from('matches')
@@ -34,8 +39,17 @@ export async function POST(request: Request) {
     .select()
     .single()
 
+  console.log('[facilitate-intro] Match creation result:', { match, matchError })
+
   if (matchError) {
-    return NextResponse.json({ error: 'Failed to create match' }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'Failed to create match', 
+      debug: { 
+        matchError: matchError.message,
+        code: matchError.code,
+        details: matchError.details
+      } 
+    }, { status: 500 })
   }
 
   // Create conversation
