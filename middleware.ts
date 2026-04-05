@@ -3,6 +3,9 @@ console.log('[middleware] file is loading')
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 
+// Force Node.js runtime instead of Edge
+export const runtime = 'nodejs'
+
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
 export async function middleware(request: NextRequest) {
