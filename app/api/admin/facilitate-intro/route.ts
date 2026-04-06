@@ -57,19 +57,18 @@ export async function POST(request: Request) {
     .update({ status: 'approved' })
     .eq('id', requestId)
 
-  // Use admin client to bypass RLS for notifications
   const adminSupabase = createAdminClient()
   const notifications = [
     {
       user_id: introRequest.requester_id,
-      type: 'new_connection',
+      type: 'intro_accepted',
       title: 'New Connection',
       body: `You're now connected with ${target.full_name}`,
       link: '/dashboard/network',
     },
     {
       user_id: introRequest.target_user_id,
-      type: 'new_connection',
+      type: 'intro_accepted',
       title: 'New Connection',
       body: `You're now connected with ${requester.full_name}`,
       link: '/dashboard/network',
