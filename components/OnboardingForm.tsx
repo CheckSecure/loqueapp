@@ -57,12 +57,16 @@ export default function OnboardingForm() {
   const [fullName, setFullName] = useState('')
   const [title, setTitle] = useState('')
   const [company, setCompany] = useState('')
+  const [city, setCity] = useState('')
+  const [state, setState] = useState('')
   const [roleType, setRoleType] = useState('')
   const [bio, setBio] = useState('')
 
   // Preferences step
   const [meetRoles, setMeetRoles] = useState<string[]>([])
   const [purposes, setPurposes] = useState<string[]>([])
+  const [meetingFormat, setMeetingFormat] = useState('both')
+  const [geographicScope, setGeographicScope] = useState('us-wide')
   const [lookingFor, setLookingFor] = useState('')
 
   const toggleItem = (list: string[], setList: (v: string[]) => void, item: string) => {
@@ -126,11 +130,15 @@ export default function OnboardingForm() {
     fd.append('full_name', fullName.trim())
     fd.append('title', title.trim())
     fd.append('company', company.trim())
+    fd.append('city', city.trim())
+    fd.append('state', state.trim())
     fd.append('role_type', roleType)
     fd.append('bio', bio.trim())
     fd.append('looking_for', lookingFor.trim())
     fd.append('intro_preferences', meetRoles.join(','))
     fd.append('purposes', purposes.join(','))
+    fd.append('meeting_format_preference', meetingFormat)
+    fd.append('geographic_scope', geographicScope)
     if (avatarUrl) fd.append('avatar_url', avatarUrl)
 
     const result = await completeOnboarding(fd)
@@ -216,6 +224,18 @@ export default function OnboardingForm() {
               <label className="block text-sm font-semibold text-slate-800 mb-1.5">Company</label>
               <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Acme Corp" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
             </div>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-semibold text-slate-800 mb-1.5">City</label>
+                <input type="text" value={city} onChange={e => setCity(e.target.value)} placeholder="New York" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-800 mb-1.5">State</label>
+                <input type="text" value={state} onChange={e => setState(e.target.value)} placeholder="NY" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-2">Role type</label>
               <div className="flex flex-wrap gap-2">
@@ -252,6 +272,55 @@ export default function OnboardingForm() {
               <div className="flex flex-wrap gap-2">
                 {PURPOSES.map(p => (
                   <button key={p} type="button" onClick={() => toggleItem(purposes, setPurposes, p)} className={cn('px-3.5 py-2 rounded-lg text-sm font-medium border transition-all', purposes.includes(p) ? 'bg-[#C4922A] text-white border-[#C4922A]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#C4922A]/40 hover:text-[#C4922A]')}>{p}</button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">Meeting format preference</label>
+              <div className="flex gap-2">
+                {[
+                  { value: 'virtual', label: 'Virtual only' },
+                  { value: 'in-person', label: 'In-person only' },
+                  { value: 'both', label: 'Either works' },
+                ].map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setMeetingFormat(option.value)}
+                    className={cn(
+                      'flex-1 px-3.5 py-2.5 rounded-lg text-sm font-medium border transition-all',
+                      meetingFormat === option.value
+                        ? 'bg-[#1B2850] text-white border-[#1B2850]'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/40 hover:text-[#1B2850]'
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">Geographic preference</label>
+              <div className="flex gap-2">
+                {[
+                  { value: 'local', label: 'Local connections only' },
+                  { value: 'us-wide', label: 'Open to US-wide' },
+                ].map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setGeographicScope(option.value)}
+                    className={cn(
+                      'flex-1 px-3.5 py-2.5 rounded-lg text-sm font-medium border transition-all',
+                      geographicScope === option.value
+                        ? 'bg-[#1B2850] text-white border-[#1B2850]'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/40 hover:text-[#1B2850]'
+                    )}
+                  >
+                    {option.label}
+                  </button>
                 ))}
               </div>
             </div>
