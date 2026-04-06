@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { sendMatchCreatedEmail } from '@/lib/email'
 
@@ -23,11 +24,6 @@ export async function POST(request: Request) {
   const requester = introRequest.requester as any
   const target = introRequest.target as any
 
-  console.log('[facilitate-intro] Creating match:', {
-    user_a_id: introRequest.requester_id,
-    user_b_id: introRequest.target_user_id
-  })
-
   const { data: match, error: matchError } = await supabase
     .from('matches')
     .insert({
@@ -36,8 +32,6 @@ export async function POST(request: Request) {
     })
     .select()
     .single()
-
-  console.log('[facilitate-intro] Match creation result:', { match, matchError })
 
   if (matchError) {
     return NextResponse.json({
@@ -63,6 +57,8 @@ export async function POST(request: Request) {
     .update({ status: 'approved' })
     .eq('id', requestId)
 
+  // Use admin client to bypass RLS for notifications
+  const adminSupabase = createAdminClient()
   const notifications = [
     {
       user_id: introRequest.requester_id,
@@ -80,13 +76,14 @@ export async function POST(request: Request) {
     },
   ]
 
-  console.log('[facilitate-intro] Inserting notifications:', notifications)
-  const { data: notifData, error: notifError } = await supabase
+  const { data: notifData, error: notifError } = await adminSupabase
     .from('notifications')
     .insert(notifications)
     .select()
-  
-  console.log('[facilitate-intro] Notification result:', { notifData, notifError })
+
+  if (notifError) {
+    console.error('[facilitate-intro] Notification error:', notifError)
+  }
 
   try {
     await Promise.all([
