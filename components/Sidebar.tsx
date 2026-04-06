@@ -28,6 +28,7 @@ interface SidebarProps {
   avatarUrl?: string | null
   credits: number
   unreadCount: number
+  networkNotifCount: number
 }
 
 function CreditsChip({ credits }: { credits: number }) {
@@ -96,6 +97,7 @@ export default function Sidebar({
   avatarUrl,
   credits,
   unreadCount,
+  networkNotifCount,
 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -126,6 +128,9 @@ export default function Sidebar({
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
           const isMessages = href === '/dashboard/messages'
+          const isNetwork = href === '/dashboard/network'
+          const badgeCount = isMessages ? unreadCount : isNetwork ? networkNotifCount : 0
+          
           return (
             <Link
               key={href}
@@ -137,9 +142,9 @@ export default function Sidebar({
             >
               <Icon className="w-4 h-4 flex-shrink-0" />
               {label}
-              {isMessages && unreadCount > 0 && (
+              {badgeCount > 0 && (
                 <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {unreadCount > 9 ? '9+' : unreadCount}
+                  {badgeCount > 9 ? '9+' : badgeCount}
                 </span>
               )}
             </Link>

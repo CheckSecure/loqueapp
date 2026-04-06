@@ -86,6 +86,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
     unreadCount = 0
   }
 
+  // Network notification count (unread intro_accepted notifications)
+  let networkNotifCount = 0
+  try {
+    const { count } = await supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('type', 'intro_accepted')
+      .is('read_at', null)
+    
+    networkNotifCount = count ?? 0
+  } catch {
+    networkNotifCount = 0
+  }
+
   return (
     <>
       <MobileNav credits={credits} unreadCount={unreadCount} />
@@ -98,6 +113,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           avatarUrl={avatarUrl}
           credits={credits}
           unreadCount={unreadCount}
+          networkNotifCount={networkNotifCount}
         />
         <main className="flex-1 min-w-0 overflow-x-hidden">
           {children}
