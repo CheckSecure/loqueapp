@@ -215,7 +215,8 @@ function generateReason(recipient: any, candidate: any): string {
     return `${candidateName} is also focused on ${sharedPurposes[0]} — aligned on goals and timing.`
   }
 
-  // Priority 5: Shared interests
+
+function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low' {
   if (sharedInterests.length >= 2) {
     return `You both share a focus on ${sharedInterests.slice(0, 2).join(' and ')} — strong thematic alignment.`
   }
