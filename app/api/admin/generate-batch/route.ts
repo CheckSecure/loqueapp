@@ -65,30 +65,29 @@ function scoreMatch(recipient: any, candidate: any): number {
   let score = 0
 
   // 1. Intro preferences match
-  const recipientPrefs: string[] = recipient.intro_preferences || []
+  const recipientPrefs: string[] = Array.isArray(recipient.intro_preferences) ? recipient.intro_preferences : []
   const candidateRole: string = candidate.role_type || ''
   if (recipientPrefs.some((p: string) => p.toLowerCase() === candidateRole.toLowerCase())) {
     score += 30
   }
 
   // 2. Reverse match
-  const candidatePrefs: string[] = candidate.intro_preferences || []
+  const candidatePrefs: string[] = Array.isArray(candidate.intro_preferences) ? candidate.intro_preferences : []
   const recipientRole: string = recipient.role_type || ''
   if (candidatePrefs.some((p: string) => p.toLowerCase() === recipientRole.toLowerCase())) {
     score += 20
   }
 
   // 3. Purpose alignment
-  const recipientPurposes: string[] = recipient.purposes || []
-  const candidatePurposes: string[] = candidate.purposes || []
+  const recipientPurposes: string[] = Array.isArray(recipient.purposes) ? recipient.purposes : []
+  const candidatePurposes: string[] = Array.isArray(candidate.purposes) ? candidate.purposes : []
   const purposeOverlap = recipientPurposes.filter((p: string) =>
     candidatePurposes.some((cp: string) => cp.toLowerCase() === p.toLowerCase())
   ).length
   score += purposeOverlap * 12
 
-  // 4. Expertise complementarity
-  const recipientExpertise: string[] = recipient.expertise || []
-  const candidateExpertise: string[] = candidate.expertise || []
+  const recipientExpertise: string[] = Array.isArray(recipient.expertise) ? recipient.expertise : []
+  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
   const expertiseOverlap = recipientExpertise.filter((e: string) =>
     candidateExpertise.some((ce: string) => ce.toLowerCase() === e.toLowerCase())
   ).length
@@ -165,14 +164,14 @@ function scoreMatch(recipient: any, candidate: any): number {
 }
 
 function generateReason(recipient: any, candidate: any): string {
-  const recipientPrefs: string[] = recipient.intro_preferences || []
+  const recipientPrefs: string[] = Array.isArray(recipient.intro_preferences) ? recipient.intro_preferences : []
   const candidateRole: string = candidate.role_type || ''
-  const recipientPurposes: string[] = recipient.purposes || []
-  const candidatePurposes: string[] = candidate.purposes || []
-  const recipientExpertise: string[] = recipient.expertise || []
-  const candidateExpertise: string[] = candidate.expertise || []
-  const recipientInterests: string[] = recipient.interests || []
-  const candidateInterests: string[] = candidate.interests || []
+  const recipientPurposes: string[] = Array.isArray(recipient.purposes) ? recipient.purposes : []
+  const candidatePurposes: string[] = Array.isArray(candidate.purposes) ? candidate.purposes : []
+  const recipientExpertise: string[] = Array.isArray(recipient.expertise) ? recipient.expertise : []
+  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
+  const recipientInterests: string[] = Array.isArray(recipient.interests) ? recipient.interests : []
+  const candidateInterests: string[] = Array.isArray(candidate.interests) ? candidate.interests : []
 
   const sharedPurposes = recipientPurposes.filter((p: string) =>
     candidatePurposes.some((cp: string) => cp.toLowerCase() === p.toLowerCase())
