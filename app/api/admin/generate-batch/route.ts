@@ -243,8 +243,6 @@ function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low'
   return 'low'
 }
   
-  if (percentile <= 0.33) return 'high'
-}
 
 interface PairScore {
   userA: any
