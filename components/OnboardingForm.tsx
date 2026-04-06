@@ -17,6 +17,29 @@ const ROLE_TYPES = [
   'Legal',
 ]
 
+const SENIORITY_LEVELS = [
+  'Junior',
+  'Mid-Level',
+  'Senior',
+  'Executive',
+  'C-Suite',
+]
+
+const EXPERTISE_AREAS = [
+  'Strategy',
+  'Operations',
+  'Legal',
+  'Finance',
+  'Marketing',
+  'Sales',
+  'Product',
+  'Technology',
+  'Healthcare',
+  'Policy',
+  'Fundraising',
+  'M&A',
+]
+
 const MEET_ROLE_TYPES = [
   'Executive / C-Suite',
   'Investor / VC',
@@ -60,6 +83,8 @@ export default function OnboardingForm() {
   const [city, setCity] = useState('')
   const [state, setState] = useState('')
   const [roleType, setRoleType] = useState('')
+  const [seniority, setSeniority] = useState('')
+  const [expertise, setExpertise] = useState<string[]>([])
   const [bio, setBio] = useState('')
 
   // Preferences step
@@ -133,6 +158,8 @@ export default function OnboardingForm() {
     fd.append('city', city.trim())
     fd.append('state', state.trim())
     fd.append('role_type', roleType)
+    fd.append('seniority', seniority)
+    fd.append('expertise', expertise.join(','))
     fd.append('bio', bio.trim())
     fd.append('looking_for', lookingFor.trim())
     fd.append('intro_preferences', meetRoles.join(','))
@@ -244,6 +271,25 @@ export default function OnboardingForm() {
                 ))}
               </div>
             </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">Seniority level</label>
+              <div className="flex flex-wrap gap-2">
+                {SENIORITY_LEVELS.map(level => (
+                  <button key={level} type="button" onClick={() => setSeniority(level === seniority ? '' : level)} className={cn('px-3.5 py-2 rounded-lg text-sm font-medium border transition-all', seniority === level ? 'bg-[#1B2850] text-white border-[#1B2850]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/40 hover:text-[#1B2850]')}>{level}</button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">Areas of expertise <span className="text-slate-400 font-normal text-xs ml-1">select all that apply</span></label>
+              <div className="flex flex-wrap gap-2">
+                {EXPERTISE_AREAS.map(area => (
+                  <button key={area} type="button" onClick={() => toggleItem(expertise, setExpertise, area)} className={cn('px-3.5 py-2 rounded-lg text-sm font-medium border transition-all', expertise.includes(area) ? 'bg-[#1B2850] text-white border-[#1B2850]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/40 hover:text-[#1B2850]')}>{area}</button>
+                ))}
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-1.5">Short bio</label>
               <textarea value={bio} onChange={e => setBio(e.target.value)} placeholder="A few sentences about your background and what you bring to the table." rows={3} className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition resize-none" />

@@ -99,6 +99,12 @@ export async function completeOnboarding(formData: FormData) {
     .split(',').map(s => s.trim()).filter(Boolean)
   const purposes = (formData.get('purposes') as string || '')
     .split(',').map(s => s.trim()).filter(Boolean)
+  const expertise = (formData.get('expertise') as string || '')
+    .split(',').map(s => s.trim()).filter(Boolean)
+
+  const city = (formData.get('city') as string || '').trim()
+  const state = (formData.get('state') as string || '').trim()
+  const location = city && state ? `${city}, ${state}` : city || state || null
 
   const { error } = await supabase.from('profiles').upsert({
     id: user.id,
@@ -106,9 +112,12 @@ export async function completeOnboarding(formData: FormData) {
     full_name: (formData.get('full_name') as string) || null,
     title: (formData.get('title') as string) || null,
     company: (formData.get('company') as string) || null,
-    city: (formData.get('city') as string) || null,
-    state: (formData.get('state') as string) || null,
+    city: city || null,
+    state: state || null,
+    location: location,
     role_type: (formData.get('role_type') as string) || null,
+    seniority: (formData.get('seniority') as string) || null,
+    expertise: expertise,
     bio: (formData.get('bio') as string) || null,
     avatar_url: (formData.get('avatar_url') as string) || null,
     looking_for: (formData.get('looking_for') as string) || null,
@@ -118,6 +127,17 @@ export async function completeOnboarding(formData: FormData) {
     geographic_scope: (formData.get('geographic_scope') as string) || 'us-wide',
     profile_complete: true,
     updated_at: new Date().toISOString(),
+  }, { onConflict: 'email' })
+
+  if (error) {
+    console.error('[completeOnboarding] error:', error.message)
+    return { error: error.message }
+  }
+
+  revalidatePath('/dashboard')
+  return { success: true }
+}
+
   }, { onConflict: 'email' })
 
   if (error) {
