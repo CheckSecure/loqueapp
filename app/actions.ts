@@ -92,6 +92,7 @@ export async function adminRejectIntro(requestId: string) {
 }
 
 
+
 export async function saveAvatarUrl(avatarUrl: string) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
