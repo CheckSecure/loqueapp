@@ -24,6 +24,7 @@ export default function ScheduleMeetingModal({
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [format, setFormat] = useState<'virtual' | 'in-person'>('virtual')
 
   const tomorrow = new Date(Date.now() + 86400000)
   const defaultDate = tomorrow.toISOString().slice(0, 10)
@@ -65,7 +66,6 @@ export default function ScheduleMeetingModal({
             </p>
           )}
 
-          {/* Who */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               Meeting with <span className="text-red-400">*</span>
@@ -81,7 +81,6 @@ export default function ScheduleMeetingModal({
             </select>
           </div>
 
-          {/* Title */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               Meeting title <span className="text-slate-400 font-normal text-xs ml-1">optional</span>
@@ -94,7 +93,6 @@ export default function ScheduleMeetingModal({
             />
           </div>
 
-          {/* Purpose */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               Purpose <span className="text-red-400">*</span>
@@ -107,7 +105,6 @@ export default function ScheduleMeetingModal({
             </select>
           </div>
 
-          {/* Date + Time */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -135,7 +132,6 @@ export default function ScheduleMeetingModal({
             </div>
           </div>
 
-          {/* Duration + Format */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">Duration</label>
@@ -147,27 +143,49 @@ export default function ScheduleMeetingModal({
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">Format</label>
-              <select name="format" defaultValue="virtual" className={fieldClass}>
+              <select 
+                name="format" 
+                value={format}
+                onChange={(e) => setFormat(e.target.value as 'virtual' | 'in-person')}
+                className={fieldClass}
+              >
                 <option value="virtual">Virtual</option>
                 <option value="in-person">In-person</option>
               </select>
             </div>
           </div>
 
-          {/* Meeting link */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Meeting link <span className="text-slate-400 font-normal text-xs ml-1">optional</span>
-            </label>
-            <input
-              name="zoom_link"
-              type="url"
-              placeholder="Zoom, Google Meet, or Teams URL"
-              className={fieldClass}
-            />
-          </div>
+          {format === 'virtual' && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Meeting link <span className="text-slate-400 font-normal text-xs ml-1">optional</span>
+              </label>
+              <input
+                name="zoom_link"
+                type="url"
+                placeholder="Zoom, Google Meet, or Teams URL"
+                className={fieldClass}
+              />
+              <p className="text-xs text-slate-400 mt-1.5">Paste your video call link or leave blank</p>
+            </div>
+          )}
 
-          {/* Notes */}
+          {format === 'in-person' && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Location <span className="text-red-400">*</span>
+              </label>
+              <input
+                name="location"
+                type="text"
+                required
+                placeholder="e.g. Starbucks, 123 Main St, NYC"
+                className={fieldClass}
+              />
+              <p className="text-xs text-slate-400 mt-1.5">Enter the meeting address or venue</p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               Notes <span className="text-slate-400 font-normal text-xs ml-1">optional</span>
