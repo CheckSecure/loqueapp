@@ -216,7 +216,7 @@ function generateReason(recipient: any, candidate: any): string {
   }
 
 
-function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low' {
+  // Priority 5: Interest alignment
   if (sharedInterests.length >= 2) {
     return `You both share a focus on ${sharedInterests.slice(0, 2).join(' and ')} — strong thematic alignment.`
   }
@@ -230,6 +230,7 @@ function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low'
   return `Curated based on your professional background and stated goals.`
 }
 
+function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low' {
   const totalScore = (user.networkValueScore || 0) + (user.responsivenessScore || 0)
   const sortedByScore = profiles
     .map(p => (p.networkValueScore || 0) + (p.responsivenessScore || 0))
@@ -240,6 +241,9 @@ function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low'
   if (percentile <= 0.33) return 'high'
   if (percentile <= 0.66) return 'mid'
   return 'low'
+}
+  
+  if (percentile <= 0.33) return 'high'
 }
 
 interface PairScore {
