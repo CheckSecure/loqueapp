@@ -85,22 +85,10 @@ export async function createIntroRequest(
 
   if (reverseRequest?.id) {
     console.log('[createIntroRequest] mutual interest detected — auto-matching')
-    // Get the newly created request
-    const { data: newRequest } = await supabase
-      .from('intro_requests')
-      .select('id')
-      .eq('requester_id', authUserId)
-      .eq('target_user_id', targetUserId)
-      .eq('status', 'pending')
-      .limit(1)
-      .single()
-
-    if (newRequest?.id) {
-      // Approve both requests
-      await approveIntroRequest(newRequest.id)
-    }
+    // Approve the REVERSE request (from the first person who expressed interest)
+    // This ensures the first person gets charged, not the second
+    await approveIntroRequest(reverseRequest.id)
   }
-
   return { success: true }
 }
 
