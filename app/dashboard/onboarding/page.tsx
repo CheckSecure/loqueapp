@@ -28,7 +28,7 @@ export default async function OnboardingPage() {
           <p className="text-slate-600 mb-6">Complete your profile to start making meaningful connections.</p>
         </div>
         
-        <ProfileForm initialData={profile} isOnboarding={true} />
+        <ProfileForm profile={profile} email={user.email ?? ''} />
       </div>
     </div>
   )
