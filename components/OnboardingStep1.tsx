@@ -55,7 +55,6 @@ export default function OnboardingStep1({
     if (result.error) {
       setError(result.error)
     } else {
-      // Update onboarding step
       await fetch('/api/profile/onboarding-step', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -144,12 +143,9 @@ export default function OnboardingStep1({
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Seniority</label>
-            <input
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Seniority</label>
             <select
               name="seniority"
-              defaultValue={profile?.seniority || ""}
+              defaultValue={profile?.seniority || ''}
               className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition bg-white"
             >
               <option value="">Select seniority</option>
@@ -160,12 +156,8 @@ export default function OnboardingStep1({
               <option value="C-Suite">C-Suite</option>
             </select>
           </div>
-              <option value="Mid-level">Mid-level</option>
-              <option value="Senior">Senior</option>
-              <option value="Executive">Executive</option>
-              <option value="C-Suite">C-Suite</option>
-            </select>
-          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Role type</label>
             <select
               name="role_type"
               defaultValue={profile?.role_type || ''}
