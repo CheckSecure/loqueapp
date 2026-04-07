@@ -14,6 +14,8 @@ interface Profile {
   bio?: string
   expertise?: string[]
   intro_preferences?: string[]
+  purposes?: string[]
+  interests?: string[]
   open_to_intros?: boolean
   linkedin_url?: string
   twitter_url?: string
