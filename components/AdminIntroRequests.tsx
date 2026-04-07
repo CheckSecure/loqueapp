@@ -84,7 +84,6 @@ export default function AdminIntroRequests({ initial }: { initial: RequestRow[] 
       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
         {title} · {items.length}
       </p>
-      <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[960px]">
@@ -142,8 +141,6 @@ export default function AdminIntroRequests({ initial }: { initial: RequestRow[] 
             </tbody>
           </table>
         </div>
-        </div>
-      </div>
     </div>
   )
 
