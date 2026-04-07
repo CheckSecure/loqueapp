@@ -189,6 +189,15 @@ function generateReason(recipient: any, candidate: any): string {
 
   const sharedPurposes = recipientPurposes.filter((p: string) =>
     candidatePurposes.some((cp: string) => cp.toLowerCase() === p.toLowerCase())
+
+function getTierDistribution(tier: string): { high: number, mid: number, total: number } {
+  const distributions: Record<string, { high: number, mid: number, total: number }> = {
+    free: { high: 1, mid: 2, total: 3 },
+    professional: { high: 3, mid: 2, total: 5 },
+    executive: { high: 5, mid: 3, total: 8 }
+  }
+  return distributions[tier] || distributions.free
+}
   )
   
   const sharedExpertise = recipientExpertise.filter((e: string) =>
@@ -280,7 +289,7 @@ export async function POST(req: NextRequest) {
 
     const { data: profiles, error: profilesError } = await adminClient
       .from('profiles')
-      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score')
+      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score, current_status, purposes, city, state, geographic_scope, meeting_format_preference')
       .eq('profile_complete', true)
       .eq('is_active', true)
       .neq('email', 'bizdev91@gmail.com')
@@ -556,6 +565,7 @@ export async function POST(req: NextRequest) {
           suggested_id: suggested.id,
           reason,
           match_score: score,
+          score_bucket: getScoreBucket(score),
           position: i + 1,
           status: 'generated',
         })
