@@ -674,6 +674,18 @@ export async function adminSendWaitlistInvite(id: string) {
 
         // Seed 3 free credits for new user
         const newUserId = createdUser?.user?.id
+
+        // Create profile for new user
+        await supabase.from('profiles').insert({
+          id: newUserId,
+          email: entry.email,
+          full_name: entry.full_name,
+          email_verified: true,
+          email_verified_at: new Date().toISOString(),
+          verification_status: 'pending',
+          trust_score: 50
+        })
+        console.log('[invite] created profile for:', entry.email)
         if (newUserId) {
           await supabase.from('meeting_credits').upsert({ user_id: newUserId, balance: 3 })
           await supabase.from('credit_transactions').insert({ user_id: newUserId, amount: 3, type: 'credit', note: 'signup_bonus' })
