@@ -140,7 +140,6 @@ export async function createIntroRequest(
 
   return { success: true }
 }
-}
 
 export async function getUserIntroRequests(userId: string) {
   const supabase = createAdminClient()
