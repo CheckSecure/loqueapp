@@ -65,29 +65,30 @@ function scoreMatch(recipient: any, candidate: any): number {
   let score = 0
 
   // 1. Intro preferences match
-  const recipientPrefs: string[] = Array.isArray(recipient.intro_preferences) ? recipient.intro_preferences : []
+  const recipientPrefs: string[] = recipient.intro_preferences || []
   const candidateRole: string = candidate.role_type || ''
   if (recipientPrefs.some((p: string) => p.toLowerCase() === candidateRole.toLowerCase())) {
     score += 30
   }
 
   // 2. Reverse match
-  const candidatePrefs: string[] = Array.isArray(candidate.intro_preferences) ? candidate.intro_preferences : []
+  const candidatePrefs: string[] = candidate.intro_preferences || []
   const recipientRole: string = recipient.role_type || ''
   if (candidatePrefs.some((p: string) => p.toLowerCase() === recipientRole.toLowerCase())) {
     score += 20
   }
 
   // 3. Purpose alignment
-  const recipientPurposes: string[] = Array.isArray(recipient.purposes) ? recipient.purposes : []
-  const candidatePurposes: string[] = Array.isArray(candidate.purposes) ? candidate.purposes : []
+  const recipientPurposes: string[] = recipient.purposes || []
+  const candidatePurposes: string[] = candidate.purposes || []
   const purposeOverlap = recipientPurposes.filter((p: string) =>
     candidatePurposes.some((cp: string) => cp.toLowerCase() === p.toLowerCase())
   ).length
   score += purposeOverlap * 12
 
-  const recipientExpertise: string[] = Array.isArray(recipient.expertise) ? recipient.expertise : []
-  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
+  // 4. Expertise complementarity
+  const recipientExpertise: string[] = recipient.expertise || []
+  const candidateExpertise: string[] = candidate.expertise || []
   const expertiseOverlap = recipientExpertise.filter((e: string) =>
     candidateExpertise.some((ce: string) => ce.toLowerCase() === e.toLowerCase())
   ).length
@@ -160,32 +161,18 @@ function scoreMatch(recipient: any, candidate: any): number {
     score += Math.round((candidate.responsivenessScore / 100) * 5)
   }
 
-
-  // 12. Verification status boost
-  const verificationBoost: Record<string, number> = {
-    high_confidence: 12,
-    verified: 15,
-    pending: 0,
-    flagged: -20  // Significant penalty for flagged users
-  }
-  score += verificationBoost[candidate.verification_status] ?? 0
-
-  // 13. Trust score weighting
-  if (candidate.trust_score) {
-    score += Math.round((candidate.trust_score / 100) * 10)
-  }
   return score
 }
 
 function generateReason(recipient: any, candidate: any): string {
-  const recipientPrefs: string[] = Array.isArray(recipient.intro_preferences) ? recipient.intro_preferences : []
+  const recipientPrefs: string[] = recipient.intro_preferences || []
   const candidateRole: string = candidate.role_type || ''
-  const recipientPurposes: string[] = Array.isArray(recipient.purposes) ? recipient.purposes : []
-  const candidatePurposes: string[] = Array.isArray(candidate.purposes) ? candidate.purposes : []
-  const recipientExpertise: string[] = Array.isArray(recipient.expertise) ? recipient.expertise : []
-  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
-  const recipientInterests: string[] = Array.isArray(recipient.interests) ? recipient.interests : []
-  const candidateInterests: string[] = Array.isArray(candidate.interests) ? candidate.interests : []
+  const recipientPurposes: string[] = recipient.purposes || []
+  const candidatePurposes: string[] = candidate.purposes || []
+  const recipientExpertise: string[] = recipient.expertise || []
+  const candidateExpertise: string[] = candidate.expertise || []
+  const recipientInterests: string[] = recipient.interests || []
+  const candidateInterests: string[] = candidate.interests || []
 
   const sharedPurposes = recipientPurposes.filter((p: string) =>
     candidatePurposes.some((cp: string) => cp.toLowerCase() === p.toLowerCase())
@@ -228,8 +215,7 @@ function generateReason(recipient: any, candidate: any): string {
     return `${candidateName} is also focused on ${sharedPurposes[0]} — aligned on goals and timing.`
   }
 
-
-  // Priority 5: Interest alignment
+  // Priority 5: Shared interests
   if (sharedInterests.length >= 2) {
     return `You both share a focus on ${sharedInterests.slice(0, 2).join(' and ')} — strong thematic alignment.`
   }
@@ -243,7 +229,6 @@ function generateReason(recipient: any, candidate: any): string {
   return `Curated based on your professional background and stated goals.`
 }
 
-function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low' {
   const totalScore = (user.networkValueScore || 0) + (user.responsivenessScore || 0)
   const sortedByScore = profiles
     .map(p => (p.networkValueScore || 0) + (p.responsivenessScore || 0))
@@ -255,7 +240,6 @@ function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low'
   if (percentile <= 0.66) return 'mid'
   return 'low'
 }
-  
 
 interface PairScore {
   userA: any
@@ -280,7 +264,7 @@ export async function POST(req: NextRequest) {
 
     const { data: profiles, error: profilesError } = await adminClient
       .from('profiles')
-      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score')
+      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore')
       .eq('profile_complete', true)
       .eq('is_active', true)
       .neq('email', 'bizdev91@gmail.com')
@@ -316,73 +300,51 @@ export async function POST(req: NextRequest) {
       .select()
       .single()
 
+    if (batchError || !batch) {
+      return NextResponse.json({ error: `Failed to create batch: ${batchError?.message}` }, { status: 500 })
+    }
+
     const ninetyDaysAgo = new Date()
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
 
-    // Get permanently hidden pairs
-    const { data: hiddenPairs } = await adminClient
+    const { data: recentPasses } = await adminClient
       .from('batch_suggestions')
-      .select('recipient_id, suggested_id')
-      .eq('status', 'hidden_permanent')
-
-    const hiddenMap: Record<string, Set<string>> = {}
-    for (const p of hiddenPairs || []) {
-      if (!hiddenMap[p.recipient_id]) hiddenMap[p.recipient_id] = new Set()
-      hiddenMap[p.recipient_id].add(p.suggested_id)
-    }
-
-    // Get recently passed pairs (within 90 days)
-    const { data: passedPairs } = await adminClient
-      .from('batch_suggestions')
-      .select('recipient_id, suggested_id, created_at')
-      .eq('status', 'passed')
+      .select('recipient_id, suggested_id, status')
+      .in('status', ['passed', 'hidden_permanent'])
       .gte('created_at', ninetyDaysAgo.toISOString())
 
     const passMap: Record<string, Set<string>> = {}
-    for (const p of passedPairs || []) {
-      if (!passMap[p.recipient_id]) passMap[p.recipient_id] = new Set()
-      passMap[p.recipient_id].add(p.suggested_id)
+    const hiddenMap: Record<string, Set<string>> = {}
+    for (const p of recentPasses || []) {
+      if (p.status === 'hidden_permanent') {
+        if (!hiddenMap[p.recipient_id]) hiddenMap[p.recipient_id] = new Set()
+        hiddenMap[p.recipient_id].add(p.suggested_id)
+      } else {
+        if (!passMap[p.recipient_id]) passMap[p.recipient_id] = new Set()
+        passMap[p.recipient_id].add(p.suggested_id)
+      }
     }
 
-    // Get matched pairs (permanently exclude)
-    const { data: matchedPairs } = await adminClient
-      .from('matches')
-      .select('user_a_id, user_b_id')
+    const { data: recentBatches } = await adminClient
+      .from('introduction_batches')
+      .select('id')
+      .in('status', ['active', 'completed'])
+      .order('created_at', { ascending: false })
+      .limit(2)
 
-    const matchedMap: Record<string, Set<string>> = {}
-    for (const m of matchedPairs || []) {
-      if (!matchedMap[m.user_a_id]) matchedMap[m.user_a_id] = new Set()
-      if (!matchedMap[m.user_b_id]) matchedMap[m.user_b_id] = new Set()
-      matchedMap[m.user_a_id].add(m.user_b_id)
-      matchedMap[m.user_b_id].add(m.user_a_id)
-    }
-
-    // Get recently SHOWN pairs (within 90 days) - cooldown period
-    const { data: recentlyShown } = await adminClient
-      .from('batch_suggestions')
-      .select('recipient_id, suggested_id, shown_at')
-      .eq('status', 'shown')
-      .gte('shown_at', ninetyDaysAgo.toISOString())
-
+    const recentBatchIds = (recentBatches || []).map((b: any) => b.id)
     const recentlyShownMap: Record<string, Set<string>> = {}
-    for (const s of recentlyShown || []) {
-      if (!recentlyShownMap[s.recipient_id]) recentlyShownMap[s.recipient_id] = new Set()
-      recentlyShownMap[s.recipient_id].add(s.suggested_id)
-    }
 
-    // CRITICAL: Get previously GENERATED but never shown candidates (high priority for reuse)
-    const { data: generatedCandidates } = await adminClient
-      .from('batch_suggestions')
-      .select('recipient_id, suggested_id, match_score, reason')
-      .eq('status', 'generated')
+    if (recentBatchIds.length > 0) {
+      const { data: recentSuggestions } = await adminClient
+        .from('batch_suggestions')
+        .select('recipient_id, suggested_id')
+        .in('batch_id', recentBatchIds)
 
-    const generatedMap: Record<string, Map<string, {score: number, reason: string}>> = {}
-    for (const g of generatedCandidates || []) {
-      if (!generatedMap[g.recipient_id]) generatedMap[g.recipient_id] = new Map()
-      generatedMap[g.recipient_id].set(g.suggested_id, {
-        score: g.match_score,
-        reason: g.reason
-      })
+      for (const s of recentSuggestions || []) {
+        if (!recentlyShownMap[s.recipient_id]) recentlyShownMap[s.recipient_id] = new Set()
+        recentlyShownMap[s.recipient_id].add(s.suggested_id)
+      }
     }
 
     const highTierExposure: Record<string, number> = {}
@@ -398,18 +360,12 @@ export async function POST(req: NextRequest) {
         const userA = profiles[i]
         const userB = profiles[j]
         
-        
-        const aHiddenB = hiddenMap[userA.id]?.has(userB.id)
-        const bHiddenA = hiddenMap[userB.id]?.has(userA.id)
-        const aPassedB = passMap[userA.id]?.has(userB.id)
-        const bPassedA = passMap[userB.id]?.has(userA.id)
-        const aMatchedB = matchedMap[userA.id]?.has(userB.id)
-        const bMatchedA = matchedMap[userB.id]?.has(userA.id)
+        const aHiddenB = hiddenMap[userA.id]?.has(userB.id) || passMap[userA.id]?.has(userB.id)
+        const bHiddenA = hiddenMap[userB.id]?.has(userA.id) || passMap[userB.id]?.has(userA.id)
         const aShownB = recentlyShownMap[userA.id]?.has(userB.id)
         const bShownA = recentlyShownMap[userB.id]?.has(userA.id)
         
-        // Exclude if: hidden, passed, matched, or recently shown
-        if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA) continue
+        if (aHiddenB || bHiddenA || aShownB || bShownA) continue
         
         const scoreAtoB = scoreMatch(userA, userB)
         const scoreBtoA = scoreMatch(userB, userA)
@@ -557,7 +513,7 @@ export async function POST(req: NextRequest) {
           reason,
           match_score: score,
           position: i + 1,
-          status: 'generated',
+          status: 'active',
         })
       }
     }

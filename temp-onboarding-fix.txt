@@ -1,0 +1,46 @@
+export async function completeOnboarding(formData: FormData) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const introPref = (formData.get('intro_preferences') as string || '')
+    .split(',').map(s => s.trim()).filter(Boolean)
+  const purposes = (formData.get('purposes') as string || '')
+    .split(',').map(s => s.trim()).filter(Boolean)
+  const expertise = (formData.get('expertise') as string || '')
+    .split(',').map(s => s.trim()).filter(Boolean)
+
+  const city = (formData.get('city') as string || '').trim()
+  const state = (formData.get('state') as string || '').trim()
+  const location = city && state ? `${city}, ${state}` : city || state || null
+
+  const { error } = await supabase.from('profiles').upsert({
+    id: user.id,
+    email: user.email,
+    full_name: (formData.get('full_name') as string) || null,
+    title: (formData.get('title') as string) || null,
+    company: (formData.get('company') as string) || null,
+    city: city || null,
+    state: state || null,
+    location: location,
+    role_type: (formData.get('role_type') as string) || null,
+    seniority: (formData.get('seniority') as string) || null,
+    expertise: expertise,
+    bio: (formData.get('bio') as string) || null,
+    avatar_url: (formData.get('avatar_url') as string) || null,
+    looking_for: (formData.get('looking_for') as string) || null,
+    intro_preferences: introPref,
+    purposes: purposes,
+    meeting_format_preference: (formData.get('meeting_format_preference') as string) || 'both',
+    geographic_scope: (formData.get('geographic_scope') as string) || 'us-wide',
+    profile_complete: true,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'email' })
+
+  if (error) {
+    console.error('[completeOnboarding] error:', error.message)
+    return { error: error.message }
+  }
+
+  revalidatePath('/dashboard')
+  return { success: true }
+}

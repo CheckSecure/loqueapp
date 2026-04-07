@@ -160,20 +160,6 @@ function scoreMatch(recipient: any, candidate: any): number {
     score += Math.round((candidate.responsivenessScore / 100) * 5)
   }
 
-
-  // 12. Verification status boost
-  const verificationBoost: Record<string, number> = {
-    high_confidence: 12,
-    verified: 15,
-    pending: 0,
-    flagged: -20  // Significant penalty for flagged users
-  }
-  score += verificationBoost[candidate.verification_status] ?? 0
-
-  // 13. Trust score weighting
-  if (candidate.trust_score) {
-    score += Math.round((candidate.trust_score / 100) * 10)
-  }
   return score
 }
 
@@ -280,7 +266,7 @@ export async function POST(req: NextRequest) {
 
     const { data: profiles, error: profilesError } = await adminClient
       .from('profiles')
-      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score')
+      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore')
       .eq('profile_complete', true)
       .eq('is_active', true)
       .neq('email', 'bizdev91@gmail.com')
@@ -398,9 +384,6 @@ export async function POST(req: NextRequest) {
         const userA = profiles[i]
         const userB = profiles[j]
         
-        
-        const aHiddenB = hiddenMap[userA.id]?.has(userB.id)
-        const bHiddenA = hiddenMap[userB.id]?.has(userA.id)
         const aPassedB = passMap[userA.id]?.has(userB.id)
         const bPassedA = passMap[userB.id]?.has(userA.id)
         const aMatchedB = matchedMap[userA.id]?.has(userB.id)
@@ -557,7 +540,7 @@ export async function POST(req: NextRequest) {
           reason,
           match_score: score,
           position: i + 1,
-          status: 'generated',
+          status: 'active',
         })
       }
     }

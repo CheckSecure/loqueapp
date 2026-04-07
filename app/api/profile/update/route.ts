@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { verifyLinkedInConsistency } from '@/app/actions/verify-linkedin'
+import { checkProfileCompletion } from '@/lib/trust/signals'
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,6 +46,17 @@ export async function POST(req: NextRequest) {
       console.error('[profile/update] error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    // Run LinkedIn verification
+    await verifyLinkedInConsistency(user.id, {
+      fullName: formData.get('full_name') as string,
+      title: formData.get('title') as string,
+      company: formData.get('company') as string,
+      linkedinUrl: formData.get('linkedinUrl') as string | undefined
+    })
+
+    // Check and track profile completion
+    await checkProfileCompletion(user.id)
 
     return NextResponse.json({ success: true })
   } catch (err: any) {
