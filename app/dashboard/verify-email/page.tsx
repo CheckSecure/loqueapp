@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/lib/supabase/client'
 import { Mail, CheckCircle, Loader2 } from 'lucide-react'
 
 export default function VerifyEmailPage() {
