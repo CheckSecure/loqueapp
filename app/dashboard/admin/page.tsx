@@ -35,7 +35,7 @@ export default async function AdminPage() {
   ] = await Promise.all([
     createAdminClient().from('intro_requests').select('id, requester_id, target_user_id, requester:profiles!requester_id(full_name, role_type), target:profiles!target_user_id(full_name, role_type)').eq('status', 'pending'),
     adminGetPendingRequests(),
-    supabase.from('waitlist').select('id, full_name, email, company, role_type, referral_source, status, created_at').order('created_at', { ascending: false }),
+    supabase.from('waitlist').select('id, full_name, email, title, company, role_type, linkedin_url, meeting_interests, referral_source, status, verification_status, verification_method, created_at').order('created_at', { ascending: false }),
     supabase.from('profiles').select('*', { count: 'exact', head: true }),
     supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('updated_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
     supabase.from('matches').select('*', { count: 'exact', head: true }),
