@@ -666,7 +666,7 @@ export async function adminSendWaitlistInvite(id: string) {
           }
           console.log('[invite] password reset for existing user:', entry.email)
         } else {
-          console.error('[invite] createUser error:', createError.message)
+          console.error('[invite] createUser FULL error:', JSON.stringify(createError, null, 2))
           return { error: `Could not create user account: ${createError.message}` }
         }
       } else {
