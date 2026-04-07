@@ -190,12 +190,6 @@ function generateReason(recipient: any, candidate: any): string {
   const sharedPurposes = recipientPurposes.filter((p: string) =>
     candidatePurposes.some((cp: string) => cp.toLowerCase() === p.toLowerCase())
 
-function getTierDistribution(tier: string): { high: number, mid: number, total: number } {
-  const distributions: Record<string, { high: number, mid: number, total: number }> = {
-    free: { high: 1, mid: 2, total: 3 },
-    professional: { high: 3, mid: 2, total: 5 },
-    executive: { high: 5, mid: 3, total: 8 }
-  }
   return distributions[tier] || distributions.free
 }
   )
@@ -253,6 +247,15 @@ function getTierDistribution(tier: string): { high: number, mid: number, total: 
 }
 
 function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low' {
+
+function getTierDistribution(tier: string): { high: number, mid: number, total: number } {
+  const distributions: Record<string, { high: number, mid: number, total: number }> = {
+    free: { high: 1, mid: 2, total: 3 },
+    professional: { high: 3, mid: 2, total: 5 },
+    executive: { high: 5, mid: 3, total: 8 }
+  }
+  return distributions[tier] || distributions.free
+}
   const totalScore = (user.networkValueScore || 0) + (user.responsivenessScore || 0)
   const sortedByScore = profiles
     .map(p => (p.networkValueScore || 0) + (p.responsivenessScore || 0))
