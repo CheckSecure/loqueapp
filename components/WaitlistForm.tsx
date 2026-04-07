@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2, CheckCircle, Lock } from 'lucide-react'
+import { Loader2, CheckCircle, Lock, Linkedin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { submitWaitlist } from '@/app/actions'
 
@@ -27,8 +27,11 @@ const ROLE_OPTIONS = [
 export default function WaitlistForm() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
+  const [title, setTitle] = useState('')
   const [company, setCompany] = useState('')
   const [roleType, setRoleType] = useState('')
+  const [linkedinUrl, setLinkedinUrl] = useState('')
+  const [meetingInterests, setMeetingInterests] = useState('')
   const [referral, setReferral] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -38,7 +41,16 @@ export default function WaitlistForm() {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const result = await submitWaitlist({ fullName, email, company, roleType, referral })
+    const result = await submitWaitlist({ 
+      fullName, 
+      email, 
+      title,
+      company, 
+      roleType, 
+      linkedinUrl,
+      meetingInterests,
+      referral 
+    })
     setLoading(false)
     if (result.error) {
       setError(result.error)
@@ -101,6 +113,17 @@ export default function WaitlistForm() {
 
       <div className="grid sm:grid-cols-2 gap-3">
         <div>
+          <label className="block text-xs font-medium text-white/70 mb-1.5">Title <span className="text-[#C4922A]">*</span></label>
+          <input
+            type="text"
+            required
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="General Counsel"
+            className="w-full px-3.5 py-2.5 bg-white/10 border border-white/20 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#C4922A] focus:border-transparent transition"
+          />
+        </div>
+        <div>
           <label className="block text-xs font-medium text-white/70 mb-1.5">Company <span className="text-[#C4922A]">*</span></label>
           <input
             type="text"
@@ -111,22 +134,49 @@ export default function WaitlistForm() {
             className="w-full px-3.5 py-2.5 bg-white/10 border border-white/20 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#C4922A] focus:border-transparent transition"
           />
         </div>
-        <div>
-          <label className="block text-xs font-medium text-white/70 mb-1.5">Role type <span className="text-[#C4922A]">*</span></label>
-          <select
-            required
-            value={roleType}
-            onChange={e => setRoleType(e.target.value)}
-            className="w-full px-3.5 py-2.5 bg-white/10 border border-white/20 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#C4922A] focus:border-transparent transition appearance-none"
-            style={{ colorScheme: 'dark' }}
-          >
-            {ROLE_OPTIONS.map(o => (
-              <option key={o.value} value={o.value} className="bg-[#1B2850] text-white">
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-white/70 mb-1.5">Role type <span className="text-[#C4922A]">*</span></label>
+        <select
+          required
+          value={roleType}
+          onChange={e => setRoleType(e.target.value)}
+          className="w-full px-3.5 py-2.5 bg-white/10 border border-white/20 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#C4922A] focus:border-transparent transition appearance-none"
+          style={{ colorScheme: 'dark' }}
+        >
+          {ROLE_OPTIONS.map(o => (
+            <option key={o.value} value={o.value} className="bg-[#1B2850] text-white">
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-white/70 mb-1.5 flex items-center gap-1.5">
+          <Linkedin className="w-3 h-3" />
+          LinkedIn profile <span className="text-white/30">(optional)</span>
+        </label>
+        <input
+          type="url"
+          value={linkedinUrl}
+          onChange={e => setLinkedinUrl(e.target.value)}
+          placeholder="https://linkedin.com/in/yourprofile"
+          className="w-full px-3.5 py-2.5 bg-white/10 border border-white/20 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#C4922A] focus:border-transparent transition"
+        />
+        <p className="text-[10px] text-white/50 mt-1.5">Helps us prioritize your application</p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-white/70 mb-1.5">Who would you like to meet? <span className="text-white/30">(optional)</span></label>
+        <input
+          type="text"
+          value={meetingInterests}
+          onChange={e => setMeetingInterests(e.target.value)}
+          placeholder="Investors, legal tech founders, GCs in healthcare..."
+          className="w-full px-3.5 py-2.5 bg-white/10 border border-white/20 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#C4922A] focus:border-transparent transition"
+        />
       </div>
 
       <div>

@@ -561,18 +561,31 @@ export async function saveOnboardingPreferences(prefs: {
 export async function submitWaitlist(data: {
   fullName: string
   email: string
+  title: string
   company: string
   roleType: string
+  linkedinUrl?: string
+  meetingInterests?: string
   referral: string
 }) {
   const supabase = createClient()
+  
+  const hasLinkedIn = data.linkedinUrl && data.linkedinUrl.trim().length > 0
+  const verification_status = 'pending_review'
+  const verification_method = hasLinkedIn ? 'linkedin' : 'none'
+  
   const { error } = await supabase.from('waitlist').insert({
     full_name: data.fullName,
     email: data.email,
+    title: data.title || null,
     company: data.company || null,
     role_type: data.roleType || null,
+    linkedin_url: data.linkedinUrl || null,
+    meeting_interests: data.meetingInterests || null,
     referral_source: data.referral || null,
     status: 'pending',
+    verification_status: verification_status,
+    verification_method: verification_method,
   })
   if (error) {
     if (error.code === '23505') return { error: 'This email is already on the waitlist.' }
@@ -580,7 +593,6 @@ export async function submitWaitlist(data: {
   }
   return { success: true }
 }
-
 export async function adminSendWaitlistInvite(id: string) {
   try {
     console.log('[invite] function called, id:', id)

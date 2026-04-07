@@ -9,11 +9,17 @@ interface WaitlistEntry {
   id: string
   full_name: string
   email: string
+  title: string | null
   company: string | null
   role_type: string | null
+  linkedin_url: string | null
+  meeting_interests: string | null
   referral_source: string | null
   status: string
+  verification_status: string | null
+  verification_method: string | null
   created_at: string
+}
 }
 
 const ROLE_LABELS: Record<string, string> = {
