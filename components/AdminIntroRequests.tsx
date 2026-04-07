@@ -84,10 +84,10 @@ export default function AdminIntroRequests({ initial }: { initial: RequestRow[] 
       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
         {title} · {items.length}
       </p>
-      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[960px]">
-          <thead>
+            <thead>
               <tr className="border-b border-slate-100 bg-[#F5F6FB]">
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Requester</th>
                 <th className="px-2 py-3 w-6" />
@@ -142,6 +142,7 @@ export default function AdminIntroRequests({ initial }: { initial: RequestRow[] 
             </tbody>
           </table>
         </div>
+      </div>
     </div>
   )
 
