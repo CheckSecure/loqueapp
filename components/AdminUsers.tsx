@@ -117,9 +117,8 @@ export default function AdminUsers({ users }: { users: UserRow[] }) {
 
   return (
     <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[600px]">
-          <thead>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[600px]">
             <tr className="border-b border-slate-100 bg-[#F5F6FB]">
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Member</th>
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Role</th>

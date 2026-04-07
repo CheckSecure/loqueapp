@@ -109,9 +109,8 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
 
   const Table = ({ rows, dimmed = false }: { rows: WaitlistEntry[]; dimmed?: boolean }) => (
     <div className={`bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden ${dimmed ? 'opacity-60' : ''}`}>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[700px]">
-          <thead>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[700px]">
             <tr className="border-b border-slate-100 bg-[#F5F6FB]">
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Name</th>
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</th>

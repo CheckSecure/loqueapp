@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Users, MessageSquare, Calendar, UserCircle, MoreHorizontal, CreditCard, Settings, ShieldCheck, LogOut, X, Network } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 import { cn } from '@/lib/utils'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
@@ -17,56 +17,6 @@ const bottomNavItems = [
   { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar },
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
 ]
-
-function CreditsChip({ credits }: { credits: number }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  const chipStyle =
-    credits === 0
-      ? 'bg-red-50 text-red-600 border-red-200'
-      : credits < 5
-      ? 'bg-amber-50 text-amber-600 border-amber-200'
-      : 'bg-[#FDF3E3] text-[#C4922A] border-[#e8c88a]'
-
-  const label = credits === 0 ? 'No credits' : `✦ ${credits}`
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className={cn('px-2.5 py-1 rounded-full border text-xs font-semibold', chipStyle)}
-      >
-        {label}
-      </button>
-      {open && (
-        <div className="absolute top-full right-0 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-lg p-3.5 z-50">
-          <p className="text-xs font-semibold text-slate-800 mb-1">Meeting credits</p>
-          <p className="text-xs text-slate-500 leading-relaxed">
-            Credits are used to request meetings. Purchase more to continue connecting.
-          </p>
-          {credits < 5 && (
-            <p className={cn('text-xs font-medium mt-2', credits === 0 ? 'text-red-600' : 'text-amber-600')}>
-              {credits === 0 ? 'No credits left.' : `Only ${credits} remaining.`}
-            </p>
-          )}
-          <div className="mt-3 pt-2.5 border-t border-slate-100">
-            <Link href="/dashboard/billing" className="text-xs font-semibold text-[#1B2850]">Purchase credits →</Link>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 export default function MobileNav({ credits, unreadCount = 0 }: { credits: number; unreadCount?: number }) {
   const pathname = usePathname()
@@ -88,14 +38,33 @@ export default function MobileNav({ credits, unreadCount = 0 }: { credits: numbe
     router.refresh()
   }
 
+  // Compact credit chip styling
+  const creditStyle =
+    credits === 0
+      ? 'bg-red-50 text-red-600 border-red-200'
+      : credits < 5
+      ? 'bg-amber-50 text-amber-600 border-amber-200'
+      : 'bg-[#FDF3E3] text-[#C4922A] border-[#e8c88a]'
+
   return (
     <>
-      {/* Top header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-200 px-4 h-14 flex items-center justify-between">
-        <span className="text-lg font-bold text-[#1B2850] tracking-tight">Andrel</span>
-        <div className="flex items-center gap-1">
+      {/* Top header - REDESIGNED: Logo + Credits + Bell */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-100 h-14 flex items-center justify-between px-4 gap-3">
+        <span className="text-lg font-bold text-[#1B2850] tracking-tight flex-shrink-0">Andrel</span>
+        
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Compact credits chip */}
+          <Link
+            href="/dashboard/billing"
+            className={cn(
+              'px-2 py-1 rounded-full border text-[11px] font-semibold transition-colors hover:opacity-80',
+              creditStyle
+            )}
+          >
+            ✦ {credits}
+          </Link>
+          
           <NotificationBell />
-          <CreditsChip credits={credits} />
         </div>
       </div>
 
