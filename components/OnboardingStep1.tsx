@@ -145,15 +145,21 @@ export default function OnboardingStep1({
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Seniority</label>
             <input
-              name="seniority"
-              type="text"
-              defaultValue={profile?.seniority || ''}
-              placeholder="Executive"
-              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
-            />
-          </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Role type</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Seniority</label>
+            <select
+              name="seniority"
+              defaultValue={profile?.seniority || ''}
+              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition bg-white"
+            >
+              <option value="">Select seniority</option>
+              <option value="Junior">Junior</option>
+              <option value="Mid-level">Mid-level</option>
+              <option value="Senior">Senior</option>
+              <option value="Executive">Executive</option>
+              <option value="C-Suite">C-Suite</option>
+            </select>
+          </div>
             <select
               name="role_type"
               defaultValue={profile?.role_type || ''}

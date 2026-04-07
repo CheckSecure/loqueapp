@@ -40,15 +40,24 @@ export default function ResetPasswordPage() {
     }
 
     // Mark password reset as complete
+    // Mark password reset as complete
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      await supabase
+      const { error: profileError } = await supabase
         .from('profiles')
         .update({ password_reset_required: false })
         .eq('id', user.id)
+      
+      if (profileError) {
+        console.error('Failed to update password_reset_required:', profileError)
+        setError('Password updated but profile update failed. Please try again.')
+        setLoading(false)
+        return
+      }
     }
 
-    router.push('/dashboard/onboarding')
+    // Force full page reload to refresh middleware
+    window.location.href = '/dashboard/onboarding'
   }
 
   return (
