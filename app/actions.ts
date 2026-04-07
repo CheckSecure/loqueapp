@@ -678,6 +678,7 @@ export async function adminSendWaitlistInvite(id: string) {
         // Create profile for new user
         await adminClient.from('profiles').insert({
           id: newUserId,
+          password_reset_required: true,
           email: entry.email,
           full_name: entry.full_name,
           email_verified: true,
