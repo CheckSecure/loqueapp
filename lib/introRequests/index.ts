@@ -85,57 +85,7 @@ export async function createIntroRequest(
     .single()
 
   if (reverseRequest?.id) {
-    console.log('[createIntroRequest] mutual interest detected — auto-matching')
-    
-    // Get the first person who expressed interest (from the reverse request)
-    const { data: firstRequest } = await supabase
-      .from('intro_requests')
-      .select('requester_id')
-      .eq('id', reverseRequest.id)
-      .single()
-    
-    const firstPersonId = firstRequest?.requester_id || targetUserId
-    
-    // Charge 1 credit from the first person
-    const { data: creditRow } = await supabase
-      .from('meeting_credits')
-      .select('balance')
-      .eq('user_id', firstPersonId)
-      .single()
-    
-    const balance = creditRow?.balance ?? 0
-    
-    if (balance >= 1) {
-      // Deduct credit
-      await supabase
-        .from('meeting_credits')
-        .update({ balance: balance - 1 })
-        .eq('user_id', firstPersonId)
-      
-      // Log transaction
-      await supabase.from('credit_transactions').insert({
-        user_id: firstPersonId,
-        amount: -1,
-        type: 'deduction',
-        note: 'Introduction facilitated',
-      })
-      
-      console.log('[createIntroRequest] charged 1 credit to first person')
-    }
-    
-    // Create the match
-    await supabase.from('matches').insert({
-      user_a_id: firstPersonId,
-      user_b_id: authUserId,
-    })
-    
-    // Update both requests to approved
-    await supabase
-      .from('intro_requests')
-      .update({ status: 'approved', credit_charged: true })
-      .in('id', [reverseRequest.id])
-    
-    console.log('[createIntroRequest] auto-match complete')
+    console.log('[createIntroRequest] mutual interest detected — ready for admin review')
   }
 
   return { success: true }
