@@ -190,8 +190,6 @@ function generateReason(recipient: any, candidate: any): string {
   const sharedPurposes = recipientPurposes.filter((p: string) =>
     candidatePurposes.some((cp: string) => cp.toLowerCase() === p.toLowerCase())
 
-  return distributions[tier] || distributions.free
-}
   )
   
   const sharedExpertise = recipientExpertise.filter((e: string) =>
