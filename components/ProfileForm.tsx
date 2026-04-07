@@ -25,12 +25,16 @@ interface Profile {
 }
 
 const INTRO_PREFS = ['Investors', 'Founders', 'Potential hires', 'Collaborators', 'Mentors', 'Customers']
+const PURPOSE_OPTIONS = ["Find customers", "Raise capital", "Hire talent", "Learn & grow", "Expand network", "Give back / mentor", "Explore opportunities"]
+const INTEREST_OPTIONS = ["Sports", "Travel", "Food & wine", "Arts & culture", "Technology", "Fitness", "Reading", "Music", "Volunteering"]
 
 export default function ProfileForm({ profile, email }: { profile: Profile | null; email: string }) {
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [introPref, setIntroPref] = useState<string[]>(profile?.intro_preferences || [])
+  const [purposes, setPurposes] = useState<string[]>(profile?.purposes || [])
+  const [interests, setInterests] = useState<string[]>(profile?.interests || [])
 
   const initials = (profile?.full_name || email)
     .split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
@@ -42,6 +46,8 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
     setError(null)
     const formData = new FormData(e.currentTarget)
     formData.set('intro_preferences', introPref.join(','))
+    formData.set('purposes', purposes.join(','))
+    formData.set('interests', interests.join(','))
     const result = await updateProfile(formData)
     setLoading(false)
     if (result.error) {
@@ -252,6 +258,52 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
             </label>
           ))}
         </div>
+
+      {/* Purposes */}
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6">
+        <h3 className="text-sm font-semibold text-slate-900 mb-1">Your goals on Andrel</h3>
+        <p className="text-xs text-slate-400 mb-3">What are you looking to achieve through introductions?</p>
+        <div className="grid grid-cols-2 gap-2">
+          {PURPOSE_OPTIONS.map((purpose) => (
+            <label key={purpose} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-[#C4922A] rounded"
+                checked={purposes.includes(purpose)}
+                onChange={(e) =>
+                  setPurposes(prev =>
+                    e.target.checked ? [...prev, purpose] : prev.filter(p => p !== purpose)
+                  )
+                }
+              />
+              <span className="text-sm text-slate-700">{purpose}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Interests */}
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6">
+        <h3 className="text-sm font-semibold text-slate-900 mb-1">Personal interests</h3>
+        <p className="text-xs text-slate-400 mb-3">Shared interests help build rapport in conversations</p>
+        <div className="grid grid-cols-3 gap-2">
+          {INTEREST_OPTIONS.map((interest) => (
+            <label key={interest} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-[#C4922A] rounded"
+                checked={interests.includes(interest)}
+                onChange={(e) =>
+                  setInterests(prev =>
+                    e.target.checked ? [...prev, interest] : prev.filter(i => i !== interest)
+                  )
+                }
+              />
+              <span className="text-sm text-slate-700">{interest}</span>
+            </label>
+          ))}
+        </div>
+      </div>
       </div>
 
       {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-lg">{error}</p>}
