@@ -302,51 +302,73 @@ export async function POST(req: NextRequest) {
       .select()
       .single()
 
-    if (batchError || !batch) {
-      return NextResponse.json({ error: `Failed to create batch: ${batchError?.message}` }, { status: 500 })
-    }
-
     const ninetyDaysAgo = new Date()
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
 
-    const { data: recentPasses } = await adminClient
+    // Get permanently hidden pairs
+    const { data: hiddenPairs } = await adminClient
       .from('batch_suggestions')
-      .select('recipient_id, suggested_id, status')
-      .in('status', ['passed', 'hidden_permanent'])
+      .select('recipient_id, suggested_id')
+      .eq('status', 'hidden_permanent')
+
+    const hiddenMap: Record<string, Set<string>> = {}
+    for (const p of hiddenPairs || []) {
+      if (!hiddenMap[p.recipient_id]) hiddenMap[p.recipient_id] = new Set()
+      hiddenMap[p.recipient_id].add(p.suggested_id)
+    }
+
+    // Get recently passed pairs (within 90 days)
+    const { data: passedPairs } = await adminClient
+      .from('batch_suggestions')
+      .select('recipient_id, suggested_id, created_at')
+      .eq('status', 'passed')
       .gte('created_at', ninetyDaysAgo.toISOString())
 
     const passMap: Record<string, Set<string>> = {}
-    const hiddenMap: Record<string, Set<string>> = {}
-    for (const p of recentPasses || []) {
-      if (p.status === 'hidden_permanent') {
-        if (!hiddenMap[p.recipient_id]) hiddenMap[p.recipient_id] = new Set()
-        hiddenMap[p.recipient_id].add(p.suggested_id)
-      } else {
-        if (!passMap[p.recipient_id]) passMap[p.recipient_id] = new Set()
-        passMap[p.recipient_id].add(p.suggested_id)
-      }
+    for (const p of passedPairs || []) {
+      if (!passMap[p.recipient_id]) passMap[p.recipient_id] = new Set()
+      passMap[p.recipient_id].add(p.suggested_id)
     }
 
-    const { data: recentBatches } = await adminClient
-      .from('introduction_batches')
-      .select('id')
-      .in('status', ['active', 'completed'])
-      .order('created_at', { ascending: false })
-      .limit(2)
+    // Get matched pairs (permanently exclude)
+    const { data: matchedPairs } = await adminClient
+      .from('matches')
+      .select('user_a_id, user_b_id')
 
-    const recentBatchIds = (recentBatches || []).map((b: any) => b.id)
+    const matchedMap: Record<string, Set<string>> = {}
+    for (const m of matchedPairs || []) {
+      if (!matchedMap[m.user_a_id]) matchedMap[m.user_a_id] = new Set()
+      if (!matchedMap[m.user_b_id]) matchedMap[m.user_b_id] = new Set()
+      matchedMap[m.user_a_id].add(m.user_b_id)
+      matchedMap[m.user_b_id].add(m.user_a_id)
+    }
+
+    // Get recently SHOWN pairs (within 90 days) - cooldown period
+    const { data: recentlyShown } = await adminClient
+      .from('batch_suggestions')
+      .select('recipient_id, suggested_id, shown_at')
+      .eq('status', 'shown')
+      .gte('shown_at', ninetyDaysAgo.toISOString())
+
     const recentlyShownMap: Record<string, Set<string>> = {}
+    for (const s of recentlyShown || []) {
+      if (!recentlyShownMap[s.recipient_id]) recentlyShownMap[s.recipient_id] = new Set()
+      recentlyShownMap[s.recipient_id].add(s.suggested_id)
+    }
 
-    if (recentBatchIds.length > 0) {
-      const { data: recentSuggestions } = await adminClient
-        .from('batch_suggestions')
-        .select('recipient_id, suggested_id')
-        .in('batch_id', recentBatchIds)
+    // CRITICAL: Get previously GENERATED but never shown candidates (high priority for reuse)
+    const { data: generatedCandidates } = await adminClient
+      .from('batch_suggestions')
+      .select('recipient_id, suggested_id, match_score, reason')
+      .eq('status', 'generated')
 
-      for (const s of recentSuggestions || []) {
-        if (!recentlyShownMap[s.recipient_id]) recentlyShownMap[s.recipient_id] = new Set()
-        recentlyShownMap[s.recipient_id].add(s.suggested_id)
-      }
+    const generatedMap: Record<string, Map<string, {score: number, reason: string}>> = {}
+    for (const g of generatedCandidates || []) {
+      if (!generatedMap[g.recipient_id]) generatedMap[g.recipient_id] = new Map()
+      generatedMap[g.recipient_id].set(g.suggested_id, {
+        score: g.match_score,
+        reason: g.reason
+      })
     }
 
     const highTierExposure: Record<string, number> = {}
@@ -362,15 +384,18 @@ export async function POST(req: NextRequest) {
         const userA = profiles[i]
         const userB = profiles[j]
         
-        const aHiddenB = hiddenMap[userA.id]?.has(userB.id) || passMap[userA.id]?.has(userB.id)
-        const bHiddenA = hiddenMap[userB.id]?.has(userA.id) || passMap[userB.id]?.has(userA.id)
+        
+        const aHiddenB = hiddenMap[userA.id]?.has(userB.id)
+        const bHiddenA = hiddenMap[userB.id]?.has(userA.id)
+        const aPassedB = passMap[userA.id]?.has(userB.id)
+        const bPassedA = passMap[userB.id]?.has(userA.id)
+        const aMatchedB = matchedMap[userA.id]?.has(userB.id)
+        const bMatchedA = matchedMap[userB.id]?.has(userA.id)
         const aShownB = recentlyShownMap[userA.id]?.has(userB.id)
         const bShownA = recentlyShownMap[userB.id]?.has(userA.id)
         
-        if (aHiddenB || bHiddenA || aShownB || bShownA) continue
-        
-        // Skip incompatible pairs (geographic or meeting format mismatch)
-        if (!isCompatiblePair(userA, userB)) continue
+        // Exclude if: hidden, passed, matched, or recently shown
+        if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA) continue
         
         const scoreAtoB = scoreMatch(userA, userB)
         const scoreBtoA = scoreMatch(userB, userA)
@@ -518,7 +543,7 @@ export async function POST(req: NextRequest) {
           reason,
           match_score: score,
           position: i + 1,
-          status: 'active',
+          status: 'generated',
         })
       }
     }

@@ -31,6 +31,18 @@ export async function POST(req: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+    // CRITICAL: Mark all suggestions in this batch as 'shown' with timestamp
+    // This ensures they won't be reused for 90 days
+    const now = new Date().toISOString()
+    await adminClient
+      .from('batch_suggestions')
+      .update({ 
+        status: 'shown',
+        shown_at: now
+      })
+      .eq('batch_id', batchId)
+      .eq('status', 'generated')
+
     // Notify all members of new batch
     const { createNotificationsForAllUsers } = await import('@/lib/notifications')
     await createNotificationsForAllUsers(
