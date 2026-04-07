@@ -20,7 +20,6 @@ interface WaitlistEntry {
   verification_method: string | null
   created_at: string
 }
-}
 
 const ROLE_LABELS: Record<string, string> = {
   in_house_counsel: 'In-house Counsel',
