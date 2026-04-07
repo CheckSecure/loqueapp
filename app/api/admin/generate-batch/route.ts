@@ -463,7 +463,7 @@ export async function POST(req: NextRequest) {
       reason: string
     }>> = {}
     
-    for (const profile of profiles) {
+    for (const profile of sortedProfiles) {
       userCandidatePools[profile.id] = []
     }
     
@@ -489,10 +489,18 @@ export async function POST(req: NextRequest) {
     }
     
     // Step 2: Apply tier-based selection for each user
+
+    // CRITICAL: Process users in tier priority order (Executive → Professional → Free)
+    const tierPriority: Record<string, number> = { executive: 1, professional: 2, free: 3 }
+    const sortedProfiles = [...profiles].sort((a, b) => {
+      const aTier = tierPriority[a.subscription_tier || 'free'] || 3
+      const bTier = tierPriority[b.subscription_tier || 'free'] || 3
+      return aTier - bTier
+    })
     const userBatches: Record<string, any[]> = {}
     const userRoleCounts: Record<string, Record<string, number>> = {}
     
-    for (const profile of profiles) {
+    for (const profile of sortedProfiles) {
       userBatches[profile.id] = []
       userRoleCounts[profile.id] = {}
       
