@@ -676,7 +676,7 @@ export async function adminSendWaitlistInvite(id: string) {
         const newUserId = createdUser?.user?.id
 
         // Create profile for new user
-        await supabase.from('profiles').insert({
+        await adminClient.from('profiles').insert({
           id: newUserId,
           email: entry.email,
           full_name: entry.full_name,
