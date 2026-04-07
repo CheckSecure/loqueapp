@@ -177,6 +177,12 @@ function scoreMatch(recipient: any, candidate: any): number {
   return score
 }
 
+function getScoreBucket(score: number): 'high_score' | 'mid_score' | 'low_score' {
+  if (score >= 70) return 'high_score'
+  if (score >= 50) return 'mid_score'
+  return 'low_score'
+}
+
 function generateReason(recipient: any, candidate: any): string {
   const recipientPrefs: string[] = Array.isArray(recipient.intro_preferences) ? recipient.intro_preferences : []
   const candidateRole: string = candidate.role_type || ''
