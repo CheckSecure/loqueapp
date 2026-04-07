@@ -119,7 +119,9 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
           <thead>
             <tr className="border-b border-slate-100 bg-[#F5F6FB]">
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Name</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Title</th>
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</th>
+              <th className="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-12">LI</th>
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Company</th>
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Role</th>
               <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Signed up</th>
@@ -138,8 +140,18 @@ export default function AdminWaitlist({ initial }: { initial: WaitlistEntry[] })
                       <p className="text-[11px] text-slate-400 mt-0.5">via: {entry.referral_source}</p>
                     )}
                   </td>
+                  <td className="px-5 py-4 text-sm text-slate-600">{entry.title || "—"}</td>
                   <td className="px-5 py-4 text-sm text-slate-600">{entry.email}</td>
                   <td className="px-5 py-4 text-sm text-slate-600">{entry.company || '—'}</td>
+                  <td className="px-3 py-4 text-center">
+                    {entry.linkedin_url ? (
+                      <a href={entry.linkedin_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-blue-50 transition-colors">
+                        <Linkedin className="w-4 h-4 text-blue-600" />
+                      </a>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-4 text-sm text-slate-600">
                     {entry.role_type ? (ROLE_LABELS[entry.role_type] ?? entry.role_type) : '—'}
                   </td>
