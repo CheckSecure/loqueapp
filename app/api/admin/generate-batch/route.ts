@@ -453,114 +453,136 @@ export async function POST(req: NextRequest) {
       return b.mutualScore - a.mutualScore
     })
     
-    const mutualThreshold = allPairs[Math.floor(allPairs.length * MUTUAL_MATCH_PERCENTILE)]?.mutualScore || 0
-    const bidirectionalPairs = allPairs.filter(p => p.mutualScore >= mutualThreshold)
-    const onewayPairs = allPairs.filter(p => p.mutualScore < mutualThreshold)
+    // NEW TIER-FIRST MATCHING FLOW
+    // Step 1: Build candidate pools for each user (no selection yet)
+    const userCandidatePools: Record<string, Array<{
+      candidate: any
+      score: number
+      bucket: 'high_score' | 'mid_score' | 'low_score'
+      reason: string
+    }>> = {}
     
+    for (const profile of profiles) {
+      userCandidatePools[profile.id] = []
+    }
+    
+    // Populate candidate pools from all pairs
+    for (const pair of allPairs) {
+      const { userA, userB, scoreAtoB, scoreBtoA, reasonAtoB, reasonBtoA } = pair
+      
+      // Add B as candidate for A
+      userCandidatePools[userA.id].push({
+        candidate: userB,
+        score: scoreAtoB,
+        bucket: getScoreBucket(scoreAtoB),
+        reason: reasonAtoB
+      })
+      
+      // Add A as candidate for B
+      userCandidatePools[userB.id].push({
+        candidate: userA,
+        score: scoreBtoA,
+        bucket: getScoreBucket(scoreBtoA),
+        reason: reasonBtoA
+      })
+    }
+    
+    // Step 2: Apply tier-based selection for each user
     const userBatches: Record<string, any[]> = {}
-    const userBatchSizes: Record<string, number> = {}
     const userRoleCounts: Record<string, Record<string, number>> = {}
     
     for (const profile of profiles) {
       userBatches[profile.id] = []
-      userBatchSizes[profile.id] = TIER_BATCH_SIZES[profile.subscription_tier ?? 'free'] ?? 3
       userRoleCounts[profile.id] = {}
-    }
-    
-    const assignedPairs = new Set<string>()
-    let mutualMatchesCreated = 0
-    
-    for (const pair of bidirectionalPairs) {
-      const { userA, userB, scoreAtoB, scoreBtoA, reasonAtoB, reasonBtoA } = pair
       
-      const pairKey = [userA.id, userB.id].sort().join('-')
-      if (assignedPairs.has(pairKey)) continue
+      const tier = profile.subscription_tier || 'free'
+      const tierDist = getTierDistribution(tier)
+      const pool = userCandidatePools[profile.id]
       
-      const aHasSpace = userBatches[userA.id].length < userBatchSizes[userA.id]
-      const bHasSpace = userBatches[userB.id].length < userBatchSizes[userB.id]
+      // Separate by bucket
+      const highCandidates = pool.filter(c => c.bucket === 'high_score').sort((a, b) => b.score - a.score)
+      const midCandidates = pool.filter(c => c.bucket === 'mid_score').sort((a, b) => b.score - a.score)
+      const lowCandidates = pool.filter(c => c.bucket === 'low_score').sort((a, b) => b.score - a.score)
       
-      const aRoleB = userB.role_type || 'unknown'
-      const bRoleA = userA.role_type || 'unknown'
-      const aRoleCount = userRoleCounts[userA.id][aRoleB] || 0
-      const bRoleCount = userRoleCounts[userB.id][bRoleA] || 0
-      const aMaxPerRole = Math.ceil(userBatchSizes[userA.id] * MAX_SAME_ROLE_PERCENT)
-      const bMaxPerRole = Math.ceil(userBatchSizes[userB.id] * MAX_SAME_ROLE_PERCENT)
+      const selected: any[] = []
       
-      const bIsHighTier = highTierExposure.hasOwnProperty(userB.id)
-      const aIsHighTier = highTierExposure.hasOwnProperty(userA.id)
-      const bOverExposed = bIsHighTier && highTierExposure[userB.id] >= 8
-      const aOverExposed = aIsHighTier && highTierExposure[userA.id] >= 8
-      
-      const canAddBoth = aHasSpace && bHasSpace && 
-                         aRoleCount < aMaxPerRole && bRoleCount < bMaxPerRole &&
-                         !bOverExposed && !aOverExposed
-      
-      if (canAddBoth) {
-        userBatches[userA.id].push({ suggested: userB, score: scoreAtoB, reason: reasonAtoB })
-        userBatches[userB.id].push({ suggested: userA, score: scoreBtoA, reason: reasonBtoA })
+      // Select high-score candidates first
+      for (let i = 0; i < Math.min(tierDist.high, highCandidates.length); i++) {
+        const candidate = highCandidates[i]
         
-        userRoleCounts[userA.id][aRoleB] = aRoleCount + 1
-        userRoleCounts[userB.id][bRoleA] = bRoleCount + 1
+        // Check role diversity
+        const roleType = candidate.candidate.role_type || 'unknown'
+        const roleCount = userRoleCounts[profile.id][roleType] || 0
+        const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
         
-        if (bIsHighTier) highTierExposure[userB.id]++
-        if (aIsHighTier) highTierExposure[userA.id]++
-        
-        assignedPairs.add(pairKey)
-        mutualMatchesCreated++
+        if (roleCount < maxPerRole) {
+          selected.push({
+            suggested: candidate.candidate,
+            score: candidate.score,
+            bucket: candidate.bucket,
+            reason: candidate.reason
+          })
+          userRoleCounts[profile.id][roleType] = roleCount + 1
+        }
       }
+      
+      // Select mid-score candidates to fill remaining slots
+      const stillNeed = tierDist.total - selected.length
+      for (let i = 0; i < Math.min(stillNeed, midCandidates.length); i++) {
+        const candidate = midCandidates[i]
+        
+        const roleType = candidate.candidate.role_type || 'unknown'
+        const roleCount = userRoleCounts[profile.id][roleType] || 0
+        const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
+        
+        if (roleCount < maxPerRole) {
+          selected.push({
+            suggested: candidate.candidate,
+            score: candidate.score,
+            bucket: candidate.bucket,
+            reason: candidate.reason
+          })
+          userRoleCounts[profile.id][roleType] = roleCount + 1
+        }
+      }
+      
+      // Fallback: if still need more and have low-score candidates
+      const finalNeed = tierDist.total - selected.length
+      if (finalNeed > 0 && lowCandidates.length > 0) {
+        for (let i = 0; i < Math.min(finalNeed, lowCandidates.length); i++) {
+          const candidate = lowCandidates[i]
+          
+          const roleType = candidate.candidate.role_type || 'unknown'
+          const roleCount = userRoleCounts[profile.id][roleType] || 0
+          const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
+          
+          if (roleCount < maxPerRole) {
+            selected.push({
+              suggested: candidate.candidate,
+              score: candidate.score,
+              bucket: candidate.bucket,
+              reason: candidate.reason
+            })
+            userRoleCounts[profile.id][roleType] = roleCount + 1
+          }
+        }
+      }
+      
+      userBatches[profile.id] = selected
     }
     
-    const allCandidatePairs = [...onewayPairs, ...bidirectionalPairs]
-    
-    for (const recipient of profiles) {
-      const currentSize = userBatches[recipient.id].length
-      const targetSize = userBatchSizes[recipient.id]
-      const spotsLeft = targetSize - currentSize
-      
-      if (spotsLeft <= 0) continue
-      
-      const alreadyAssigned = new Set(userBatches[recipient.id].map(s => s.suggested.id))
-      
-      const candidates = allCandidatePairs
-        .filter(p => {
-          const isA = p.userA.id === recipient.id
-          const isB = p.userB.id === recipient.id
-          if (!isA && !isB) return false
-          
-          const suggested = isA ? p.userB : p.userA
-          if (alreadyAssigned.has(suggested.id)) return false
-          
-          const roleCount = userRoleCounts[recipient.id][suggested.role_type || 'unknown'] || 0
-          const maxPerRole = Math.ceil(targetSize * MAX_SAME_ROLE_PERCENT)
-          if (roleCount >= maxPerRole) return false
-          
-          const isHighTier = highTierExposure.hasOwnProperty(suggested.id)
-          if (isHighTier && highTierExposure[suggested.id] >= 8) return false
-          
-          return true
-        })
-        .map(p => {
-          const isA = p.userA.id === recipient.id
-          return {
-            suggested: isA ? p.userB : p.userA,
-            score: isA ? p.scoreAtoB : p.scoreBtoA,
-            reason: isA ? p.reasonAtoB : p.reasonBtoA,
-          }
-        })
-        .sort((a, b) => b.score - a.score)
-        .slice(0, spotsLeft)
-      
-      for (const candidate of candidates) {
-        userBatches[recipient.id].push(candidate)
-        const roleType = candidate.suggested.role_type || 'unknown'
-        userRoleCounts[recipient.id][roleType] = (userRoleCounts[recipient.id][roleType] || 0) + 1
-        
-        if (highTierExposure.hasOwnProperty(candidate.suggested.id)) {
-          highTierExposure[candidate.suggested.id]++
+    // Step 3: Detect mutual matches AFTER selection (for reporting only)
+    let mutualMatchesCreated = 0
+    for (const userAId of Object.keys(userBatches)) {
+      for (const match of userBatches[userAId]) {
+        const userBId = match.suggested.id
+        const bHasA = userBatches[userBId]?.some(m => m.suggested.id === userAId)
+        if (bHasA) {
+          mutualMatchesCreated++
         }
       }
     }
-    
+    mutualMatchesCreated = mutualMatchesCreated / 2 // Each mutual counted twice
     const allSuggestions: any[] = []
     
     for (const [recipientId, suggestions] of Object.entries(userBatches)) {
