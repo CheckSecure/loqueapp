@@ -65,7 +65,7 @@ export async function verifyLinkedInConsistency(
   const hasSuspiciousTitle = suspiciousTitles.some(t => profileData.title.toLowerCase().includes(t))
   
   const genericDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com']
-  const hasGenericEmail = user?.email && genericDomains.some(d => user.email.includes(d))
+  const hasGenericEmail = user?.email ? genericDomains.some(d => user.email!.includes(d)) : false
   
   if (hasSuspiciousTitle && hasGenericEmail && !metadata.company_match) {
     flaggedReasons.push('High-level title with generic email domain')
