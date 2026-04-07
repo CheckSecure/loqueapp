@@ -45,13 +45,18 @@ export async function middleware(request: NextRequest) {
     // Check if email is verified
     const { data: profile } = await supabase
       .from('profiles')
-      .select('email_verified')
+      .select('email_verified, profile_complete')
       .eq('id', user.id)
       .single()
 
-    // Allow access to verify-email page even if not verified
+    // Allow access to verify-email and onboarding pages even if not complete
     if (!profile?.email_verified && !request.nextUrl.pathname.startsWith('/dashboard/verify-email')) {
       return NextResponse.redirect(new URL('/dashboard/verify-email', request.url))
+    }
+
+    // Redirect to onboarding if profile not complete
+    if (profile?.email_verified && !profile?.profile_complete && !request.nextUrl.pathname.startsWith('/dashboard/onboarding')) {
+      return NextResponse.redirect(new URL('/dashboard/onboarding', request.url))
     }
   }
 
