@@ -22,7 +22,6 @@ interface Profile {
   role_type?: string
   mentorship_role?: string
 }
-
 export default function OnboardingStep1({ 
   profile, 
   email, 
