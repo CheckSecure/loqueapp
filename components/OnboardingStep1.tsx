@@ -72,7 +72,7 @@ export default function OnboardingStep1({
         <div className="h-20 bg-gradient-to-r from-[#1B2850] to-[#2E4080]" />
         <div className="px-6 pb-6">
           <div className="-mt-10 mb-4">
-            <AvatarUpload userId={profile?.id || ''}  initials={initials} />
+            <AvatarUpload userId={profile?.id || ''}   />
           </div>
         </div>
       </div>
