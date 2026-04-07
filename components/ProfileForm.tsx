@@ -202,7 +202,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
         <input
           name="expertise"
           type="text"
-          defaultValue={(profile?.expertise || []).join(', ')}
+          defaultValue={Array.isArray(profile?.expertise) ? profile.expertise.join(', ') : (profile?.expertise || '')}
           placeholder="M&A, Securities Law, Corporate Governance"
           className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
         />
