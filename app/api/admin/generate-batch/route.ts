@@ -622,13 +622,13 @@ export async function POST(req: NextRequest) {
       totalSuggestions: allSuggestions.length,
       usersMatched: profiles.length,
       mutualOpportunities: mutualMatchesCreated,
-      oneWayMatches,
+      oneWayMatches: allSuggestions.length - (mutualMatchesCreated * 2),
       avgBatchSize: Math.round(avgBatchSize * 10) / 10,
       qualityMetrics: {
         relevanceThreshold: MIN_RELEVANCE_SCORE,
         mutualMatchPercentile: MUTUAL_MATCH_PERCENTILE,
         pairsConsidered: allPairs.length,
-        pairsQualified: bidirectionalPairs.length,
+        pairsQualified: allPairs.length,
       }
     })
   } catch (err: any) {
