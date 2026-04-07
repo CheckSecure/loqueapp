@@ -142,6 +142,7 @@ export default function AdminIntroRequests({ initial }: { initial: RequestRow[] 
             </tbody>
           </table>
         </div>
+        </div>
       </div>
     </div>
   )
