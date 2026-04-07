@@ -687,8 +687,8 @@ export async function adminSendWaitlistInvite(id: string) {
         })
         console.log('[invite] created profile for:', entry.email)
         if (newUserId) {
-          await supabase.from('meeting_credits').upsert({ user_id: newUserId, balance: 3 })
-          await supabase.from('credit_transactions').insert({ user_id: newUserId, amount: 3, type: 'credit', note: 'signup_bonus' })
+          await adminClient.from('meeting_credits').upsert({ user_id: newUserId, balance: 3 })
+          await adminClient.from('credit_transactions').insert({ user_id: newUserId, amount: 3, type: 'credit', note: 'signup_bonus' })
           console.log('[invite] seeded 3 credits for:', entry.email)
         }
       }
