@@ -1,87 +1,25 @@
-'use client'
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import ProfileEditForm from '@/components/ProfileEditForm'
+import EmailChangeForm from '@/components/EmailChangeForm'
+import PasswordChangeForm from '@/components/PasswordChangeForm'
+import AccountDeletion from '@/components/AccountDeletion'
+import { Mail, FileText } from 'lucide-react'
 
-import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { Eye, EyeOff, Loader2, CheckCircle, Mail, FileText, Shield, AlertTriangle } from 'lucide-react'
+export const metadata = { title: 'Settings | Andrel' }
 
-export default function SettingsPage() {
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [showCurrent, setShowCurrent] = useState(false)
-  const [showNew, setShowNew] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [success, setSuccess] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+export default async function SettingsPage() {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
 
-  const [newEmail, setNewEmail] = useState('')
-  const [emailPassword, setEmailPassword] = useState('')
-  const [emailSaving, setEmailSaving] = useState(false)
-  const [emailSuccess, setEmailSuccess] = useState(false)
-  const [emailError, setEmailError] = useState<string | null>(null)
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single()
 
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
-  const [deleting, setDeleting] = useState(false)
-
-  const handleChangeEmail = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setEmailError(null)
-    setEmailSuccess(false)
-    if (!newEmail || !newEmail.includes('@')) { setEmailError('Please enter a valid email address'); return }
-    if (!emailPassword) { setEmailError('Please enter your current password to confirm'); return }
-    setEmailSaving(true)
-    const supabase = createClient()
-    // Re-authenticate first
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user?.email) { setEmailError('Not authenticated'); setEmailSaving(false); return }
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: user.email,
-      password: emailPassword,
-    })
-    if (signInError) { setEmailError('Incorrect password'); setEmailSaving(false); return }
-    // Update email
-    const { error: updateError } = await supabase.auth.updateUser({ email: newEmail })
-    if (updateError) { setEmailError(updateError.message); setEmailSaving(false); return }
-    // Update profiles table
-    await supabase.from('profiles').update({ email: newEmail }).eq('id', user.id)
-    setEmailSuccess(true)
-    setNewEmail('')
-    setEmailPassword('')
-    setEmailSaving(false)
-  }
-
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    setSuccess(false)
-    if (newPassword.length < 8) { setError('New password must be at least 8 characters'); return }
-    if (newPassword !== confirmPassword) { setError('Passwords do not match'); return }
-    setSaving(true)
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user?.email) { setError('Not authenticated'); setSaving(false); return }
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email: user.email, password: currentPassword })
-    if (signInError) { setError('Current password is incorrect'); setSaving(false); return }
-    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
-    setSaving(false)
-    if (updateError) { setError(updateError.message); return }
-    setSuccess(true)
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
-    setTimeout(() => setSuccess(false), 4000)
-  }
-
-  const handleDeleteAccount = async () => {
-    if (deleteConfirmText !== 'DELETE') return
-    setDeleting(true)
-    const supabase = createClient()
-    await supabase.rpc('delete_user_account')
-    await supabase.auth.signOut()
-    window.location.href = '/'
-  }
+  if (!profile) redirect('/login')
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-10 space-y-8">
@@ -90,105 +28,9 @@ export default function SettingsPage() {
         <p className="text-slate-500 text-sm mt-1">Manage your account and preferences.</p>
       </div>
 
-      {/* Change Email */}
-      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-900">Change Email</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Update the email address associated with your account.</p>
-        </div>
-        <form onSubmit={handleChangeEmail} className="px-6 py-5 space-y-4">
-          {emailSuccess && (
-            <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 px-4 py-3 rounded-lg">
-              <CheckCircle className="w-4 h-4 flex-shrink-0" />
-              Check your new email address for a confirmation link.
-            </div>
-          )}
-          {emailError && (
-            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-100 px-4 py-3 rounded-lg">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              {emailError}
-            </div>
-          )}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">New email address</label>
-            <input
-              type="email"
-              value={newEmail}
-              onChange={e => setNewEmail(e.target.value)}
-              placeholder="new@email.com"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Current password (to confirm)</label>
-            <input
-              type="password"
-              value={emailPassword}
-              onChange={e => setEmailPassword(e.target.value)}
-              placeholder="Enter your current password"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={emailSaving}
-            className="flex items-center gap-2 px-5 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040] transition-colors disabled:opacity-60"
-          >
-            {emailSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-            {emailSaving ? 'Updating…' : 'Update email'}
-          </button>
-        </form>
-      </section>
-
-      {/* Change Password */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-[#1B2850]" />
-            <h2 className="text-sm font-semibold text-slate-900">Change Password</h2>
-          </div>
-        </div>
-        <form onSubmit={handleChangePassword} className="px-6 py-5 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Current password</label>
-            <div className="relative">
-              <input type={showCurrent ? 'text' : 'password'} value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required placeholder="Enter current password" className="w-full px-3.5 py-2.5 pr-10 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
-              <button type="button" onClick={() => setShowCurrent(!showCurrent)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">New password</label>
-            <div className="relative">
-              <input type={showNew ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} required placeholder="At least 8 characters" className="w-full px-3.5 py-2.5 pr-10 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
-              <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Confirm new password</label>
-            <div className="relative">
-              <input type={showConfirm ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required placeholder="Re-enter new password" className="w-full px-3.5 py-2.5 pr-10 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
-              <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-          {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-lg">{error}</p>}
-          {success && (
-            <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 px-4 py-3 rounded-lg">
-              <CheckCircle className="w-4 h-4 flex-shrink-0" />
-              Password updated successfully.
-            </div>
-          )}
-          <button type="submit" disabled={saving} className="flex items-center justify-center gap-2 bg-[#1B2850] text-white text-sm font-semibold px-5 py-2.5 rounded-lg hover:bg-[#162040] transition-colors disabled:opacity-60">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            {saving ? 'Updating...' : 'Update Password'}
-          </button>
-        </form>
-      </div>
+      <ProfileEditForm initialData={profile} />
+      <EmailChangeForm />
+      <PasswordChangeForm />
 
       {/* Help & Support */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -231,48 +73,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Danger Zone */}
-      <div className="bg-white rounded-2xl border border-red-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-red-100">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-500" />
-            <h2 className="text-sm font-semibold text-red-600">Danger Zone</h2>
-          </div>
-        </div>
-        <div className="px-6 py-5">
-          <p className="text-sm text-slate-500 mb-4">Permanently delete your account, profile, matches, and messages. This cannot be undone.</p>
-          {!showDeleteConfirm ? (
-            <button onClick={() => setShowDeleteConfirm(true)} className="px-4 py-2 text-sm font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
-              Delete My Account
-            </button>
-          ) : (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-3">
-              <p className="text-sm font-semibold text-red-700">Are you sure? This is permanent.</p>
-              <p className="text-xs text-red-500">Type DELETE to confirm.</p>
-              <input
-                type="text"
-                value={deleteConfirmText}
-                onChange={e => setDeleteConfirmText(e.target.value)}
-                placeholder="Type DELETE"
-                className="w-full px-3 py-2 border border-red-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"
-              />
-              <div className="flex gap-3">
-                <button onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText('') }} className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteAccount}
-                  disabled={deleteConfirmText !== 'DELETE' || deleting}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-40"
-                >
-                  {deleting && <Loader2 className="w-3 h-3 animate-spin" />}
-                  {deleting ? 'Deleting...' : 'Permanently Delete Account'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      <AccountDeletion />
     </div>
   )
 }
