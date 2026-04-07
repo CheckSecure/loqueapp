@@ -252,14 +252,6 @@ function generateReason(recipient: any, candidate: any): string {
 
 function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low' {
 
-function getTierDistribution(tier: string): { high: number, mid: number, total: number } {
-  const distributions: Record<string, { high: number, mid: number, total: number }> = {
-    free: { high: 1, mid: 2, total: 3 },
-    professional: { high: 3, mid: 2, total: 5 },
-    executive: { high: 5, mid: 3, total: 8 }
-  }
-  return distributions[tier] || distributions.free
-}
   const totalScore = (user.networkValueScore || 0) + (user.responsivenessScore || 0)
   const sortedByScore = profiles
     .map(p => (p.networkValueScore || 0) + (p.responsivenessScore || 0))
@@ -270,6 +262,15 @@ function getTierDistribution(tier: string): { high: number, mid: number, total: 
   if (percentile <= 0.33) return 'high'
   if (percentile <= 0.66) return 'mid'
   return 'low'
+}
+
+function getTierDistribution(tier: string): { high: number, mid: number, total: number } {
+  const distributions: Record<string, { high: number, mid: number, total: number }> = {
+    free: { high: 1, mid: 2, total: 3 },
+    professional: { high: 3, mid: 2, total: 5 },
+    executive: { high: 5, mid: 3, total: 8 }
+  }
+  return distributions[tier] || distributions.free
 }
   
 
