@@ -20,6 +20,7 @@ interface Profile {
   seniority?: string
   role_type?: string
   mentorship_role?: string
+  current_status?: string
 }
 
 export default function OnboardingStep1({ 
