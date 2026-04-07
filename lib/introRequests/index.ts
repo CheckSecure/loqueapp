@@ -1,3 +1,4 @@
+import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from '@/lib/supabase/server'
 
 async function resolveProfileId(supabase: ReturnType<typeof createClient>, authUserId: string, authUserEmail?: string) {
@@ -18,7 +19,7 @@ export async function createIntroRequest(
   targetUserId: string,
   note?: string,
 ) {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   console.log('[createIntroRequest] authUserId:', authUserId, 'targetUserId:', targetUserId)
 
   if (authUserId === targetUserId) {
@@ -93,7 +94,7 @@ export async function createIntroRequest(
 }
 
 export async function getUserIntroRequests(userId: string) {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   const profileId = await resolveProfileId(supabase, userId)
 
   const { data, error } = await supabase
@@ -106,7 +107,7 @@ export async function getUserIntroRequests(userId: string) {
 }
 
 export async function adminGetPendingRequests() {
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { data: requests, error } = await supabase
     .from('intro_requests')
@@ -142,7 +143,7 @@ export async function adminGetPendingRequests() {
 }
 
 export async function approveIntroRequest(requestId: string) {
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   // ── 1. Fetch the intro request ────────────────────────────────────────────
   const { data: req, error: fetchErr } = await supabase
@@ -329,7 +330,7 @@ export async function approveIntroRequest(requestId: string) {
 }
 
 export async function rejectIntroRequest(requestId: string) {
-  const supabase = createClient()
+  const supabase = createAdminClient()
 
   const { error } = await supabase
     .from('intro_requests')
