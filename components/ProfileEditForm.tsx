@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { Loader2, CheckCircle, User } from 'lucide-react'
+import { Loader2, CheckCircle, User, ChevronDown, ChevronUp } from 'lucide-react'
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite']
 const EXPERTISE_OPTIONS = ['Strategy', 'Operations', 'Legal', 'Finance', 'Sales', 'Marketing', 'Product', 'Engineering', 'HR', 'Other']
 const PURPOSE_OPTIONS = ['Fundraising', 'Hiring', 'Partnerships', 'Mentorship', 'Business Development', 'Market Insights', 'Career Growth']
 
 export default function ProfileEditForm({ initialData }: { initialData: any }) {
+  const [isOpen, setIsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -18,8 +19,8 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
   const [city, setCity] = useState(initialData.city || '')
   const [state, setState] = useState(initialData.state || '')
   const [seniority, setSeniority] = useState(initialData.seniority || '')
-  const [expertise, setExpertise] = useState<string[]>(initialData.expertise || [])
-  const [purposes, setPurposes] = useState<string[]>(initialData.purposes || [])
+  const [expertise, setExpertise] = useState<string[]>(Array.isArray(initialData.expertise) ? initialData.expertise : [])
+  const [purposes, setPurposes] = useState<string[]>(Array.isArray(initialData.purposes) ? initialData.purposes : [])
   const [meetingFormat, setMeetingFormat] = useState(initialData.meeting_format_preference || 'both')
   const [geoScope, setGeoScope] = useState(initialData.geographic_scope || 'us-wide')
   const [bio, setBio] = useState(initialData.bio || '')
@@ -37,8 +38,6 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     setError(null)
     setSuccess(false)
     setSaving(true)
-
-    const location = city && state ? `${city}, ${state}` : city || state || null
 
     const formData = new FormData()
     formData.append('full_name', fullName)
@@ -67,18 +66,51 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     }
 
     setSuccess(true)
-    setTimeout(() => setSuccess(false), 4000)
+    setTimeout(() => {
+      setSuccess(false)
+      setIsOpen(false)
+    }, 2000)
+  }
+
+  if (!isOpen) {
+    return (
+      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <button
+          onClick={() => setIsOpen(true)}
+          className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-[#F5F6FB] rounded-lg flex items-center justify-center">
+              <User className="w-4 h-4 text-[#1B2850]" />
+            </div>
+            <div className="text-left">
+              <h2 className="text-sm font-semibold text-slate-900">Edit Profile</h2>
+              <p className="text-xs text-slate-400">Update your professional details and preferences</p>
+            </div>
+          </div>
+          <ChevronDown className="w-5 h-5 text-slate-400" />
+        </button>
+      </section>
+    )
   }
 
   return (
     <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100">
-        <div className="flex items-center gap-2">
-          <User className="w-4 h-4 text-[#1B2850]" />
-          <h2 className="text-sm font-semibold text-slate-900">Profile Information</h2>
+      <button
+        onClick={() => setIsOpen(false)}
+        className="w-full px-6 py-4 flex items-center justify-between border-b border-slate-100 hover:bg-slate-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-[#F5F6FB] rounded-lg flex items-center justify-center">
+            <User className="w-4 h-4 text-[#1B2850]" />
+          </div>
+          <div className="text-left">
+            <h2 className="text-sm font-semibold text-slate-900">Edit Profile</h2>
+            <p className="text-xs text-slate-400">Update your professional details and preferences</p>
+          </div>
         </div>
-        <p className="text-xs text-slate-400 mt-0.5">Update your professional details and preferences.</p>
-      </div>
+        <ChevronUp className="w-5 h-5 text-slate-400" />
+      </button>
 
       <form onSubmit={handleSubmit} className="px-6 py-5 space-y-5">
         {success && (
@@ -236,14 +268,23 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
           </div>
         </div>
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="flex items-center gap-2 px-5 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040] transition-colors disabled:opacity-60"
-        >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />}
-          {saving ? 'Saving…' : 'Save Changes'}
-        </button>
+        <div className="flex gap-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex items-center gap-2 px-5 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040] transition-colors disabled:opacity-60"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsOpen(false)}
+            className="px-5 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
       </form>
     </section>
   )
