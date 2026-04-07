@@ -144,7 +144,6 @@ export default function AdminUsers({ users }: { users: UserRow[] }) {
           </tbody>
         </table>
       </div>
-      </div>
     </div>
   )
 }
