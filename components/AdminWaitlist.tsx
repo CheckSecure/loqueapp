@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { adminApproveWaitlist, adminDeclineWaitlist, adminSendWaitlistInvite } from '@/app/actions'
-import { CheckCircle, Loader2, Clock, UserCheck, XCircle, Mail, Send } from 'lucide-react'
+import { CheckCircle, Loader2, Clock, UserCheck, XCircle, Mail, Send, Linkedin, Shield } from 'lucide-react'
 
 interface WaitlistEntry {
   id: string
