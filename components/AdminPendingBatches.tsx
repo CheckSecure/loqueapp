@@ -18,7 +18,7 @@ export default async function AdminPendingBatches() {
         .from('batch_suggestions')
         .select('id, recipient_id, suggested_id, reason, match_score')
         .eq('batch_id', batch.id)
-        .eq('status', 'active')
+        .eq('status', 'generated')
 
       const recipientIds = Array.from(new Set((suggestions ?? []).map((s: any) => s.recipient_id)))
       const suggestedIds = Array.from(new Set((suggestions ?? []).map((s: any) => s.suggested_id)))
