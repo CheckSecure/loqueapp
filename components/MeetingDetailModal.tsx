@@ -60,6 +60,7 @@ export interface MeetingDetail {
   other?: { id: string; full_name: string; title?: string; company?: string } | null
   isOrganizer: boolean
   isPast: boolean
+  isNew?: boolean
 }
 
 function downloadICS(m: MeetingDetail) {
