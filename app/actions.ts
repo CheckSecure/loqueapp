@@ -797,7 +797,7 @@ export async function scheduleMeeting(formData: FormData) {
     user_id: recipientId,
     type: 'meeting_request',
     title: 'New meeting request',
-    message: `${requesterName} wants to meet with you`,
+    body: `${requesterName} wants to meet with you`,
     link: '/dashboard/meetings',
     created_at: new Date().toISOString()
   })
@@ -870,7 +870,7 @@ export async function acceptMeeting(meetingId: string) {
       user_id: otherUserId,
       type: 'meeting_accepted',
       title: 'Meeting confirmed',
-      message: 'Your meeting request was accepted',
+      body: 'Your meeting request was accepted',
       link: '/dashboard/meetings',
       created_at: new Date().toISOString()
     })
@@ -922,7 +922,7 @@ export async function declineMeeting(meetingId: string) {
       user_id: otherUserId,
       type: 'meeting_declined',
       title: 'Meeting declined',
-      message: 'Your meeting request was declined',
+      body: 'Your meeting request was declined',
       link: '/dashboard/meetings',
       created_at: new Date().toISOString()
     })
@@ -1010,7 +1010,7 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
     user_id: otherUserId,
     type: 'meeting_request',
     title: 'Meeting rescheduled',
-    message: `A meeting has been rescheduled`,
+    body: `A meeting has been rescheduled`,
     link: '/dashboard/meetings',
     created_at: new Date().toISOString()
   })
