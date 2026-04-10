@@ -1,28 +1,4 @@
-'us
-
-  const handleAccept = async () => {
-    setDeleting(true)
-    const result = await acceptMeeting(meeting.id)
-    if (result.success) {
-      router.refresh()
-      handleClose()
-    } else {
-      alert(result.error || 'Failed to accept meeting')
-      setDeleting(false)
-    }
-  }
-
-  const handleDecline = async () => {
-    setDeleting(true)
-    const result = await declineMeeting(meeting.id)
-    if (result.success) {
-      router.refresh()
-      handleClose()
-    } else {
-      alert(result.error || 'Failed to decline meeting')
-      setDeleting(false)
-    }
-  }e client'
+'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -149,7 +125,7 @@ export default function MeetingDetailModal({
 
   return (
     <>
-        <div className="fixed inset-0 z-50 flex items-end md:items-stretch">
+    <div className="fixed inset-0 z-50 flex items-end md:items-stretch">
       {/* Backdrop */}
       <div
         className={cn(
@@ -368,27 +344,3 @@ export default function MeetingDetailModal({
 
   )
 }
-
-  const handleAccept = async () => {
-    setDeleting(true)
-    const result = await acceptMeeting(meeting.id)
-    if (result.success) {
-      router.refresh()
-      handleClose()
-    } else {
-      alert(result.error || 'Failed to accept meeting')
-      setDeleting(false)
-    }
-  }
-
-  const handleDecline = async () => {
-    setDeleting(true)
-    const result = await declineMeeting(meeting.id)
-    if (result.success) {
-      router.refresh()
-      handleClose()
-    } else {
-      alert(result.error || 'Failed to decline meeting')
-      setDeleting(false)
-    }
-  }
