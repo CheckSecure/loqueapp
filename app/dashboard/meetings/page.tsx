@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import MeetingsClient from '@/components/MeetingsClient'
 
 export const metadata = { title: 'Meetings | Andrel' }
@@ -102,6 +103,7 @@ export default async function MeetingsPage() {
       other,
       isOrganizer: isRequester,
       isPast: new Date(m.scheduled_at) < new Date(),
+      isNew: (m.status === 'requested' || m.status === 'reschedule_requested') && !isRequester,
     }
   })
 
@@ -127,6 +129,8 @@ export default async function MeetingsPage() {
     .eq('user_id', user.id)
     .in('type', ['meeting_request', 'meeting_accepted', 'meeting_declined'])
     .is('read_at', null)
+
+  revalidatePath('/dashboard/meetings')
 
   return (
     <MeetingsClient
