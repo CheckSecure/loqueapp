@@ -39,7 +39,7 @@ export default async function MeetingsPage() {
   // ── 3. Fetch meetings ─────────────────────────────────────────────────────
   const { data: meetingRows, error: meetingErr } = await supabase
     .from('meetings')
-    .select('id, purpose, format, status, scheduled_at, duration_minutes, location, zoom_link, notes, requester_id, recipient_id')
+    .select('id, purpose, format, status, scheduled_at, duration_minutes, location, zoom_link, notes, requester_id, recipient_id, proposed_scheduled_at, proposed_duration_minutes, proposed_format, proposed_location, proposed_zoom_link, proposed_notes')
     .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
     .order('scheduled_at', { ascending: true })
 
@@ -93,6 +93,12 @@ export default async function MeetingsPage() {
       location: m.location,
       zoom_link: m.zoom_link ?? null,
       notes: m.notes ?? null,
+      proposed_scheduled_at: m.proposed_scheduled_at ?? null,
+      proposed_duration_minutes: m.proposed_duration_minutes ?? null,
+      proposed_format: m.proposed_format ?? null,
+      proposed_location: m.proposed_location ?? null,
+      proposed_zoom_link: m.proposed_zoom_link ?? null,
+      proposed_notes: m.proposed_notes ?? null,
       other,
       isOrganizer: isRequester,
       isPast: new Date(m.scheduled_at) < new Date(),

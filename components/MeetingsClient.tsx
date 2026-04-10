@@ -76,6 +76,18 @@ interface MatchedUser {
   company?: string
 }
 
+function getStatusBadge(status: string) {
+  if (status === 'confirmed') {
+    return { text: 'Confirmed', color: 'bg-green-100 text-green-700 border-green-200' }
+  } else if (status === 'requested' || status === 'reschedule_requested') {
+    return { text: status === 'reschedule_requested' ? 'Reschedule Pending' : 'Pending', color: 'bg-orange-100 text-orange-700 border-orange-200' }
+  } else if (status === 'declined' || status === 'reschedule_declined') {
+    return { text: status === 'reschedule_declined' ? 'Reschedule Declined' : 'Declined', color: 'bg-red-100 text-red-700 border-red-200' }
+  }
+  return { text: status, color: 'bg-gray-100 text-gray-700 border-gray-200' }
+}
+
+
 export default function MeetingsClient({
   upcoming,
   past,

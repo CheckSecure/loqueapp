@@ -44,6 +44,12 @@ export interface MeetingDetail {
   location?: string
   zoom_link?: string | null
   notes?: string | null
+  proposed_scheduled_at?: string | null
+  proposed_duration_minutes?: number | null
+  proposed_format?: string | null
+  proposed_location?: string | null
+  proposed_zoom_link?: string | null
+  proposed_notes?: string | null
   other?: { id: string; full_name: string; title?: string; company?: string } | null
   isOrganizer: boolean
   isPast: boolean
@@ -298,7 +304,7 @@ export default function MeetingDetailModal({
             )}
           </div>
         
-          {meeting.status === 'requested' && !meeting.isOrganizer && !meeting.isPast && (
+          {(meeting.status === 'requested' || meeting.status === 'reschedule_requested') && !meeting.isOrganizer && !meeting.isPast && (
             <div className="flex gap-2 mb-3">
               <button
                 onClick={handleAccept}
