@@ -91,7 +91,8 @@ export default function MeetingDetailModal({
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', handleKey)
     document.body.style.overflow = 'hidden'
-    return () => {
+    return (
+    <>) => {
       document.removeEventListener('keydown', handleKey)
       document.body.style.overflow = ''
     }
@@ -319,5 +320,14 @@ export default function MeetingDetailModal({
         />
       )}
 
+
+
+      {showReschedule && (
+        <RescheduleMeetingModal
+          meeting={meeting}
+          onClose={() => setShowReschedule(false)}
+        />
+      )}
+    </>
   )
 }
