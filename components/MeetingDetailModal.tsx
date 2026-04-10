@@ -1,4 +1,28 @@
-'use client'
+'us
+
+  const handleAccept = async () => {
+    setDeleting(true)
+    const result = await acceptMeeting(meeting.id)
+    if (result.success) {
+      router.refresh()
+      handleClose()
+    } else {
+      alert(result.error || 'Failed to accept meeting')
+      setDeleting(false)
+    }
+  }
+
+  const handleDecline = async () => {
+    setDeleting(true)
+    const result = await declineMeeting(meeting.id)
+    if (result.success) {
+      router.refresh()
+      handleClose()
+    } else {
+      alert(result.error || 'Failed to decline meeting')
+      setDeleting(false)
+    }
+  }e client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
