@@ -755,6 +755,12 @@ export async function scheduleMeeting(formData: FormData) {
   if (!recipientId) return { error: 'Please select who you are meeting with.' }
   if (!scheduled_at) return { error: 'Please provide a valid date and time.' }
 
+  // DEBUG: Log what we're receiving
+  console.log('[scheduleMeeting] format from formData:', formData.get('format'))
+  console.log('[scheduleMeeting] location from formData:', formData.get('location'))
+  console.log('[scheduleMeeting] purpose from formData:', formData.get('purpose'))
+  console.log('[scheduleMeeting] title from formData:', formData.get('title'))
+
   const { error } = await supabase.from('meetings').insert({
     requester_id: user.id,
     recipient_id: recipientId,
