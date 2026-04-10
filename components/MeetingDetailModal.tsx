@@ -1,29 +1,4 @@
-'us
-
-  const handleAccept = async () => {
-    setDeleting(true)
-    const result = await acceptMeeting(meeting.id)
-    if (result.success) {
-      router.refresh()
-      handleClose()
-    } else {
-      alert(result.error || 'Failed to accept meeting')
-      setDeleting(false)
-    }
-  }
-
-  const handleDecline = async () => {
-    setDeleting(true)
-    const result = await declineMeeting(meeting.id)
-    if (result.success) {
-      router.refresh()
-      handleClose()
-    } else {
-      alert(result.error || 'Failed to decline meeting')
-      setDeleting(false)
-    }
-  }
-e client'
+'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -116,7 +91,8 @@ export default function MeetingDetailModal({
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', handleKey)
     document.body.style.overflow = 'hidden'
-    return () => {
+    return (
+    <>) => {
       document.removeEventListener('keydown', handleKey)
       document.body.style.overflow = ''
     }
@@ -299,26 +275,24 @@ export default function MeetingDetailModal({
           </div>
         
           {meeting.status === 'requested' && !meeting.isOrganizer && !meeting.isPast && (
-            <>
-              <div className="flex gap-2 mb-3">
-                <button
-                  onClick={handleAccept}
-                  disabled={deleting}
-                  className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  Accept
-                </button>
-                <button
-                  onClick={handleDecline}
-                  disabled={deleting}
-                  className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold bg-red-600 text-white px-4 py-2.5 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50"
-                >
-                  <XCircle className="w-4 h-4" />
-                  Decline
-                </button>
-              </div>
-            </>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={handleAccept}
+                disabled={deleting}
+                className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+              >
+                <CheckCircle className="w-4 h-4" />
+                Accept
+              </button>
+              <button
+                onClick={handleDecline}
+                disabled={deleting}
+                className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold bg-red-600 text-white px-4 py-2.5 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                <XCircle className="w-4 h-4" />
+                Decline
+              </button>
+            </div>
           )}
 
           <button
@@ -361,6 +335,12 @@ export default function MeetingDetailModal({
       </div>
     </div>
 
+      {showReschedule && (
+        <RescheduleMeetingModal
+          meeting={meeting}
+          onClose={() => setShowReschedule(false)}
+        />
+      )}
 
 
 
