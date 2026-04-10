@@ -156,7 +156,6 @@ export default function ScheduleMeetingModal({
                 <option value="in-person">In-person</option>
               </select>
             </div>
-            </div>
           </div>
 
           <div>
