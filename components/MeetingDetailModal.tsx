@@ -24,6 +24,13 @@ function formatFullDate(iso: string) {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   })
 }
+function getTimezoneAbbr() {
+  const d = new Date()
+  const tzString = d.toLocaleString('en-US', { timeZoneName: 'short' })
+  const match = tzString.match(/([A-Z]{3,4})/)
+  return match ? match[1] : ''
+}
+
 function formatTimeRange(iso: string, duration: number) {
   const d = new Date(iso)
   const end = new Date(d.getTime() + duration * 60000)
@@ -244,20 +251,20 @@ export default function MeetingDetailModal({
                       Current: {formatFullDate(meeting.scheduled_at)}
                     </p>
                     <p className="text-xs text-slate-400 line-through mt-0.5">
-                      {formatTimeRange(meeting.scheduled_at, meeting.duration_minutes)} · {meeting.duration_minutes} min
+                      {formatTimeRange(meeting.scheduled_at, meeting.duration_minutes)} {getTimezoneAbbr()} · {meeting.duration_minutes} min
                     </p>
                     <p className="text-sm font-semibold text-blue-600 mt-2">
                       Proposed: {formatFullDate(meeting.proposed_scheduled_at)}
                     </p>
                     <p className="text-xs text-blue-600 mt-0.5">
-                      {formatTimeRange(meeting.proposed_scheduled_at, meeting.proposed_duration_minutes || meeting.duration_minutes)} · {meeting.proposed_duration_minutes || meeting.duration_minutes} min
+                      {formatTimeRange(meeting.proposed_scheduled_at, meeting.proposed_duration_minutes || meeting.duration_minutes)} {getTimezoneAbbr()} · {meeting.proposed_duration_minutes || meeting.duration_minutes} min
                     </p>
                   </>
                 ) : (
                   <>
                     <p className="text-sm font-semibold text-slate-900">{formatFullDate(meeting.scheduled_at)}</p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {formatTimeRange(meeting.scheduled_at, meeting.duration_minutes)} · {meeting.duration_minutes} min
+                      {formatTimeRange(meeting.scheduled_at, meeting.duration_minutes)} {getTimezoneAbbr()} · {meeting.duration_minutes} min
                     </p>
                   </>
                 )}

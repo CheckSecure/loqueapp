@@ -38,6 +38,13 @@ function downloadICS(m: Meeting) {
   URL.revokeObjectURL(url)
 }
 
+function getTimezoneAbbr() {
+  const d = new Date()
+  const tzString = d.toLocaleString('en-US', { timeZoneName: 'short' })
+  const match = tzString.match(/([A-Z]{3,4})/)
+  return match ? match[1] : ''
+}
+
 function formatDate(iso: string) {
   const d = new Date(iso)
   const today = new Date()
@@ -128,7 +135,7 @@ export default function MeetingsClient({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
             <span className="flex items-center gap-1 text-xs text-slate-500">
               <Clock className="w-3 h-3" />
-              {formatDate(m.scheduled_at)} · {formatTime(m.scheduled_at, m.duration_minutes)}
+              {formatDate(m.scheduled_at)} · {formatTime(m.scheduled_at, m.duration_minutes)} {getTimezoneAbbr()}
             </span>
             {m.meeting_type === 'virtual' || m.meeting_type === 'video' ? (
               <span className="flex items-center gap-1 text-xs text-[#1B2850] font-medium">
