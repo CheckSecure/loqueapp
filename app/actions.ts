@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail } from '@/lib/email'
+import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail } from '@/lib/email'
 import {
   createIntroRequest,
   approveIntroRequest,
