@@ -41,7 +41,7 @@ function downloadICS(m: Meeting) {
 function getTimezoneAbbr() {
   const d = new Date()
   const tzString = d.toLocaleString('en-US', { timeZoneName: 'short' })
-  const match = tzString.match(/([A-Z]{3,4})/)
+  const match = tzString.match(/\b([A-Z]{3,4})\b/)
   return match ? match[1] : ''
 }
 
