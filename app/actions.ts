@@ -892,5 +892,6 @@ export async function deleteMeeting(meetingId: string) {
     .eq('id', meetingId)
 
   if (error) return { error: error.message }
+  revalidatePath('/dashboard/meetings')
   return { success: true }
 }
