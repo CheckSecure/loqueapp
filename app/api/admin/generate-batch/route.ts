@@ -456,6 +456,14 @@ export async function POST(req: NextRequest) {
     
     // NEW TIER-FIRST MATCHING FLOW
     // Step 1: Build candidate pools for each user (no selection yet)
+
+    // CRITICAL: Process users in tier priority order (Executive → Professional → Free)
+    const tierPriority: Record<string, number> = { executive: 1, professional: 2, free: 3 }
+    const sortedProfiles = [...profiles].sort((a, b) => {
+      const aTier = tierPriority[a.subscription_tier || 'free'] || 3
+      const bTier = tierPriority[b.subscription_tier || 'free'] || 3
+      return aTier - bTier
+    })
     const userCandidatePools: Record<string, Array<{
       candidate: any
       score: number
@@ -490,20 +498,6 @@ export async function POST(req: NextRequest) {
     
     // Step 2: Apply tier-based selection for each user
 
-    // CRITICAL: Process users in tier priority order (Executive → Professional → Free)
-    const tierPriority: Record<string, number> = { executive: 1, professional: 2, free: 3 }
-    const sortedProfiles = [...profiles].sort((a, b) => {
-      const aTier = tierPriority[a.subscription_tier || 'free'] || 3
-      const bTier = tierPriority[b.subscription_tier || 'free'] || 3
-      return aTier - bTier
-    })
-    const userBatches: Record<string, any[]> = {}
-    const userRoleCounts: Record<string, Record<string, number>> = {}
-    
-    for (const profile of sortedProfiles) {
-      userBatches[profile.id] = []
-      userRoleCounts[profile.id] = {}
-      
       const tier = profile.subscription_tier || 'free'
       const tierDist = getTierDistribution(tier)
       const pool = userCandidatePools[profile.id]
