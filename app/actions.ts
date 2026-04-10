@@ -895,3 +895,55 @@ export async function deleteMeeting(meetingId: string) {
   revalidatePath('/dashboard/meetings')
   return { success: true }
 }
+
+export async function rescheduleMeeting(meetingId: string, formData: FormData) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Check authorization
+  const { data: meeting } = await supabase
+    .from('meetings')
+    .select('requester_id, recipient_id')
+    .eq('id', meetingId)
+    .single()
+
+  if (!meeting) return { error: 'Meeting not found' }
+  if (meeting.requester_id !== user.id && meeting.recipient_id !== user.id) {
+    return { error: 'Not authorized' }
+  }
+
+  const date = formData.get('date') as string
+  const time = formData.get('time') as string
+  const scheduled_at = date && time ? new Date(`${date}T${time}:00`).toISOString() : null
+
+  if (!scheduled_at) return { error: 'Please provide a valid date and time.' }
+
+  const { error } = await supabase
+    .from('meetings')
+    .update({
+      scheduled_at,
+      duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
+      format: formData.get('format') as string || 'virtual',
+      location: (formData.get('location') as string) || null,
+      zoom_link: (formData.get('zoom_link') as string) || null,
+      notes: (formData.get('notes') as string) || null,
+      status: 'requested', // Reset to requested if rescheduled
+    })
+    .eq('id', meetingId)
+
+  if (error) return { error: error.message }
+
+  // Notify the other party
+  const otherUserId = meeting.requester_id === user.id ? meeting.recipient_id : meeting.requester_id
+  await supabase.from('notifications').insert({
+    user_id: otherUserId,
+    type: 'meeting_request',
+    title: 'Meeting rescheduled',
+    message: `A meeting has been rescheduled`,
+    link: '/dashboard/meetings',
+    created_at: new Date().toISOString()
+  })
+
+  revalidatePath('/dashboard/meetings')
+  return { success: true }
+}

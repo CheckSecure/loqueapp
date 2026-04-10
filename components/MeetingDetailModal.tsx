@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { deleteMeeting } from '@/app/actions'
+import RescheduleMeetingModal from './RescheduleMeetingModal'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]', 'bg-[#2E4080]', 'bg-amber-500', 'bg-rose-500',
@@ -81,6 +82,7 @@ export default function MeetingDetailModal({
   onClose: () => void
 }) {
   const router = useRouter()
+  const [showReschedule, setShowReschedule] = useState(false)
   const [visible, setVisible] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -271,6 +273,14 @@ export default function MeetingDetailModal({
           </div>
         
           <button
+            onClick={() => setShowReschedule(true)}
+            className="w-full text-sm font-semibold border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl hover:border-slate-300 hover:text-slate-800 transition-colors flex items-center justify-center gap-2 mt-3"
+          >
+            <Calendar className="w-4 h-4" />
+            Reschedule
+          </button>
+
+          <button
             onClick={handleDelete}
             disabled={deleting}
             className="w-full text-sm font-semibold border border-red-200 text-red-600 px-4 py-2.5 rounded-xl hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mt-3"
@@ -301,5 +311,13 @@ export default function MeetingDetailModal({
         </div>
       </div>
     </div>
+
+      {showReschedule && (
+        <RescheduleMeetingModal
+          meeting={meeting}
+          onClose={() => setShowReschedule(false)}
+        />
+      )}
+
   )
 }
