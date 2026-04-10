@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail } from '@/lib/email'
 import {
   createIntroRequest,
   approveIntroRequest,
@@ -808,6 +809,39 @@ export async function scheduleMeeting(formData: FormData) {
     console.error('[scheduleMeeting] Notification error:', notifInsert.error)
     return { error: `Meeting created but notification failed: ${notifInsert.error.message}` }
   }
+
+  // Send email notification
+  const { data: recipientProfile } = await supabase
+    .from('profiles')
+    .select('full_name, email')
+    .eq('id', recipientId)
+    .single()
+
+  if (recipientProfile?.email) {
+    const meetingDate = new Date(scheduled_at).toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      month: 'long', 
+      day: 'numeric' 
+    })
+    const meetingTime = new Date(scheduled_at).toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit',
+      timeZoneName: 'short'
+    })
+    
+    try {
+      await sendMeetingRequestEmail(
+        recipientProfile.email,
+        recipientProfile.full_name || 'there',
+        requesterName,
+        meetingDate,
+        meetingTime,
+        (formData.get('title') as string || '').trim() || (formData.get('purpose') as string) || undefined
+      )
+    } catch (emailError) {
+      console.error('[scheduleMeeting] Email error:', emailError)
+    }
+  }
   
   revalidatePath('/dashboard/meetings')
   return { success: true }
@@ -866,7 +900,7 @@ export async function acceptMeeting(meetingId: string) {
 
   if (error) return { error: error.message }
   
-  // Send notification
+  // Send notification and email
   if (meeting) {
     const otherUserId = meeting.requester_id === user.id ? meeting.recipient_id : meeting.requester_id
     await supabase.from('notifications').insert({
@@ -877,6 +911,48 @@ export async function acceptMeeting(meetingId: string) {
       link: '/dashboard/meetings',
       created_at: new Date().toISOString()
     })
+
+    // Send email
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', [user.id, otherUserId])
+
+    const accepterProfile = profiles?.find(p => p.id === user.id)
+    const otherProfile = profiles?.find(p => p.id === otherUserId)
+
+    if (otherProfile?.email && accepterProfile) {
+      const { data: updatedMeeting } = await supabase
+        .from('meetings')
+        .select('scheduled_at')
+        .eq('id', meetingId)
+        .single()
+
+      if (updatedMeeting) {
+        const meetingDate = new Date(updatedMeeting.scheduled_at).toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          month: 'long', 
+          day: 'numeric' 
+        })
+        const meetingTime = new Date(updatedMeeting.scheduled_at).toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          timeZoneName: 'short'
+        })
+
+        try {
+          await sendMeetingAcceptedEmail(
+            otherProfile.email,
+            otherProfile.full_name || 'there',
+            accepterProfile.full_name || user.email || 'Someone',
+            meetingDate,
+            meetingTime
+          )
+        } catch (emailError) {
+          console.error('[acceptMeeting] Email error:', emailError)
+        }
+      }
+    }
   }
   
   revalidatePath('/dashboard/meetings')
@@ -929,6 +1005,27 @@ export async function declineMeeting(meetingId: string) {
       link: '/dashboard/meetings',
       created_at: new Date().toISOString()
     })
+
+    // Send email
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', [user.id, otherUserId])
+
+    const declinerProfile = profiles?.find(p => p.id === user.id)
+    const otherProfile = profiles?.find(p => p.id === otherUserId)
+
+    if (otherProfile?.email && declinerProfile) {
+      try {
+        await sendMeetingDeclinedEmail(
+          otherProfile.email,
+          otherProfile.full_name || 'there',
+          declinerProfile.full_name || user.email || 'Someone'
+        )
+      } catch (emailError) {
+        console.error('[declineMeeting] Email error:', emailError)
+      }
+    }
   }
   
   revalidatePath('/dashboard/meetings')

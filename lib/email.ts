@@ -148,3 +148,105 @@ export async function sendInviteEmail(
     return { success: false, error: error.message }
   }
 }
+
+export async function sendMeetingRequestEmail(
+  toEmail: string,
+  toName: string,
+  fromName: string,
+  meetingDate: string,
+  meetingTime: string,
+  meetingPurpose?: string
+) {
+  await resend.emails.send({
+    from: 'Andrel <hello@andrel.app>',
+    to: toEmail,
+    subject: `Meeting request from ${fromName}`,
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2850; margin-bottom: 24px;">New meeting request</h2>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          Hi ${toName},
+        </p>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+          <strong>${fromName}</strong> would like to meet with you.
+        </p>
+        <div style="background: #F5F6FB; border-left: 3px solid #1B2850; padding: 16px; margin: 24px 0; border-radius: 4px;">
+          <p style="color: #1B2850; font-weight: 600; margin: 0 0 8px 0;">📅 ${meetingDate} at ${meetingTime}</p>
+          ${meetingPurpose ? `<p style="color: #334155; margin: 0;"><strong>Purpose:</strong> ${meetingPurpose}</p>` : ''}
+        </div>
+        <a href="https://andrel.app/dashboard/meetings"
+           style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+          View Meeting Request
+        </a>
+        <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+          — The Andrel Team
+        </p>
+      </div>
+    `,
+  })
+}
+
+export async function sendMeetingAcceptedEmail(
+  toEmail: string,
+  toName: string,
+  acceptedByName: string,
+  meetingDate: string,
+  meetingTime: string
+) {
+  await resend.emails.send({
+    from: 'Andrel <hello@andrel.app>',
+    to: toEmail,
+    subject: `${acceptedByName} accepted your meeting`,
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2850; margin-bottom: 24px;">Meeting confirmed</h2>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          Hi ${toName},
+        </p>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+          <strong>${acceptedByName}</strong> has confirmed your meeting.
+        </p>
+        <div style="background: #F5F6FB; border-left: 3px solid #1B2850; padding: 16px; margin: 24px 0; border-radius: 4px;">
+          <p style="color: #1B2850; font-weight: 600; margin: 0;">📅 ${meetingDate} at ${meetingTime}</p>
+        </div>
+        <a href="https://andrel.app/dashboard/meetings"
+           style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+          View Meeting Details
+        </a>
+        <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+          — The Andrel Team
+        </p>
+      </div>
+    `,
+  })
+}
+
+export async function sendMeetingDeclinedEmail(
+  toEmail: string,
+  toName: string,
+  declinedByName: string
+) {
+  await resend.emails.send({
+    from: 'Andrel <hello@andrel.app>',
+    to: toEmail,
+    subject: 'Meeting request declined',
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2850; margin-bottom: 24px;">Meeting request declined</h2>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          Hi ${toName},
+        </p>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+          <strong>${declinedByName}</strong> is unable to accept your meeting request at this time.
+        </p>
+        <a href="https://andrel.app/dashboard/meetings"
+           style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+          View Meetings
+        </a>
+        <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+          — The Andrel Team
+        </p>
+      </div>
+    `,
+  })
+}
