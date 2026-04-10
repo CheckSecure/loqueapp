@@ -498,6 +498,10 @@ export async function POST(req: NextRequest) {
     
     // Step 2: Apply tier-based selection for each user
 
+    const userBatches: Record<string, any[]> = {}
+    const userRoleCounts: Record<string, Record<string, number>> = {}
+
+    for (const profile of sortedProfiles) {
       const tier = profile.subscription_tier || 'free'
       const tierDist = getTierDistribution(tier)
       const pool = userCandidatePools[profile.id]
