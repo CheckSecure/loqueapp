@@ -102,7 +102,6 @@ export default async function MeetingsPage() {
       other,
       isOrganizer: isRequester,
       isPast: new Date(m.scheduled_at) < new Date(),
-      isNew: recentMeetings.has(m.id),
     }
   })
 
@@ -128,18 +127,6 @@ export default async function MeetingsPage() {
     .eq('user_id', user.id)
     .in('type', ['meeting_request', 'meeting_accepted', 'meeting_declined'])
     .is('read_at', null)
-
-  // Get list of new meetings before returning
-  const now = new Date()
-  const recentMeetings = new Set(
-    (meetingRows || [])
-      .filter((m: any) => {
-        const updated = new Date(m.updated_at)
-        const diff = now.getTime() - updated.getTime()
-        return diff < 5 * 60 * 1000 && (m.status === 'requested' || m.status === 'reschedule_requested')
-      })
-      .map((m: any) => m.id)
-  )
 
   return (
     <MeetingsClient
