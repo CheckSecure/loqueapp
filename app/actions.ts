@@ -806,20 +806,44 @@ export async function acceptMeeting(meetingId: string) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
+  // Get meeting to check if there are proposed changes
+  const { data: meeting } = await supabase
+    .from('meetings')
+    .select('requester_id, recipient_id, proposed_scheduled_at, proposed_duration_minutes, proposed_format, proposed_location, proposed_zoom_link, proposed_notes')
+    .eq('id', meetingId)
+    .single()
+
+  if (!meeting) return { error: 'Meeting not found' }
+
+  // Build update object
+  const updates: any = { status: 'confirmed' }
+  
+  // If there are proposed changes, apply them
+  if (meeting.proposed_scheduled_at) {
+    updates.scheduled_at = meeting.proposed_scheduled_at
+    updates.duration_minutes = meeting.proposed_duration_minutes
+    updates.format = meeting.proposed_format
+    updates.location = meeting.proposed_location
+    updates.zoom_link = meeting.proposed_zoom_link
+    updates.notes = meeting.proposed_notes
+    
+    // Clear proposed fields
+    updates.proposed_scheduled_at = null
+    updates.proposed_duration_minutes = null
+    updates.proposed_format = null
+    updates.proposed_location = null
+    updates.proposed_zoom_link = null
+    updates.proposed_notes = null
+  }
+
   const { error } = await supabase
     .from('meetings')
-    .update({ status: 'confirmed' })
+    .update(updates)
     .eq('id', meetingId)
 
   if (error) return { error: error.message }
   
-  // Get meeting details for notification
-  const { data: meeting } = await supabase
-    .from('meetings')
-    .select('requester_id, recipient_id')
-    .eq('id', meetingId)
-    .single()
-  
+  // Send notification
   if (meeting) {
     const otherUserId = meeting.requester_id === user.id ? meeting.recipient_id : meeting.requester_id
     await supabase.from('notifications').insert({
@@ -840,19 +864,37 @@ export async function declineMeeting(meetingId: string) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
+  // Get meeting to check if declining a reschedule or initial request
+  const { data: meeting } = await supabase
+    .from('meetings')
+    .select('requester_id, recipient_id, status, proposed_scheduled_at')
+    .eq('id', meetingId)
+    .single()
+
+  if (!meeting) return { error: 'Meeting not found' }
+
+  // If there's a proposed reschedule, decline it but keep meeting confirmed
+  const isRescheduleDecline = meeting.proposed_scheduled_at !== null
+  const newStatus = isRescheduleDecline ? 'reschedule_declined' : 'declined'
+  
+  const updates: any = { status: newStatus }
+  
+  // If declining a reschedule, clear proposed fields
+  if (isRescheduleDecline) {
+    updates.proposed_scheduled_at = null
+    updates.proposed_duration_minutes = null
+    updates.proposed_format = null
+    updates.proposed_location = null
+    updates.proposed_zoom_link = null
+    updates.proposed_notes = null
+  }
+
   const { error } = await supabase
     .from('meetings')
-    .update({ status: 'declined' })
+    .update(updates)
     .eq('id', meetingId)
 
   if (error) return { error: error.message }
-  
-  // Get meeting details for notification
-  const { data: meeting } = await supabase
-    .from('meetings')
-    .select('requester_id, recipient_id')
-    .eq('id', meetingId)
-    .single()
   
   if (meeting) {
     const otherUserId = meeting.requester_id === user.id ? meeting.recipient_id : meeting.requester_id
