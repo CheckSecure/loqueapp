@@ -82,17 +82,16 @@ export default function MeetingDetailModal({
   onClose: () => void
 }) {
   const router = useRouter()
-  const [showReschedule, setShowReschedule] = useState(false)
   const [visible, setVisible] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [showReschedule, setShowReschedule] = useState(false)
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', handleKey)
     document.body.style.overflow = 'hidden'
-    return (
-    <>) => {
+    return () => {
       document.removeEventListener('keydown', handleKey)
       document.body.style.overflow = ''
     }
@@ -125,7 +124,7 @@ export default function MeetingDetailModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end md:items-stretch">
+        <div className="fixed inset-0 z-50 flex items-end md:items-stretch">
       {/* Backdrop */}
       <div
         className={cn(
@@ -297,9 +296,8 @@ export default function MeetingDetailModal({
 
           <button
             onClick={() => setShowReschedule(true)}
-            className="w-full text-sm font-semibold border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl hover:border-slate-300 hover:text-slate-800 transition-colors flex items-center justify-center gap-2 mt-3"
+            className="w-full text-sm font-semibold border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl hover:border-slate-300 hover:text-slate-800 transition-colors flex items-center justify-center gap-2 mb-3"
           >
-            <Calendar className="w-4 h-4" />
             Reschedule
           </button>
 
@@ -341,15 +339,31 @@ export default function MeetingDetailModal({
           onClose={() => setShowReschedule(false)}
         />
       )}
-
-
-
-      {showReschedule && (
-        <RescheduleMeetingModal
-          meeting={meeting}
-          onClose={() => setShowReschedule(false)}
-        />
-      )}
     </>
+
   )
 }
+
+  const handleAccept = async () => {
+    setDeleting(true)
+    const result = await acceptMeeting(meeting.id)
+    if (result.success) {
+      router.refresh()
+      handleClose()
+    } else {
+      alert(result.error || 'Failed to accept meeting')
+      setDeleting(false)
+    }
+  }
+
+  const handleDecline = async () => {
+    setDeleting(true)
+    const result = await declineMeeting(meeting.id)
+    if (result.success) {
+      router.refresh()
+      handleClose()
+    } else {
+      alert(result.error || 'Failed to decline meeting')
+      setDeleting(false)
+    }
+  }
