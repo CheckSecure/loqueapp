@@ -785,14 +785,26 @@ export async function scheduleMeeting(formData: FormData) {
   if (error) return { error: error.message }
   
   // Create notification for recipient
-  await supabase.from('notifications').insert({
+  const { data: requesterProfile } = await supabase
+    .from('profiles')
+    .select('full_name')
+    .eq('id', user.id)
+    .single()
+  
+  const requesterName = requesterProfile?.full_name || user.email
+  
+  const { error: notifError } = await supabase.from('notifications').insert({
     user_id: recipientId,
     type: 'meeting_request',
     title: 'New meeting request',
-    message: `Meeting request from ${user.email}`,
+    message: `${requesterName} wants to meet with you`,
     link: '/dashboard/meetings',
     created_at: new Date().toISOString()
   })
+  
+  if (notifError) {
+    console.error('[scheduleMeeting] Notification error:', notifError)
+  }
   
   revalidatePath('/dashboard/meetings')
   return { success: true }
