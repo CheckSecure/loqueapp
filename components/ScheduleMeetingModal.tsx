@@ -34,10 +34,9 @@ export default function ScheduleMeetingModal({
     setLoading(true)
     setError(null)
     const formData = new FormData(e.currentTarget)
-    console.log('[ScheduleModal] FormData entries:')
-    for (const [key, value] of formData.entries()) {
-      console.log('  ', key, ':', value)
-    }
+    console.log('[ScheduleModal] FormData - format:', formData.get('format'))
+    console.log('[ScheduleModal] FormData - location:', formData.get('location'))
+    console.log('[ScheduleModal] FormData - purpose:', formData.get('purpose'))
     const result = await scheduleMeeting(formData)
     if (result.error) {
       setError(result.error)
