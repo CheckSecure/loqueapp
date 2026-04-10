@@ -1,4 +1,3 @@
-  const a = document.createElement('a')
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -55,9 +54,9 @@ function downloadICS(m: MeetingDetail) {
   const now = new Date()
   const description = [m.notes, m.zoom_link ? `Meeting link: ${m.zoom_link}` : ''].filter(Boolean).join('\\n')
   const lines = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Loque//Loque Networking//EN',
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Andrel//Andrel Networking//EN',
     'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
-    `UID:loque-meeting-${m.id}@loque.app`,
+    `UID:andrel-meeting-${m.id}@andrel.app`,
     `DTSTAMP:${toICSDate(now.toISOString())}`,
     `DTSTART:${toICSDate(start.toISOString())}`,
     `DTEND:${toICSDate(end.toISOString())}`,
@@ -133,48 +132,9 @@ export default function MeetingDetailModal({
     }
     setLoading(false)
   }
-  a.href = url
-  a.download = `${m.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-export default function MeetingDetailModal({
-  meeting,
-  onClose,
-}: {
-  meeting: MeetingDetail
-  onClose: () => void
-}) {
-  const router = useRouter()
-  const [visible, setVisible] = useState(false)
-
-  useEffect(() => {
-    requestAnimationFrame(() => setVisible(true))
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handleKey)
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', handleKey)
-      document.body.style.overflow = ''
-    }
-  }, [onClose])
-
-  const handleClose = () => {
-    setVisible(false)
-    setTimeout(onClose, 250)
-  }
-
-  const goToProfile = () => {
-    if (meeting.other?.id) {
-      handleClose()
-      setTimeout(() => router.push(`/dashboard/profile/${meeting.other!.id}`), 260)
-    }
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-stretch">
-      {/* Backdrop */}
       <div
         className={cn(
           'absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-250',
@@ -182,8 +142,6 @@ export default function MeetingDetailModal({
         )}
         onClick={handleClose}
       />
-
-      {/* Panel: bottom sheet on mobile, right side panel on desktop */}
       <div
         className={cn(
           'relative w-full md:w-[420px] md:ml-auto bg-white shadow-2xl flex flex-col',
@@ -195,12 +153,9 @@ export default function MeetingDetailModal({
             : 'translate-y-full md:translate-x-full md:translate-y-0'
         )}
       >
-        {/* Drag handle — mobile only */}
         <div className="md:hidden flex justify-center pt-3 pb-1 flex-shrink-0">
           <div className="w-10 h-1 rounded-full bg-slate-200" />
         </div>
-
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 flex-shrink-0">
           <h2 className="text-sm font-semibold text-slate-900">Meeting details</h2>
           <button
@@ -210,12 +165,8 @@ export default function MeetingDetailModal({
             <X className="w-4 h-4 text-slate-500" />
           </button>
         </div>
-
-        {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto">
           <div className="px-5 py-5 space-y-6">
-
-            {/* Person profile card */}
             {meeting.other && (
               <button
                 onClick={goToProfile}
@@ -240,10 +191,9 @@ export default function MeetingDetailModal({
                 </div>
               </button>
             )}
-
-            {/* Topic */}
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Topic</p>
+              <p className="text-base font-semibold text-slate-900 leading-snug">{meeting.title}</p>
               <div className="flex items-center gap-2 mt-2">
                 {meeting.isPast && (
                   <span className="inline-block text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Past meeting</span>
@@ -258,10 +208,7 @@ export default function MeetingDetailModal({
                   <span className="inline-block text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Declined</span>
                 )}
               </div>
-              )}
             </div>
-
-            {/* Date & time */}
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
                 <Calendar className="w-4 h-4 text-[#1B2850]" />
@@ -273,39 +220,39 @@ export default function MeetingDetailModal({
                 </p>
               </div>
             </div>
-
-            {/* Format / location */}
-            {(meeting.meeting_type === 'virtual' || meeting.meeting_type === 'video') ? (
-              <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
-                  <Video className="w-4 h-4 text-[#1B2850]" />
+            {(meeting.meeting_type === 'virtual' || meeting.meeting_type === 'video' || meeting.meeting_type === 'in-person') ? (
+              meeting.meeting_type === 'in-person' && meeting.location ? (
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-4 h-4 text-[#1B2850]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">In person</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{meeting.location}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-900">Virtual meeting</p>
-                  {meeting.zoom_link && (
-                    <a
-                      href={meeting.zoom_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="mt-1 flex items-center gap-1 text-xs text-[#C4922A] font-medium hover:underline truncate"
-                    >
-                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                      <span className="truncate">{meeting.zoom_link}</span>
-                    </a>
-                  )}
+              ) : (
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
+                    <Video className="w-4 h-4 text-[#1B2850]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">Virtual meeting</p>
+                    {meeting.zoom_link && (
+                      
+                        href={meeting.zoom_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="mt-1 flex items-center gap-1 text-xs text-[#C4922A] font-medium hover:underline truncate"
+                      >
+                        <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{meeting.zoom_link}</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : meeting.location ? (
-              <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
-                  <MapPin className="w-4 h-4 text-[#1B2850]" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">In person</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{meeting.location}</p>
-                </div>
-              </div>
+              )
             ) : (
               <div className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
@@ -318,8 +265,6 @@ export default function MeetingDetailModal({
                 </div>
               </div>
             )}
-
-            {/* Notes */}
             {meeting.notes && (
               <div className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
@@ -333,24 +278,48 @@ export default function MeetingDetailModal({
             )}
           </div>
         </div>
-
-        {/* Footer actions */}
-        <div className="flex-shrink-0 px-5 pb-safe-or-6 pb-6 pt-4 border-t border-slate-100 flex gap-3">
-          <button
-            onClick={() => downloadICS(meeting)}
-            className="flex-1 text-sm font-semibold border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl hover:border-slate-300 hover:text-slate-800 transition-colors"
-          >
-            + Calendar
-          </button>
-          {meeting.zoom_link && !meeting.isPast && (
-            <a
-              href={meeting.zoom_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 text-sm font-semibold bg-[#1B2850] text-white px-4 py-2.5 rounded-xl hover:bg-[#2E4080] transition-colors text-center"
-            >
-              Join meeting
-            </a>
+        <div className="flex-shrink-0 px-5 pb-safe-or-6 pb-6 pt-4 border-t border-slate-100">
+          {showActions ? (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 mb-3">This meeting request is pending your response</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAccept}
+                  disabled={loading}
+                  className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  Accept
+                </button>
+                <button
+                  onClick={handleDecline}
+                  disabled={loading}
+                  className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl hover:border-slate-300 hover:text-slate-800 transition-colors disabled:opacity-50"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Decline
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              <button
+                onClick={() => downloadICS(meeting)}
+                className="flex-1 text-sm font-semibold border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl hover:border-slate-300 hover:text-slate-800 transition-colors"
+              >
+                + Calendar
+              </button>
+              {meeting.zoom_link && !meeting.isPast && (
+                
+                  href={meeting.zoom_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 text-sm font-semibold bg-[#1B2850] text-white px-4 py-2.5 rounded-xl hover:bg-[#2E4080] transition-colors text-center"
+                >
+                  Join meeting
+                </a>
+              )}
+            </div>
           )}
         </div>
       </div>
