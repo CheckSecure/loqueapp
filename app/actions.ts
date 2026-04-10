@@ -821,11 +821,11 @@ export async function acceptMeeting(meetingId: string) {
   // If there are proposed changes, apply them
   if (meeting.proposed_scheduled_at) {
     updates.scheduled_at = meeting.proposed_scheduled_at
-    updates.duration_minutes = meeting.proposed_duration_minutes
-    updates.format = meeting.proposed_format
-    updates.location = meeting.proposed_location
-    updates.zoom_link = meeting.proposed_zoom_link
-    updates.notes = meeting.proposed_notes
+    if (meeting.proposed_duration_minutes !== null) updates.duration_minutes = meeting.proposed_duration_minutes
+    if (meeting.proposed_format !== null) updates.format = meeting.proposed_format
+    if (meeting.proposed_location !== null) updates.location = meeting.proposed_location
+    if (meeting.proposed_zoom_link !== null) updates.zoom_link = meeting.proposed_zoom_link
+    if (meeting.proposed_notes !== null) updates.notes = meeting.proposed_notes
     
     // Clear proposed fields
     updates.proposed_scheduled_at = null
