@@ -749,8 +749,13 @@ export async function scheduleMeeting(formData: FormData) {
 
   const date = formData.get('date') as string
   const time = formData.get('time') as string
-  // Parse as local time, not UTC
-  const scheduled_at = date && time ? new Date(`${date}T${time}`).toISOString() : null
+  // Parse as local time by constructing Date with explicit components
+  let scheduled_at: string | null = null
+  if (date && time) {
+    const [year, month, day] = date.split('-').map(Number)
+    const [hours, minutes] = time.split(':').map(Number)
+    scheduled_at = new Date(year, month - 1, day, hours, minutes).toISOString()
+  }
 
   const recipientId = (formData.get('recipient_id') as string || '').trim()
   if (!recipientId) return { error: 'Please select who you are meeting with.' }
@@ -957,8 +962,13 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
 
   const date = formData.get('date') as string
   const time = formData.get('time') as string
-  // Parse as local time, not UTC
-  const scheduled_at = date && time ? new Date(`${date}T${time}`).toISOString() : null
+  // Parse as local time by constructing Date with explicit components
+  let scheduled_at: string | null = null
+  if (date && time) {
+    const [year, month, day] = date.split('-').map(Number)
+    const [hours, minutes] = time.split(':').map(Number)
+    scheduled_at = new Date(year, month - 1, day, hours, minutes).toISOString()
+  }
 
   if (!scheduled_at) return { error: 'Please provide a valid date and time.' }
 
