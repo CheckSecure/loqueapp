@@ -237,11 +237,30 @@ export default function MeetingDetailModal({
               <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
                 <Calendar className="w-4 h-4 text-[#1B2850]" />
               </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{formatFullDate(meeting.scheduled_at)}</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {formatTimeRange(meeting.scheduled_at, meeting.duration_minutes)} · {meeting.duration_minutes} min
-                </p>
+              <div className="flex-1">
+                {meeting.proposed_scheduled_at ? (
+                  <>
+                    <p className="text-sm font-semibold text-slate-400 line-through">
+                      Current: {formatFullDate(meeting.scheduled_at)}
+                    </p>
+                    <p className="text-xs text-slate-400 line-through mt-0.5">
+                      {formatTimeRange(meeting.scheduled_at, meeting.duration_minutes)} · {meeting.duration_minutes} min
+                    </p>
+                    <p className="text-sm font-semibold text-blue-600 mt-2">
+                      Proposed: {formatFullDate(meeting.proposed_scheduled_at)}
+                    </p>
+                    <p className="text-xs text-blue-600 mt-0.5">
+                      {formatTimeRange(meeting.proposed_scheduled_at, meeting.proposed_duration_minutes || meeting.duration_minutes)} · {meeting.proposed_duration_minutes || meeting.duration_minutes} min
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold text-slate-900">{formatFullDate(meeting.scheduled_at)}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {formatTimeRange(meeting.scheduled_at, meeting.duration_minutes)} · {meeting.duration_minutes} min
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 
