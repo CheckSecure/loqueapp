@@ -323,7 +323,7 @@ export default function MeetingDetailModal({
             )}
           </div>
         
-          {(meeting.status === 'requested' || meeting.status === 'reschedule_requested') && !meeting.isOrganizer && !meeting.isPast && (
+          {((meeting.status === 'requested' && !meeting.isOrganizer) || meeting.status === 'reschedule_requested') && !meeting.isPast && (
             <div className="flex gap-2 mb-3">
               <button
                 onClick={handleAccept}
