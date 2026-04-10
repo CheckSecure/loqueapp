@@ -102,11 +102,32 @@ export default async function MeetingsPage() {
       other,
       isOrganizer: isRequester,
       isPast: new Date(m.scheduled_at) < new Date(),
+      isNew: hasUnreadNotif && (m.status === 'requested' || m.status === 'reschedule_requested') && m.updated_at > cutoff,
     }
   })
 
   const upcoming = enriched.filter((m: any) => !m.isPast)
   const past = enriched.filter((m: any) => m.isPast).reverse()
+
+    // Get unread meeting notification types to highlight new meetings
+  const { data: unreadMeetingNotifs } = await supabase
+    .from('notifications')
+    .select('type, created_at')
+    .eq('user_id', user.id)
+    .in('type', ['meeting_request', 'meeting_accepted', 'meeting_declined'])
+    .is('read_at', null)
+
+  // Meetings created/updated in last 24h with unread notifs are "new"
+  const hasUnreadNotif = (unreadMeetingNotifs || []).length > 0
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+  // Mark meeting notifications as read
+  await supabase
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('user_id', user.id)
+    .in('type', ['meeting_request', 'meeting_accepted', 'meeting_declined'])
+    .is('read_at', null)
 
   return (
     <MeetingsClient
