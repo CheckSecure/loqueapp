@@ -63,6 +63,15 @@ function isCompatiblePair(userA: any, userB: any): boolean {
 
 function scoreMatch(recipient: any, candidate: any): number {
   let score = 0
+    
+    // BOOST SYSTEM: Add boost_score bonus (0-100 range)
+    const boostBonus = (candidate.boost_score || 0) * 2  // Each boost point = 2 score points
+    score += boostBonus
+    
+    // PRIORITY: Priority users get additional 50 points
+    if (candidate.is_priority) {
+      score += 50
+    }
 
   // 1. Intro preferences match
   const recipientPrefs: string[] = Array.isArray(recipient.intro_preferences) ? recipient.intro_preferences : []
