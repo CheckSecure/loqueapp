@@ -1,10 +1,35 @@
-'use client'
+'us
+
+  const handleAccept = async () => {
+    setDeleting(true)
+    const result = await acceptMeeting(meeting.id)
+    if (result.success) {
+      router.refresh()
+      handleClose()
+    } else {
+      alert(result.error || 'Failed to accept meeting')
+      setDeleting(false)
+    }
+  }
+
+  const handleDecline = async () => {
+    setDeleting(true)
+    const result = await declineMeeting(meeting.id)
+    if (result.success) {
+      router.refresh()
+      handleClose()
+    } else {
+      alert(result.error || 'Failed to decline meeting')
+      setDeleting(false)
+    }
+  }
+e client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink, Trash2 } from 'lucide-react'
+import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink, Trash2, CheckCircle, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { deleteMeeting } from '@/app/actions'
+import { deleteMeeting, acceptMeeting, declineMeeting } from '@/app/actions'
 import RescheduleMeetingModal from './RescheduleMeetingModal'
 
 const AVATAR_COLORS = [
@@ -273,6 +298,29 @@ export default function MeetingDetailModal({
             )}
           </div>
         
+          {meeting.status === 'requested' && !meeting.isOrganizer && !meeting.isPast && (
+            <>
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={handleAccept}
+                  disabled={deleting}
+                  className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Accept
+                </button>
+                <button
+                  onClick={handleDecline}
+                  disabled={deleting}
+                  className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold bg-red-600 text-white px-4 py-2.5 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Decline
+                </button>
+              </div>
+            </>
+          )}
+
           <button
             onClick={() => setShowReschedule(true)}
             className="w-full text-sm font-semibold border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl hover:border-slate-300 hover:text-slate-800 transition-colors flex items-center justify-center gap-2 mt-3"
