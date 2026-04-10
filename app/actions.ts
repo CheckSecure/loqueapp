@@ -817,6 +817,7 @@ export async function scheduleMeeting(formData: FormData) {
     .eq('id', recipientId)
     .single()
 
+  console.log('[scheduleMeeting] Recipient profile:', recipientProfile)
   if (recipientProfile?.email) {
     const meetingDate = new Date(scheduled_at).toLocaleDateString('en-US', { 
       weekday: 'long', 
@@ -838,6 +839,7 @@ export async function scheduleMeeting(formData: FormData) {
         meetingTime,
         (formData.get('title') as string || '').trim() || (formData.get('purpose') as string) || undefined
       )
+      console.log('[scheduleMeeting] Email sent successfully to:', recipientProfile.email)
     } catch (emailError) {
       console.error('[scheduleMeeting] Email error:', emailError)
     }
