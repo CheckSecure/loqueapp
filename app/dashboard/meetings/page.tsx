@@ -130,7 +130,7 @@ export default async function MeetingsPage() {
     .in('type', ['meeting_request', 'meeting_accepted', 'meeting_declined'])
     .is('read_at', null)
 
-  revalidatePath('/dashboard/meetings')
+  revalidatePath('/dashboard')
 
   return (
     <MeetingsClient
