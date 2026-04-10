@@ -774,6 +774,7 @@ export async function scheduleMeeting(formData: FormData) {
     requester_id: user.id,
     recipient_id: recipientId,
     purpose: (formData.get('title') as string || '').trim() || (formData.get('purpose') as string),
+    purpose_category: (formData.get('purpose') as string) || null,
     format: formData.get('format') as string || 'virtual',
     status: 'requested',
     scheduled_at,

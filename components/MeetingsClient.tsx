@@ -6,7 +6,9 @@ import { cn } from '@/lib/utils'
 import ScheduleMeetingModal from './ScheduleMeetingModal'
 import MeetingDetailModal, { MeetingDetail } from './MeetingDetailModal'
 
-interface Meeting extends MeetingDetail {}
+interface Meeting extends MeetingDetail {
+  purpose_category?: string | null
+}
 
 function toICSDate(iso: string) {
   return iso.replace(/[-:]/g, '').replace(/\.\d{3}/, '').replace('Z', 'Z')
@@ -129,6 +131,11 @@ export default function MeetingsClient({
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-slate-900 truncate">{m.title}</p>
+          {m.purpose_category && (
+            <p className="text-xs text-slate-500 truncate mt-0.5">
+              <span className="text-slate-400">•</span> {m.purpose_category}
+            </p>
+          )}
           {m.other?.full_name && (
             <p className={m.isNew ? "text-xs text-slate-900 font-bold truncate mt-0.5" : "text-xs text-slate-400 truncate mt-0.5"}>with {m.other.full_name}</p>
           )}
