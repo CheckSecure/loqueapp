@@ -34,6 +34,10 @@ export default function ScheduleMeetingModal({
     setLoading(true)
     setError(null)
     const formData = new FormData(e.currentTarget)
+    console.log('[ScheduleModal] FormData entries:')
+    for (const [key, value] of formData.entries()) {
+      console.log('  ', key, ':', value)
+    }
     const result = await scheduleMeeting(formData)
     if (result.error) {
       setError(result.error)
@@ -142,10 +146,16 @@ export default function ScheduleMeetingModal({
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">Format</label>
-              <select name="format" defaultValue="virtual" className={fieldClass}>
+              <select 
+                name="format" 
+                defaultValue="virtual" 
+                className={fieldClass}
+                onChange={(e) => console.log('[ScheduleModal] Format changed to:', e.target.value)}
+              >
                 <option value="virtual">Virtual</option>
                 <option value="in-person">In-person</option>
               </select>
+            </div>
             </div>
           </div>
 
