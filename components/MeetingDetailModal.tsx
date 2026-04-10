@@ -310,7 +310,7 @@ export default function MeetingDetailModal({
                 + Calendar
               </button>
               {meeting.zoom_link && !meeting.isPast && (
-                
+                <a
                   href={meeting.zoom_link}
                   target="_blank"
                   rel="noopener noreferrer"
