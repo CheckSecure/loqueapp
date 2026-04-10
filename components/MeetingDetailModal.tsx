@@ -40,6 +40,7 @@ export interface MeetingDetail {
   scheduled_at: string
   duration_minutes: number
   meeting_type: string
+  status: string
   location?: string
   zoom_link?: string | null
   notes?: string | null
