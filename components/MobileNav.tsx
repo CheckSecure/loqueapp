@@ -18,7 +18,7 @@ const bottomNavItems = [
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
 ]
 
-export default function MobileNav({ credits, unreadCount = 0 }: { credits: number; unreadCount?: number }) {
+export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0 }: { credits: number; unreadCount?: number; meetingNotifCount?: number }) {
   const pathname = usePathname()
   const router = useRouter()
   const [showMore, setShowMore] = useState(false)
