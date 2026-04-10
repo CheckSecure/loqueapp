@@ -1121,3 +1121,148 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
   revalidatePath('/dashboard/meetings')
   return { success: true }
 }
+
+// ── ADMIN: Force Match ─────────────────────────────────────────────────────
+export async function adminForceMatch(userAId: string, userBId: string, skipCredits: boolean = true) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
+
+  // Check if match already exists
+  const { data: existing } = await supabase
+    .from('matches')
+    .select('id')
+    .or(`and(user_a_id.eq.${userAId},user_b_id.eq.${userBId}),and(user_a_id.eq.${userBId},user_b_id.eq.${userAId})`)
+    .single()
+
+  if (existing) return { error: 'Match already exists' }
+
+  // Create match
+  const { data: match, error: matchError } = await supabase
+    .from('matches')
+    .insert({
+      user_a_id: userAId,
+      user_b_id: userBId,
+      status: 'active',
+      admin_facilitated: true,
+      admin_notes: 'Admin force match'
+    })
+    .select()
+    .single()
+
+  if (matchError) return { error: matchError.message }
+
+  // Create conversation
+  await supabase.from('conversations').insert({
+    match_id: match.id
+  })
+
+  // Get profiles for notifications
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, full_name, email, title, company')
+    .in('id', [userAId, userBId])
+
+  const profileA = profiles?.find(p => p.id === userAId)
+  const profileB = profiles?.find(p => p.id === userBId)
+
+  // Create notifications for both users
+  if (profileA && profileB) {
+    await supabase.from('notifications').insert([
+      {
+        user_id: userAId,
+        type: 'new_connection',
+        title: 'New Connection',
+        body: `You're now connected with ${profileB.full_name}`,
+        link: '/dashboard/network',
+        created_at: new Date().toISOString()
+      },
+      {
+        user_id: userBId,
+        type: 'new_connection',
+        title: 'New Connection',
+        body: `You're now connected with ${profileA.full_name}`,
+        link: '/dashboard/network',
+        created_at: new Date().toISOString()
+      }
+    ])
+
+    // Send emails
+    if (profileA.email) {
+      try {
+        await sendMatchCreatedEmail(
+          profileA.email,
+          profileA.full_name || 'there',
+          profileB.full_name || 'New Connection',
+          profileB.title,
+          profileB.company
+        )
+      } catch (e) {
+        console.error('Email error:', e)
+      }
+    }
+
+    if (profileB.email) {
+      try {
+        await sendMatchCreatedEmail(
+          profileB.email,
+          profileB.full_name || 'there',
+          profileA.full_name || 'New Connection',
+          profileA.title,
+          profileA.company
+        )
+      } catch (e) {
+        console.error('Email error:', e)
+      }
+    }
+  }
+
+  revalidatePath('/dashboard/admin')
+  return { success: true, matchId: match.id }
+}
+
+// ── ADMIN: Quick User Edit ──────────────────────────────────────────────────
+export async function adminUpdateUser(userId: string, updates: {
+  tier?: string
+  credits?: number
+  verification_status?: string
+  is_priority?: boolean
+  boost_score?: number
+  account_status?: string
+  current_status?: string
+}) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
+
+  const profileUpdates: any = {}
+  if (updates.tier !== undefined) profileUpdates.tier = updates.tier
+  if (updates.verification_status !== undefined) profileUpdates.verification_status = updates.verification_status
+  if (updates.is_priority !== undefined) profileUpdates.is_priority = updates.is_priority
+  if (updates.boost_score !== undefined) profileUpdates.boost_score = updates.boost_score
+  if (updates.account_status !== undefined) profileUpdates.account_status = updates.account_status
+  if (updates.current_status !== undefined) profileUpdates.current_status = updates.current_status
+
+  if (Object.keys(profileUpdates).length > 0) {
+    const { error } = await supabase
+      .from('profiles')
+      .update(profileUpdates)
+      .eq('id', userId)
+
+    if (error) return { error: error.message }
+  }
+
+  // Update credits if provided
+  if (updates.credits !== undefined) {
+    const { error } = await supabase
+      .from('meeting_credits')
+      .upsert({
+        user_id: userId,
+        balance: updates.credits
+      })
+
+    if (error) return { error: error.message }
+  }
+
+  revalidatePath('/dashboard/admin')
+  return { success: true }
+}
+
