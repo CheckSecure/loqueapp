@@ -35,7 +35,6 @@ export async function updateProfile(formData: FormData) {
     bio: formData.get('bio') as string || null,
     expertise,
     intro_preferences: introPref,
-    open_to_intros: formData.get('open_to_intros') === 'true',
     linkedin_url: formData.get('linkedin_url') as string || null,
     twitter_url: formData.get('twitter_url') as string || null,
     website_url: formData.get('website_url') as string || null,
