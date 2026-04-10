@@ -921,13 +921,13 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
   const { error } = await supabase
     .from('meetings')
     .update({
-      scheduled_at,
-      duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
-      format: formData.get('format') as string || 'virtual',
-      location: (formData.get('location') as string) || null,
-      zoom_link: (formData.get('zoom_link') as string) || null,
-      notes: (formData.get('notes') as string) || null,
-      status: 'requested', // Reset to requested if rescheduled
+      proposed_scheduled_at: scheduled_at,
+      proposed_duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
+      proposed_format: formData.get('format') as string || 'virtual',
+      proposed_location: (formData.get('location') as string) || null,
+      proposed_zoom_link: (formData.get('zoom_link') as string) || null,
+      proposed_notes: (formData.get('notes') as string) || null,
+      status: 'reschedule_requested',
     })
     .eq('id', meetingId)
 
