@@ -1,9 +1,11 @@
+  const a = document.createElement('a')
 'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink } from 'lucide-react'
+import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink, Check, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { acceptMeeting, declineMeeting } from '@/app/actions'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]', 'bg-[#2E4080]', 'bg-amber-500', 'bg-rose-500',
@@ -38,6 +40,7 @@ export interface MeetingDetail {
   scheduled_at: string
   duration_minutes: number
   meeting_type: string
+  status: string
   location?: string
   zoom_link?: string | null
   notes?: string | null
@@ -66,6 +69,70 @@ function downloadICS(m: MeetingDetail) {
   const blob = new Blob([lines], { type: 'text/calendar;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
+  a.href = url
+  a.download = `${m.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export default function MeetingDetailModal({
+  meeting,
+  currentUserId,
+  onClose,
+}: {
+  meeting: MeetingDetail
+  currentUserId: string
+  onClose: () => void
+}) {
+  const router = useRouter()
+  const [visible, setVisible] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  const isRecipient = !meeting.isOrganizer
+  const showActions = meeting.status === 'requested' && isRecipient && !meeting.isPast
+
+  useEffect(() => {
+    requestAnimationFrame(() => setVisible(true))
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handleKey)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', handleKey)
+      document.body.style.overflow = ''
+    }
+  }, [onClose])
+
+  const handleClose = () => {
+    setVisible(false)
+    setTimeout(onClose, 250)
+  }
+
+  const goToProfile = () => {
+    if (meeting.other?.id) {
+      handleClose()
+      setTimeout(() => router.push(`/dashboard/profile/${meeting.other!.id}`), 260)
+    }
+  }
+
+  const handleAccept = async () => {
+    setLoading(true)
+    const result = await acceptMeeting(meeting.id)
+    if (result.success) {
+      router.refresh()
+      handleClose()
+    }
+    setLoading(false)
+  }
+
+  const handleDecline = async () => {
+    setLoading(true)
+    const result = await declineMeeting(meeting.id)
+    if (result.success) {
+      router.refresh()
+      handleClose()
+    }
+    setLoading(false)
+  }
   a.href = url
   a.download = `${m.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`
   a.click()
@@ -177,9 +244,20 @@ export default function MeetingDetailModal({
             {/* Topic */}
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Topic</p>
-              <p className="text-base font-semibold text-slate-900 leading-snug">{meeting.title}</p>
-              {meeting.isPast && (
-                <span className="inline-block mt-2 text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Past meeting</span>
+              <div className="flex items-center gap-2 mt-2">
+                {meeting.isPast && (
+                  <span className="inline-block text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Past meeting</span>
+                )}
+                {meeting.status === 'requested' && !meeting.isPast && (
+                  <span className="inline-block text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Pending response</span>
+                )}
+                {meeting.status === 'confirmed' && !meeting.isPast && (
+                  <span className="inline-block text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Confirmed</span>
+                )}
+                {meeting.status === 'declined' && (
+                  <span className="inline-block text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Declined</span>
+                )}
+              </div>
               )}
             </div>
 

@@ -763,11 +763,23 @@ export async function scheduleMeeting(formData: FormData) {
     status: 'requested',
     scheduled_at,
     duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
+    location: (formData.get('location') as string) || null,
     notes: (formData.get('notes') as string) || null,
     zoom_link: (formData.get('zoom_link') as string) || null,
   })
 
   if (error) return { error: error.message }
+  
+  // Create notification for recipient
+  await supabase.from('notifications').insert({
+    user_id: recipientId,
+    type: 'meeting_request',
+    title: 'New meeting request',
+    message: `Meeting request from ${user.email}`,
+    link: '/dashboard/meetings',
+    created_at: new Date().toISOString()
+  })
+  
   revalidatePath('/dashboard/meetings')
   return { success: true }
 }
@@ -781,5 +793,73 @@ export async function passOnSuggestion(rowId: string, permanent: boolean) {
     .update({ status: permanent ? 'hidden_permanent' : 'passed' })
     .eq('id', rowId)
 
+  return { success: true }
+}
+
+export async function acceptMeeting(meetingId: string) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('meetings')
+    .update({ status: 'confirmed' })
+    .eq('id', meetingId)
+
+  if (error) return { error: error.message }
+  
+  // Get meeting details for notification
+  const { data: meeting } = await supabase
+    .from('meetings')
+    .select('requester_id, recipient_id')
+    .eq('id', meetingId)
+    .single()
+  
+  if (meeting) {
+    const otherUserId = meeting.requester_id === user.id ? meeting.recipient_id : meeting.requester_id
+    await supabase.from('notifications').insert({
+      user_id: otherUserId,
+      type: 'meeting_accepted',
+      title: 'Meeting confirmed',
+      message: 'Your meeting request was accepted',
+      link: '/dashboard/meetings',
+      created_at: new Date().toISOString()
+    })
+  }
+  
+  revalidatePath('/dashboard/meetings')
+  return { success: true }
+}
+
+export async function declineMeeting(meetingId: string) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  const { error } = await supabase
+    .from('meetings')
+    .update({ status: 'declined' })
+    .eq('id', meetingId)
+
+  if (error) return { error: error.message }
+  
+  // Get meeting details for notification
+  const { data: meeting } = await supabase
+    .from('meetings')
+    .select('requester_id, recipient_id')
+    .eq('id', meetingId)
+    .single()
+  
+  if (meeting) {
+    const otherUserId = meeting.requester_id === user.id ? meeting.recipient_id : meeting.requester_id
+    await supabase.from('notifications').insert({
+      user_id: otherUserId,
+      type: 'meeting_declined',
+      title: 'Meeting declined',
+      message: 'Your meeting request was declined',
+      link: '/dashboard/meetings',
+      created_at: new Date().toISOString()
+    })
+  }
+  
+  revalidatePath('/dashboard/meetings')
   return { success: true }
 }

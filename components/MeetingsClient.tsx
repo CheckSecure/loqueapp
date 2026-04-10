@@ -255,6 +255,7 @@ export default function MeetingsClient({
 
       {selectedMeeting && (
         <MeetingDetailModal
+          currentUserId={currentUserId}
           meeting={selectedMeeting}
           onClose={() => setSelectedMeeting(null)}
         />
