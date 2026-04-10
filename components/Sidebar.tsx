@@ -29,6 +29,7 @@ interface SidebarProps {
   credits: number
   unreadCount: number
   networkNotifCount: number
+  meetingNotifCount: number
 }
 
 function CreditsChip({ credits }: { credits: number }) {
@@ -98,6 +99,7 @@ export default function Sidebar({
   credits,
   unreadCount,
   networkNotifCount,
+  meetingNotifCount,
 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -129,7 +131,8 @@ export default function Sidebar({
           const active = pathname.startsWith(href)
           const isMessages = href === '/dashboard/messages'
           const isNetwork = href === '/dashboard/network'
-          const badgeCount = isMessages ? unreadCount : isNetwork ? networkNotifCount : 0
+          const isMeetings = href === '/dashboard/meetings'
+          const badgeCount = isMessages ? unreadCount : isNetwork ? networkNotifCount : isMeetings ? meetingNotifCount : 0
           
           return (
             <Link

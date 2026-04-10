@@ -101,9 +101,24 @@ export default async function DashboardLayout({ children }: { children: React.Re
     networkNotifCount = 0
   }
 
+  // Meeting notification count (unread meeting-related notifications)
+  let meetingNotifCount = 0
+  try {
+    const { count } = await supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .in('type', ['meeting_request', 'meeting_accepted', 'meeting_declined'])
+      .is('read_at', null)
+    
+    meetingNotifCount = count ?? 0
+  } catch {
+    meetingNotifCount = 0
+  }
+
   return (
     <>
-      <MobileNav credits={credits} unreadCount={unreadCount} />
+      <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} />
       <div className="min-h-screen md:flex bg-slate-50">
         <Sidebar
           displayName={displayName}
@@ -114,6 +129,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           credits={credits}
           unreadCount={unreadCount}
           networkNotifCount={networkNotifCount}
+          meetingNotifCount={meetingNotifCount}
         />
         <main className="flex-1 min-w-0 overflow-x-hidden">
           {children}
