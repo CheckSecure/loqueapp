@@ -793,7 +793,7 @@ export async function scheduleMeeting(formData: FormData) {
   
   const requesterName = requesterProfile?.full_name || user.email
   
-  const { error: notifError } = await supabase.from('notifications').insert({
+  const notifInsert = await supabase.from('notifications').insert({
     user_id: recipientId,
     type: 'meeting_request',
     title: 'New meeting request',
@@ -802,8 +802,11 @@ export async function scheduleMeeting(formData: FormData) {
     created_at: new Date().toISOString()
   })
   
-  if (notifError) {
-    console.error('[scheduleMeeting] Notification error:', notifError)
+  console.log('[scheduleMeeting] Notification insert result:', JSON.stringify(notifInsert))
+  
+  if (notifInsert.error) {
+    console.error('[scheduleMeeting] Notification error:', notifInsert.error)
+    return { error: `Meeting created but notification failed: ${notifInsert.error.message}` }
   }
   
   revalidatePath('/dashboard/meetings')
