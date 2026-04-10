@@ -749,12 +749,15 @@ export async function scheduleMeeting(formData: FormData) {
 
   const date = formData.get('date') as string
   const time = formData.get('time') as string
-  // Parse as local time by constructing Date with explicit components
+  const timezoneOffset = parseInt(formData.get('timezone_offset') as string || '0')
+  // Parse time in user's timezone and convert to UTC
   let scheduled_at: string | null = null
   if (date && time) {
     const [year, month, day] = date.split('-').map(Number)
     const [hours, minutes] = time.split(':').map(Number)
-    scheduled_at = new Date(year, month - 1, day, hours, minutes).toISOString()
+    const localDate = new Date(Date.UTC(year, month - 1, day, hours, minutes))
+    // Subtract the timezone offset to get UTC
+    scheduled_at = new Date(localDate.getTime() + timezoneOffset * 60000).toISOString()
   }
 
   const recipientId = (formData.get('recipient_id') as string || '').trim()
@@ -962,12 +965,15 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
 
   const date = formData.get('date') as string
   const time = formData.get('time') as string
-  // Parse as local time by constructing Date with explicit components
+  const timezoneOffset = parseInt(formData.get('timezone_offset') as string || '0')
+  // Parse time in user's timezone and convert to UTC
   let scheduled_at: string | null = null
   if (date && time) {
     const [year, month, day] = date.split('-').map(Number)
     const [hours, minutes] = time.split(':').map(Number)
-    scheduled_at = new Date(year, month - 1, day, hours, minutes).toISOString()
+    const localDate = new Date(Date.UTC(year, month - 1, day, hours, minutes))
+    // Subtract the timezone offset to get UTC
+    scheduled_at = new Date(localDate.getTime() + timezoneOffset * 60000).toISOString()
   }
 
   if (!scheduled_at) return { error: 'Please provide a valid date and time.' }

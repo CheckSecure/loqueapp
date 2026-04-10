@@ -62,6 +62,7 @@ export default function ScheduleMeetingModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <input type="hidden" name="timezone_offset" value={new Date().getTimezoneOffset().toString()} />
           {error && (
             <p className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">
               {error}
