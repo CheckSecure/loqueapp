@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink } from 'lucide-react'
+import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { deleteMeeting } from '@/app/actions'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]', 'bg-[#2E4080]', 'bg-amber-500', 'bg-rose-500',
@@ -81,6 +82,7 @@ export default function MeetingDetailModal({
 }) {
   const router = useRouter()
   const [visible, setVisible] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true))
@@ -102,6 +104,19 @@ export default function MeetingDetailModal({
     if (meeting.other?.id) {
       handleClose()
       setTimeout(() => router.push(`/dashboard/profile/${meeting.other!.id}`), 260)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to delete this meeting? This cannot be undone.')) return
+    setDeleting(true)
+    const result = await deleteMeeting(meeting.id)
+    if (result.success) {
+      router.refresh()
+      handleClose()
+    } else {
+      alert(result.error || 'Failed to delete meeting')
+      setDeleting(false)
     }
   }
 
@@ -254,6 +269,15 @@ export default function MeetingDetailModal({
               </div>
             )}
           </div>
+        
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="w-full text-sm font-semibold border border-red-200 text-red-600 px-4 py-2.5 rounded-xl hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mt-3"
+          >
+            <Trash2 className="w-4 h-4" />
+            {deleting ? 'Deleting...' : 'Delete Meeting'}
+          </button>
         </div>
 
         {/* Footer actions */}

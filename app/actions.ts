@@ -869,3 +869,28 @@ export async function declineMeeting(meetingId: string) {
   revalidatePath('/dashboard/meetings')
   return { success: true }
 }
+
+export async function deleteMeeting(meetingId: string) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // First check if user is either requester or recipient
+  const { data: meeting } = await supabase
+    .from('meetings')
+    .select('requester_id, recipient_id')
+    .eq('id', meetingId)
+    .single()
+
+  if (!meeting) return { error: 'Meeting not found' }
+  if (meeting.requester_id !== user.id && meeting.recipient_id !== user.id) {
+    return { error: 'Not authorized to delete this meeting' }
+  }
+
+  const { error } = await supabase
+    .from('meetings')
+    .delete()
+    .eq('id', meetingId)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
