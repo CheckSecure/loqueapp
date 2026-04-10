@@ -102,7 +102,6 @@ export default async function MeetingsPage() {
       other,
       isOrganizer: isRequester,
       isPast: new Date(m.scheduled_at) < new Date(),
-      isNew: hasUnreadNotif && (m.status === 'requested' || m.status === 'reschedule_requested') && m.updated_at > cutoff,
     }
   })
 
