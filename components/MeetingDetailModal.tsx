@@ -31,7 +31,7 @@ function formatTimeRange(iso: string, duration: number) {
   const d = new Date(iso)
   const end = new Date(d.getTime() + duration * 60000)
   const fmt = (dt: Date) => dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return \`\${fmt(d)} – \${fmt(end)}\`
+ return `${fmt(d)} – ${fmt(end)}`
 }
 
 function toICSDate(iso: string) {
@@ -61,23 +61,23 @@ function downloadICS(m: MeetingDetail) {
   const lines = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Andrel//Andrel Networking//EN',
     'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
-    \`UID:andrel-meeting-\${m.id}@andrel.app\`,
+ const description = [m.notes, m.zoom_link ? `Meeting link: ${m.zoom_link}` : ''].filter(Boolean).join('\n')
     \`DTSTAMP:\${toICSDate(now.toISOString())}\`,
     \`DTSTART:\${toICSDate(start.toISOString())}\`,
-    \`DTEND:\${toICSDate(end.toISOString())}\`,
-    \`SUMMARY:\${m.title}\`,
-    description ? \`DESCRIPTION:\${description}\` : '',
-    m.zoom_link ? \`URL:\${m.zoom_link}\` : '',
-    'END:VEVENT', 'END:VCALENDAR',
-  ].filter(Boolean).join('\r\n')
-  const blob = new Blob([lines], { type: 'text/calendar;charset=utf-8' })
+ `UID:andrel-meeting-${m.id}@andrel.app`,
+ `DTSTAMP:${toICSDate(now.toISOString())}`,
+ `DTSTART:${toICSDate(start.toISOString())}`,
+ `DTEND:${toICSDate(end.toISOString())}`,
+ `SUMMARY:${m.title}`,
+ description ? `DESCRIPTION:${description}` : '',
+ m.zoom_link ? `URL:${m.zoom_link}` : '',
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = \`\${m.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics\`
   a.click()
   URL.revokeObjectURL(url)
-}
+ a.download = `${m.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`
 
 export default function MeetingDetailModal({
   meeting,
@@ -123,7 +123,7 @@ export default function MeetingDetailModal({
     const result = await acceptMeeting(meeting.id)
     if (result.success) {
       router.refresh()
-      handleClose()
+ setTimeout(() => router.push(`/dashboard/profile/${meeting.other!.id}`), 260)
     }
     setLoading(false)
   }
