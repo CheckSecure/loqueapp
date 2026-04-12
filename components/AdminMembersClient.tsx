@@ -42,6 +42,7 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
 
   // Filtered profiles
   const filtered = useMemo(() => {
+    console.log('[AdminMembers] Filtering. showStuckOnly:', showStuckOnly, 'Total profiles:', profiles.length)
     let result = profiles
 
     if (search) {
@@ -125,7 +126,10 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
                 </div>
               </div>
               <button
-                onClick={() => setShowStuckOnly(!showStuckOnly)}
+                onClick={() => {
+                  console.log('[AdminMembers] Toggling stuck filter. Current:', showStuckOnly, '-> New:', !showStuckOnly)
+                  setShowStuckOnly(!showStuckOnly)
+                }}
                 className="px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-lg hover:bg-amber-700"
               >
                 {showStuckOnly ? 'Show All' : 'Show Stuck Only'}
