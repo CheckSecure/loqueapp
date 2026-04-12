@@ -124,7 +124,7 @@ export default async function AdminDashboard() {
             </p>
             <div className="flex items-center gap-4 text-xs text-slate-600">
               <span>{totalMembers || 0} active</span>
-              {pendingIntros > 0 && <span className="text-amber-600 font-medium">{pendingIntros} pending intros</span>}
+              {(pendingIntros || 0) > 0 && <span className="text-amber-600 font-medium">{pendingIntros} pending intros</span>}
             </div>
           </Link>
 
@@ -161,7 +161,7 @@ export default async function AdminDashboard() {
               <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
                 <Inbox className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
               </div>
-              {pendingIntros > 0 && (
+              {(pendingIntros || 0) > 0 && (
                 <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded">
                   {pendingIntros} pending
                 </span>
