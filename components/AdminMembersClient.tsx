@@ -57,11 +57,10 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
     if (filterStatus) result = result.filter(p => p.account_status === filterStatus)
     if (filterVerification) result = result.filter(p => p.verification_status === filterVerification)
 
-    // Stuck user filter
+    // Stuck user filter: no matches AND no active intros
     if (showStuckOnly) {
       result = result.filter(p => 
-        p.matches === 0 || 
-        (p.pending_intros === 0 && p.active_intros === 0)
+        p.matches === 0 && p.pending_intros === 0 && p.active_intros === 0
       )
     }
 
@@ -93,7 +92,7 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
     }
   }
 
-  const stuckUsers = profiles.filter(p => p.matches === 0 || (p.pending_intros === 0 && p.active_intros === 0))
+  const stuckUsers = profiles.filter(p => p.matches === 0 && p.pending_intros === 0 && p.active_intros === 0)
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
