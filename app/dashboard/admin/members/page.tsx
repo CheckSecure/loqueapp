@@ -12,10 +12,13 @@ export default async function AdminMembersPage() {
   if (!user || user.email !== ADMIN_EMAIL) redirect('/dashboard')
 
   // Get all users with their key stats
+  console.log('[AdminMembers] Fetching profiles...')
   const { data: profiles } = await supabase
     .from('profiles')
     .select('id, full_name, email, company, title, tier, location, boost_score, is_priority, account_status, verification_status, current_status, profile_complete, created_at')
     .order('created_at', { ascending: false })
+  
+  console.log('[AdminMembers] Profiles fetched:', profiles?.length || 0)
 
   // Get credits for all users
   const { data: credits } = await supabase
@@ -59,6 +62,10 @@ export default async function AdminMembersPage() {
     }
   })
 
+  console.log('[AdminMembers] Credits:', credits?.length || 0)
+  console.log('[AdminMembers] Matches:', matches?.length || 0)
+  console.log('[AdminMembers] Intros:', intros?.length || 0)
+  
   const enrichedProfiles = (profiles || []).map((p: any) => ({
     ...p,
     credits: creditsMap[p.id] || 0,
@@ -67,5 +74,7 @@ export default async function AdminMembersPage() {
     active_intros: activeIntros[p.id] || 0,
   }))
 
+  console.log('[AdminMembers] Enriched profiles:', enrichedProfiles.length)
+  
   return <AdminMembersClient profiles={enrichedProfiles} />
 }
