@@ -1,184 +1,198 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
-import { adminGetPendingRequests } from '@/lib/introRequests'
-import AdminIntroRequests from '@/components/AdminIntroRequests'
-import AdminWaitlist from '@/components/AdminWaitlist'
-import AdminStats from '@/components/AdminStats'
-import AdminUsers from '@/components/AdminUsers'
-import AdminBatchButton from '@/components/AdminBatchButton'
-import AdminMutualInterest from '@/components/AdminMutualInterest'
-import ComputeScoresButton from '@/components/ComputeScoresButton'
-import AdminMemberList from '@/components/AdminMemberList'
-import AdminPendingBatches from '@/components/AdminPendingBatches'
-import { ShieldCheck, Users, BarChart2, Sparkles } from 'lucide-react'
+import Link from 'next/link'
+import { Users, GitBranch, UserPlus, Inbox, TrendingUp, MessageSquare, Calendar, Network } from 'lucide-react'
 
-export const metadata = { title: 'Admin | Andrel' }
+export const metadata = { title: 'Admin Dashboard | Andrel' }
 
-export default async function AdminPage() {
+const ADMIN_EMAIL = 'bizdev91@gmail.com'
+
+export default async function AdminDashboard() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-  if (user.email !== 'bizdev91@gmail.com') redirect('/dashboard/introductions')
+  if (!user || user.email !== ADMIN_EMAIL) redirect('/dashboard')
 
-  // Fetch all data in parallel
-  const [
-    { data: mutualRequests },
-    { data: pending },
-    { data: waitlistEntries },
-    { count: totalUsers },
-    { count: activeThisWeek },
-    { count: connectionsMade },
-    { count: meetingsBooked },
-    { data: profileRows },
-    { data: creditRows },
-  ] = await Promise.all([
-    createAdminClient().from('intro_requests').select('id, requester_id, target_user_id, requester:profiles!requester_id(full_name, role_type), target:profiles!target_user_id(full_name, role_type)').eq('status', 'pending'),
-    adminGetPendingRequests(),
-    supabase.from('waitlist').select('id, full_name, email, title, company, role_type, linkedin_url, meeting_interests, referral_source, status, verification_status, verification_method, created_at').order('created_at', { ascending: false }),
-    supabase.from('profiles').select('*', { count: 'exact', head: true }),
-    supabase.from('profiles').select('*', { count: 'exact', head: true }).gte('updated_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
-    supabase.from('matches').select('*', { count: 'exact', head: true }),
-    supabase.from('meetings').select('*', { count: 'exact', head: true }),
-    supabase.from('profiles').select('id, full_name, email, role_type, subscription_tier, admin_priority, seniority').order('full_name'),
-    supabase.from('meeting_credits').select('user_id, balance'),
-  ])
+  // Get key metrics
+  const { count: totalMembers } = await supabase
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_status', 'active')
 
-  // Compute mutual interest pairs
-  const allRequests = mutualRequests ?? []
-  const mutualPairs: any[] = []
-  const seenPairs: string[] = []
-  for (const r of allRequests) {
-    const reverse = allRequests.find((x: any) =>
-      x.requester_id === r.target_user_id && x.target_user_id === r.requester_id
-    )
-    if (reverse) {
-      const key = [r.requester_id, r.target_user_id].sort().join('-')
-      if (!seenPairs.includes(key)) {
-        seenPairs.push(key)
-        mutualPairs.push({
-          user_a_id: r.requester_id,
-          user_a_name: (r.requester as any)?.full_name ?? 'Unknown',
-          user_a_role: (r.requester as any)?.role_type ?? '',
-          user_b_id: r.target_user_id,
-          user_b_name: (r.target as any)?.full_name ?? 'Unknown',
-          user_b_role: (r.target as any)?.role_type ?? '',
-          request_a_id: r.id,
-          request_b_id: reverse.id,
-        })
-      }
-    }
-  }
+  const { count: totalMatches } = await supabase
+    .from('matches')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'active')
 
-  const creditMap: Record<string, number> = {}
-  for (const row of creditRows ?? []) creditMap[row.user_id] = row.balance
+  const { count: totalMeetings } = await supabase
+    .from('meetings')
+    .select('id', { count: 'exact', head: true })
 
-  const users = (profileRows ?? []).map((p: any) => ({
-    id: p.id,
-    full_name: p.full_name,
-    email: p.email,
-    role_type: p.role_type,
-    subscription_tier: p.subscription_tier ?? 'free',
-    admin_priority: p.admin_priority ?? 'standard',
-    seniority: p.seniority ?? '',
-    balance: creditMap[p.id] ?? 0,
-  }))
+  const { count: pendingIntros } = await supabase
+    .from('intro_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending')
 
-  const stats = {
-    totalUsers: totalUsers ?? 0,
-    activeThisWeek: activeThisWeek ?? 0,
-    connectionsMade: connectionsMade ?? 0,
-    meetingsBooked: meetingsBooked ?? 0,
-  }
+  const { count: waitlistCount } = await supabase
+    .from('waitlist')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending')
+
+  const { count: activeWeekCount } = await supabase
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .gte('updated_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+
+  // Get current batch info
+  const { data: currentBatch } = await supabase
+    .from('batches')
+    .select('id, created_at, approved_at')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  const { count: batchSuggestions } = currentBatch ? await supabase
+    .from('batch_suggestions')
+    .select('id', { count: 'exact', head: true })
+    .eq('batch_id', currentBatch.id)
+    : { count: 0 }
 
   return (
-    <div className="p-6 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
-      <div className="max-w-5xl">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-9 h-9 bg-[#FDF3E3] rounded-lg flex items-center justify-center">
-            <ShieldCheck className="w-5 h-5 text-[#C4922A]" />
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Admin Dashboard</h1>
+          <p className="text-sm text-slate-500 mt-1">Platform control center</p>
+        </div>
+
+        {/* Key Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-2">
+              <Users className="w-5 h-5 text-[#1B2850]" />
+              <span className="text-xs text-slate-500">Active</span>
+            </div>
+            <p className="text-3xl font-bold text-slate-900">{totalMembers || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">Total Members</p>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Admin</h1>
-            <p className="text-slate-500 text-sm mt-0.5">Platform overview and member management</p>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-2">
+              <Network className="w-5 h-5 text-green-600" />
+              <span className="text-xs text-slate-500">All time</span>
+            </div>
+            <p className="text-3xl font-bold text-slate-900">{totalMatches || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">Connections Made</p>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-2">
+              <Calendar className="w-5 h-5 text-blue-600" />
+              <span className="text-xs text-slate-500">All time</span>
+            </div>
+            <p className="text-3xl font-bold text-slate-900">{totalMeetings || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">Meetings Booked</p>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-2">
+              <TrendingUp className="w-5 h-5 text-amber-600" />
+              <span className="text-xs text-slate-500">Last 7 days</span>
+            </div>
+            <p className="text-3xl font-bold text-slate-900">{activeWeekCount || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">Active This Week</p>
           </div>
         </div>
 
-        {/* Stats */}
-        <AdminStats stats={stats} />
-
-        {/* Members */}
-        <section className="mb-12">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-[#C4922A]" />
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                Members · {users.length}
-              </h2>
+        {/* Main Navigation Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          
+          {/* Members */}
+          <Link
+            href="/dashboard/admin/members"
+            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
+                <Users className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
+              </div>
             </div>
-          </div>
-          <AdminMemberList members={users} />
-        </section>
-
-        {/* Intro batch generation */}
-        <section className="mb-12">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[#C4922A]" />
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                Weekly recommendations
-              </h2>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Members</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Manage users, boost priority, force matches, edit tiers and credits
+            </p>
+            <div className="flex items-center gap-4 text-xs text-slate-600">
+              <span>{totalMembers || 0} active</span>
+              {pendingIntros > 0 && <span className="text-amber-600 font-medium">{pendingIntros} pending intros</span>}
             </div>
-          </div>
-          <div className="bg-white border border-slate-100 rounded-xl p-5 shadow-sm flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">Generate new batch</p>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Runs role-based matching and pushes a fresh set of recommendations to all members. Closes the current active batch first.
-              </p>
-            </div>
-            <AdminBatchButton />
-          </div>
-        <AdminPendingBatches />
-        </section>
+          </Link>
 
-        {/* Score computation */}
-        <div className="mb-8 flex items-center justify-between bg-white border border-slate-100 rounded-xl px-5 py-4 shadow-sm">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Andrel Scores</p>
-            <p className="text-xs text-slate-400 mt-0.5">Internal scores updated daily. Influences match quality and exposure.</p>
-          </div>
-          <ComputeScoresButton />
+          {/* Batch Management */}
+          <Link
+            href="/dashboard/admin/batches"
+            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
+                <GitBranch className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
+              </div>
+              {!currentBatch?.approved_at && (
+                <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded">
+                  Needs Review
+                </span>
+              )}
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Batch Management</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Generate weekly batches, review suggestions, approve recommendations
+            </p>
+            <div className="flex items-center gap-4 text-xs text-slate-600">
+              {currentBatch && <span>{batchSuggestions || 0} suggestions in current batch</span>}
+            </div>
+          </Link>
+
+          {/* Intro Requests */}
+          <Link
+            href="/dashboard/admin/intros"
+            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
+                <Inbox className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
+              </div>
+              {pendingIntros > 0 && (
+                <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded">
+                  {pendingIntros} pending
+                </span>
+              )}
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Intro Requests</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Review and approve member-initiated introduction requests
+            </p>
+          </Link>
+
+          {/* Waitlist */}
+          <Link
+            href="/dashboard/admin/waitlist"
+            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
+                <UserPlus className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Waitlist</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Approve new members, send invites, manage access
+            </p>
+            <div className="flex items-center gap-4 text-xs text-slate-600">
+              <span>{waitlistCount || 0} pending approval</span>
+            </div>
+          </Link>
+
         </div>
-
-        {/* Mutual Interest */}
-        <AdminMutualInterest pairs={mutualPairs} />
-
-        {/* Waitlist */}
-        <section className="mb-12">
-          <div className="flex items-center gap-2 mb-4">
-            <BarChart2 className="w-4 h-4 text-[#C4922A]" />
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-              Waitlist · {waitlistEntries?.length ?? 0} total
-            </h2>
-          </div>
-          <AdminWaitlist initial={waitlistEntries ?? []} />
-        </section>
-
-        {/* Intro requests */}
-        <section>
-          <div className="mb-4 flex items-center gap-2">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-              Intro requests · {pending?.length ?? 0} total
-            </h2>
-            {(pending ?? []).filter((r: any) => r.status === 'pending').length > 0 && (
-              <span className="text-[10px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full">
-                {(pending ?? []).filter((r: any) => r.status === 'pending').length} pending
-              </span>
-            )}
-          </div>
-          <AdminIntroRequests initial={pending ?? []} />
-        </section>
       </div>
     </div>
   )
