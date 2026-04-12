@@ -12,13 +12,20 @@ export default async function AdminMembersPage() {
   if (!user || user.email !== ADMIN_EMAIL) redirect('/dashboard')
 
   // Get all users with their key stats
-  console.log('[AdminMembers] Fetching profiles...')
-  const { data: profiles } = await supabase
+  console.log('[AdminMembers] Starting query...')
+  const profileQuery = await supabase
     .from('profiles')
-    .select('id, full_name, email, company, title, tier, location, profile_complete, created_at')
+    .select('id, full_name, email, company, title, subscription_tier, location, boost_score, is_priority, account_status, verification_status, current_status, profile_complete, created_at')
     .order('created_at', { ascending: false })
   
-  console.log('[AdminMembers] Profiles fetched:', profiles?.length || 0)
+  console.log('[AdminMembers] Query result:', { 
+    data: profileQuery.data?.length || 0, 
+    error: profileQuery.error,
+    status: profileQuery.status,
+    statusText: profileQuery.statusText 
+  })
+  
+  const profiles = profileQuery.data
 
   // Get credits for all users
   const { data: credits } = await supabase
@@ -68,11 +75,7 @@ export default async function AdminMembersPage() {
   
   const enrichedProfiles = (profiles || []).map((p: any) => ({
     ...p,
-    boost_score: 0,
-    is_priority: false,
-    account_status: 'active',
-    verification_status: 'unverified',
-    current_status: 'employed',
+    tier: p.subscription_tier,
     credits: creditsMap[p.id] || 0,
     matches: matchCounts[p.id] || 0,
     pending_intros: pendingIntros[p.id] || 0,
