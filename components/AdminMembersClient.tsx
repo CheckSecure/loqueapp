@@ -60,11 +60,13 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
 
     // Stuck user filter: no matches AND no active intros
     if (showStuckOnly) {
-      result = result.filter(p => 
+      result = result.filter(p =>
         p.matches === 0 && p.pending_intros === 0 && p.active_intros === 0
       )
+      console.log("[AdminMembers] After stuck filter:", result.length, "users")
     }
 
+    console.log("[AdminMembers] Final filtered count:", result.length)
     return result
   }, [profiles, search, filterTier, filterStatus, filterVerification, showStuckOnly])
 
@@ -93,7 +95,10 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
     }
   }
 
-  const stuckUsers = profiles.filter(p => p.matches === 0 && p.pending_intros === 0 && p.active_intros === 0)
+        p.matches === 0 && p.pending_intros === 0 && p.active_intros === 0
+      )
+      console.log("[AdminMembers] After stuck filter:", result.length, "users")
+      console.log("[AdminMembers] After stuck filter:", result.length, "users")
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
