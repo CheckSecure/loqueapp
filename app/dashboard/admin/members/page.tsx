@@ -15,7 +15,7 @@ export default async function AdminMembersPage() {
   console.log('[AdminMembers] Fetching profiles...')
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, full_name, email, company, title, tier, location, boost_score, is_priority, account_status, verification_status, current_status, profile_complete, created_at')
+    .select('id, full_name, email, company, title, tier, location, profile_complete, created_at')
     .order('created_at', { ascending: false })
   
   console.log('[AdminMembers] Profiles fetched:', profiles?.length || 0)
@@ -68,6 +68,11 @@ export default async function AdminMembersPage() {
   
   const enrichedProfiles = (profiles || []).map((p: any) => ({
     ...p,
+    boost_score: 0,
+    is_priority: false,
+    account_status: 'active',
+    verification_status: 'unverified',
+    current_status: 'employed',
     credits: creditsMap[p.id] || 0,
     matches: matchCounts[p.id] || 0,
     pending_intros: pendingIntros[p.id] || 0,
