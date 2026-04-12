@@ -1234,7 +1234,7 @@ export async function adminUpdateUser(userId: string, updates: {
   if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
 
   const profileUpdates: any = {}
-  if (updates.tier !== undefined) profileUpdates.tier = updates.tier
+  if (updates.tier !== undefined) profileUpdates.subscription_tier = updates.tier
   if (updates.verification_status !== undefined) profileUpdates.verification_status = updates.verification_status
   if (updates.is_priority !== undefined) profileUpdates.is_priority = updates.is_priority
   if (updates.boost_score !== undefined) profileUpdates.boost_score = updates.boost_score
