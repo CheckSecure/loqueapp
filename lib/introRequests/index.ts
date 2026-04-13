@@ -76,6 +76,8 @@ export async function createIntroRequest(
 
   if (error) return { error: error.message }
 
+  const newIntroRequestId = introRequest?.id
+
   // Auto-match: check if target has already expressed interest in requester
   const { data: reverseRequest } = await supabase
     .from('intro_requests')
@@ -90,7 +92,7 @@ export async function createIntroRequest(
     console.log('[createIntroRequest] mutual interest detected — ready for admin review')
   }
 
-  return { success: true, introRequestId: introRequest?.id }
+  return { success: true, introRequestId: newIntroRequestId }
 }
 
 export async function getUserIntroRequests(userId: string) {
