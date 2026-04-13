@@ -340,5 +340,5 @@ export async function rejectIntroRequest(requestId: string) {
     .eq('id', requestId)
 
   if (error) return { error: error.message }
-  return { success: true, introRequestId: introRequest?.id }
+  return { success: true }
 }
