@@ -80,12 +80,12 @@ export default async function IntroductionsPage() {
     )
   )
 
-  // Pending intro requests where I'm the target
+  // Pending intro requests where I'm the target (pending or approved waiting for mutual response)
   const { data: pending } = await supabase
     .from('intro_requests')
     .select('id, note, created_at, requester:profiles!requester_id(id, full_name, title, company, avatar_url)')
     .eq('target_user_id', profileId)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'approved'])
     .order('created_at', { ascending: false })
 
   // Suggested intro requests (onboarding recommendations for this user)
