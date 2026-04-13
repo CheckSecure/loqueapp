@@ -44,6 +44,8 @@ export async function POST(request: Request) {
     // If mutual interest exists, auto-create the match
     if (reverseRequest) {
       console.log('[Auto-Match] Mutual interest detected, creating match...')
+      
+      const adminClient = createAdminClient()
 
       // Check if match already exists
       const { data: existingMatch } = await supabase
@@ -79,7 +81,6 @@ export async function POST(request: Request) {
       }
 
       // Create conversation
-      const adminClient = createAdminClient()
       await adminClient.from('conversations').insert({
         match_id: match.id
       })
