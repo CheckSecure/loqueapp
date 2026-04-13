@@ -39,6 +39,8 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
   const [matchUserA, setMatchUserA] = useState<string>('')
   const [matchUserB, setMatchUserB] = useState<string>('')
   const [saving, setSaving] = useState(false)
+  const [simulating, setSimulating] = useState(false)
+  const [simulationResult, setSimulationResult] = useState<any>(null)
 
   // Filtered profiles
   const filtered = useMemo(() => {
@@ -69,6 +71,24 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
     console.log("[AdminMembers] Final count:", result.length)
     return result
   }, [profiles, search, filterTier, filterStatus, filterVerification, showStuckOnly])
+
+  const handleSimulateMatches = async () => {
+    setSimulating(true)
+    setSimulationResult(null)
+    try {
+      const res = await fetch('/api/admin/simulate-matches', { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        setSimulationResult(data.stats)
+        router.refresh()
+      } else {
+        alert(data.error || 'Simulation failed')
+      }
+    } catch (error) {
+      alert('Simulation error')
+    }
+    setSimulating(false)
+  }
 
   const handleForceMatch = async () => {
     if (!matchUserA || !matchUserB) return
@@ -107,13 +127,23 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
             <h1 className="text-2xl font-bold text-slate-900">Members</h1>
             <p className="text-sm text-slate-500 mt-1">{filtered.length} of {profiles.length} users</p>
           </div>
-          <button
-            onClick={() => setShowForceMatch(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040]"
-          >
-            <UserPlus className="w-4 h-4" />
-            Force Match
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSimulateMatches}
+              disabled={simulating}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50"
+            >
+              <TrendingUp className="w-4 h-4" />
+              {simulating ? 'Simulating...' : 'Simulate Matches'}
+            </button>
+            <button
+              onClick={() => setShowForceMatch(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040]"
+            >
+              <UserPlus className="w-4 h-4" />
+              Force Match
+            </button>
+          </div>
         </div>
 
         {/* Stuck Users Alert */}
@@ -281,6 +311,54 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
             </table>
           </div>
         </div>
+
+        {/* Simulation Results Modal */}
+        {simulationResult && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-lg w-full">
+              <h2 className="text-lg font-bold text-slate-900 mb-4">Simulation Complete</h2>
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Initial stuck users:</span>
+                  <span className="font-semibold">{simulationResult.initialStuckUsers}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Matches created:</span>
+                  <span className="font-semibold text-green-600">{simulationResult.matchesCreated}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Remaining stuck:</span>
+                  <span className="font-semibold text-amber-600">{simulationResult.remainingStuckUsers}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Average match score:</span>
+                  <span className="font-semibold">{Math.round(simulationResult.averageScore)}/100</span>
+                </div>
+                
+                {simulationResult.sampleMatches && simulationResult.sampleMatches.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    <p className="text-xs font-semibold text-slate-700 mb-2">Sample Matches:</p>
+                    <div className="space-y-1">
+                      {simulationResult.sampleMatches.slice(0, 5).map((m: any, i: number) => (
+                        <div key={i} className="text-xs text-slate-600">
+                          {m.userA} ↔ {m.userB} (score: {m.score})
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3 pt-4 mt-4 border-t border-slate-200">
+                <button
+                  onClick={() => setSimulationResult(null)}
+                  className="flex-1 px-4 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040]"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Force Match Modal */}
         {showForceMatch && (
