@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { adminClient } from '@/lib/supabase/admin'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { sendMatchCreatedEmail } from '@/lib/email'
 
@@ -79,6 +79,7 @@ export async function POST(request: Request) {
       }
 
       // Create conversation
+      const adminClient = createAdminClient()
       await adminClient.from('conversations').insert({
         match_id: match.id
       })
