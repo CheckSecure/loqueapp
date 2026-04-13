@@ -56,7 +56,7 @@ export default function AdminBatchesClient({ batches }: { batches: Batch[] }) {
   }
 
   const activeBatch = batches.find(b => b.status === 'active')
-  const pendingBatches = batches.filter(b => b.status === 'pending')
+  const pendingBatches = batches.filter(b => b.status === 'pending_review' || b.status === 'pending')
   const completedBatches = batches.filter(b => b.status === 'completed')
 
   return (
