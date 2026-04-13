@@ -215,6 +215,11 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
                         {user.is_priority && (
                           <Zap className="w-4 h-4 text-amber-500" />
                         )}
+                        {(user.matches === 0 && user.pending_intros === 0 && user.active_intros === 0) && (
+                          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded">
+                            STUCK
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3">
