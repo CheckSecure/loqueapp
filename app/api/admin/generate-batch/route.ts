@@ -522,6 +522,11 @@ export async function POST(req: NextRequest) {
       
       const selected: any[] = []
       
+      // Initialize role counts for this profile
+      if (!userRoleCounts[profile.id]) {
+        userRoleCounts[profile.id] = {}
+      }
+      
       // Select high-score candidates first
       for (let i = 0; i < Math.min(tierDist.high, highCandidates.length); i++) {
         const candidate = highCandidates[i]
