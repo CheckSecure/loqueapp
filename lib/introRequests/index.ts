@@ -63,12 +63,14 @@ export async function createIntroRequest(
     return { error: 'You have expressed interest in 5 people today. Check back tomorrow.' }
   }
 
-  const { error } = await supabase.from('intro_requests').insert({
+  const { data: introRequest, error } = await supabase.from('intro_requests').insert({
     requester_id: authUserId,
     target_user_id: targetUserId,
     status: 'pending',
     note: note || null,
   })
+  .select('id')
+  .single()
 
   console.log('[createIntroRequest] insert result — error:', JSON.stringify(error))
 
@@ -88,7 +90,7 @@ export async function createIntroRequest(
     console.log('[createIntroRequest] mutual interest detected — ready for admin review')
   }
 
-  return { success: true }
+  return { success: true, introRequestId: introRequest?.id }
 }
 
 export async function getUserIntroRequests(userId: string) {
@@ -336,5 +338,5 @@ export async function rejectIntroRequest(requestId: string) {
     .eq('id', requestId)
 
   if (error) return { error: error.message }
-  return { success: true }
+  return { success: true, introRequestId: introRequest?.id }
 }

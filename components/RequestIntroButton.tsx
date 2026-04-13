@@ -50,7 +50,7 @@ export default function RequestIntroButton({
     }
 
     // Now check for mutual interest and auto-match
-    if (result.introRequestId) {
+    if (result.success && 'introRequestId' in result && result.introRequestId) {
       try {
         const response = await fetch('/api/intro-requests/express-interest', {
           method: 'POST',
