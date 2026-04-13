@@ -130,7 +130,7 @@ export default async function AdminDashboard() {
 
           {/* Batch Management */}
           <Link
-            href="/dashboard/admin#batches"
+            href="/dashboard/admin/batches"
             className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
           >
             <div className="flex items-start justify-between mb-4">
@@ -154,7 +154,7 @@ export default async function AdminDashboard() {
 
           {/* Intro Requests */}
           <Link
-            href="/dashboard/admin#intros"
+            href="/dashboard/admin/intros"
             className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
           >
             <div className="flex items-start justify-between mb-4">
@@ -175,7 +175,7 @@ export default async function AdminDashboard() {
 
           {/* Waitlist */}
           <Link
-            href="/dashboard/admin#waitlist"
+            href="/dashboard/admin/waitlist"
             className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
           >
             <div className="flex items-start justify-between mb-4">
