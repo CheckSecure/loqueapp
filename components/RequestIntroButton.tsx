@@ -1,5 +1,7 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
+
 import { useState } from 'react'
 import { submitIntroRequest, passOnSuggestion } from '@/app/actions'
 import { CheckCircle, Loader2, X, EyeOff, Sparkles } from 'lucide-react'
@@ -33,6 +35,7 @@ export default function RequestIntroButton({
     await new Promise(r => setTimeout(r, 600))
     setState('signaling')
 
+    // First create the intro request
     const result = await submitIntroRequest(targetId)
 
     if (result.error) {
@@ -46,7 +49,31 @@ export default function RequestIntroButton({
       return
     }
 
-    // Show "facilitating" state briefly to reinforce Andrel is in control
+    // Now check for mutual interest and auto-match
+    if (result.introRequestId) {
+      try {
+        const response = await fetch('/api/intro-requests/express-interest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ introRequestId: result.introRequestId })
+        })
+
+        const data = await response.json()
+
+        if (data.mutualInterest && data.matchCreated) {
+          // Auto-match happened!
+          setState('facilitating')
+          await new Promise(r => setTimeout(r, 2000))
+          // Redirect to network
+          window.location.href = '/dashboard/network'
+          return
+        }
+      } catch (e) {
+        console.error('Express interest error:', e)
+      }
+    }
+
+    // No mutual match - just show done state
     setState('facilitating')
     await new Promise(r => setTimeout(r, 1800))
     setState('done')

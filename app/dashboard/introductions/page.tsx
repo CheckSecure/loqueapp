@@ -88,6 +88,14 @@ export default async function IntroductionsPage() {
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
 
+  // Suggested intro requests (onboarding recommendations for this user)
+  const { data: suggestedIntros } = await supabase
+    .from('intro_requests')
+    .select('id, target_user_id, relevance_score, created_at, target:profiles!target_user_id(id, full_name, title, company, location, bio, interests, seniority, role_type, avatar_url)')
+    .eq('requester_id', profileId)
+    .eq('status', 'suggested')
+    .order('relevance_score', { ascending: false })
+
   // Active batch
   const { data: activeBatchRows } = await supabase
     .from('introduction_batches')
@@ -134,15 +142,29 @@ export default async function IntroductionsPage() {
   const rowMap: Record<string, any> = {}
   for (const r of newRows || []) rowMap[r.suggested_id] = r
 
-  // All suggestions with their state
-  const allSuggestions = allSuggestionIds
+  // Add suggested intros to the suggestions list
+  const suggestedProfiles = (suggestedIntros || [])
+    .filter((intro: any) => intro.target && !matchedUserIds.has(intro.target.id))
+    .map((intro: any) => ({
+      rowId: intro.id,
+      profile: intro.target,
+      reason: `Curated introduction (${intro.relevance_score}% match)`,
+      alreadyRequested: false,
+      fromOnboarding: true
+    }))
+
+  // All suggestions with their state (batch + onboarding)
+  const batchSuggestions = allSuggestionIds
     .map((id: string) => ({
       rowId: rowMap[id]?.id,
       profile: profileMap[id],
       reason: rowMap[id]?.reason,
-      alreadyRequested: requestedIds.has(id)
+      alreadyRequested: requestedIds.has(id),
+      fromOnboarding: false
     }))
     .filter((r: any) => r.profile)
+
+  const allSuggestions = [...suggestedProfiles, ...batchSuggestions]
 
 
   return (

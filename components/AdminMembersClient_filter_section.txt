@@ -1,0 +1,28 @@
+  const filtered = useMemo(() => {
+    console.log('[AdminMembers] Filtering. showStuckOnly:', showStuckOnly, 'Total profiles:', profiles.length)
+    let result = profiles
+
+    if (search) {
+      const s = search.toLowerCase()
+      result = result.filter(p => 
+        p.full_name?.toLowerCase().includes(s) ||
+        p.email?.toLowerCase().includes(s) ||
+        p.company?.toLowerCase().includes(s)
+      )
+    }
+
+    if (filterTier) result = result.filter(p => p.tier === filterTier)
+    if (filterStatus) result = result.filter(p => p.account_status === filterStatus)
+    if (filterVerification) result = result.filter(p => p.verification_status === filterVerification)
+
+    // Stuck user filter: no matches AND no active intros
+    if (showStuckOnly) {
+      result = result.filter(p =>
+        p.matches === 0 && p.pending_intros === 0 && p.active_intros === 0
+      )
+      console.log('[AdminMembers] After stuck filter:', result.length, 'users')
+    }
+
+    console.log('[AdminMembers] Final filtered count:', result.length)
+    return result
+  }, [profiles, search, filterTier, filterStatus, filterVerification, showStuckOnly])
