@@ -152,14 +152,14 @@ export async function POST(request: Request) {
         ? introRequest.requester_id 
         : reverseRequest.requester_id
 
-      const { data: credits } = await supabase
+      const { data: credits } = await adminClient
         .from('meeting_credits')
         .select('balance')
         .eq('user_id', initiatorId)
         .single()
 
       if (credits && credits.balance > 0) {
-        await supabase
+        await adminClient
           .from('meeting_credits')
           .update({ balance: credits.balance - 1 })
           .eq('user_id', initiatorId)
