@@ -70,7 +70,7 @@ export async function submitIntroRequest(targetUserId: string, note?: string) {
   const result = await createIntroRequest(user.id, user.email ?? '', targetUserId, note)
   if (result.error) return { error: result.error }
   revalidatePath('/dashboard/introductions')
-  return { success: true }
+  return { success: true, introRequestId: result.introRequestId }
 }
 
 export async function adminApproveIntro(requestId: string) {
