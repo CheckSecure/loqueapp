@@ -184,38 +184,6 @@ export default async function IntroductionsPage() {
           </div>
         )}
 
-        {/* Pending requests from others */}
-        {pending && pending.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
-              Pending requests · {pending.length}
-            </h2>
-            <div className="space-y-3">
-              {pending.map((p: any) => {
-                const req = p.requester
-                const daysAgo = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000)
-                return (
-                  <div key={p.id} className="bg-white border border-amber-200 rounded-xl p-4 shadow-sm flex flex-col gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Avatar profile={req} size="sm" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900 truncate">{req.full_name || 'Unknown'}</p>
-                        <p className="text-xs text-slate-500 truncate">
-                          {[req.title, req.company].filter(Boolean).join(' at ') || 'No title yet'}
-                        </p>
-                        {p.note && <p className="text-xs text-slate-400 mt-0.5 italic line-clamp-2">"{p.note}"</p>}
-                      </div>
-                      <span className="text-xs text-slate-400 flex-shrink-0">{daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}</span>
-                    </div>
-                    <div className="flex items-center gap-2 border-t border-amber-100 pt-2.5">
-                      <IntroductionActions introId={p.id} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
         {/* SECTION 1 — This Week's Introductions */}
         <div className="mb-10">
