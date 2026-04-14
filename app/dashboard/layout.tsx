@@ -93,7 +93,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       .from('notifications')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
-      .eq('type', 'intro_accepted')
+      .in('type', ['intro_accepted', 'new_connection'])
       .is('read_at', null)
     
     networkNotifCount = count ?? 0
