@@ -28,20 +28,20 @@ export default async function NetworkPage() {
     m.user_a_id === profileId ? m.user_b_id : m.user_a_id
   )
 
-  // Get unread intro_accepted notifications to identify new connections
+  // Get unread connection notifications to identify new connections
   const { data: unreadNotifs } = await supabase
     .from('notifications')
     .select('body')
     .eq('user_id', profileId)
-    .eq('type', 'intro_accepted')
+    .in('type', ['intro_accepted', 'new_connection'])
     .is('read_at', null)
 
   // Extract names from notification bodies: "You're now connected with [Name]"
   const newConnectionNames = new Set(
     (unreadNotifs || [])
       .map((n: any) => {
-        const match = n.body?.match(/You're now connected with (.+)/)
-        return match ? match[1] : null
+        const match = n.body?.match(/You're now connected with ([^.]+)/)
+        return match ? match[1].trim() : null
       })
       .filter(Boolean)
   )

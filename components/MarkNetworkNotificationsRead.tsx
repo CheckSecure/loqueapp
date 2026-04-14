@@ -14,7 +14,7 @@ export default function MarkNetworkNotificationsRead({ userId }: { userId: strin
         .from('notifications')
         .update({ read_at: new Date().toISOString() })
         .eq('user_id', userId)
-        .eq('type', 'intro_accepted')
+        .in('type', ['intro_accepted', 'new_connection'])
         .is('read_at', null)
       
       // Refresh to update the badge count
