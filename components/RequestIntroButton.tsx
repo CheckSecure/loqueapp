@@ -149,7 +149,7 @@ export default function RequestIntroButton({
           className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-[#1B2850] text-white py-2 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60"
         >
           {state === 'loading' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          {state === 'loading' ? 'Submitting...' : state === 'signaling' ? 'Processing...' : state === 'facilitating' ? 'Connecting...' : state === 'error' ? 'Try again' : 'Express interest'}
+          {state === 'loading' ? 'Submitting...' : state === 'error' ? 'Try again' : 'Express interest'}
         </button>
 
         <div className="relative">
