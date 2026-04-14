@@ -33,7 +33,7 @@ export default function RequestIntroButton({
 
     // Show "signaling" state briefly
     await new Promise(r => setTimeout(r, 600))
-    setState('signaling')
+    setState('signaling')  // Internal signal - no notification to other user
 
     // First create the intro request
     const result = await submitIntroRequest(targetId)
@@ -138,19 +138,6 @@ export default function RequestIntroButton({
     )
   }
 
-  if (state === 'done') {
-    return (
-      <div className="mt-1">
-        <div className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-[#C4922A] bg-[#FDF3E3] border border-[#C4922A]/30 py-2 rounded-lg">
-          <CheckCircle className="w-3.5 h-3.5" />
-          Interest expressed ✓
-        </div>
-        <p className="text-xs text-slate-400 text-center mt-1.5 leading-relaxed">
-          Andrel will facilitate this introduction based on alignment.
-        </p>
-      </div>
-    )
-  }
 
   return (
     <>
@@ -162,7 +149,7 @@ export default function RequestIntroButton({
           className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-[#1B2850] text-white py-2 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60"
         >
           {state === 'loading' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          {state === 'loading' ? 'Recording…' : state === 'error' ? 'Try again' : 'Express interest'}
+          {state === 'loading' ? 'Submitting...' : state === 'signaling' ? 'Processing...' : state === 'facilitating' ? 'Connecting...' : state === 'error' ? 'Try again' : 'Express interest'}
         </button>
 
         <div className="relative">

@@ -98,21 +98,21 @@ export async function POST(request: Request) {
         .eq('id', otherUserId)
         .single()
 
-      // Send notifications to both users
+      // Send notifications to both users - ONLY when mutual interest confirmed
       await adminClient.from('notifications').insert([
         {
           user_id: expresserId,
           type: 'new_connection',
-          title: 'Introduction facilitated',
-          body: `You're now connected with ${otherProfile?.full_name}`,
+          title: 'Your introduction is ready',
+          body: `You're now connected with ${otherProfile?.full_name}. Start a conversation.`,
           link: '/dashboard/network',
           created_at: new Date().toISOString()
         },
         {
           user_id: otherUserId,
           type: 'new_connection',
-          title: 'Introduction facilitated',
-          body: `You're now connected with ${expresserProfile?.full_name}`,
+          title: 'Your introduction is ready',
+          body: `You're now connected with ${expresserProfile?.full_name}. Start a conversation.`,
           link: '/dashboard/network',
           created_at: new Date().toISOString()
         }
