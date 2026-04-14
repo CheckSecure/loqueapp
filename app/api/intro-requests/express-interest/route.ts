@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       .select('*')
       .eq('requester_id', otherUserId)
       .eq('target_user_id', expresserId)
-      .eq('status', 'approved')
+      .in('status', ['pending', 'approved'])
       .maybeSingle()
 
     // If mutual interest exists, auto-create the match
