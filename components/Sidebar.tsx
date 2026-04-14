@@ -133,6 +133,8 @@ export default function Sidebar({
           const isNetwork = href === '/dashboard/network'
           const isMeetings = href === '/dashboard/meetings'
           const badgeCount = isMessages ? unreadCount : isNetwork ? networkNotifCount : isMeetings ? meetingNotifCount : 0
+          // DEBUG: Log badge count for Network tab
+          if (isNetwork) console.log('[NETWORK BADGE]', { networkNotifCount, badgeCount, href })
           
           return (
             <Link
