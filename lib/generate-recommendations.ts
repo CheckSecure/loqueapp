@@ -69,6 +69,7 @@ export async function generateOnboardingRecommendations(userId: string) {
     .from('profiles')
     .select('*')
     .eq('account_status', 'active')
+    .eq('profile_complete', true)
     .neq('id', userId)
     .neq('email', 'bizdev91@gmail.com')
   
