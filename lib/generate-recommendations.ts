@@ -77,6 +77,9 @@ export async function generateOnboardingRecommendations(userId: string) {
     throw new Error('Failed to fetch users')
   }
   
+  console.log('[generate-recommendations] All users count:', allUsers.length)
+  console.log('[generate-recommendations] Sample user:', allUsers[0])
+  
   // Filter out users without actual profile data
   const usersWithData = allUsers.filter(u => {
     if (!u.full_name || !u.role_type) return false
