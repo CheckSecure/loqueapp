@@ -136,6 +136,20 @@ export async function completeOnboarding(formData: FormData) {
     return { error: error.message }
   }
 
+  // Generate initial recommendations for new user
+  try {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://andrel.app'}/api/onboarding/generate-recommendations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id })
+    })
+    if (!response.ok) {
+      console.error('[completeOnboarding] Failed to generate recommendations:', await response.text())
+    }
+  } catch (err) {
+    console.error('[completeOnboarding] Error generating recommendations:', err)
+  }
+
   revalidatePath('/dashboard')
   return { success: true }
 }
