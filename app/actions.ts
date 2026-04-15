@@ -10,6 +10,7 @@ import {
   rejectIntroRequest,
 } from '@/lib/introRequests'
 import { sendNewMessageEmail } from '@/lib/email'
+import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -138,14 +139,8 @@ export async function completeOnboarding(formData: FormData) {
 
   // Generate initial recommendations for new user
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://andrel.app'}/api/onboarding/generate-recommendations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: user.id })
-    })
-    if (!response.ok) {
-      console.error('[completeOnboarding] Failed to generate recommendations:', await response.text())
-    }
+    const result = await generateOnboardingRecommendations(user.id)
+    console.log('[completeOnboarding] Generated recommendations:', result.count)
   } catch (err) {
     console.error('[completeOnboarding] Error generating recommendations:', err)
   }
