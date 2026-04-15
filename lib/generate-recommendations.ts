@@ -77,7 +77,12 @@ export async function generateOnboardingRecommendations(userId: string) {
     throw new Error('Failed to fetch users')
   }
   
-  const scoredCandidates = allUsers
+  // Filter out users without actual profile data
+  const usersWithData = allUsers.filter(u => 
+    u.full_name && u.role_type && u.expertise && u.expertise.length > 0
+  )
+  
+  const scoredCandidates = usersWithData
     .map(candidate => ({
       ...candidate,
       relevance_score: scoreMatch(newUserProfile, candidate)
