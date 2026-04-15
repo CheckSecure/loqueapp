@@ -100,7 +100,7 @@ export async function generateOnboardingRecommendations(userId: string) {
     .insert(introRequests)
   
   if (insertError) {
-    throw new Error(\`Failed to create recommendations: \${insertError.message}\`)
+    throw new Error(`Failed to create recommendations: ${insertError.message}`)
   }
   
   return { count: scoredCandidates.length }
