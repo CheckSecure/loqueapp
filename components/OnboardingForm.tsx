@@ -170,6 +170,10 @@ export default function OnboardingForm() {
 
     const result = await completeOnboarding(fd)
     if (result.error) { setError(result.error); setSaving(false); return }
+    
+    // Wait a moment for recommendations to finish generating
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
     router.push('/dashboard/introductions')
   }
 
