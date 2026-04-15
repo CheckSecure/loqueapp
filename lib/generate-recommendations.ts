@@ -70,6 +70,7 @@ export async function generateOnboardingRecommendations(userId: string) {
     .select('*')
     .eq('account_status', 'active')
     .neq('id', userId)
+    .neq('email', 'bizdev91@gmail.com')
   
   if (usersError || !allUsers) {
     throw new Error('Failed to fetch users')
