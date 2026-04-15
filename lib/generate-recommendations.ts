@@ -60,6 +60,16 @@ export async function generateOnboardingRecommendations(userId: string) {
     throw new Error('User not found')
   }
   
+  console.log('[generate-recommendations] New user profile:', {
+    email: newUserProfile.email,
+    role_type: newUserProfile.role_type,
+    seniority: newUserProfile.seniority,
+    expertise: newUserProfile.expertise,
+    intro_preferences: newUserProfile.intro_preferences,
+    city: newUserProfile.city,
+    state: newUserProfile.state
+  })
+  
   // Get tier-based recommendation count
   const userTier = newUserProfile.subscription_tier || 'free'
   const recommendationCount = TIER_RECOMMENDATION_COUNTS[userTier] || 3
