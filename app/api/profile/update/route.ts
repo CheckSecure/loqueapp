@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
       .split(',').map(s => s.trim()).filter(Boolean)
     const purposes = (formData.get('purposes') as string || '')
       .split(',').map(s => s.trim()).filter(Boolean)
+    const introPref = (formData.get('intro_preferences') as string || '')
+      .split(',').map(s => s.trim()).filter(Boolean)
 
     const city = (formData.get('city') as string || '').trim()
     const state = (formData.get('state') as string || '').trim()
@@ -32,8 +34,10 @@ export async function POST(req: NextRequest) {
         city: city || null,
         state: state || null,
         location: location,
+        role_type: formData.get('role_type'),
         seniority: formData.get('seniority'),
         expertise: expertise,
+        intro_preferences: introPref,
         purposes: purposes,
         meeting_format_preference: formData.get('meeting_format_preference'),
         geographic_scope: formData.get('geographic_scope'),
