@@ -25,6 +25,15 @@ export async function POST(request: Request) {
     const isRequester = user.id === introRequest.requester_id
     const expresserId = user.id
     const otherUserId = isRequester ? introRequest.target_user_id : introRequest.requester_id
+    
+    console.log('[Express Interest Debug]', {
+      userId: user.id,
+      requesterId: introRequest.requester_id,
+      targetId: introRequest.target_user_id,
+      isRequester,
+      expresserId,
+      otherUserId
+    })
 
     // Update intro request status to 'approved'
     await supabase
@@ -33,13 +42,19 @@ export async function POST(request: Request) {
       .eq('id', introRequestId)
 
     // Check for mutual interest (reverse intro request)
-    const { data: reverseRequest } = await supabase
+    const { data: reverseRequest, error: reverseError } = await supabase
       .from('intro_requests')
       .select('*')
       .eq('requester_id', otherUserId)
       .eq('target_user_id', expresserId)
       .in('status', ['pending', 'approved'])
       .maybeSingle()
+    
+    console.log('[Reverse Request Debug]', {
+      reverseRequest,
+      reverseError,
+      searchingFor: { requester_id: otherUserId, target_user_id: expresserId }
+    })
 
     // If mutual interest exists, auto-create the match
     if (reverseRequest) {
