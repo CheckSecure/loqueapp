@@ -78,9 +78,12 @@ export async function generateOnboardingRecommendations(userId: string) {
   }
   
   // Filter out users without actual profile data
-  const usersWithData = allUsers.filter(u => 
-    u.full_name && u.role_type && u.expertise && u.expertise.length > 0
-  )
+  const usersWithData = allUsers.filter(u => {
+    if (!u.full_name || !u.role_type) return false
+    // expertise can be array or null - check if it exists and has items
+    if (Array.isArray(u.expertise)) return u.expertise.length > 0
+    return true // If expertise exists in any form, include the user
+  })
   
   const scoredCandidates = usersWithData
     .map(candidate => ({
