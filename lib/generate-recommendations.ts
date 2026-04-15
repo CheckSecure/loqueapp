@@ -97,15 +97,22 @@ export async function generateOnboardingRecommendations(userId: string) {
       ...candidate,
       relevance_score: scoreMatch(newUserProfile, candidate)
     }))
+  console.log('[generate-recommendations] After scoring:', scoredCandidates.length, 'candidates')
+  console.log('[generate-recommendations] Sample scores:', scoredCandidates.slice(0, 3).map(c => ({ email: c.email, score: c.relevance_score })))
+  
+  const filtered = scoredCandidates
     .filter(c => c.relevance_score > 0)
+  console.log('[generate-recommendations] After score filter (>0):', filtered.length)
+  
+  const sorted = filtered
     .sort((a, b) => b.relevance_score - a.relevance_score)
     .slice(0, recommendationCount)
   
-  if (scoredCandidates.length === 0) {
+  if (sorted.length === 0) {
     return { count: 0 }
   }
   
-  const introRequests = scoredCandidates.map(candidate => ({
+  const introRequests = sorted.map(candidate => ({
     requester_id: userId,
     target_user_id: candidate.id,
     status: 'suggested',
@@ -121,5 +128,5 @@ export async function generateOnboardingRecommendations(userId: string) {
     throw new Error(`Failed to create recommendations: ${insertError.message}`)
   }
   
-  return { count: scoredCandidates.length }
+  return { count: sorted.length }
 }
