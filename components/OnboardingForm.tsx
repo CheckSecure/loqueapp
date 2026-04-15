@@ -129,6 +129,7 @@ export default function OnboardingForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('[OnboardingForm] handleSubmit called!')
     setSaving(true)
     setError(null)
 
@@ -168,7 +169,9 @@ export default function OnboardingForm() {
     fd.append('geographic_scope', geographicScope)
     if (avatarUrl) fd.append('avatar_url', avatarUrl)
 
+    console.log('[OnboardingForm] About to call completeOnboarding')
     const result = await completeOnboarding(fd)
+    console.log('[OnboardingForm] completeOnboarding returned:', result)
     if (result.error) { setError(result.error); setSaving(false); return }
     
     // Wait a moment for recommendations to finish generating
