@@ -63,6 +63,7 @@ export async function generateOnboardingRecommendations(userId: string) {
   // Get tier-based recommendation count
   const userTier = newUserProfile.subscription_tier || 'free'
   const recommendationCount = TIER_RECOMMENDATION_COUNTS[userTier] || 3
+  console.log('[generate-recommendations] User tier:', userTier, 'Count:', recommendationCount)
   
   const { data: allUsers, error: usersError } = await adminClient
     .from('profiles')
