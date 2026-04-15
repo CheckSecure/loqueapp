@@ -27,6 +27,7 @@ export async function updateProfile(formData: FormData) {
   const introPref = (formData.get('intro_preferences') as string || '')
     .split(',').map(s => s.trim()).filter(Boolean)
 
+  console.log('[completeOnboarding] About to upsert profile data')
   const { error } = await supabase.from('profiles').upsert({
     id: user.id,
     email: user.email,
@@ -95,7 +96,9 @@ export async function adminRejectIntro(requestId: string) {
 
 
 export async function completeOnboarding(formData: FormData) {
+  console.log('[completeOnboarding] START - function called')
   const { supabase, user } = await getSupabaseAndUser()
+  console.log('[completeOnboarding] User:', user?.email)
   if (!user) return { error: 'Not authenticated' }
 
   const introPref = (formData.get('intro_preferences') as string || '')
@@ -109,6 +112,7 @@ export async function completeOnboarding(formData: FormData) {
   const state = (formData.get('state') as string || '').trim()
   const location = city && state ? `${city}, ${state}` : city || state || null
 
+  console.log('[completeOnboarding] About to upsert profile data')
   const { error } = await supabase.from('profiles').upsert({
     id: user.id,
     email: user.email,
