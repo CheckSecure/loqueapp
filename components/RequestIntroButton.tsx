@@ -139,6 +139,16 @@ export default function RequestIntroButton({
   }
 
 
+  if (state === 'done') {
+    return (
+      <div className="mt-1">
+        <div className="w-full text-center text-xs text-slate-500 bg-slate-50 border border-slate-200 py-2 rounded-lg">
+          Interest expressed
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
       {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
