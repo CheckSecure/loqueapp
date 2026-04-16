@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 
 const resend = new Resend(process.env.RESEND_API_KEY!)
@@ -26,7 +27,13 @@ export async function POST(req: Request) {
 
   const tempPassword = Math.random().toString(36).slice(-12)
   
-  const { error: authError } = await supabase.auth.admin.createUser({
+  // Use admin client with service role key
+  const adminClient = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  
+  const { error: authError } = await adminClient.auth.admin.createUser({
     email: entry.email,
     password: tempPassword,
     email_confirm: true,
