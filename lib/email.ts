@@ -12,7 +12,7 @@ export async function sendMatchCreatedEmail(
   const roleCompany = [matchRole, matchCompany].filter(Boolean).join(' at ')
   
   await resend.emails.send({
-    from: 'Andrel <hello@andrel.app>',
+    from: 'Andrel <hello@loque.app>',
     to: toEmail,
     subject: 'New Connection on Andrel',
     html: `
@@ -46,7 +46,7 @@ export async function sendNewMessageEmail(
   messagePreview: string
 ) {
   await resend.emails.send({
-    from: 'Andrel <hello@andrel.app>',
+    from: 'Andrel <hello@loque.app>',
     to: toEmail,
     subject: `New message from ${fromName}`,
     html: `
@@ -78,7 +78,7 @@ export async function sendNewBatchEmail(
   introCount: number
 ) {
   await resend.emails.send({
-    from: 'Andrel <hello@andrel.app>',
+    from: 'Andrel <hello@loque.app>',
     to: toEmail,
     subject: 'New introductions waiting for you',
     html: `
@@ -109,7 +109,7 @@ export async function sendInviteEmail(
 ) {
   try {
     const { data, error } = await resend.emails.send({
-      from: 'Andrel <hello@andrel.app>',
+      from: 'Andrel <hello@loque.app>',
       to: toEmail,
       subject: 'Welcome to Andrel',
       html: `
@@ -165,7 +165,7 @@ export async function sendMeetingRequestEmail(
   meetingPurpose?: string
 ) {
   await resend.emails.send({
-    from: 'Andrel <hello@andrel.app>',
+    from: 'Andrel <hello@loque.app>',
     to: toEmail,
     subject: `Meeting request from ${fromName}`,
     html: `
@@ -201,7 +201,7 @@ export async function sendMeetingAcceptedEmail(
   meetingTime: string
 ) {
   await resend.emails.send({
-    from: 'Andrel <hello@andrel.app>',
+    from: 'Andrel <hello@loque.app>',
     to: toEmail,
     subject: `${acceptedByName} accepted your meeting`,
     html: `
@@ -234,7 +234,7 @@ export async function sendMeetingDeclinedEmail(
   declinedByName: string
 ) {
   await resend.emails.send({
-    from: 'Andrel <hello@andrel.app>',
+    from: 'Andrel <hello@loque.app>',
     to: toEmail,
     subject: 'Meeting request declined',
     html: `
@@ -267,7 +267,7 @@ export async function sendMeetingRescheduledEmail(
   meetingPurpose?: string
 ) {
   await resend.emails.send({
-    from: 'Andrel <hello@andrel.app>',
+    from: 'Andrel <hello@loque.app>',
     to: toEmail,
     subject: `${reschedulerName} proposed a new meeting time`,
     html: `
