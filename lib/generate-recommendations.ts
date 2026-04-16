@@ -13,31 +13,42 @@ function generateIntroReason(userProfile: any, candidate: any): string {
                   candidate.full_name?.includes('Priya') ||
                   candidate.full_name?.includes('Alexandra') ? 'She' : 'He'
   
-  const reasons = []
+  const isLawFirm = candidate.role_type?.toLowerCase().includes('law firm')
+  const isInHouse = candidate.role_type?.toLowerCase().includes('in-house')
   
-  // Expertise match
+  // Law firm attorney with expertise
+  if (isLawFirm && Array.isArray(candidate.expertise) && candidate.expertise.length > 0) {
+    const exp = candidate.expertise.slice(0, 2).join(' and ')
+    if (candidate.seniority === 'Senior' || candidate.seniority === 'Executive') {
+      return `${pronoun} practices ${exp} at ${candidate.company || 'a top firm'} and could be a great mentor`
+    }
+    return `${pronoun} focuses on ${exp} at ${candidate.company || 'a law firm'}`
+  }
+  
+  // In-house counsel with company context
+  if (isInHouse && candidate.company) {
+    if (Array.isArray(candidate.expertise) && candidate.expertise.length > 0) {
+      const exp = candidate.expertise[0]
+      return `${pronoun} leads ${exp} strategy at ${candidate.company}`
+    }
+    if (candidate.seniority === 'Executive' || candidate.seniority === 'C-Suite') {
+      return `${pronoun} oversees legal operations at ${candidate.company}`
+    }
+    return `${pronoun} works in-house at ${candidate.company}`
+  }
+  
+  // Generic with expertise
   if (Array.isArray(candidate.expertise) && candidate.expertise.length > 0) {
     const exp = candidate.expertise.slice(0, 2).join(' and ')
-    reasons.push(`specializes in ${exp}`)
+    return `${pronoun} specializes in ${exp} and brings valuable experience`
   }
   
-  // Seniority + role value prop
-  if (candidate.seniority === userProfile.seniority) {
-    reasons.push(`${candidate.seniority.toLowerCase()}-level peer in ${candidate.role_type?.toLowerCase() || 'legal'}`)
-  } else if (candidate.seniority === 'Executive' || candidate.seniority === 'C-Suite') {
-    reasons.push(`experienced ${candidate.title?.toLowerCase() || 'executive'}`)
-  }
-  
-  // Company prestige
+  // Fallback
   if (candidate.company) {
-    reasons.push(`works at ${candidate.company}`)
+    return `${pronoun} works at ${candidate.company} and could be a valuable connection`
   }
   
-  if (reasons.length > 0) {
-    return `${pronoun} ${reasons.slice(0, 2).join(' and ')}`
-  }
-  
-  return `${pronoun} could be a valuable connection`
+  return `Could be a valuable connection`
 }
 
 function scoreMatch(newUser: any, candidate: any): number {
