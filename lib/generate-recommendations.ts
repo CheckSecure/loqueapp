@@ -6,8 +6,6 @@ const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
   executive: 8,
 }
 
-
-// Generate personalized introduction reasoning
 // Generate personalized introduction reasoning
 function generateIntroReason(userProfile: any, candidate: any): string {
   const pronoun = candidate.full_name?.toLowerCase().endsWith('a') || 
@@ -40,29 +38,6 @@ function generateIntroReason(userProfile: any, candidate: any): string {
   }
   
   return `${pronoun} could be a valuable connection`
-}
-
-  
-  // Company
-  if (candidate.company) {
-    parts.push(`at ${candidate.company}`)
-  }
-  
-  // Role
-  if (candidate.title) {
-    parts.push(candidate.title)
-  }
-  
-  const pronoun = candidate.full_name?.toLowerCase().endsWith('a') || 
-                  candidate.full_name?.includes('Sarah') || 
-                  candidate.full_name?.includes('Priya') ||
-                  candidate.full_name?.includes('Alexandra') ? 'She' : 'He'
-  
-  if (parts.length > 0) {
-    return `${pronoun} is ${parts.slice(0, 2).join(', ')}`
-  }
-  
-  return 'Curated match based on your profile'
 }
 
 function scoreMatch(newUser: any, candidate: any): number {
@@ -129,7 +104,6 @@ export async function generateOnboardingRecommendations(userId: string) {
     state: newUserProfile.state
   })
   
-  // Get tier-based recommendation count
   const userTier = newUserProfile.subscription_tier || 'free'
   const recommendationCount = TIER_RECOMMENDATION_COUNTS[userTier] || 3
   console.log('[generate-recommendations] User tier:', userTier, 'Count:', recommendationCount)
@@ -149,15 +123,13 @@ export async function generateOnboardingRecommendations(userId: string) {
   console.log('[generate-recommendations] All users count:', allUsers.length)
   console.log('[generate-recommendations] Sample user:', allUsers[0])
   
-  // Filter out users without actual profile data
   const usersWithData = allUsers.filter(u => {
     const hasName = !!u.full_name
     const hasRole = !!u.role_type
     console.log('[filter]', u.email, 'name:', hasName, 'role:', hasRole, 'expertise:', u.expertise)
     if (!hasName || !hasRole) return false
-    // expertise can be array or null - check if it exists and has items
     if (Array.isArray(u.expertise)) return u.expertise.length > 0
-    return true // If expertise exists in any form, include the user
+    return true
   })
   console.log('[generate-recommendations] Users after filter:', usersWithData.length)
   
