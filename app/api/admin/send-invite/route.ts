@@ -40,8 +40,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: authError.message }, { status: 500 })
   }
 
-  console.log('[send-invite] Sending email to:', entry.email)
-  await sendInviteEmail(entry.email, entry.full_name || 'there', tempPassword)
+  console.log('[send-invite] Sending email to:', entry.email, 'with temp password:', tempPassword)
+  const emailResult = await sendInviteEmail(entry.email, entry.full_name || 'there', tempPassword)
+  console.log('[send-invite] Email result:', emailResult)
+  
+  if (!emailResult.success) {
+    console.error('[send-invite] Email failed:', emailResult.error)
+    return NextResponse.json({ error: `Email failed: ${emailResult.error}` }, { status: 500 })
+  }
+  
   console.log('[send-invite] Email sent successfully')
 
   await supabase
