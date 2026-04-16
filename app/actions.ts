@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail } from '@/lib/email'
@@ -28,7 +29,14 @@ export async function updateProfile(formData: FormData) {
     .split(',').map(s => s.trim()).filter(Boolean)
 
   console.log('[completeOnboarding] About to upsert profile data')
-  const { error } = await supabase.from('profiles').upsert({
+  
+  // Use admin client to bypass RLS
+  const adminClient = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  
+  const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
     email: user.email,
     full_name: formData.get('full_name') as string || null,
@@ -113,7 +121,14 @@ export async function completeOnboarding(formData: FormData) {
   const location = city && state ? `${city}, ${state}` : city || state || null
 
   console.log('[completeOnboarding] About to upsert profile data')
-  const { error } = await supabase.from('profiles').upsert({
+  
+  // Use admin client to bypass RLS
+  const adminClient = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  
+  const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
     email: user.email,
     full_name: (formData.get('full_name') as string) || null,
