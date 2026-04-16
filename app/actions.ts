@@ -35,6 +35,8 @@ export async function updateProfile(formData: FormData) {
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
     email: user.email,
+    email_verified: true,  // User received invite via email, so email is verified
+    email_verified_at: new Date().toISOString(),
     full_name: formData.get('full_name') as string || null,
     title: formData.get('title') as string || null,
     company: formData.get('company') as string || null,
@@ -124,6 +126,8 @@ export async function completeOnboarding(formData: FormData) {
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
     email: user.email,
+    email_verified: true,  // User received invite via email, so email is verified
+    email_verified_at: new Date().toISOString(),
     full_name: (formData.get('full_name') as string) || null,
     title: (formData.get('title') as string) || null,
     company: (formData.get('company') as string) || null,
