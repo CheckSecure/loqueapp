@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserPlus, CheckCircle, XCircle, Mail, Clock, Send } from 'lucide-react'
-import { adminSendWaitlistInvite } from '@/app/actions'
 
 interface WaitlistEntry {
   id: string
@@ -55,12 +54,21 @@ export default function AdminWaitlistClient({
 
   const handleSendInvite = async (entryId: string, email: string) => {
     setProcessing(entryId)
-    const result = await adminSendWaitlistInvite(entryId)
-    if (result.success) {
-      alert('Invite sent successfully!')
-      router.refresh()
-    } else {
-      alert(`Failed to send invite: ${result.error}`)
+    try {
+      const res = await fetch('/api/admin/send-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryId })
+      })
+      const data = await res.json()
+      if (data.success) {
+        alert('Invite sent successfully!')
+        router.refresh()
+      } else {
+        alert(`Failed to send invite: ${data.error}`)
+      }
+    } catch (err: any) {
+      alert(`Failed to send invite: ${err.message}`)
     }
     setProcessing(null)
   }
