@@ -135,37 +135,12 @@ export default async function IntroductionsPage() {
   for (const r of newRows || []) rowMap[r.suggested_id] = r
 
 
-  // Generate personalized match reasoning
-  const getMatchReason = (userProfile: any, targetProfile: any) => {
-    const reasons = []
-    
-    // Seniority match
-    if (userProfile.seniority === targetProfile.seniority) {
-      reasons.push(`${targetProfile.seniority}-level professional`)
-    }
-    
-    // Role type match with user's preferences
-    if (userProfile.intro_preferences?.includes(targetProfile.role_type)) {
-      reasons.push(targetProfile.role_type.toLowerCase())
-    }
-    
-    // Location match
-    if (userProfile.state && targetProfile.state === userProfile.state) {
-      reasons.push(`based in ${targetProfile.state}`)
-    }
-    
-    return reasons.length > 0 
-      ? reasons.slice(0, 2).join(', ') + ' match'
-      : 'Curated introduction'
-  }
-
-  // Add suggested intros to the suggestions list
   const suggestedProfiles = (suggestedIntros || [])
     .filter((intro: any) => intro.target && !matchedUserIds.has(intro.target.id))
     .map((intro: any) => ({
       rowId: intro.id,
       profile: intro.target,
-      reason: getMatchReason(userProfile, intro.target),
+      reason: 'Curated introduction',
       alreadyRequested: false,
       fromOnboarding: true
     }))
