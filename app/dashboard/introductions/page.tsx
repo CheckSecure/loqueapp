@@ -140,7 +140,7 @@ export default async function IntroductionsPage() {
     .map((intro: any) => ({
       rowId: intro.id,
       profile: intro.target,
-      reason: 'Curated introduction',
+      reason: intro.match_reason || 'Curated introduction',
       alreadyRequested: false,
       fromOnboarding: true
     }))
