@@ -83,7 +83,7 @@ export default async function IntroductionsPage() {
   // Suggested intro requests (onboarding recommendations for this user)
   const { data: suggestedIntros } = await supabase
     .from('intro_requests')
-    .select('id, target_user_id, created_at, target:profiles!target_user_id(id, full_name, title, company, location, bio, interests, seniority, role_type, avatar_url)')
+    .select('id, target_user_id, created_at, match_reason, target:profiles!target_user_id(id, full_name, title, company, location, bio, interests, seniority, role_type, avatar_url)')
     .eq('requester_id', profileId)
     .eq('status', 'suggested')
     .order('created_at', { ascending: false })
