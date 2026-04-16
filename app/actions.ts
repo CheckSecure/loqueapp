@@ -161,14 +161,7 @@ export async function completeOnboarding(formData: FormData) {
     console.error('[completeOnboarding] Error generating recommendations:', err)
   }
 
-  // Generate initial recommendations for new user
-  try {
-    const { generateOnboardingRecommendations } = await import('@/lib/generate-recommendations')
-    const result = await generateOnboardingRecommendations(user.id)
-    console.log('[completeOnboarding] Generated recommendations:', result.count)
-  } catch (err) {
-    console.error('[completeOnboarding] Error generating recommendations:', err)
-  }
+
   
   revalidatePath('/dashboard')
   return { success: true }
@@ -189,14 +182,7 @@ export async function saveAvatarUrl(avatarUrl: string) {
   }
 
   revalidatePath('/dashboard/profile')
-  // Generate initial recommendations for new user
-  try {
-    const { generateOnboardingRecommendations } = await import('@/lib/generate-recommendations')
-    const result = await generateOnboardingRecommendations(user.id)
-    console.log('[completeOnboarding] Generated recommendations:', result.count)
-  } catch (err) {
-    console.error('[completeOnboarding] Error generating recommendations:', err)
-  }
+
   
   revalidatePath('/dashboard')
   return { success: true }
