@@ -144,7 +144,8 @@ export async function sendInviteEmail(
     })
     
     if (error) {
-      console.error('[sendInviteEmail] Resend API error:', error)
+      console.error('[sendInviteEmail] Resend API error:', JSON.stringify(error, null, 2))
+      console.error('[sendInviteEmail] Error details - name:', error.name, 'message:', error.message)
       return { success: false, error: error.message }
     }
     
