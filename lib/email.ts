@@ -108,7 +108,7 @@ export async function sendInviteEmail(
   tempPassword: string
 ) {
   try {
-    await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: 'Andrel <hello@andrel.app>',
       to: toEmail,
       subject: 'Welcome to Andrel',
@@ -142,9 +142,16 @@ export async function sendInviteEmail(
         </div>
       `,
     })
+    
+    if (error) {
+      console.error('[sendInviteEmail] Resend API error:', error)
+      return { success: false, error: error.message }
+    }
+    
+    console.log('[sendInviteEmail] Resend success, message ID:', data?.id)
     return { success: true }
   } catch (error: any) {
-    console.error('[sendInviteEmail] error:', error)
+    console.error('[sendInviteEmail] exception:', error)
     return { success: false, error: error.message }
   }
 }
