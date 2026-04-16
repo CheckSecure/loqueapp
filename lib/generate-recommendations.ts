@@ -159,7 +159,7 @@ export async function generateOnboardingRecommendations(userId: string) {
     requester_id: userId,
     target_user_id: candidate.id,
     status: 'suggested',
-    match_reason: generateIntroReason(candidate),
+    match_reason: generateIntroReason(newUserProfile, candidate),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }))
