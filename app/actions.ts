@@ -1,7 +1,6 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail } from '@/lib/email'
@@ -31,10 +30,7 @@ export async function updateProfile(formData: FormData) {
   console.log('[completeOnboarding] About to upsert profile data')
   
   // Use admin client to bypass RLS
-  const adminClient = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const adminClient = createAdminClient()
   
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
@@ -123,10 +119,7 @@ export async function completeOnboarding(formData: FormData) {
   console.log('[completeOnboarding] About to upsert profile data')
   
   // Use admin client to bypass RLS
-  const adminClient = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const adminClient = createAdminClient()
   
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
