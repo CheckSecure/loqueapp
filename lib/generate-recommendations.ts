@@ -6,6 +6,39 @@ const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
   executive: 8,
 }
 
+
+// Generate personalized introduction reasoning
+function generateIntroReason(candidate: any): string {
+  const parts = []
+  
+  // Expertise
+  if (Array.isArray(candidate.expertise) && candidate.expertise.length > 0) {
+    const exp = candidate.expertise.slice(0, 2).join(' and ')
+    parts.push(`expert in ${exp}`)
+  }
+  
+  // Company
+  if (candidate.company) {
+    parts.push(`at ${candidate.company}`)
+  }
+  
+  // Role
+  if (candidate.title) {
+    parts.push(candidate.title)
+  }
+  
+  const pronoun = candidate.full_name?.toLowerCase().endsWith('a') || 
+                  candidate.full_name?.includes('Sarah') || 
+                  candidate.full_name?.includes('Priya') ||
+                  candidate.full_name?.includes('Alexandra') ? 'She' : 'He'
+  
+  if (parts.length > 0) {
+    return `${pronoun} is ${parts.slice(0, 2).join(', ')}`
+  }
+  
+  return 'Curated match based on your profile'
+}
+
 function scoreMatch(newUser: any, candidate: any): number {
   let score = 0
   
