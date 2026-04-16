@@ -47,17 +47,12 @@ export async function middleware(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    // Step 1: Email verification
-    if (!profile?.email_verified && !request.nextUrl.pathname.startsWith('/dashboard/verify-email')) {
-      return NextResponse.redirect(new URL('/dashboard/verify-email', request.url))
-    }
-
-    // Step 2: Password reset (for invited users)
+    // Step 1: Password reset (for invited users)
     if (profile?.email_verified && profile?.password_reset_required && !request.nextUrl.pathname.startsWith('/dashboard/reset-password')) {
       return NextResponse.redirect(new URL('/dashboard/reset-password', request.url))
     }
 
-    // Step 3: Onboarding
+    // Step 2: Onboarding
     if (profile?.email_verified && !profile?.password_reset_required && !profile?.profile_complete && !request.nextUrl.pathname.startsWith('/dashboard/onboarding')) {
       return NextResponse.redirect(new URL('/dashboard/onboarding', request.url))
     }
