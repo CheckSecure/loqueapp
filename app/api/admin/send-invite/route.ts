@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { Resend } from 'resend'
-
-const resend = new Resend(process.env.RESEND_API_KEY!)
+import { sendInviteEmail } from '@/lib/email'
 
 export async function POST(req: Request) {
   const supabase = createClient()
@@ -27,7 +25,6 @@ export async function POST(req: Request) {
 
   const tempPassword = Math.random().toString(36).slice(-12)
   
-  // Use admin client with service role key
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -43,19 +40,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: authError.message }, { status: 500 })
   }
 
-  console.log('[send-invite] Sending email to:', entry.email, 'with password:', tempPassword)
-  const emailResult = await resend.emails.send({
-    from: 'Andrel <hello@andrel.app>',
-    to: entry.email,
-    subject: 'Welcome to Andrel',
-    html: `<p>Your temporary password is: <strong>${tempPassword}</strong></p><p>Login at: https://andrel.app/login</p>`,
-  })
-  console.log('[send-invite] Resend result:', emailResult)
-  
-  if (emailResult.error) {
-    console.error('[send-invite] Resend error:', emailResult.error)
-    return NextResponse.json({ error: `Email failed: ${emailResult.error.message}` }, { status: 500 })
-  }
+  console.log('[send-invite] Sending email to:', entry.email)
+  await sendInviteEmail(entry.email, entry.full_name || 'there', tempPassword)
+  console.log('[send-invite] Email sent successfully')
 
   await supabase
     .from('waitlist')
