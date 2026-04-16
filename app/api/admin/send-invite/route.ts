@@ -43,12 +43,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: authError.message }, { status: 500 })
   }
 
-  await resend.emails.send({
+  console.log('[send-invite] Sending email to:', entry.email, 'with password:', tempPassword)
+  const emailResult = await resend.emails.send({
     from: 'Andrel <hello@andrel.app>',
     to: entry.email,
     subject: 'Welcome to Andrel',
     html: `<p>Your temporary password is: <strong>${tempPassword}</strong></p><p>Login at: https://andrel.app/login</p>`,
   })
+  console.log('[send-invite] Resend result:', emailResult)
+  
+  if (emailResult.error) {
+    console.error('[send-invite] Resend error:', emailResult.error)
+    return NextResponse.json({ error: `Email failed: ${emailResult.error.message}` }, { status: 500 })
+  }
 
   await supabase
     .from('waitlist')
