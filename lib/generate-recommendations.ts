@@ -8,14 +8,40 @@ const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
 
 
 // Generate personalized introduction reasoning
-function generateIntroReason(candidate: any): string {
-  const parts = []
+// Generate personalized introduction reasoning
+function generateIntroReason(userProfile: any, candidate: any): string {
+  const pronoun = candidate.full_name?.toLowerCase().endsWith('a') || 
+                  candidate.full_name?.includes('Sarah') || 
+                  candidate.full_name?.includes('Priya') ||
+                  candidate.full_name?.includes('Alexandra') ? 'She' : 'He'
   
-  // Expertise
+  const reasons = []
+  
+  // Expertise match
   if (Array.isArray(candidate.expertise) && candidate.expertise.length > 0) {
     const exp = candidate.expertise.slice(0, 2).join(' and ')
-    parts.push(`expert in ${exp}`)
+    reasons.push(`specializes in ${exp}`)
   }
+  
+  // Seniority + role value prop
+  if (candidate.seniority === userProfile.seniority) {
+    reasons.push(`${candidate.seniority.toLowerCase()}-level peer in ${candidate.role_type?.toLowerCase() || 'legal'}`)
+  } else if (candidate.seniority === 'Executive' || candidate.seniority === 'C-Suite') {
+    reasons.push(`experienced ${candidate.title?.toLowerCase() || 'executive'}`)
+  }
+  
+  // Company prestige
+  if (candidate.company) {
+    reasons.push(`works at ${candidate.company}`)
+  }
+  
+  if (reasons.length > 0) {
+    return `${pronoun} ${reasons.slice(0, 2).join(' and ')}`
+  }
+  
+  return `${pronoun} could be a valuable connection`
+}
+
   
   // Company
   if (candidate.company) {
