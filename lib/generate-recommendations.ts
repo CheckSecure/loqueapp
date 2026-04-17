@@ -60,42 +60,6 @@ function calculateAlignmentScore(userProfile: any, candidate: any): number {
   // Normalize to 0-100 scale
   return (alignmentScore / 80) * 100
 }
-  
-  if (roleMatch) {
-    alignmentScore += 30
-  }
-  
-  // Seniority fit (20 points max)
-  const userSeniority = userProfile.seniority || ''
-  const candidateSeniority = candidate.seniority || ''
-  
-  if (userSeniority === candidateSeniority) {
-    alignmentScore += 20
-  } else if (
-    (userSeniority === 'Mid-Level' && (candidateSeniority === 'Senior' || candidateSeniority === 'Junior')) ||
-    (userSeniority === 'Senior' && (candidateSeniority === 'Executive' || candidateSeniority === 'Mid-Level'))
-  ) {
-    alignmentScore += 10
-  }
-  
-  // Expertise overlap (15 points max)
-  const userExpertise: string[] = Array.isArray(userProfile.expertise) ? userProfile.expertise : []
-  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
-  const sharedExpertise = userExpertise.filter(e => candidateExpertise.includes(e))
-  alignmentScore += Math.min(sharedExpertise.length * 5, 15)
-  
-  // Location preference (25 points max for same city, 10 for same state)
-  if (userProfile.city && candidate.city && 
-      userProfile.city.toLowerCase() === candidate.city.toLowerCase()) {
-    alignmentScore += 25
-  } else if (userProfile.state && candidate.state && 
-             userProfile.state.toLowerCase() === candidate.state.toLowerCase()) {
-    alignmentScore += 10
-  }
-  
-  return alignmentScore
-}
-
 function calculateFinalScore(userProfile: any, candidate: any): number {
   // All inputs are now 0-100 normalized
   const alignmentNormalized = calculateAlignmentScore(userProfile, candidate) // 0-100
