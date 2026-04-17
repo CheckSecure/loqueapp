@@ -100,6 +100,78 @@ function scoreMatch(newUser: any, candidate: any): number {
   return score
 }
 
+
+// Apply tier-based quality boosts for premium users
+function applyTierQualityBoost(baseScore: number, candidate: any, userTier: string): number {
+  let boostedScore = baseScore
+  
+  // Free tier gets no boosts - basic matching only
+  if (userTier === 'free') {
+    return boostedScore
+  }
+  
+  // Professional tier boosts
+  if (userTier === 'professional') {
+    // Boost for high-value network connections
+    if (candidate.networkValueScore && candidate.networkValueScore > 70) {
+      boostedScore += 15
+    }
+    
+    // Boost for responsive candidates
+    if (candidate.responsivenessScore && candidate.responsivenessScore > 70) {
+      boostedScore += 10
+    }
+    
+    // Boost for priority/verified candidates
+    if (candidate.is_priority) {
+      boostedScore += 25
+    }
+    
+    // Boost for senior professionals
+    if (candidate.seniority === 'Senior') {
+      boostedScore += 10
+    }
+  }
+  
+  // Executive tier boosts (higher than professional)
+  if (userTier === 'executive') {
+    // Premium boost for top network value
+    if (candidate.networkValueScore && candidate.networkValueScore > 70) {
+      boostedScore += 35
+    } else if (candidate.networkValueScore && candidate.networkValueScore > 50) {
+      boostedScore += 15
+    }
+    
+    // Premium boost for responsiveness
+    if (candidate.responsivenessScore && candidate.responsivenessScore > 70) {
+      boostedScore += 25
+    } else if (candidate.responsivenessScore && candidate.responsivenessScore > 50) {
+      boostedScore += 10
+    }
+    
+    // Strong boost for priority candidates
+    if (candidate.is_priority) {
+      boostedScore += 50
+    }
+    
+    // Heavily prioritize C-suite and executives
+    if (candidate.seniority === 'Executive' || candidate.seniority === 'C-Suite') {
+      boostedScore += 30
+    } else if (candidate.seniority === 'Senior') {
+      boostedScore += 15
+    }
+  }
+  
+  return boostedScore
+}
+
+// Tier-based minimum score thresholds
+const TIER_SCORE_THRESHOLDS: Record<string, number> = {
+  free: 20,         // Only show solid matches
+  professional: 10, // More permissive, quality-boosted
+  executive: 5      // Most permissive, heavily boosted
+}
+
 export async function generateOnboardingRecommendations(userId: string) {
   const adminClient = createAdminClient()
   
@@ -153,16 +225,24 @@ export async function generateOnboardingRecommendations(userId: string) {
   console.log('[generate-recommendations] Users after filter:', usersWithData.length)
   
   const scoredCandidates = usersWithData
-    .map(candidate => ({
-      ...candidate,
-      relevance_score: scoreMatch(newUserProfile, candidate)
-    }))
+    .map(candidate => {
+      const baseScore = scoreMatch(newUserProfile, candidate)
+      const boostedScore = applyTierQualityBoost(baseScore, candidate, userTier)
+      return {
+        ...candidate,
+        relevance_score: boostedScore,
+        base_score: baseScore  // Keep for debugging
+      }
+    })
   console.log('[generate-recommendations] After scoring:', scoredCandidates.length, 'candidates')
   console.log('[generate-recommendations] Sample scores:', scoredCandidates.slice(0, 3).map(c => ({ email: c.email, score: c.relevance_score })))
   
+  const scoreThreshold = TIER_SCORE_THRESHOLDS[userTier] || 20
   const filtered = scoredCandidates
-    .filter(c => c.relevance_score > 0)
-  console.log('[generate-recommendations] After score filter (>0):', filtered.length)
+    .filter(c => c.relevance_score >= scoreThreshold)
+  console.log('[generate-recommendations] Score threshold for tier:', userTier, '=', scoreThreshold)
+  console.log('[generate-recommendations] After tier-based filter:', filtered.length)
+  console.log('[generate-recommendations] Top 3 scores:', filtered.slice(0, 3).map(c => ({ email: c.email, base: c.base_score, boosted: c.relevance_score })))
   
   const sorted = filtered
     .sort((a, b) => b.relevance_score - a.relevance_score)
