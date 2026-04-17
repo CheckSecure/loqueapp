@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/weekly-batch",
       "schedule": "0 9 1 * *"
+    },
+    {
+      "path": "/api/cron/weekly-refresh",
+      "schedule": "0 9 * * 1"
+    },
+    {
+      "path": "/api/cron/daily-refill",
+      "schedule": "0 12 * * *"
     }
   ]
 }

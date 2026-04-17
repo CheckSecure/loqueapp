@@ -127,21 +127,25 @@ export async function POST(req: Request) {
           .single()
         
         const currentBalance = currentCredits?.balance || 0
-        const newBalance = Math.min(currentBalance + creditsPurchased, cap)
-        const actualAdded = newBalance - currentBalance
         
-        if (actualAdded > 0) {
-          await adminClient
-            .from('meeting_credits')
-            .upsert({
-              user_id: profile.id,
-              balance: newBalance,
-              lifetime_earned: (currentCredits?.lifetime_earned || 0) + actualAdded
-            })
-          
-          console.log(`[Credit Purchase] User ${profile.id} purchased ${creditsPurchased}, added ${actualAdded} (capped at ${cap})`)
+        // Grant full purchase first, then clamp to cap
+        const afterPurchase = currentBalance + creditsPurchased
+        const newBalance = Math.min(afterPurchase, cap)
+        const actualAdded = creditsPurchased // Full purchase amount for lifetime_earned
+        const clamped = afterPurchase > cap
+        
+        await adminClient
+          .from('meeting_credits')
+          .upsert({
+            user_id: profile.id,
+            balance: newBalance,
+            lifetime_earned: (currentCredits?.lifetime_earned || 0) + actualAdded
+          })
+        
+        if (clamped) {
+          console.log(`[Credit Purchase] User ${profile.id} purchased ${creditsPurchased}, balance clamped from ${afterPurchase} to ${cap} (tier limit)`)
         } else {
-          console.log(`[Credit Purchase] User ${profile.id} at cap (${cap}), cannot add credits`)
+          console.log(`[Credit Purchase] User ${profile.id} purchased ${creditsPurchased}, new balance: ${newBalance}`)
         }
       }
     }

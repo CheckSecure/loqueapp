@@ -12,7 +12,7 @@ const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
 function calculateAlignmentScore(userProfile: any, candidate: any): number {
   let alignmentScore = 0
   
-  // Goal/preference overlap (30 points max)
+  // Goal/preference overlap (30 points)
   const userPrefs: string[] = Array.isArray(userProfile.intro_preferences) ? userProfile.intro_preferences : []
   const candidateRole: string = candidate.role_type || ''
   
@@ -21,6 +21,45 @@ function calculateAlignmentScore(userProfile: any, candidate: any): number {
     const roleLower = candidateRole.toLowerCase()
     return prefLower.includes(roleLower) || roleLower.includes(prefLower)
   })
+  
+  if (roleMatch) {
+    alignmentScore += 30
+  }
+  
+  // Seniority fit (20 points)
+  const userSeniority = userProfile.seniority || ''
+  const candidateSeniority = candidate.seniority || ''
+  
+  if (userSeniority === candidateSeniority) {
+    alignmentScore += 20
+  } else if (
+    (userSeniority === 'Mid-Level' && (candidateSeniority === 'Senior' || candidateSeniority === 'Junior')) ||
+    (userSeniority === 'Senior' && (candidateSeniority === 'Executive' || candidateSeniority === 'Mid-Level'))
+  ) {
+    alignmentScore += 10
+  }
+  
+  // Expertise overlap (15 points max, capped)
+  const userExpertise: string[] = Array.isArray(userProfile.expertise) ? userProfile.expertise : []
+  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
+  const sharedExpertise = userExpertise.filter(e => candidateExpertise.includes(e))
+  alignmentScore += Math.min(sharedExpertise.length * 5, 15)
+  
+  // Location preference (normalized: 15 same city, 10 same region, 5 anywhere)
+  if (userProfile.city && candidate.city && 
+      userProfile.city.toLowerCase() === candidate.city.toLowerCase()) {
+    alignmentScore += 15
+  } else if (userProfile.state && candidate.state && 
+             userProfile.state.toLowerCase() === candidate.state.toLowerCase()) {
+    alignmentScore += 10
+  } else {
+    alignmentScore += 5 // Always some location value
+  }
+  
+  // Total max: 30 + 20 + 15 + 15 = 80 points
+  // Normalize to 0-100 scale
+  return (alignmentScore / 80) * 100
+}
   
   if (roleMatch) {
     alignmentScore += 30
@@ -58,8 +97,9 @@ function calculateAlignmentScore(userProfile: any, candidate: any): number {
 }
 
 function calculateFinalScore(userProfile: any, candidate: any): number {
-  const alignmentRaw = calculateAlignmentScore(userProfile, candidate)
-  const alignmentWeighted = (alignmentRaw / 90) * 55
+  // All inputs are now 0-100 normalized
+  const alignmentNormalized = calculateAlignmentScore(userProfile, candidate) // 0-100
+  const alignmentWeighted = (alignmentNormalized / 100) * 55
   
   const networkValueRaw = candidate.networkValueScore || 50
   const networkValueWeighted = (networkValueRaw / 100) * 30
@@ -77,11 +117,47 @@ function applyTierRankingAdjustment(candidates: any[], userTier: string): any[] 
   const sorted = [...candidates].sort((a, b) => b.finalScore - a.finalScore)
   
   if (userTier === 'free') {
+    // Free: ±3 variation for discovery
     return sorted.map((c) => ({
       ...c,
-      rankingScore: c.finalScore + (Math.random() * 5) - 2.5
+      rankingScore: c.finalScore + (Math.random() * 6) - 3
     })).sort((a, b) => b.rankingScore - a.rankingScore)
   }
+  
+  if (userTier === 'professional') {
+    const top30Index = Math.floor(sorted.length * 0.3)
+    const bottom30Index = Math.floor(sorted.length * 0.7)
+    
+    return sorted.map((c, idx) => {
+      let adjustment = 0
+      if (idx < top30Index) adjustment = 8
+      else if (idx > bottom30Index) adjustment = -5
+      
+      // Add ±2 randomness
+      const randomness = (Math.random() * 4) - 2
+      
+      return { ...c, rankingScore: c.finalScore + adjustment + randomness }
+    }).sort((a, b) => b.rankingScore - a.rankingScore)
+  }
+  
+  if (userTier === 'executive') {
+    const top20Index = Math.floor(sorted.length * 0.2)
+    const bottom40Index = Math.floor(sorted.length * 0.6) // Reduced from 50%
+    
+    return sorted.map((c, idx) => {
+      let adjustment = 0
+      if (idx < top20Index) adjustment = 15
+      else if (idx > bottom40Index) adjustment = -8 // Reduced penalty
+      
+      // Add ±1 randomness
+      const randomness = (Math.random() * 2) - 1
+      
+      return { ...c, rankingScore: c.finalScore + adjustment + randomness }
+    }).sort((a, b) => b.rankingScore - a.rankingScore)
+  }
+  
+  return sorted.map(c => ({ ...c, rankingScore: c.finalScore }))
+}
   
   if (userTier === 'professional') {
     const top30Index = Math.floor(sorted.length * 0.3)
@@ -215,7 +291,25 @@ export async function generateOnboardingRecommendations(userId: string) {
     return { count: 0 }
   }
   
-  const introRequests = sorted.map(candidate => ({
+  // Check for existing intro_requests to prevent duplicates
+  const { data: existingIntros } = await adminClient
+    .from('intro_requests')
+    .select('target_user_id')
+    .eq('requester_id', userId)
+  
+  const existingTargetIds = new Set(existingIntros?.map(i => i.target_user_id) || [])
+  
+  // Filter out candidates already suggested/matched
+  const newCandidates = sorted.filter(c => !existingTargetIds.has(c.id))
+  
+  console.log('[generate-recommendations] Filtered duplicates:', sorted.length, '→', newCandidates.length)
+  
+  if (newCandidates.length === 0) {
+    console.log('[generate-recommendations] No new candidates after duplicate filter')
+    return { count: 0 }
+  }
+  
+  const introRequests = newCandidates.map(candidate => ({
     requester_id: userId,
     target_user_id: candidate.id,
     status: 'suggested',
@@ -232,5 +326,5 @@ export async function generateOnboardingRecommendations(userId: string) {
     throw new Error(`Failed to create recommendations: ${insertError.message}`)
   }
   
-  return { count: sorted.length }
+  return { count: newCandidates.length }
 }
