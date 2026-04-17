@@ -64,7 +64,7 @@ export async function POST(req: Request) {
     // Get current credit balance
     const { data: currentCredits } = await adminClient
       .from('meeting_credits')
-      .select('balance')
+      .select('balance, lifetime_earned')
       .eq('user_id', profile.id)
       .single()
     
