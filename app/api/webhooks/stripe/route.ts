@@ -9,8 +9,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 const TIER_CREDIT_FLOORS: Record<string, number> = {
   free: 3,
-  professional: 10,
-  executive: 20
+  professional: 5,
+  executive: 8
 }
 
 export async function POST(req: Request) {

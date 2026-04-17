@@ -4,8 +4,8 @@ import { generateOnboardingRecommendations } from '@/lib/generate-recommendation
 
 const TIER_CREDIT_FLOORS: Record<string, number> = {
   free: 3,
-  professional: 10,
-  executive: 20
+  professional: 5,
+  executive: 8
 }
 
 const TIER_ACTIVE_SLOTS: Record<string, number> = {
