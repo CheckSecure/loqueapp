@@ -1,6 +1,17 @@
 'use client'
 
+import { useState } from 'react'
+import { UpgradeConfirmationModal } from './UpgradeConfirmationModal'
+
 export function PricingTiers() {
+  const [showModal, setShowModal] = useState(false)
+  const [selectedTier, setSelectedTier] = useState<'professional' | 'executive' | null>(null)
+
+  const handleUpgradeClick = (tier: 'professional' | 'executive') => {
+    setSelectedTier(tier)
+    setShowModal(true)
+  }
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-16">
       {/* Header */}
@@ -9,8 +20,10 @@ export function PricingTiers() {
           Choose your access level
         </h1>
         <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-          Get curated introductions to the right people at the right time. 
-          Upgrade for better access and more frequent connections.
+          Get curated introductions to the right people at the right time.
+        </p>
+        <p className="text-base text-slate-500 mt-3 italic">
+          The best connections on Andrel don't happen by chance — they're curated.
         </p>
       </div>
 
@@ -60,7 +73,7 @@ export function PricingTiers() {
           </ul>
 
           <button className="w-full py-3 px-6 border-2 border-slate-300 text-slate-700 font-semibold rounded-lg hover:border-slate-400 transition">
-            Get Started
+            Current Plan
           </button>
         </div>
 
@@ -110,15 +123,16 @@ export function PricingTiers() {
             </li>
           </ul>
 
-          <div className="mb-8 p-3 bg-slate-50 rounded-lg border border-slate-200">
-            <p className="text-sm text-slate-600 italic text-center">
-              See better matches, more often
-            </p>
-          </div>
-
-          <button className="w-full py-3 px-6 bg-[#1B2850] text-white font-semibold rounded-lg hover:bg-[#2a3a6b] transition">
+          <button 
+            onClick={() => handleUpgradeClick('professional')}
+            className="w-full py-3 px-6 bg-[#1B2850] text-white font-semibold rounded-lg hover:bg-[#2a3a6b] transition mb-3"
+          >
             Upgrade to Professional
           </button>
+          
+          <p className="text-sm text-slate-600 text-center italic">
+            See better matches, more often
+          </p>
         </div>
 
         {/* EXECUTIVE TIER */}
@@ -136,7 +150,7 @@ export function PricingTiers() {
             </div>
           </div>
           
-          <ul className="space-y-4 mb-8">
+          <ul className="space-y-4 mb-6">
             <li className="flex items-start">
               <svg className="w-5 h-5 text-emerald-600 mr-3 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -163,10 +177,24 @@ export function PricingTiers() {
             </li>
           </ul>
 
-          <button className="w-full py-3 px-6 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 transition">
+          <button 
+            onClick={() => handleUpgradeClick('executive')}
+            className="w-full py-3 px-6 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 transition mb-3"
+          >
             Upgrade to Executive
           </button>
+          
+          <p className="text-sm text-slate-600 text-center italic">
+            Connect with the highest-value members
+          </p>
         </div>
+      </div>
+
+      {/* Credit Clarity */}
+      <div className="text-center mb-12">
+        <p className="text-sm text-slate-500 italic">
+          You only use a credit when an introduction is successfully made.
+        </p>
       </div>
 
       {/* How It Works Section */}
@@ -193,7 +221,7 @@ export function PricingTiers() {
         </div>
       </div>
 
-      {/* FAQ or Additional Info (Optional) */}
+      {/* FAQ */}
       <div className="mt-16 text-center">
         <p className="text-sm text-slate-500">
           Questions about pricing?{' '}
@@ -202,6 +230,18 @@ export function PricingTiers() {
           </a>
         </p>
       </div>
+
+      {/* Upgrade Modal */}
+      {showModal && selectedTier && (
+        <UpgradeConfirmationModal
+          tier={selectedTier}
+          onClose={() => setShowModal(false)}
+          onConfirm={() => {
+            // Handle Stripe checkout
+            setShowModal(false)
+          }}
+        />
+      )}
     </div>
   )
 }
