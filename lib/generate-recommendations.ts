@@ -63,7 +63,15 @@ function scoreMatch(newUser: any, candidate: any): number {
   
   const userPrefs: string[] = Array.isArray(newUser.intro_preferences) ? newUser.intro_preferences : []
   const candidateRole: string = candidate.role_type || ''
-  if (userPrefs.some((p: string) => p.toLowerCase() === candidateRole.toLowerCase())) {
+  
+  // Fuzzy role matching - check if any preference is contained in the role or vice versa
+  const roleMatch = userPrefs.some((pref: string) => {
+    const prefLower = pref.toLowerCase()
+    const roleLower = candidateRole.toLowerCase()
+    return prefLower.includes(roleLower) || roleLower.includes(prefLower)
+  })
+  
+  if (roleMatch) {
     score += 30
   }
   
