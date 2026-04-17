@@ -199,7 +199,77 @@ export async function generateOnboardingRecommendations(userId: string) {
   
   console.log('[generate-recommendations] All users count:', allUsers.length)
   
-  const usersWithData = allUsers.filter(u => {
+  // EXCLUSION LOGIC: Get users to exclude from matching
+  
+  // 1. Users already matched (bidirectional)
+  const { data: existingMatches } = await adminClient
+    .from('matches')
+    .select('user_a_id, user_b_id')
+    .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
+  
+  const matchedUserIds = new Set<string>()
+  existingMatches?.forEach(m => {
+    matchedUserIds.add(m.user_a_id)
+    matchedUserIds.add(m.user_b_id)
+  })
+  matchedUserIds.delete(userId) // Remove self
+  
+  // 2. Users hidden or passed (bidirectional with cooldown)
+  const cooldownDate = new Date()
+  cooldownDate.setDate(cooldownDate.getDate() - 75) // 75 day cooldown
+  
+  const { data: hiddenOrPassed } = await adminClient
+    .from('intro_requests')
+    .select('requester_id, target_user_id, status, updated_at')
+    .or(`requester_id.eq.${userId},target_user_id.eq.${userId}`)
+    .in('status', ['hidden', 'passed'])
+  
+  const excludedUserIds = new Set<string>()
+  hiddenOrPassed?.forEach(req => {
+    // Hidden = permanent exclusion
+    if (req.status === 'hidden') {
+      const otherId = req.requester_id === userId ? req.target_user_id : req.requester_id
+      excludedUserIds.add(otherId)
+    }
+    
+    // Passed = temporary exclusion (75 day cooldown)
+    if (req.status === 'passed') {
+      const passedAt = new Date(req.updated_at)
+      if (passedAt > cooldownDate) {
+        const otherId = req.requester_id === userId ? req.target_user_id : req.requester_id
+        excludedUserIds.add(otherId)
+      }
+    }
+  })
+  
+  // 3. Users with existing intro requests
+  const { data: existingIntros } = await adminClient
+    .from('intro_requests')
+    .select('target_user_id, requester_id')
+    .or(`requester_id.eq.${userId},target_user_id.eq.${userId}`)
+    .in('status', ['suggested', 'pending', 'accepted'])
+  
+  existingIntros?.forEach(req => {
+    const otherId = req.requester_id === userId ? req.target_user_id : req.requester_id
+    excludedUserIds.add(otherId)
+  })
+  
+  console.log('[generate-recommendations] Excluded users:', {
+    matched: matchedUserIds.size,
+    hidden_or_passed: excludedUserIds.size,
+    total_excluded: new Set([...matchedUserIds, ...excludedUserIds]).size
+  })
+  
+  const usersWithData = allUsers
+    .filter(u => {
+      // Exclude matched users
+      if (matchedUserIds.has(u.id)) return false
+      // Exclude hidden/passed/suggested users
+      if (excludedUserIds.has(u.id)) return false
+      // Continue with existing data validation
+      return true
+    })
+    .filter(u => {
     const hasName = !!u.full_name
     const hasRole = !!u.role_type
     if (!hasName || !hasRole) return false
