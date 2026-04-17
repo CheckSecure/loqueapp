@@ -161,7 +161,23 @@ export async function completeOnboarding(formData: FormData) {
     console.error('[completeOnboarding] Error generating recommendations:', err)
   }
 
-
+  // Assign initial credits (3 for free tier)
+  try {
+    const { error: creditsError } = await adminClient
+      .from('meeting_credits')
+      .insert({
+        user_id: user.id,
+        credits_remaining: 3,
+        credits_used: 0
+      })
+    if (creditsError) {
+      console.error('[completeOnboarding] Error assigning credits:', creditsError)
+    } else {
+      console.log('[completeOnboarding] Assigned 3 credits to new user')
+    }
+  } catch (err) {
+    console.error('[completeOnboarding] Error in credits assignment:', err)
+  }
   
   revalidatePath('/dashboard')
   return { success: true }
