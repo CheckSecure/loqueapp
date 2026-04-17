@@ -257,7 +257,7 @@ export async function generateOnboardingRecommendations(userId: string) {
   console.log('[generate-recommendations] Excluded users:', {
     matched: matchedUserIds.size,
     hidden_or_passed: excludedUserIds.size,
-    total_excluded: new Set([...matchedUserIds, ...excludedUserIds]).size
+    total_excluded: new Set([...Array.from(matchedUserIds), ...Array.from(excludedUserIds)]).size
   })
   
   const usersWithData = allUsers
