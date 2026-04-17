@@ -167,8 +167,8 @@ export async function completeOnboarding(formData: FormData) {
       .from('meeting_credits')
       .insert({
         user_id: user.id,
-        credits_remaining: 3,
-        credits_used: 0
+        balance: 3,
+        lifetime_earned: 3
       })
     if (creditsError) {
       console.error('[completeOnboarding] Error assigning credits:', creditsError)
