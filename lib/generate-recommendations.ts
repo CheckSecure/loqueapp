@@ -122,35 +122,6 @@ function applyTierRankingAdjustment(candidates: any[], userTier: string): any[] 
   
   return sorted.map(c => ({ ...c, rankingScore: c.finalScore }))
 }
-  
-  if (userTier === 'professional') {
-    const top30Index = Math.floor(sorted.length * 0.3)
-    const bottom30Index = Math.floor(sorted.length * 0.7)
-    
-    return sorted.map((c, idx) => {
-      let adjustment = 0
-      if (idx < top30Index) adjustment = 8
-      else if (idx > bottom30Index) adjustment = -5
-      
-      return { ...c, rankingScore: c.finalScore + adjustment }
-    }).sort((a, b) => b.rankingScore - a.rankingScore)
-  }
-  
-  if (userTier === 'executive') {
-    const top20Index = Math.floor(sorted.length * 0.2)
-    const mid50Index = Math.floor(sorted.length * 0.5)
-    
-    return sorted.map((c, idx) => {
-      let adjustment = 0
-      if (idx < top20Index) adjustment = 15
-      else if (idx > mid50Index) adjustment = -10
-      
-      return { ...c, rankingScore: c.finalScore + adjustment }
-    }).sort((a, b) => b.rankingScore - a.rankingScore)
-  }
-  
-  return sorted.map(c => ({ ...c, rankingScore: c.finalScore }))
-}
 
 function generateIntroReason(userProfile: any, candidate: any): string {
   const pronoun = candidate.full_name?.toLowerCase().endsWith('a') || 
