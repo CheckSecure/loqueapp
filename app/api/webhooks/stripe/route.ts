@@ -91,7 +91,7 @@ export async function POST(req: Request) {
         subscription_tier: newTier,
         subscription_status: subscription.status,
         stripe_subscription_id: subscription.id,
-        current_period_end: new Date(subscription.current_period_end * 1000).toISOString()
+        current_period_end: subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : null
       })
       .eq('id', profile.id)
   }
