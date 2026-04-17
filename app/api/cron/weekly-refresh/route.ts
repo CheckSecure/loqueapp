@@ -46,15 +46,29 @@ export async function GET(req: Request) {
       const staleDate = new Date()
       staleDate.setHours(staleDate.getHours() - 72)
       
-      await adminClient
+      const { data: archivedIntros, error: archiveError } = await adminClient
         .from('intro_requests')
         .update({ status: 'archived' })
         .eq('requester_id', user.id)
         .eq('status', 'suggested')
         .lt('created_at', staleDate.toISOString())
+        .select()
+      
+      if (archivedIntros && archivedIntros.length > 0) {
+        console.log(`[Weekly Refresh] Archived ${archivedIntros.length} stale intros for ${user.email}`)
+      }
+      
+      // Recount after archiving
+      const { data: activeAfterArchive } = await adminClient
+        .from('intro_requests')
+        .select('id')
+        .eq('requester_id', user.id)
+        .eq('status', 'suggested')
+      
+      const currentCountAfterArchive = activeAfterArchive?.length || 0
       
       // Generate new recommendations if below target
-      if (currentCount < targetSlots) {
+      if (currentCountAfterArchive < targetSlots) {
         await generateOnboardingRecommendations(user.id)
         processed++
       }
