@@ -296,25 +296,8 @@ export async function generateOnboardingRecommendations(userId: string) {
     return { count: 0 }
   }
   
-  // Check for existing intro_requests to prevent duplicates
-  const { data: existingIntros } = await adminClient
-    .from('intro_requests')
-    .select('target_user_id')
-    .eq('requester_id', userId)
-  
-  const existingTargetIds = new Set(existingIntros?.map(i => i.target_user_id) || [])
-  
-  // Filter out candidates already suggested/matched
-  const newCandidates = sorted.filter(c => !existingTargetIds.has(c.id))
-  
-  console.log('[generate-recommendations] Filtered duplicates:', sorted.length, '→', newCandidates.length)
-  
-  if (newCandidates.length === 0) {
-    console.log('[generate-recommendations] No new candidates after duplicate filter')
-    return { count: 0 }
-  }
-  
-  const introRequests = newCandidates.map(candidate => ({
+  // Final safety: already handled by exclusion logic above
+  const introRequests = sorted.map(candidate => ({
     requester_id: userId,
     target_user_id: candidate.id,
     status: 'suggested',
@@ -331,5 +314,5 @@ export async function generateOnboardingRecommendations(userId: string) {
     throw new Error(`Failed to create recommendations: ${insertError.message}`)
   }
   
-  return { count: newCandidates.length }
+  return { count: sorted.length }
 }
