@@ -9,8 +9,13 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 const TIER_CREDIT_FLOORS: Record<string, number> = {
   free: 3,
-  professional: 5,
-  executive: 8
+  professional: 10,
+  executive: 20
+}
+const TIER_CREDIT_CAPS: Record<string, number> = {
+  free: 6,
+  professional: 20,
+  executive: 40
 }
 
 export async function POST(req: Request) {
@@ -96,5 +101,51 @@ export async function POST(req: Request) {
       .eq('id', profile.id)
   }
   
+
+  // Handle one-time credit purchases
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as any
+    
+    if (session.mode === 'payment' && session.metadata?.type === 'credit_purchase') {
+      const customerId = session.customer as string
+      const creditsPurchased = parseInt(session.metadata.credits || '0')
+      
+      const { data: profile } = await adminClient
+        .from('profiles')
+        .select('id, subscription_tier')
+        .eq('stripe_customer_id', customerId)
+        .single()
+      
+      if (profile && creditsPurchased > 0) {
+        const tier = profile.subscription_tier || 'free'
+        const cap = TIER_CREDIT_CAPS[tier] || 6
+        
+        const { data: currentCredits } = await adminClient
+          .from('meeting_credits')
+          .select('balance, lifetime_earned')
+          .eq('user_id', profile.id)
+          .single()
+        
+        const currentBalance = currentCredits?.balance || 0
+        const newBalance = Math.min(currentBalance + creditsPurchased, cap)
+        const actualAdded = newBalance - currentBalance
+        
+        if (actualAdded > 0) {
+          await adminClient
+            .from('meeting_credits')
+            .upsert({
+              user_id: profile.id,
+              balance: newBalance,
+              lifetime_earned: (currentCredits?.lifetime_earned || 0) + actualAdded
+            })
+          
+          console.log(`[Credit Purchase] User ${profile.id} purchased ${creditsPurchased}, added ${actualAdded} (capped at ${cap})`)
+        } else {
+          console.log(`[Credit Purchase] User ${profile.id} at cap (${cap}), cannot add credits`)
+        }
+      }
+    }
+  }
+
   return NextResponse.json({ received: true })
 }

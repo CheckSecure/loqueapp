@@ -4,8 +4,13 @@ import { generateOnboardingRecommendations } from '@/lib/generate-recommendation
 
 const TIER_CREDIT_FLOORS: Record<string, number> = {
   free: 3,
-  professional: 5,
-  executive: 8
+  professional: 10,
+  executive: 20
+}
+const TIER_CREDIT_CAPS: Record<string, number> = {
+  free: 6,
+  professional: 20,
+  executive: 40
 }
 
 const TIER_ACTIVE_SLOTS: Record<string, number> = {
@@ -23,7 +28,7 @@ export async function GET(req: Request) {
   
   const adminClient = createAdminClient()
   
-  console.log('[Weekly Batch] Starting weekly refresh...')
+  console.log('[Monthly Refill] Starting monthly credit refill...')
   
   // Get all active users
   const { data: users, error: usersError } = await adminClient
@@ -33,11 +38,11 @@ export async function GET(req: Request) {
     .eq('profile_complete', true)
   
   if (usersError || !users) {
-    console.error('[Weekly Batch] Error fetching users:', usersError)
+    console.error('[Monthly Refill] Error fetching users:', usersError)
     return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
   }
   
-  console.log(`[Weekly Batch] Processing ${users.length} users`)
+  console.log(`[Monthly Refill] Processing ${users.length} users`)
   
   let processedCount = 0
   let errorCount = 0
@@ -66,7 +71,7 @@ export async function GET(req: Request) {
             balance: newBalance,
             lifetime_earned: (currentCredits?.lifetime_earned || 0) + (newBalance - currentBalance)
           })
-        console.log(`[Weekly Batch] ${user.email}: Credits ${currentBalance} → ${newBalance}`)
+        console.log(`[Monthly Refill] ${user.email}: Credits ${currentBalance} → ${newBalance}`)
       }
       
       // 2. Count active suggestions (preserve important states)
@@ -77,7 +82,7 @@ export async function GET(req: Request) {
         .in('status', ['suggested', 'pending', 'accepted', 'matched'])
       
       if (activeError) {
-        console.error(`[Weekly Batch] Error fetching intros for ${user.email}:`, activeError)
+        console.error(`[Monthly Refill] Error fetching intros for ${user.email}:`, activeError)
         errorCount++
         continue
       }
@@ -85,7 +90,7 @@ export async function GET(req: Request) {
       const activeSuggestions = activeIntros?.filter(i => i.status === 'suggested') || []
       const activeCount = activeSuggestions.length
       
-      console.log(`[Weekly Batch] ${user.email}: ${activeCount} active suggestions, target: ${targetSlots}`)
+      console.log(`[Monthly Refill] ${user.email}: ${activeCount} active suggestions, target: ${targetSlots}`)
       
       // 3. Archive stale untouched suggestions (older than 7 days)
       const sevenDaysAgo = new Date()
@@ -99,14 +104,14 @@ export async function GET(req: Request) {
         .lt('created_at', sevenDaysAgo.toISOString())
       
       if (archiveError) {
-        console.error(`[Weekly Batch] Error archiving for ${user.email}:`, archiveError)
+        console.error(`[Monthly Refill] Error archiving for ${user.email}:`, archiveError)
       }
       
       // 4. Generate new suggestions to fill target slots
       const slotsNeeded = targetSlots - activeCount
       
       if (slotsNeeded > 0) {
-        console.log(`[Weekly Batch] ${user.email}: Generating ${slotsNeeded} new suggestions`)
+        console.log(`[Monthly Refill] ${user.email}: Generating ${slotsNeeded} new suggestions`)
         
         // Generate recommendations (it will create up to targetSlots total)
         await generateOnboardingRecommendations(user.id)
@@ -115,12 +120,12 @@ export async function GET(req: Request) {
       processedCount++
       
     } catch (err) {
-      console.error(`[Weekly Batch] Error processing ${user.email}:`, err)
+      console.error(`[Monthly Refill] Error processing ${user.email}:`, err)
       errorCount++
     }
   }
   
-  console.log(`[Weekly Batch] Complete. Processed: ${processedCount}, Errors: ${errorCount}`)
+  console.log(`[Monthly Refill] Complete. Processed: ${processedCount}, Errors: ${errorCount}`)
   
   return NextResponse.json({
     success: true,
