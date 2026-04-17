@@ -6,7 +6,112 @@ const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
   executive: 8,
 }
 
-// Generate personalized introduction reasoning
+// Unified scoring model for all tiers
+// Final Score = Alignment (55%) + Network Value (30%) + Responsiveness (15%)
+
+function calculateAlignmentScore(userProfile: any, candidate: any): number {
+  let alignmentScore = 0
+  
+  // Goal/preference overlap (30 points max)
+  const userPrefs: string[] = Array.isArray(userProfile.intro_preferences) ? userProfile.intro_preferences : []
+  const candidateRole: string = candidate.role_type || ''
+  
+  const roleMatch = userPrefs.some((pref: string) => {
+    const prefLower = pref.toLowerCase()
+    const roleLower = candidateRole.toLowerCase()
+    return prefLower.includes(roleLower) || roleLower.includes(prefLower)
+  })
+  
+  if (roleMatch) {
+    alignmentScore += 30
+  }
+  
+  // Seniority fit (20 points max)
+  const userSeniority = userProfile.seniority || ''
+  const candidateSeniority = candidate.seniority || ''
+  
+  if (userSeniority === candidateSeniority) {
+    alignmentScore += 20
+  } else if (
+    (userSeniority === 'Mid-Level' && (candidateSeniority === 'Senior' || candidateSeniority === 'Junior')) ||
+    (userSeniority === 'Senior' && (candidateSeniority === 'Executive' || candidateSeniority === 'Mid-Level'))
+  ) {
+    alignmentScore += 10
+  }
+  
+  // Expertise overlap (15 points max)
+  const userExpertise: string[] = Array.isArray(userProfile.expertise) ? userProfile.expertise : []
+  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
+  const sharedExpertise = userExpertise.filter(e => candidateExpertise.includes(e))
+  alignmentScore += Math.min(sharedExpertise.length * 5, 15)
+  
+  // Location preference (25 points max for same city, 10 for same state)
+  if (userProfile.city && candidate.city && 
+      userProfile.city.toLowerCase() === candidate.city.toLowerCase()) {
+    alignmentScore += 25
+  } else if (userProfile.state && candidate.state && 
+             userProfile.state.toLowerCase() === candidate.state.toLowerCase()) {
+    alignmentScore += 10
+  }
+  
+  return alignmentScore
+}
+
+function calculateFinalScore(userProfile: any, candidate: any): number {
+  const alignmentRaw = calculateAlignmentScore(userProfile, candidate)
+  const alignmentWeighted = (alignmentRaw / 90) * 55
+  
+  const networkValueRaw = candidate.networkValueScore || 50
+  const networkValueWeighted = (networkValueRaw / 100) * 30
+  
+  const responsivenessRaw = candidate.responsivenessScore || 50
+  const responsivenessWeighted = (responsivenessRaw / 100) * 15
+  
+  const priorityBonus = candidate.is_priority ? 5 : 0
+  const boostBonus = (candidate.boost_score || 0) * 0.5
+  
+  return alignmentWeighted + networkValueWeighted + responsivenessWeighted + priorityBonus + boostBonus
+}
+
+function applyTierRankingAdjustment(candidates: any[], userTier: string): any[] {
+  const sorted = [...candidates].sort((a, b) => b.finalScore - a.finalScore)
+  
+  if (userTier === 'free') {
+    return sorted.map((c) => ({
+      ...c,
+      rankingScore: c.finalScore + (Math.random() * 5) - 2.5
+    })).sort((a, b) => b.rankingScore - a.rankingScore)
+  }
+  
+  if (userTier === 'professional') {
+    const top30Index = Math.floor(sorted.length * 0.3)
+    const bottom30Index = Math.floor(sorted.length * 0.7)
+    
+    return sorted.map((c, idx) => {
+      let adjustment = 0
+      if (idx < top30Index) adjustment = 8
+      else if (idx > bottom30Index) adjustment = -5
+      
+      return { ...c, rankingScore: c.finalScore + adjustment }
+    }).sort((a, b) => b.rankingScore - a.rankingScore)
+  }
+  
+  if (userTier === 'executive') {
+    const top20Index = Math.floor(sorted.length * 0.2)
+    const mid50Index = Math.floor(sorted.length * 0.5)
+    
+    return sorted.map((c, idx) => {
+      let adjustment = 0
+      if (idx < top20Index) adjustment = 15
+      else if (idx > mid50Index) adjustment = -10
+      
+      return { ...c, rankingScore: c.finalScore + adjustment }
+    }).sort((a, b) => b.rankingScore - a.rankingScore)
+  }
+  
+  return sorted.map(c => ({ ...c, rankingScore: c.finalScore }))
+}
+
 function generateIntroReason(userProfile: any, candidate: any): string {
   const pronoun = candidate.full_name?.toLowerCase().endsWith('a') || 
                   candidate.full_name?.includes('Sarah') || 
@@ -16,160 +121,30 @@ function generateIntroReason(userProfile: any, candidate: any): string {
   const isLawFirm = candidate.role_type?.toLowerCase().includes('law firm')
   const isInHouse = candidate.role_type?.toLowerCase().includes('in-house')
   
-  // Law firm attorney with expertise
   if (isLawFirm && Array.isArray(candidate.expertise) && candidate.expertise.length > 0) {
     const exp = candidate.expertise.slice(0, 2).join(' and ')
-    if (candidate.seniority === 'Senior' || candidate.seniority === 'Executive') {
-      return `${pronoun} practices ${exp} at ${candidate.company || 'a top firm'} and could be a great mentor`
-    }
-    return `${pronoun} focuses on ${exp} at ${candidate.company || 'a law firm'}`
+    return `${pronoun} practices ${exp} at ${candidate.company} and could be a great mentor`
   }
   
-  // In-house counsel with company context
+  if (isLawFirm && candidate.company) {
+    return `${pronoun} is a ${candidate.title?.toLowerCase() || 'partner'} at ${candidate.company} with valuable experience`
+  }
+  
+  if (isInHouse && Array.isArray(candidate.expertise) && candidate.expertise.length > 0 && candidate.company) {
+    const exp = candidate.expertise[0]
+    return `${pronoun} leads ${exp} strategy at ${candidate.company}`
+  }
+  
   if (isInHouse && candidate.company) {
-    if (Array.isArray(candidate.expertise) && candidate.expertise.length > 0) {
-      const exp = candidate.expertise[0]
-      return `${pronoun} leads ${exp} strategy at ${candidate.company}`
-    }
-    if (candidate.seniority === 'Executive' || candidate.seniority === 'C-Suite') {
-      return `${pronoun} oversees legal operations at ${candidate.company}`
-    }
-    return `${pronoun} works in-house at ${candidate.company}`
+    return `${pronoun} oversees legal operations at ${candidate.company}`
   }
   
-  // Generic with expertise
   if (Array.isArray(candidate.expertise) && candidate.expertise.length > 0) {
-    const exp = candidate.expertise.slice(0, 2).join(' and ')
+    const exp = candidate.expertise[0]
     return `${pronoun} specializes in ${exp} and brings valuable experience`
   }
   
-  // Fallback
-  if (candidate.company) {
-    return `${pronoun} works at ${candidate.company} and could be a valuable connection`
-  }
-  
-  return `Could be a valuable connection`
-}
-
-function scoreMatch(newUser: any, candidate: any): number {
-  let score = 0
-  
-  const boostBonus = (candidate.boost_score || 0) * 2
-  score += boostBonus
-  
-  if (candidate.is_priority) {
-    score += 50
-  }
-  
-  const userPrefs: string[] = Array.isArray(newUser.intro_preferences) ? newUser.intro_preferences : []
-  const candidateRole: string = candidate.role_type || ''
-  
-  // Fuzzy role matching - check if any preference is contained in the role or vice versa
-  const roleMatch = userPrefs.some((pref: string) => {
-    const prefLower = pref.toLowerCase()
-    const roleLower = candidateRole.toLowerCase()
-    return prefLower.includes(roleLower) || roleLower.includes(prefLower)
-  })
-  
-  if (roleMatch) {
-    score += 30
-  }
-  
-  const userSeniority = newUser.seniority || ''
-  const candidateSeniority = candidate.seniority || ''
-  if (userSeniority === candidateSeniority) {
-    score += 20
-  }
-  
-  const userExpertise: string[] = Array.isArray(newUser.expertise) ? newUser.expertise : []
-  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
-  const sharedExpertise = userExpertise.filter(e => candidateExpertise.includes(e))
-  score += sharedExpertise.length * 15
-  
-  if (newUser.city && candidate.city && 
-      newUser.city.toLowerCase() === candidate.city.toLowerCase()) {
-    score += 25
-  }
-  
-  if (newUser.state && candidate.state && 
-      newUser.state.toLowerCase() === candidate.state.toLowerCase() &&
-      newUser.city?.toLowerCase() !== candidate.city?.toLowerCase()) {
-    score += 10
-  }
-  
-  return score
-}
-
-
-// Apply tier-based quality boosts for premium users
-function applyTierQualityBoost(baseScore: number, candidate: any, userTier: string): number {
-  let boostedScore = baseScore
-  
-  // Free tier gets no boosts - basic matching only
-  if (userTier === 'free') {
-    return boostedScore
-  }
-  
-  // Professional tier boosts
-  if (userTier === 'professional') {
-    // Boost for high-value network connections
-    if (candidate.networkValueScore && candidate.networkValueScore > 70) {
-      boostedScore += 15
-    }
-    
-    // Boost for responsive candidates
-    if (candidate.responsivenessScore && candidate.responsivenessScore > 70) {
-      boostedScore += 10
-    }
-    
-    // Boost for priority/verified candidates
-    if (candidate.is_priority) {
-      boostedScore += 25
-    }
-    
-    // Boost for senior professionals
-    if (candidate.seniority === 'Senior') {
-      boostedScore += 10
-    }
-  }
-  
-  // Executive tier boosts (higher than professional)
-  if (userTier === 'executive') {
-    // Premium boost for top network value
-    if (candidate.networkValueScore && candidate.networkValueScore > 70) {
-      boostedScore += 35
-    } else if (candidate.networkValueScore && candidate.networkValueScore > 50) {
-      boostedScore += 15
-    }
-    
-    // Premium boost for responsiveness
-    if (candidate.responsivenessScore && candidate.responsivenessScore > 70) {
-      boostedScore += 25
-    } else if (candidate.responsivenessScore && candidate.responsivenessScore > 50) {
-      boostedScore += 10
-    }
-    
-    // Strong boost for priority candidates
-    if (candidate.is_priority) {
-      boostedScore += 50
-    }
-    
-    // Heavily prioritize C-suite and executives
-    if (candidate.seniority === 'Executive' || candidate.seniority === 'C-Suite') {
-      boostedScore += 30
-    } else if (candidate.seniority === 'Senior') {
-      boostedScore += 15
-    }
-  }
-  
-  return boostedScore
-}
-
-// Tier-based minimum score thresholds
-const TIER_SCORE_THRESHOLDS: Record<string, number> = {
-  free: 20,         // Only show solid matches
-  professional: 10, // More permissive, quality-boosted
-  executive: 5      // Most permissive, heavily boosted
+  return `${pronoun} could be a valuable connection in your network`
 }
 
 export async function generateOnboardingRecommendations(userId: string) {
@@ -212,41 +187,29 @@ export async function generateOnboardingRecommendations(userId: string) {
   }
   
   console.log('[generate-recommendations] All users count:', allUsers.length)
-  console.log('[generate-recommendations] Sample user:', allUsers[0])
   
   const usersWithData = allUsers.filter(u => {
     const hasName = !!u.full_name
     const hasRole = !!u.role_type
-    console.log('[filter]', u.email, 'name:', hasName, 'role:', hasRole, 'expertise:', u.expertise)
     if (!hasName || !hasRole) return false
     if (Array.isArray(u.expertise)) return u.expertise.length > 0
     return true
   })
+  
   console.log('[generate-recommendations] Users after filter:', usersWithData.length)
   
-  const scoredCandidates = usersWithData
-    .map(candidate => {
-      const baseScore = scoreMatch(newUserProfile, candidate)
-      const boostedScore = applyTierQualityBoost(baseScore, candidate, userTier)
-      return {
-        ...candidate,
-        relevance_score: boostedScore,
-        base_score: baseScore  // Keep for debugging
-      }
-    })
-  console.log('[generate-recommendations] After scoring:', scoredCandidates.length, 'candidates')
-  console.log('[generate-recommendations] Sample scores:', scoredCandidates.slice(0, 3).map(c => ({ email: c.email, score: c.relevance_score })))
+  const scoredCandidates = usersWithData.map(candidate => ({
+    ...candidate,
+    finalScore: calculateFinalScore(newUserProfile, candidate)
+  }))
   
-  const scoreThreshold = TIER_SCORE_THRESHOLDS[userTier] || 20
-  const filtered = scoredCandidates
-    .filter(c => c.relevance_score >= scoreThreshold)
-  console.log('[generate-recommendations] Score threshold for tier:', userTier, '=', scoreThreshold)
-  console.log('[generate-recommendations] After tier-based filter:', filtered.length)
-  console.log('[generate-recommendations] Top 3 scores:', filtered.slice(0, 3).map(c => ({ email: c.email, base: c.base_score, boosted: c.relevance_score })))
+  const filtered = scoredCandidates.filter(c => c.finalScore >= 10)
+  console.log('[generate-recommendations] After relevance filter (>= 10):', filtered.length)
   
-  const sorted = filtered
-    .sort((a, b) => b.relevance_score - a.relevance_score)
-    .slice(0, recommendationCount)
+  const rankedCandidates = applyTierRankingAdjustment(filtered, userTier)
+  const sorted = rankedCandidates.slice(0, recommendationCount)
+  
+  console.log('[generate-recommendations] Top 3 final scores:', sorted.slice(0, 3).map(c => ({ email: c.email, score: c.finalScore.toFixed(1) })))
   
   if (sorted.length === 0) {
     return { count: 0 }
