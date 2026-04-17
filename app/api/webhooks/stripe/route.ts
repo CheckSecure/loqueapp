@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   
   // Handle subscription created or updated (tier upgrade/downgrade)
   if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.created') {
-    const subscription = event.data.object as Stripe.Subscription
+    const subscription = event.data.object as any
     const customerId = subscription.customer as string
     
     // Get user by stripe customer ID
