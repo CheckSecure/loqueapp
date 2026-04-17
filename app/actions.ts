@@ -22,7 +22,16 @@ export async function updateProfile(formData: FormData) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const expertise = JSON.parse(formData.get('expertise') as string || '[]')
+  // Parse expertise - handle both JSON array and comma-separated string
+  const expertiseRaw = formData.get('expertise') as string || ''
+  let expertise: string[] = []
+  if (expertiseRaw) {
+    try {
+      expertise = JSON.parse(expertiseRaw)
+    } catch {
+      expertise = expertiseRaw.split(',').map(s => s.trim()).filter(Boolean)
+    }
+  }
   const introPref = (formData.get('intro_preferences') as string || '')
     .split(',').map(s => s.trim()).filter(Boolean)
 
@@ -110,7 +119,16 @@ export async function completeOnboarding(formData: FormData) {
     .split(',').map(s => s.trim()).filter(Boolean)
   const purposes = (formData.get('purposes') as string || '')
     .split(',').map(s => s.trim()).filter(Boolean)
-  const expertise = JSON.parse(formData.get('expertise') as string || '[]')
+  // Parse expertise - handle both JSON array and comma-separated string
+  const expertiseRaw = formData.get('expertise') as string || ''
+  let expertise: string[] = []
+  if (expertiseRaw) {
+    try {
+      expertise = JSON.parse(expertiseRaw)
+    } catch {
+      expertise = expertiseRaw.split(',').map(s => s.trim()).filter(Boolean)
+    }
+  }
 
   const city = (formData.get('city') as string || '').trim()
   const state = (formData.get('state') as string || '').trim()
