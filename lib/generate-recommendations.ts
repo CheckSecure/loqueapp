@@ -107,6 +107,170 @@ const THROTTLING_CONFIG: ThrottlingConfig = {
   preferenceAdjustment: 0.5  // If NOT open: cut cap in half
 }
 
+
+// ==========================================
+// MENTORSHIP & JUNIOR USER DISTRIBUTION
+// ==========================================
+
+interface MentorshipConfig {
+  juniorMaxPercentage: number       // Max % of juniors in senior batches
+  seniorityLevels: {
+    junior: string[]
+    mid: string[]
+    senior: string[]
+  }
+}
+
+const MENTORSHIP_CONFIG: MentorshipConfig = {
+  juniorMaxPercentage: 0.20,  // Max 20% juniors in senior batches
+  seniorityLevels: {
+    junior: ['Junior'],
+    mid: ['Mid-Level', 'Mid-level'],
+    senior: ['Senior', 'Executive', 'C-Suite']
+  }
+}
+
+/**
+ * Classify user seniority level
+ */
+function getUserSeniorityLevel(profile: any): 'junior' | 'mid' | 'senior' {
+  const seniority = profile.seniority || ''
+  
+  if (MENTORSHIP_CONFIG.seniorityLevels.junior.includes(seniority)) {
+    return 'junior'
+  } else if (MENTORSHIP_CONFIG.seniorityLevels.mid.includes(seniority)) {
+    return 'mid'
+  } else if (MENTORSHIP_CONFIG.seniorityLevels.senior.includes(seniority)) {
+    return 'senior'
+  }
+  
+  // Default to mid if no seniority specified
+  return 'mid'
+}
+
+/**
+ * Check if a candidate should be filtered due to mentorship rules
+ */
+function shouldFilterByMentorship(
+  userProfile: any,
+  candidate: any,
+  userSeniorityLevel: 'junior' | 'mid' | 'senior'
+): boolean {
+  const candidateSeniorityLevel = getUserSeniorityLevel(candidate)
+  const userOpenToMentorship = userProfile.open_to_mentorship || false
+  
+  // Rule 1: Senior users with mentorship OFF should rarely see juniors
+  if (userSeniorityLevel === 'senior' && candidateSeniorityLevel === 'junior') {
+    if (!userOpenToMentorship) {
+      // Strong suppression via scoring penalty (handled in scoring, not filtering)
+      return false
+    }
+  }
+  
+  // Rule 2: Junior users should only see seniors if those seniors are open to mentorship
+  if (userSeniorityLevel === 'junior' && candidateSeniorityLevel === 'senior') {
+    const candidateOpenToMentorship = candidate.open_to_mentorship || false
+    if (!candidateOpenToMentorship) {
+      return true  // Filter out seniors who are NOT open to mentorship
+    }
+  }
+  
+  return false
+}
+
+/**
+ * Apply junior user distribution control to prevent overwhelming senior users
+ */
+function applyJuniorDistributionControl(
+  candidates: any[],
+  userProfile: any,
+  userSeniorityLevel: 'junior' | 'mid' | 'senior',
+  targetCount: number
+): any[] {
+  if (candidates.length === 0) return []
+  
+  // Only apply distribution control for senior users
+  if (userSeniorityLevel !== 'senior') {
+    return candidates
+  }
+  
+  // Separate juniors from non-juniors
+  const juniors = candidates.filter(c => getUserSeniorityLevel(c) === 'junior')
+  const nonJuniors = candidates.filter(c => getUserSeniorityLevel(c) !== 'junior')
+  
+  // Calculate max allowed juniors
+  const userOpenToMentorship = userProfile.open_to_mentorship || false
+  let maxJuniors = 0
+  
+  if (userOpenToMentorship) {
+    // If open to mentorship: allow up to 20% juniors
+    maxJuniors = Math.floor(targetCount * MENTORSHIP_CONFIG.juniorMaxPercentage)
+    // Ensure at least 1 junior if batch size >= 5
+    if (maxJuniors === 0 && targetCount >= 5 && juniors.length > 0) {
+      maxJuniors = 1
+    }
+  } else {
+    // If NOT open to mentorship: suppress juniors (but allow rare exceptions)
+    // Allow 1 junior only if batch size >= 8
+    if (targetCount >= 8 && juniors.length > 0) {
+      maxJuniors = 1
+    }
+  }
+  
+  // Select juniors up to cap
+  const selectedJuniors = juniors.slice(0, maxJuniors)
+  
+  // Fill remaining slots with non-juniors
+  const remainingSlots = candidates.length - selectedJuniors.length
+  const selectedNonJuniors = nonJuniors.slice(0, remainingSlots)
+  
+  // Interleave juniors among non-juniors (similar to business solution logic)
+  const result = interleaveJuniors(selectedNonJuniors, selectedJuniors)
+  
+  console.log('[mentorship]', {
+    user_seniority: userSeniorityLevel,
+    open_to_mentorship: userOpenToMentorship,
+    juniors_available: juniors.length,
+    non_juniors_available: nonJuniors.length,
+    max_juniors_allowed: maxJuniors,
+    juniors_selected: selectedJuniors.length,
+    non_juniors_selected: selectedNonJuniors.length,
+    final_count: result.length
+  })
+  
+  return result
+}
+
+/**
+ * Interleave juniors among non-juniors to prevent clustering
+ */
+function interleaveJuniors(nonJuniors: any[], juniors: any[]): any[] {
+  if (juniors.length === 0) return nonJuniors
+  if (nonJuniors.length === 0) return juniors
+  
+  const result: any[] = []
+  const totalSlots = nonJuniors.length + juniors.length
+  const spacing = totalSlots / juniors.length
+  
+  let nonJuniorIndex = 0
+  let juniorIndex = 0
+  
+  for (let i = 0; i < totalSlots; i++) {
+    const juniorSlotPosition = Math.floor(juniorIndex * spacing)
+    
+    if (i === juniorSlotPosition && juniorIndex < juniors.length) {
+      result.push(juniors[juniorIndex])
+      juniorIndex++
+    } else if (nonJuniorIndex < nonJuniors.length) {
+      result.push(nonJuniors[nonJuniorIndex])
+      nonJuniorIndex++
+    }
+  }
+  
+  return result
+}
+
+
 /**
  * Apply throttling to prevent consultant/law firm clustering
  * 
@@ -269,7 +433,22 @@ function calculateFinalScore(userProfile: any, candidate: any, userTier: string 
     tierAdjustment += (Math.random() * 2) - 1 // ±1 randomness
   }
   
-  const finalScore = alignmentWeighted + networkValueWeighted + responsivenessWeighted + priorityBonus + boostBonus + tierAdjustment
+  // 5. Mentorship-based scoring adjustments
+  let mentorshipAdjustment = 0
+  const userSeniorityLevel = getUserSeniorityLevel(userProfile)
+  const candidateSeniorityLevel = getUserSeniorityLevel(candidate)
+  
+  // Senior users with mentorship OFF: penalize junior candidates heavily
+  if (userSeniorityLevel === 'senior' && candidateSeniorityLevel === 'junior') {
+    const userOpenToMentorship = userProfile.open_to_mentorship || false
+    if (!userOpenToMentorship) {
+      mentorshipAdjustment = -15  // Strong penalty to suppress juniors
+    } else {
+      mentorshipAdjustment = -3   // Light penalty even when open (still prefer peers)
+    }
+  }
+  
+  const finalScore = alignmentWeighted + networkValueWeighted + responsivenessWeighted + priorityBonus + boostBonus + tierAdjustment + mentorshipAdjustment
   
   // 4. SAFEGUARD: Tier adjustments cannot flip matches with >15 point base score gap
   // This ensures relevance always wins over tier manipulation
@@ -510,15 +689,19 @@ export async function generateOnboardingRecommendations(userId: string) {
     throw new Error('User not found')
   }
   
+  const userSeniorityLevel = getUserSeniorityLevel(newUserProfile)
+  
   console.log('[generate-recommendations] New user profile:', {
     email: newUserProfile.email,
     role_type: newUserProfile.role_type,
     seniority: newUserProfile.seniority,
+    seniority_level: userSeniorityLevel,
     expertise: newUserProfile.expertise,
     intro_preferences: newUserProfile.intro_preferences,
     city: newUserProfile.city,
     state: newUserProfile.state,
     open_to_business_solutions: newUserProfile.open_to_business_solutions,
+    open_to_mentorship: newUserProfile.open_to_mentorship,
     is_founding_member: newUserProfile.is_founding_member
   })
   
@@ -637,7 +820,15 @@ export async function generateOnboardingRecommendations(userId: string) {
     recommendationCount
   )
   
-  const sorted = throttled.slice(0, recommendationCount)
+  // Apply junior user distribution control
+  const mentorshipControlled = applyJuniorDistributionControl(
+    throttled,
+    newUserProfile,
+    userSeniorityLevel,
+    recommendationCount
+  )
+  
+  const sorted = mentorshipControlled.slice(0, recommendationCount)
   
   console.log('[generate-recommendations] Top 3 final scores:', sorted.slice(0, 3).map(c => ({ email: c.email, score: c.finalScore.toFixed(1) })))
   
