@@ -40,28 +40,29 @@ function calculateAlignmentScore(userProfile: any, candidate: any): number {
   }
   
   // Expertise overlap (15 points max, capped)
-  // Parse expertise - handle both arrays and JSON strings
-  let userExpertise: string[] = []
-  if (Array.isArray(userProfile.expertise)) {
-    userExpertise = userProfile.expertise
-  } else if (typeof userProfile.expertise === 'string') {
-    try {
-      userExpertise = JSON.parse(userProfile.expertise)
-    } catch {
-      userExpertise = []
+  // Parse expertise - handle arrays, JSON strings, and PostgreSQL arrays
+  const parseExpertise = (exp: any): string[] => {
+    if (Array.isArray(exp)) return exp
+    if (typeof exp === 'string') {
+      // Try JSON parse
+      try {
+        const parsed = JSON.parse(exp)
+        if (Array.isArray(parsed)) return parsed
+      } catch {}
+      
+      // Try PostgreSQL array format: {item1,item2} or {"item1","item2"}
+      if (exp.startsWith('{') && exp.endsWith('}')) {
+        return exp.slice(1, -1)
+          .split(',')
+          .map(s => s.replace(/^"|"$/g, '').trim())
+          .filter(Boolean)
+      }
     }
+    return []
   }
   
-  let candidateExpertise: string[] = []
-  if (Array.isArray(candidate.expertise)) {
-    candidateExpertise = candidate.expertise
-  } else if (typeof candidate.expertise === 'string') {
-    try {
-      candidateExpertise = JSON.parse(candidate.expertise)
-    } catch {
-      candidateExpertise = []
-    }
-  }
+  const userExpertise = parseExpertise(userProfile.expertise)
+  const candidateExpertise = parseExpertise(candidate.expertise)
   
   const sharedExpertise = userExpertise.filter(e => candidateExpertise.includes(e))
   alignmentScore += Math.min(sharedExpertise.length * 5, 15)
@@ -152,28 +153,29 @@ function generateIntroReason(userProfile: any, candidate: any): string {
                   candidate.full_name?.includes('Emily') ||
                   candidate.full_name?.includes('Rachel') ? 'She' : 'He'
   
-  // Parse expertise - handle both arrays and JSON strings
-  let userExpertise: string[] = []
-  if (Array.isArray(userProfile.expertise)) {
-    userExpertise = userProfile.expertise
-  } else if (typeof userProfile.expertise === 'string') {
-    try {
-      userExpertise = JSON.parse(userProfile.expertise)
-    } catch {
-      userExpertise = []
+  // Parse expertise - handle arrays, JSON strings, and PostgreSQL arrays
+  const parseExpertise = (exp: any): string[] => {
+    if (Array.isArray(exp)) return exp
+    if (typeof exp === 'string') {
+      // Try JSON parse
+      try {
+        const parsed = JSON.parse(exp)
+        if (Array.isArray(parsed)) return parsed
+      } catch {}
+      
+      // Try PostgreSQL array format: {item1,item2} or {"item1","item2"}
+      if (exp.startsWith('{') && exp.endsWith('}')) {
+        return exp.slice(1, -1)
+          .split(',')
+          .map(s => s.replace(/^"|"$/g, '').trim())
+          .filter(Boolean)
+      }
     }
+    return []
   }
   
-  let candidateExpertise: string[] = []
-  if (Array.isArray(candidate.expertise)) {
-    candidateExpertise = candidate.expertise
-  } else if (typeof candidate.expertise === 'string') {
-    try {
-      candidateExpertise = JSON.parse(candidate.expertise)
-    } catch {
-      candidateExpertise = []
-    }
-  }
+  const userExpertise = parseExpertise(userProfile.expertise)
+  const candidateExpertise = parseExpertise(candidate.expertise)
   
   const sharedExpertise = userExpertise.filter(e => candidateExpertise.includes(e))
   
@@ -267,7 +269,16 @@ function generateIntroReason(userProfile: any, candidate: any): string {
     ])
   }
   
-  // CASE 7: Just mentor relationship
+  // CASE 7: Peer relationship (same seniority)
+  if (isPeer && candidate.company) {
+    return pick([
+      `${pronoun} operates at a similar level at ${candidate.company} and could be a valuable peer`,
+      `${pronoun} navigates comparable challenges at ${candidate.company}`,
+      `${pronoun} is building their career at ${candidate.company} and shares your trajectory`
+    ])
+  }
+  
+  // CASE 8: Just mentor relationship
   if (isMentor && candidate.company) {
     return pick([
       `${pronoun} has extensive experience at ${candidate.company} and could provide strategic guidance`,
@@ -276,12 +287,30 @@ function generateIntroReason(userProfile: any, candidate: any): string {
     ])
   }
   
-  // CASE 8: Company prestige/reputation
+  // CASE 9: Role-based even without other info
+  if (candidateRole && candidate.company) {
+    if (candidateRole.toLowerCase().includes('law firm')) {
+      return pick([
+        `${pronoun} practices at ${candidate.company} and brings law firm perspective`,
+        `${pronoun} advises clients from ${candidate.company}`,
+        `${pronoun} works at ${candidate.company} and offers outside counsel insight`
+      ])
+    }
+    if (candidateRole.toLowerCase().includes('in-house')) {
+      return pick([
+        `${pronoun} manages legal matters at ${candidate.company}`,
+        `${pronoun} leads in-house work at ${candidate.company} and brings client-side experience`,
+        `${pronoun} handles legal operations at ${candidate.company}`
+      ])
+    }
+  }
+  
+  // CASE 10: Company prestige/reputation
   if (candidate.company) {
     return pick([
-      `${pronoun} brings valuable ${candidate.company} experience to the conversation`,
+      `${pronoun} brings valuable ${candidate.company} experience`,
       `${pronoun} works at ${candidate.company} and could be a strategic connection`,
-      `${pronoun}'s work at ${candidate.company} offers unique industry perspective`
+      `${pronoun}'s work at ${candidate.company} offers industry perspective`
     ])
   }
   
