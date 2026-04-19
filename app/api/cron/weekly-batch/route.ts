@@ -67,14 +67,20 @@ export async function GET(req: Request) {
       const newBalance = Math.max(currentBalance, creditFloor)
       
       if (newBalance > currentBalance) {
-        await adminClient
+        const { error: creditError } = await adminClient
           .from('meeting_credits')
           .upsert({
             user_id: user.id,
             balance: newBalance,
             lifetime_earned: (currentCredits?.lifetime_earned || 0) + (newBalance - currentBalance)
-          })
-        console.log(`[Monthly Refill] ${user.email}: Credits ${currentBalance} → ${newBalance}`)
+          }, { onConflict: 'user_id' })
+        
+        if (creditError) {
+          console.error(`[Monthly Refill] Credit update error for ${user.email}:`, creditError)
+          errorCount++
+        } else {
+          console.log(`[Monthly Refill] ${user.email}: Credits ${currentBalance} → ${newBalance}`)
+        }
       }
       
       // 2. Count active suggestions (preserve important states)
