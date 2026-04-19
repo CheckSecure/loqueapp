@@ -338,7 +338,8 @@ export async function generateOnboardingRecommendations(userId: string) {
     expertise: newUserProfile.expertise,
     intro_preferences: newUserProfile.intro_preferences,
     city: newUserProfile.city,
-    state: newUserProfile.state
+    state: newUserProfile.state,
+    open_to_business_solutions: newUserProfile.open_to_business_solutions
   })
   
   const userTier = newUserProfile.subscription_tier || 'free'
