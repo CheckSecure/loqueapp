@@ -271,6 +271,71 @@ function interleaveJuniors(nonJuniors: any[], juniors: any[]): any[] {
 }
 
 
+
+// ==========================================
+// TARGETED REQUEST SCORING (PREMIUM FEATURE)
+// ==========================================
+
+interface TargetedRequest {
+  id: string
+  role?: string
+  industry?: string
+  intent?: string
+}
+
+/**
+ * Apply targeted request boost to candidates matching user's premium request
+ * This is a ranking boost, not a filter - maintains curation
+ */
+function applyTargetedRequestBoost(
+  candidate: any,
+  targetedRequest: TargetedRequest | null
+): number {
+  if (!targetedRequest) return 0
+  
+  let boost = 0
+  
+  // Role matching (strongest signal)
+  if (targetedRequest.role && candidate.role_type) {
+    const requestRole = targetedRequest.role.toLowerCase()
+    const candidateRole = candidate.role_type.toLowerCase()
+    
+    // Exact or partial match
+    if (candidateRole.includes(requestRole) || requestRole.includes(candidateRole)) {
+      boost += 15  // Strong boost for role match
+    }
+  }
+  
+  // Industry matching (moderate signal)
+  if (targetedRequest.industry && candidate.industry) {
+    const requestIndustry = targetedRequest.industry.toLowerCase()
+    const candidateIndustry = candidate.industry.toLowerCase()
+    
+    if (candidateIndustry.includes(requestIndustry) || requestIndustry.includes(candidateIndustry)) {
+      boost += 8  // Moderate boost for industry match
+    }
+  }
+  
+  // Intent matching affects business solution candidates
+  if (targetedRequest.intent) {
+    const intent = targetedRequest.intent.toLowerCase()
+    const isBusinessSolution = isBusinessSolutionProvider(candidate)
+    
+    // "Looking for solutions" or "Exploring vendors" → boost business solutions
+    if ((intent.includes('solution') || intent.includes('vendor')) && isBusinessSolution) {
+      boost += 10
+    }
+    
+    // "Peer networking" → penalize business solutions
+    if (intent.includes('peer') && isBusinessSolution) {
+      boost -= 5
+    }
+  }
+  
+  return boost
+}
+
+
 /**
  * Apply throttling to prevent consultant/law firm clustering
  * 
@@ -448,7 +513,10 @@ function calculateFinalScore(userProfile: any, candidate: any, userTier: string 
     }
   }
   
-  const finalScore = alignmentWeighted + networkValueWeighted + responsivenessWeighted + priorityBonus + boostBonus + tierAdjustment + mentorshipAdjustment
+  // 6. Targeted request boost (premium feature)
+  const targetedRequestBoost = applyTargetedRequestBoost(candidate, targetedRequest)
+  
+  const finalScore = alignmentWeighted + networkValueWeighted + responsivenessWeighted + priorityBonus + boostBonus + tierAdjustment + mentorshipAdjustment + targetedRequestBoost
   
   // 4. SAFEGUARD: Tier adjustments cannot flip matches with >15 point base score gap
   // This ensures relevance always wins over tier manipulation
@@ -691,6 +759,23 @@ export async function generateOnboardingRecommendations(userId: string) {
   
   const userSeniorityLevel = getUserSeniorityLevel(newUserProfile)
   
+  // Fetch pending targeted request (premium feature)
+  const { data: targetedRequest } = await adminClient
+    .from('targeted_requests')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .maybeSingle()
+  
+  if (targetedRequest) {
+    console.log('[generate-recommendations] Targeted request active:', {
+      role: targetedRequest.role,
+      industry: targetedRequest.industry,
+      intent: targetedRequest.intent
+    })
+  }
+  
   console.log('[generate-recommendations] New user profile:', {
     email: newUserProfile.email,
     role_type: newUserProfile.role_type,
@@ -805,7 +890,7 @@ export async function generateOnboardingRecommendations(userId: string) {
   
   const scoredCandidates = usersWithData.map(candidate => ({
     ...candidate,
-    finalScore: calculateFinalScore(newUserProfile, candidate, userTier)
+    finalScore: calculateFinalScore(newUserProfile, candidate, userTier, targetedRequest)
   }))
   
   const filtered = scoredCandidates.filter(c => c.finalScore >= 10)
@@ -857,6 +942,19 @@ export async function generateOnboardingRecommendations(userId: string) {
   
   if (insertError) {
     throw new Error(`Failed to create recommendations: ${insertError.message}`)
+  }
+  
+  // Mark targeted request as applied (premium feature)
+  if (targetedRequest) {
+    await adminClient
+      .from('targeted_requests')
+      .update({
+        status: 'applied',
+        applied_at: new Date().toISOString()
+      })
+      .eq('id', targetedRequest.id)
+    
+    console.log('[generate-recommendations] Targeted request marked as applied:', targetedRequest.id)
   }
   
   return { count: sorted.length }
