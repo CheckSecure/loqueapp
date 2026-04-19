@@ -108,42 +108,56 @@ function calculateFinalScore(userProfile: any, candidate: any, userTier: string 
   const priorityBonus = candidate.is_priority ? 5 : 0
   const boostBonus = (candidate.boost_score || 0) * 0.5
   
-  // Tier-based business solution weighting
+  // PHASE 1: Light tier weighting + preference-based boosting
   let tierAdjustment = 0
-  const isBusinessSolution = isBusinessSolutionProvider(candidate)
-  const userOpenToSolutions = userProfile.open_to_business_solutions || false
   
-  if (isBusinessSolution) {
-    if (userTier === 'free') {
-      // Free tier: Small penalty, keep them visible but slightly lower
-      tierAdjustment = -3
-    } else if (userTier === 'professional') {
-      if (userOpenToSolutions) {
-        // User is open, but still peer-first: moderate penalty
-        tierAdjustment = -5
-      } else {
-        // User prefers peers: stronger penalty
-        tierAdjustment = -8
-      }
-    } else if (userTier === 'executive') {
-      if (userOpenToSolutions) {
-        // User is open, but executive expects premium: moderate-strong penalty
-        tierAdjustment = -7
-      } else {
-        // User prefers peers: strong penalty
-        tierAdjustment = -12
-      }
-    }
-  } else {
-    // Peer matches get a boost for premium tiers
-    if (userTier === 'professional') {
-      tierAdjustment = +3
-    } else if (userTier === 'executive') {
-      tierAdjustment = +5
-    }
+  // 1. Check if candidate matches user's intro preferences
+  const userPrefs: string[] = Array.isArray(userProfile.intro_preferences) ? userProfile.intro_preferences : []
+  const candidateRole = (candidate.role_type || '').toLowerCase()
+  
+  const matchesPreference = userPrefs.some((pref: string) => {
+    const prefLower = pref.toLowerCase()
+    return prefLower.includes(candidateRole) || candidateRole.includes(prefLower)
+  })
+  
+  // 2. Preference-based boosting (overrides role type penalties)
+  if (matchesPreference) {
+    // User explicitly wants this type of person - boost them
+    tierAdjustment += 4
   }
   
-  return alignmentWeighted + networkValueWeighted + responsivenessWeighted + priorityBonus + boostBonus + tierAdjustment
+  // 3. Light tier-based adjustments (only for close calls)
+  if (userTier === 'free') {
+    // Free tier: minimal adjustment, mostly random discovery
+    tierAdjustment += (Math.random() * 6) - 3 // ±3
+  } else if (userTier === 'professional') {
+    // Professional: slight preference for top candidates
+    // Use base score percentile (before adjustments) to determine
+    const baseScore = alignmentWeighted + networkValueWeighted + responsivenessWeighted
+    if (baseScore > 60) {
+      tierAdjustment += 2 + Math.random() * 2 // +2 to +4
+    } else if (baseScore < 40) {
+      tierAdjustment -= 2 + Math.random() // -2 to -3
+    }
+    tierAdjustment += (Math.random() * 4) - 2 // ±2 randomness
+  } else if (userTier === 'executive') {
+    // Executive: stronger top candidate preference
+    const baseScore = alignmentWeighted + networkValueWeighted + responsivenessWeighted
+    if (baseScore > 65) {
+      tierAdjustment += 3 + Math.random() * 3 // +3 to +6
+    } else if (baseScore < 35) {
+      tierAdjustment -= 3 + Math.random() * 2 // -3 to -5
+    }
+    tierAdjustment += (Math.random() * 2) - 1 // ±1 randomness
+  }
+  
+  const finalScore = alignmentWeighted + networkValueWeighted + responsivenessWeighted + priorityBonus + boostBonus + tierAdjustment
+  
+  // 4. SAFEGUARD: Tier adjustments cannot flip matches with >15 point base score gap
+  // This ensures relevance always wins over tier manipulation
+  // (This safeguard is informational - implemented in ranking, not here)
+  
+  return finalScore
 }
 
 function applyTierRankingAdjustment(candidates: any[], userTier: string): any[] {
