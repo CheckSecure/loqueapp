@@ -5,6 +5,7 @@ const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
   free: 3,
   professional: 5,
   executive: 8,
+  founding: 5,  // Same as professional
 }
 
 // Unified scoring model for all tiers
