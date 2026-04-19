@@ -965,8 +965,7 @@ export async function generateOnboardingRecommendations(userId: string) {
         request_id: targetedRequest.id,
         error: updateError
       })
-      // Don't throw - batch was already created successfully
-      // Log for monitoring and manual cleanup
+      throw new Error(`Failed to mark targeted request as applied: ${updateError.message}`)
     } else {
       console.log('[generate-recommendations] Targeted request marked as applied:', {
         request_id: targetedRequest.id,
