@@ -85,6 +85,122 @@ function calculateAlignmentScore(userProfile: any, candidate: any): number {
   return (alignmentScore / 80) * 100
 }
 
+
+// ==========================================
+// CONSULTANT/LAW FIRM THROTTLING CONFIG
+// ==========================================
+
+interface ThrottlingConfig {
+  baseCapPercentage: number      // Base max % of business solutions per batch
+  tierMultipliers: Record<string, number>  // Tier-based adjustment
+  preferenceAdjustment: number   // Reduction when user is NOT open to solutions
+}
+
+const THROTTLING_CONFIG: ThrottlingConfig = {
+  baseCapPercentage: 0.30,  // 30% max business solutions by default
+  tierMultipliers: {
+    free: 1.0,          // Free: full 30%
+    professional: 0.7,  // Professional: 21% (30% * 0.7)
+    executive: 0.5,     // Executive: 15% (30% * 0.5)
+    founding: 0.7       // Founding: same as professional
+  },
+  preferenceAdjustment: 0.5  // If NOT open: cut cap in half
+}
+
+/**
+ * Apply throttling to prevent consultant/law firm clustering
+ * 
+ * - Enforces max % cap per batch
+ * - Prevents clustering (distributes business solutions)
+ * - Respects user preference and tier
+ */
+function applyThrottling(
+  candidates: any[],
+  userProfile: any,
+  userTier: string,
+  targetCount: number
+): any[] {
+  if (candidates.length === 0) return []
+  
+  // 1. Separate business solutions from peers
+  const businessSolutions = candidates.filter(c => isBusinessSolutionProvider(c))
+  const peers = candidates.filter(c => !isBusinessSolutionProvider(c))
+  
+  // 2. Calculate max allowed business solutions
+  let maxBusinessSolutions = Math.floor(
+    targetCount * THROTTLING_CONFIG.baseCapPercentage * (THROTTLING_CONFIG.tierMultipliers[userTier] || 1.0)
+  )
+  
+  // 3. Reduce further if user is NOT open to business solutions
+  const userOpenToSolutions = userProfile.open_to_business_solutions || false
+  if (!userOpenToSolutions) {
+    maxBusinessSolutions = Math.floor(maxBusinessSolutions * THROTTLING_CONFIG.preferenceAdjustment)
+  }
+  
+  // Ensure at least 1 business solution can appear (unless targetCount is very small)
+  if (maxBusinessSolutions === 0 && targetCount >= 3 && businessSolutions.length > 0) {
+    maxBusinessSolutions = 1
+  }
+  
+  // 4. Select business solutions up to cap
+  const selectedBusinessSolutions = businessSolutions.slice(0, maxBusinessSolutions)
+  
+  // 5. Fill remaining slots with peers
+  const remainingSlots = targetCount - selectedBusinessSolutions.length
+  const selectedPeers = peers.slice(0, remainingSlots)
+  
+  // 6. Interleave to prevent clustering
+  const result = interleaveBusinessSolutions(selectedPeers, selectedBusinessSolutions)
+  
+  console.log('[throttling]', {
+    total_candidates: candidates.length,
+    business_solutions_available: businessSolutions.length,
+    peers_available: peers.length,
+    max_business_allowed: maxBusinessSolutions,
+    business_selected: selectedBusinessSolutions.length,
+    peers_selected: selectedPeers.length,
+    final_batch_size: result.length,
+    user_open_to_solutions: userOpenToSolutions,
+    tier: userTier
+  })
+  
+  return result
+}
+
+/**
+ * Interleave business solutions among peers to prevent clustering
+ * Strategy: Distribute business solutions evenly throughout the batch
+ */
+function interleaveBusinessSolutions(peers: any[], businessSolutions: any[]): any[] {
+  if (businessSolutions.length === 0) return peers
+  if (peers.length === 0) return businessSolutions
+  
+  const result: any[] = []
+  const totalSlots = peers.length + businessSolutions.length
+  
+  // Calculate spacing between business solutions
+  const spacing = totalSlots / businessSolutions.length
+  
+  let peerIndex = 0
+  let businessIndex = 0
+  
+  for (let i = 0; i < totalSlots; i++) {
+    // Determine if this slot should be a business solution
+    const businessSlotPosition = Math.floor(businessIndex * spacing)
+    
+    if (i === businessSlotPosition && businessIndex < businessSolutions.length) {
+      result.push(businessSolutions[businessIndex])
+      businessIndex++
+    } else if (peerIndex < peers.length) {
+      result.push(peers[peerIndex])
+      peerIndex++
+    }
+  }
+  
+  return result
+}
+
+
 // Helper: Identify if candidate is a business solution provider
 function isBusinessSolutionProvider(candidate: any): boolean {
   const roleType = (candidate.role_type || '').toLowerCase()
@@ -513,7 +629,15 @@ export async function generateOnboardingRecommendations(userId: string) {
   console.log('[generate-recommendations] After relevance filter (>= 10):', filtered.length)
   
   const rankedCandidates = applyTierRankingAdjustment(filtered, userTier)
-  const sorted = rankedCandidates.slice(0, recommendationCount)
+  // Apply throttling to prevent consultant/law firm clustering
+  const throttled = applyThrottling(
+    rankedCandidates,
+    newUserProfile,
+    userTier,
+    recommendationCount
+  )
+  
+  const sorted = throttled.slice(0, recommendationCount)
   
   console.log('[generate-recommendations] Top 3 final scores:', sorted.slice(0, 3).map(c => ({ email: c.email, score: c.finalScore.toFixed(1) })))
   
