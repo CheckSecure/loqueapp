@@ -59,27 +59,31 @@ export async function GET(req: Request) {
       // 1. Refill credits to floor (not additive)
       const { data: currentCredits } = await adminClient
         .from('meeting_credits')
-        .select('balance, lifetime_earned')
+        .select('free_credits, premium_credits, balance, lifetime_earned')
         .eq('user_id', user.id)
         .single()
       
-      const currentBalance = currentCredits?.balance || 0
-      const newBalance = Math.max(currentBalance, creditFloor)
+      const currentFree = currentCredits?.free_credits || 0
+      const currentPremium = currentCredits?.premium_credits || 0
+      const newFreeBalance = Math.max(currentFree, creditFloor)
       
-      if (newBalance > currentBalance) {
+      // Only refill FREE credits, premium credits never auto-refill
+      if (newFreeBalance > currentFree) {
         const { error: creditError } = await adminClient
           .from('meeting_credits')
           .upsert({
             user_id: user.id,
-            balance: newBalance,
-            lifetime_earned: (currentCredits?.lifetime_earned || 0) + (newBalance - currentBalance)
+            free_credits: newFreeBalance,
+            premium_credits: currentPremium, // Keep premium unchanged
+            balance: newFreeBalance + currentPremium, // Keep legacy field in sync
+            lifetime_earned: (currentCredits?.lifetime_earned || 0) + (newFreeBalance - currentFree)
           }, { onConflict: 'user_id' })
         
         if (creditError) {
           console.error(`[Monthly Refill] Credit update error for ${user.email}:`, creditError)
           errorCount++
         } else {
-          console.log(`[Monthly Refill] ${user.email}: Credits ${currentBalance} → ${newBalance}`)
+          console.log(`[Monthly Refill] ${user.email}: Free credits ${currentFree} → ${newFreeBalance} (Premium: ${currentPremium})`)
         }
       }
       

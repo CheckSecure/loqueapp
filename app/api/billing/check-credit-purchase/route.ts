@@ -1,11 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-
-const TIER_CREDIT_CAPS: Record<string, number> = {
-  free: 6,
-  professional: 20,
-  executive: 40
-}
+import { getTotalCredits, getCreditCap } from '@/lib/credits'
+import { getEffectiveTier } from '@/lib/tier-override'
 
 export async function POST(req: Request) {
   const supabase = createClient()
@@ -19,35 +15,44 @@ export async function POST(req: Request) {
   
   const { data: profile } = await supabase
     .from('profiles')
-    .select('subscription_tier')
+    .select('subscription_tier, is_founding_member, founding_member_expires_at')
     .eq('id', user.id)
     .single()
   
   const { data: credits } = await supabase
     .from('meeting_credits')
-    .select('balance')
+    .select('free_credits, premium_credits, balance')
     .eq('user_id', user.id)
     .single()
   
-  const tier = profile?.subscription_tier || 'free'
-  const currentBalance = credits?.balance || 0
-  const cap = TIER_CREDIT_CAPS[tier] || 6
+  const effectiveTier = getEffectiveTier(profile || {})
+  const currentFree = credits?.free_credits || 0
+  const currentPremium = credits?.premium_credits || 0
+  const currentTotal = getTotalCredits(currentFree, currentPremium)
+  const cap = getCreditCap(effectiveTier)
   
-  const balanceAfterPurchase = currentBalance + creditsToPurchase
-  const usableCredits = Math.min(balanceAfterPurchase, cap)
-  const willExceedCap = balanceAfterPurchase > cap
-  const unusableCredits = willExceedCap ? balanceAfterPurchase - cap : 0
+  // Purchased credits go into premium_credits
+  // Cap applies to total (free + premium)
+  const premiumAfterPurchase = currentPremium + creditsToPurchase
+  const totalAfterPurchase = currentFree + premiumAfterPurchase
+  
+  const usableTotal = Math.min(totalAfterPurchase, cap)
+  const willExceedCap = totalAfterPurchase > cap
+  const unusableCredits = willExceedCap ? totalAfterPurchase - cap : 0
   
   return NextResponse.json({
-    currentBalance,
+    currentFree,
+    currentPremium,
+    currentTotal,
     creditsToPurchase,
-    balanceAfterPurchase,
+    premiumAfterPurchase,
+    totalAfterPurchase,
     cap,
-    usableCredits,
+    usableTotal,
     willExceedCap,
     unusableCredits,
-    warning: willExceedCap 
-      ? `Your ${tier} plan allows a maximum of ${cap} active credits. ${unusableCredits} credit(s) will not be usable until your balance drops.`
+    warning: willExceedCap
+      ? `Your ${effectiveTier} plan allows a maximum of ${cap} active credits. ${unusableCredits} credit(s) will not be usable until your balance drops.`
       : null
   })
 }

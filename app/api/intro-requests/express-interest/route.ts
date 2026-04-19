@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { sendMatchCreatedEmail } from '@/lib/email'
+import { deductCredits, hasEnoughCredits } from '@/lib/credits'
 
 export async function POST(request: Request) {
   const supabase = createClient()

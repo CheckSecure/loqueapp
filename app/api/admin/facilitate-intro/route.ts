@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { sendMatchCreatedEmail } from '@/lib/email'
+import { deductCredits, hasEnoughCredits } from '@/lib/credits'
 
 export async function POST(request: Request) {
   const supabase = createClient()
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
   // Check credit balance of first person
   const { data: creditRow } = await adminSupabase
     .from('meeting_credits')
-    .select('balance')
+    .select('free_credits, premium_credits, balance')
     .eq('user_id', firstPersonId)
     .single()
 
