@@ -441,7 +441,7 @@ function isBusinessSolutionProvider(candidate: any): boolean {
          roleType.includes('legal tech')
 }
 
-function calculateFinalScore(userProfile: any, candidate: any, userTier: string = 'free'): number {
+function calculateFinalScore(userProfile: any, candidate: any, userTier: string = 'free', targetedRequest: any = null): number {
   // All inputs are now 0-100 normalized
   const alignmentNormalized = calculateAlignmentScore(userProfile, candidate) // 0-100
   const alignmentWeighted = (alignmentNormalized / 100) * 55
