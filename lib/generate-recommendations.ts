@@ -811,7 +811,12 @@ export async function generateOnboardingRecommendations(userId: string) {
   const filtered = scoredCandidates.filter(c => c.finalScore >= 10)
   console.log('[generate-recommendations] After relevance filter (>= 10):', filtered.length)
   
-  const rankedCandidates = applyTierRankingAdjustment(filtered, userTier)
+  // Apply mentorship filtering
+  const mentorshipFiltered = filtered.filter(c => !shouldFilterByMentorship(newUserProfile, c, userSeniorityLevel))
+  
+  console.log('[generate-recommendations] After mentorship filter:', mentorshipFiltered.length)
+  
+  const rankedCandidates = applyTierRankingAdjustment(mentorshipFiltered, userTier)
   // Apply throttling to prevent consultant/law firm clustering
   const throttled = applyThrottling(
     rankedCandidates,
