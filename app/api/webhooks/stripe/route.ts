@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import Stripe from 'stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getEffectiveTier, getMonthlyCredits, getCreditCap } from '@/lib/tier-override'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2026-02-25.clover'
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
     
     // Determine new tier from price ID (handle both monthly and annual)
     const priceId = subscription.items.data[0]?.price.id
-    let newTier = 'free'
+    let stripeTier = 'free'
     
     // Professional: monthly or annual
     const professionalPrices = [
@@ -71,12 +72,14 @@ export async function POST(req: Request) {
     ]
     
     if (professionalPrices.includes(priceId)) {
-      newTier = 'professional'
+      stripeTier = 'professional'
     } else if (executivePrices.includes(priceId)) {
-      newTier = 'executive'
+      stripeTier = 'executive'
     }
     
-    const newFloor = TIER_CREDIT_FLOORS[newTier] || 3
+    // Use effective tier (respects founding member override)
+    const effectiveTier = getEffectiveTier({ ...profile, subscription_tier: stripeTier })
+    const newFloor = getMonthlyCredits(effectiveTier)
     
     // Get current credit balance
     const { data: currentCredits } = await adminClient
@@ -99,13 +102,13 @@ export async function POST(req: Request) {
         lifetime_earned: (currentCredits?.lifetime_earned || 0) + Math.max(0, newFloor - currentBalance)
       })
     
-    console.log(`[Stripe Webhook] User ${profile.id} upgraded to ${newTier}. Credits: ${currentBalance} → ${newBalance}`)
+    console.log(`[Stripe Webhook] User ${profile.id} upgraded to ${stripeTier} (effective: ${effectiveTier}). Credits: ${currentBalance} → ${newBalance}`)
     
-    // Update subscription tier
+    // Update subscription tier (store Stripe tier, not effective tier)
     await adminClient
       .from('profiles')
       .update({
-        subscription_tier: newTier,
+        subscription_tier: stripeTier,
         subscription_status: subscription.status,
         stripe_subscription_id: subscription.id,
         current_period_end: subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : null
@@ -129,8 +132,8 @@ export async function POST(req: Request) {
         .single()
       
       if (profile && creditsPurchased > 0) {
-        const tier = profile.subscription_tier || 'free'
-        const cap = TIER_CREDIT_CAPS[tier] || 6
+        const effectiveTier = getEffectiveTier(profile)
+        const cap = getCreditCap(effectiveTier)
         
         const { data: currentCredits } = await adminClient
           .from('meeting_credits')

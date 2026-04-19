@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getEffectiveTier } from '@/lib/tier-override'
 
 const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
   free: 3,
@@ -400,10 +401,11 @@ export async function generateOnboardingRecommendations(userId: string) {
     intro_preferences: newUserProfile.intro_preferences,
     city: newUserProfile.city,
     state: newUserProfile.state,
-    open_to_business_solutions: newUserProfile.open_to_business_solutions
+    open_to_business_solutions: newUserProfile.open_to_business_solutions,
+    is_founding_member: newUserProfile.is_founding_member
   })
   
-  const userTier = newUserProfile.subscription_tier || 'free'
+  const userTier = getEffectiveTier(newUserProfile)
   const recommendationCount = TIER_RECOMMENDATION_COUNTS[userTier] || 3
   console.log('[generate-recommendations] User tier:', userTier, 'Count:', recommendationCount)
   

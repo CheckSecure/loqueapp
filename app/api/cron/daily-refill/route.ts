@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
+import { getEffectiveTier } from '@/lib/tier-override'
 
 const TIER_ACTIVE_SLOTS: Record<string, number> = {
   free: 3,
   professional: 5,
-  executive: 8
+  executive: 8,
+  founding: 5  // Same as professional for weekly batches
 }
 
 export async function GET(req: Request) {
@@ -30,7 +32,7 @@ export async function GET(req: Request) {
   
   for (const user of users) {
     try {
-      const tier = user.subscription_tier || 'free'
+      const tier = getEffectiveTier(user)
       const targetSlots = TIER_ACTIVE_SLOTS[tier]
       
       const { data: activeIntros } = await adminClient
