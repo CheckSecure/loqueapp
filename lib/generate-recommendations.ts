@@ -137,93 +137,114 @@ function generateIntroReason(userProfile: any, candidate: any): string {
   
   const userSeniority = userProfile.seniority || ''
   const candidateSeniority = candidate.seniority || ''
-  
-  // Determine relationship type
-  const isMentor = (userSeniority === 'Junior' && candidateSeniority === 'Senior') ||
-                   (userSeniority === 'Junior' && candidateSeniority === 'Executive') ||
-                   (userSeniority === 'Mid-Level' && candidateSeniority === 'Executive')
-  
-  const isPeer = userSeniority === candidateSeniority
-  
-  const isMentee = (userSeniority === 'Senior' && candidateSeniority === 'Mid-Level') ||
-                   (userSeniority === 'Executive' && candidateSeniority === 'Senior') ||
-                   (userSeniority === 'Executive' && candidateSeniority === 'Mid-Level')
-  
-  // Build reason based on what they have in common
-  
-  // Case 1: Shared expertise + mentor relationship
-  if (sharedExpertise.length > 0 && isMentor && candidate.company) {
-    const expertise = sharedExpertise[0]
-    return `${pronoun} has deep expertise in ${expertise} at ${candidate.company} and could be a valuable mentor`
-  }
-  
-  // Case 2: Shared expertise + peer relationship
-  if (sharedExpertise.length > 0 && isPeer && candidate.company) {
-    const expertise = sharedExpertise.length > 1 
-      ? `${sharedExpertise[0]} and ${sharedExpertise[1]}`
-      : sharedExpertise[0]
-    return `${pronoun} works on ${expertise} at ${candidate.company} and shares your professional focus`
-  }
-  
-  // Case 3: Shared expertise + mentee (you can help them)
-  if (sharedExpertise.length > 0 && isMentee && candidate.company) {
-    const expertise = sharedExpertise[0]
-    return `${pronoun} is developing expertise in ${expertise} at ${candidate.company} and would value your insights`
-  }
-  
-  // Case 4: Same role type (e.g., both in-house counsel)
   const userRole = userProfile.role_type || ''
   const candidateRole = candidate.role_type || ''
-  const sameRoleType = userRole.toLowerCase().includes('in-house') && candidateRole.toLowerCase().includes('in-house')
   
-  if (sameRoleType && candidate.company) {
-    return `${pronoun} navigates similar in-house challenges at ${candidate.company} and could share valuable perspectives`
-  }
+  // Helper to pick random phrase
+  const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)]
   
-  // Case 5: Complementary roles (law firm + in-house)
+  // Determine relationship type
+  const isMentor = (userSeniority === 'Junior' && (candidateSeniority === 'Senior' || candidateSeniority === 'Executive')) ||
+                   (userSeniority === 'Mid-Level' && candidateSeniority === 'Executive')
+  const isPeer = userSeniority === candidateSeniority
   const userIsLawFirm = userRole.toLowerCase().includes('law firm')
   const candidateIsInHouse = candidateRole.toLowerCase().includes('in-house')
   const userIsInHouse = userRole.toLowerCase().includes('in-house')
   const candidateIsLawFirm = candidateRole.toLowerCase().includes('law firm')
   
-  if ((userIsLawFirm && candidateIsInHouse) && candidate.company) {
-    return `${pronoun} manages legal matters in-house at ${candidate.company} and could offer client-side insights`
-  }
-  
-  if ((userIsInHouse && candidateIsLawFirm) && candidate.company) {
-    return `${pronoun} advises clients from ${candidate.company} and brings outside counsel perspective`
-  }
-  
-  // Case 6: Shared location + different expertise (learn from each other)
-  const sameCity = userProfile.city && candidate.city && 
-                   userProfile.city.toLowerCase() === candidate.city.toLowerCase()
-  
-  if (sameCity && candidateExpertise.length > 0 && candidate.company) {
-    const expertise = candidateExpertise[0]
-    return `${pronoun} specializes in ${expertise} at ${candidate.company} in your area and brings complementary expertise`
-  }
-  
-  // Case 7: Just expertise overlap
-  if (sharedExpertise.length > 0 && candidate.company) {
+  // CASE 1: Shared expertise + mentor
+  if (sharedExpertise.length > 0 && isMentor && candidate.company) {
     const expertise = sharedExpertise[0]
-    return `${pronoun} works in ${expertise} at ${candidate.company} and shares your interests`
+    return pick([
+      `${pronoun} has deep ${expertise} experience at ${candidate.company} and could accelerate your growth`,
+      `${pronoun} specializes in ${expertise} at ${candidate.company} and would be an excellent mentor`,
+      `${pronoun}'s ${expertise} expertise at ${candidate.company} could help shape your career trajectory`
+    ])
   }
   
-  // Case 8: Seniority-based (mentor/peer) without shared expertise
+  // CASE 2: Shared expertise + peer
+  if (sharedExpertise.length > 0 && isPeer && candidate.company) {
+    const expertise = sharedExpertise.length > 1 ? sharedExpertise[0] : sharedExpertise[0]
+    return pick([
+      `${pronoun} tackles similar ${expertise} challenges at ${candidate.company}`,
+      `${pronoun} works in ${expertise} at ${candidate.company} and faces parallel problems`,
+      `${pronoun} specializes in ${expertise} at ${candidate.company} and could be a thought partner`
+    ])
+  }
+  
+  // CASE 3: Law firm → In-house (client development)
+  if (userIsLawFirm && candidateIsInHouse && candidate.company) {
+    if (candidateExpertise.length > 0) {
+      const expertise = candidateExpertise[0]
+      return pick([
+        `${pronoun} leads ${expertise} matters at ${candidate.company} and could be a valuable client connection`,
+        `${pronoun} manages ${expertise} in-house at ${candidate.company} and brings the client perspective`,
+        `${pronoun} oversees ${expertise} at ${candidate.company}—potential client and strategic contact`
+      ])
+    }
+    return pick([
+      `${pronoun} manages legal strategy at ${candidate.company} and could be a valuable client connection`,
+      `${pronoun} leads in-house counsel work at ${candidate.company}—potential client relationship`
+    ])
+  }
+  
+  // CASE 4: In-house → Law firm (outside counsel perspective)
+  if (userIsInHouse && candidateIsLawFirm && candidate.company) {
+    if (candidateExpertise.length > 0) {
+      const expertise = candidateExpertise[0]
+      return pick([
+        `${pronoun} advises on ${expertise} from ${candidate.company} and offers outside counsel insight`,
+        `${pronoun} practices ${expertise} at ${candidate.company} and brings law firm perspective`,
+        `${pronoun} specializes in ${expertise} at ${candidate.company}—valuable advisor contact`
+      ])
+    }
+    return pick([
+      `${pronoun} brings outside counsel perspective from ${candidate.company}`,
+      `${pronoun} advises clients at ${candidate.company} and offers law firm insight`
+    ])
+  }
+  
+  // CASE 5: Same role type (in-house to in-house)
+  const sameInHouse = userRole.toLowerCase().includes('in-house') && candidateRole.toLowerCase().includes('in-house')
+  if (sameInHouse && candidate.company) {
+    return pick([
+      `${pronoun} navigates similar in-house challenges at ${candidate.company}`,
+      `${pronoun} handles comparable legal operations at ${candidate.company} and could share strategies`,
+      `${pronoun} manages in-house matters at ${candidate.company} and faces parallel challenges`
+    ])
+  }
+  
+  // CASE 6: Different expertise (complementary learning)
+  const uniqueExpertise = candidateExpertise.filter(e => !userExpertise.includes(e))
+  if (uniqueExpertise.length > 0 && candidate.company) {
+    const expertise = uniqueExpertise[0]
+    return pick([
+      `${pronoun} specializes in ${expertise} at ${candidate.company}—complementary expertise worth knowing`,
+      `${pronoun} brings ${expertise} perspective from ${candidate.company} to broaden your network`,
+      `${pronoun} works in ${expertise} at ${candidate.company} and offers different domain expertise`
+    ])
+  }
+  
+  // CASE 7: Just mentor relationship
   if (isMentor && candidate.company) {
-    return `${pronoun} has extensive experience at ${candidate.company} and could provide strategic guidance`
+    return pick([
+      `${pronoun} has extensive experience at ${candidate.company} and could provide strategic guidance`,
+      `${pronoun} brings senior perspective from ${candidate.company} and could help navigate your career`,
+      `${pronoun} leads at ${candidate.company} and would be a valuable strategic advisor`
+    ])
   }
   
-  if (isPeer && candidate.company) {
-    return `${pronoun} is at a similar career stage at ${candidate.company} and could be a valuable peer connection`
-  }
-  
-  // Fallback: Just company + general value
+  // CASE 8: Company prestige/reputation
   if (candidate.company) {
-    return `${pronoun} brings valuable perspective from ${candidate.company}`
+    return pick([
+      `${pronoun} brings valuable ${candidate.company} experience to the conversation`,
+      `${pronoun} works at ${candidate.company} and could be a strategic connection`,
+      `${pronoun}'s work at ${candidate.company} offers unique industry perspective`
+    ])
   }
   
-  return `${pronoun} could be a valuable connection in your network`
+  // Fallback
+  return `${pronoun} could be a valuable addition to your network`
 }
 
 export async function generateOnboardingRecommendations(userId: string) {
