@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import Stripe from 'stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getTotalCredits, getCreditCap } from '@/lib/credits'
+import { getTotalCredits } from '@/lib/credits'
 import { getEffectiveTier, getMonthlyCredits, getCreditCap } from '@/lib/tier-override'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
