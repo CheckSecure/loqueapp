@@ -759,20 +759,25 @@ export async function generateOnboardingRecommendations(userId: string) {
   
   const userSeniorityLevel = getUserSeniorityLevel(newUserProfile)
   
-  // Fetch pending targeted request (premium feature)
+  // Fetch pending targeted request (premium feature) - exclude expired
   const { data: targetedRequest } = await adminClient
     .from('targeted_requests')
     .select('*')
     .eq('user_id', userId)
     .eq('status', 'pending')
+    .gt('expires_at', new Date().toISOString())  // ✅ Exclude expired requests
     .order('created_at', { ascending: false })
     .maybeSingle()
   
   if (targetedRequest) {
     console.log('[generate-recommendations] Targeted request active:', {
+      request_id: targetedRequest.id,
+      user_id: userId,
       role: targetedRequest.role,
       industry: targetedRequest.industry,
-      intent: targetedRequest.intent
+      intent: targetedRequest.intent,
+      created_at: targetedRequest.created_at,
+      expires_at: targetedRequest.expires_at
     })
   }
   
@@ -946,15 +951,29 @@ export async function generateOnboardingRecommendations(userId: string) {
   
   // Mark targeted request as applied (premium feature)
   if (targetedRequest) {
-    await adminClient
+    const { error: updateError } = await adminClient
       .from('targeted_requests')
       .update({
         status: 'applied',
         applied_at: new Date().toISOString()
       })
       .eq('id', targetedRequest.id)
+      .eq('status', 'pending')  // ✅ Guard: only update if still pending
     
-    console.log('[generate-recommendations] Targeted request marked as applied:', targetedRequest.id)
+    if (updateError) {
+      console.error('[generate-recommendations] CRITICAL: Failed to mark request as applied:', {
+        request_id: targetedRequest.id,
+        error: updateError
+      })
+      // Don't throw - batch was already created successfully
+      // Log for monitoring and manual cleanup
+    } else {
+      console.log('[generate-recommendations] Targeted request marked as applied:', {
+        request_id: targetedRequest.id,
+        user_id: userId,
+        role: targetedRequest.role
+      })
+    }
   }
   
   return { count: sorted.length }

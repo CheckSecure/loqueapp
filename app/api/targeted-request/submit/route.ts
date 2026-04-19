@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
-import { deductCredits, hasEnoughCredits } from '@/lib/credits'
 
 export async function POST(request: Request) {
   const supabase = createClient()
@@ -31,12 +30,13 @@ export async function POST(request: Request) {
       }, { status: 403 })
     }
 
-    // 2. Check for existing pending request (only one at a time)
+    // 2. Check for existing pending request (exclude expired)
     const { data: existingRequest } = await supabase
       .from('targeted_requests')
-      .select('id')
+      .select('id, expires_at')
       .eq('user_id', user.id)
       .eq('status', 'pending')
+      .gt('expires_at', new Date().toISOString())  // ✅ FIX: Exclude expired
       .maybeSingle()
 
     if (existingRequest) {
@@ -46,25 +46,7 @@ export async function POST(request: Request) {
       }, { status: 409 })
     }
 
-    // 3. Deduct 1 premium credit (MUST use premium, not free)
-    const premiumToDeduct = 1
-    const newPremium = currentPremium - premiumToDeduct
-    
-    await adminClient
-      .from('meeting_credits')
-      .update({
-        premium_credits: newPremium,
-        balance: currentFree + newPremium
-      })
-      .eq('user_id', user.id)
-
-    console.log('[Targeted Request] Premium credit deducted:', {
-      user: user.id,
-      premium_before: currentPremium,
-      premium_after: newPremium
-    })
-
-    // 4. Create targeted request
+    // 3. CREATE REQUEST FIRST (before deducting credit)
     const { data: targetedRequest, error: insertError } = await adminClient
       .from('targeted_requests')
       .insert({
@@ -79,7 +61,65 @@ export async function POST(request: Request) {
       .select()
       .single()
 
-    if (insertError) throw insertError
+    // Handle duplicate pending request (race condition caught by DB constraint)
+    if (insertError) {
+      if (insertError.code === '23505') {  // Unique constraint violation
+        console.log('[Targeted Request] Duplicate pending request blocked (race condition)', {
+          user: user.id,
+          error_code: insertError.code
+        })
+        
+        // No refund needed - credit wasn't deducted yet
+        return NextResponse.json({
+          error: 'Request already pending',
+          message: 'You already have an active targeted request. It will be applied to your next batch.'
+        }, { status: 409 })
+      }
+      
+      // Other insert errors
+      console.error('[Targeted Request] Request creation failed:', insertError)
+      throw insertError
+    }
+
+    console.log('[Targeted Request] Request created:', {
+      request_id: targetedRequest.id,
+      user_id: user.id,
+      role: targetedRequest.role,
+      industry: targetedRequest.industry,
+      intent: targetedRequest.intent,
+      expires_at: targetedRequest.expires_at
+    })
+
+    // 4. THEN deduct premium credit (only after successful insert)
+    const newPremium = currentPremium - 1
+    const { error: creditError } = await adminClient
+      .from('meeting_credits')
+      .update({
+        premium_credits: newPremium,
+        balance: currentFree + newPremium
+      })
+      .eq('user_id', user.id)
+
+    if (creditError) {
+      console.error('[Targeted Request] Credit deduction failed, rolling back:', creditError)
+      
+      // ROLLBACK: Delete the request we just created
+      await adminClient
+        .from('targeted_requests')
+        .delete()
+        .eq('id', targetedRequest.id)
+      
+      console.log('[Targeted Request] Request deleted due to credit deduction failure:', targetedRequest.id)
+      
+      throw new Error(`Failed to deduct credit: ${creditError.message}`)
+    }
+
+    console.log('[Targeted Request] Premium credit deducted:', {
+      user: user.id,
+      premium_before: currentPremium,
+      premium_after: newPremium,
+      request_id: targetedRequest.id
+    })
 
     return NextResponse.json({
       success: true,
@@ -88,7 +128,7 @@ export async function POST(request: Request) {
     })
 
   } catch (error: any) {
-    console.error('Submit targeted request error:', error)
+    console.error('[Targeted Request] Submit error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
