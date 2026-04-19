@@ -36,7 +36,7 @@ export async function GET(req: Request) {
   // Get all active users
   const { data: users, error: usersError } = await adminClient
     .from('profiles')
-    .select('id, email, subscription_tier')
+    .select('id, email, subscription_tier, is_founding_member, founding_member_expires_at')
     .eq('account_status', 'active')
     .eq('profile_complete', true)
   
