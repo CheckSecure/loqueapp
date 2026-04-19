@@ -54,13 +54,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
     
-    // Determine new tier from price ID
+    // Determine new tier from price ID (handle both monthly and annual)
     const priceId = subscription.items.data[0]?.price.id
     let newTier = 'free'
     
-    if (priceId === process.env.NEXT_PUBLIC_STRIPE_PROFESSIONAL_PRICE_ID) {
+    // Professional: monthly or annual
+    const professionalPrices = [
+      'price_1TNHfVDuNRcLQVf15Hv4HYHC', // Monthly
+      'price_1TNHpWDuNRcLQVf14cO5b0Ja'  // Annual
+    ]
+    
+    // Executive: monthly or annual
+    const executivePrices = [
+      'price_1TNHgDDuNRcLQVf1mx9Higwc', // Monthly
+      'price_1TNHqADuNRcLQVf1XZCdUi3F'  // Annual
+    ]
+    
+    if (professionalPrices.includes(priceId)) {
       newTier = 'professional'
-    } else if (priceId === process.env.NEXT_PUBLIC_STRIPE_EXECUTIVE_PRICE_ID) {
+    } else if (executivePrices.includes(priceId)) {
       newTier = 'executive'
     }
     
