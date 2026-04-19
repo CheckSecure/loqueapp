@@ -23,6 +23,7 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
   const [purposes, setPurposes] = useState<string[]>(Array.isArray(initialData.purposes) ? initialData.purposes : [])
   const [meetingFormat, setMeetingFormat] = useState(initialData.meeting_format_preference || 'both')
   const [geoScope, setGeoScope] = useState(initialData.geographic_scope || 'us-wide')
+  const [openToBusinessSolutions, setOpenToBusinessSolutions] = useState(initialData.open_to_business_solutions || false)
   const [bio, setBio] = useState(initialData.bio || '')
 
   const toggleExpertise = (item: string) => {
@@ -50,6 +51,7 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     formData.append('purposes', purposes.join(','))
     formData.append('meeting_format_preference', meetingFormat)
     formData.append('geographic_scope', geoScope)
+    formData.append('open_to_business_solutions', openToBusinessSolutions.toString())
     formData.append('bio', bio)
 
     const res = await fetch('/api/profile/update', {
@@ -254,6 +256,25 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
               <option value="us-wide">Open to connections nationwide</option>
               <option value="local">Prefer local connections only</option>
             </select>
+          </div>
+
+          <div className="col-span-2">
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={openToBusinessSolutions}
+                  onChange={e => setOpenToBusinessSolutions(e.target.checked)}
+                  className="peer sr-only"
+                />
+                <div className="w-11 h-6 bg-slate-200 rounded-full peer-checked:bg-[#1B2850] transition-colors"></div>
+                <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+              </div>
+              <div className="flex-1">
+                <span className="text-xs font-semibold text-slate-700">Open to business solutions</span>
+                <p className="text-xs text-slate-500 mt-0.5">Occasionally see relevant solution providers and service partners</p>
+              </div>
+            </label>
           </div>
 
           <div className="col-span-2">

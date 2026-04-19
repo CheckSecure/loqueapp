@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
         purposes: purposes,
         meeting_format_preference: formData.get('meeting_format_preference'),
         geographic_scope: formData.get('geographic_scope'),
+        open_to_business_solutions: formData.get('open_to_business_solutions') === 'true',
         bio: formData.get('bio'),
         updated_at: new Date().toISOString(),
       })
