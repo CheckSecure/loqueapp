@@ -82,7 +82,19 @@ function calculateAlignmentScore(userProfile: any, candidate: any): number {
   // Normalize to 0-100 scale
   return (alignmentScore / 80) * 100
 }
-function calculateFinalScore(userProfile: any, candidate: any): number {
+
+// Helper: Identify if candidate is a business solution provider
+function isBusinessSolutionProvider(candidate: any): boolean {
+  const roleType = (candidate.role_type || '').toLowerCase()
+  
+  // Law firms, consultants, service providers
+  return roleType.includes('law firm') || 
+         roleType.includes('consultant') ||
+         roleType.includes('legal services') ||
+         roleType.includes('legal tech')
+}
+
+function calculateFinalScore(userProfile: any, candidate: any, userTier: string = 'free'): number {
   // All inputs are now 0-100 normalized
   const alignmentNormalized = calculateAlignmentScore(userProfile, candidate) // 0-100
   const alignmentWeighted = (alignmentNormalized / 100) * 55
@@ -96,7 +108,42 @@ function calculateFinalScore(userProfile: any, candidate: any): number {
   const priorityBonus = candidate.is_priority ? 5 : 0
   const boostBonus = (candidate.boost_score || 0) * 0.5
   
-  return alignmentWeighted + networkValueWeighted + responsivenessWeighted + priorityBonus + boostBonus
+  // Tier-based business solution weighting
+  let tierAdjustment = 0
+  const isBusinessSolution = isBusinessSolutionProvider(candidate)
+  const userOpenToSolutions = userProfile.open_to_business_solutions || false
+  
+  if (isBusinessSolution) {
+    if (userTier === 'free') {
+      // Free tier: Small penalty, keep them visible but slightly lower
+      tierAdjustment = -3
+    } else if (userTier === 'professional') {
+      if (userOpenToSolutions) {
+        // User is open, but still peer-first: moderate penalty
+        tierAdjustment = -5
+      } else {
+        // User prefers peers: stronger penalty
+        tierAdjustment = -8
+      }
+    } else if (userTier === 'executive') {
+      if (userOpenToSolutions) {
+        // User is open, but executive expects premium: moderate-strong penalty
+        tierAdjustment = -7
+      } else {
+        // User prefers peers: strong penalty
+        tierAdjustment = -12
+      }
+    }
+  } else {
+    // Peer matches get a boost for premium tiers
+    if (userTier === 'professional') {
+      tierAdjustment = +3
+    } else if (userTier === 'executive') {
+      tierAdjustment = +5
+    }
+  }
+  
+  return alignmentWeighted + networkValueWeighted + responsivenessWeighted + priorityBonus + boostBonus + tierAdjustment
 }
 
 function applyTierRankingAdjustment(candidates: any[], userTier: string): any[] {
@@ -442,7 +489,7 @@ export async function generateOnboardingRecommendations(userId: string) {
   
   const scoredCandidates = usersWithData.map(candidate => ({
     ...candidate,
-    finalScore: calculateFinalScore(newUserProfile, candidate)
+    finalScore: calculateFinalScore(newUserProfile, candidate, userTier)
   }))
   
   const filtered = scoredCandidates.filter(c => c.finalScore >= 10)
