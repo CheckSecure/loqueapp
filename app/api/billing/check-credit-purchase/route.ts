@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getTotalCredits, getCreditCap } from '@/lib/credits'
-import { getEffectiveTier } from '@/lib/tier-override'
+import { getTotalCredits } from '@/lib/credits'
+import { getEffectiveTier, getCreditCap } from '@/lib/tier-override'
 
 export async function POST(req: Request) {
   const supabase = createClient()
