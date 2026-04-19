@@ -40,8 +40,29 @@ function calculateAlignmentScore(userProfile: any, candidate: any): number {
   }
   
   // Expertise overlap (15 points max, capped)
-  const userExpertise: string[] = Array.isArray(userProfile.expertise) ? userProfile.expertise : []
-  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
+  // Parse expertise - handle both arrays and JSON strings
+  let userExpertise: string[] = []
+  if (Array.isArray(userProfile.expertise)) {
+    userExpertise = userProfile.expertise
+  } else if (typeof userProfile.expertise === 'string') {
+    try {
+      userExpertise = JSON.parse(userProfile.expertise)
+    } catch {
+      userExpertise = []
+    }
+  }
+  
+  let candidateExpertise: string[] = []
+  if (Array.isArray(candidate.expertise)) {
+    candidateExpertise = candidate.expertise
+  } else if (typeof candidate.expertise === 'string') {
+    try {
+      candidateExpertise = JSON.parse(candidate.expertise)
+    } catch {
+      candidateExpertise = []
+    }
+  }
+  
   const sharedExpertise = userExpertise.filter(e => candidateExpertise.includes(e))
   alignmentScore += Math.min(sharedExpertise.length * 5, 15)
   
@@ -131,8 +152,29 @@ function generateIntroReason(userProfile: any, candidate: any): string {
                   candidate.full_name?.includes('Emily') ||
                   candidate.full_name?.includes('Rachel') ? 'She' : 'He'
   
-  const userExpertise: string[] = Array.isArray(userProfile.expertise) ? userProfile.expertise : []
-  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
+  // Parse expertise - handle both arrays and JSON strings
+  let userExpertise: string[] = []
+  if (Array.isArray(userProfile.expertise)) {
+    userExpertise = userProfile.expertise
+  } else if (typeof userProfile.expertise === 'string') {
+    try {
+      userExpertise = JSON.parse(userProfile.expertise)
+    } catch {
+      userExpertise = []
+    }
+  }
+  
+  let candidateExpertise: string[] = []
+  if (Array.isArray(candidate.expertise)) {
+    candidateExpertise = candidate.expertise
+  } else if (typeof candidate.expertise === 'string') {
+    try {
+      candidateExpertise = JSON.parse(candidate.expertise)
+    } catch {
+      candidateExpertise = []
+    }
+  }
+  
   const sharedExpertise = userExpertise.filter(e => candidateExpertise.includes(e))
   
   const userSeniority = userProfile.seniority || ''
