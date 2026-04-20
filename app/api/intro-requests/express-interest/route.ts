@@ -165,9 +165,9 @@ export async function POST(request: Request) {
         }
       }
 
-      // Handle credits (charge the original requester)
-      const initiatorId = introRequest.created_at < reverseRequest.created_at 
-        ? introRequest.requester_id 
+      // Check credits BEFORE creating match (charge the original requester)
+      const initiatorId = introRequest.created_at < reverseRequest.created_at
+        ? introRequest.requester_id
         : reverseRequest.requester_id
 
       const { data: credits } = await adminClient
@@ -176,37 +176,52 @@ export async function POST(request: Request) {
         .eq('user_id', initiatorId)
         .single()
 
-      if (credits) {
-        const currentFree = credits.free_credits || 0
-        const currentPremium = credits.premium_credits || 0
-        
-        // Express Interest uses FREE credits ONLY (no premium fallback)
-        if (currentFree >= 1) {
-          const newFree = currentFree - 1
-          
-          await adminClient
-            .from('meeting_credits')
-            .update({
-              free_credits: newFree,
-              premium_credits: currentPremium, // Keep premium unchanged
-              balance: newFree + currentPremium // Keep legacy field in sync
-            })
-            .eq('user_id', initiatorId)
-          
-          console.log('[Credit Deduction] Express Interest (free credits only):', {
-            user: initiatorId,
-            free_before: currentFree,
-            free_after: newFree,
-            premium_unchanged: currentPremium
-          })
-        } else {
-          console.warn('[Credit Deduction] User has no free credits but match created:', {
-            user: initiatorId,
-            free_credits: currentFree,
-            premium_credits: currentPremium
-          })
-        }
+      if (!credits) {
+        return NextResponse.json({
+          error: 'Credit information not found',
+          message: 'Unable to process request. Please contact support.'
+        }, { status: 500 })
       }
+
+      const currentFree = credits.free_credits || 0
+      const currentPremium = credits.premium_credits || 0
+      
+      // Express Interest requires FREE credits (no premium fallback)
+      if (currentFree < 1) {
+        return NextResponse.json({
+          error: 'Insufficient free credits',
+          message: 'No free credits remaining. Upgrade your plan or wait for your monthly refill to continue connecting.',
+          free_credits: currentFree,
+          premium_credits: currentPremium
+        }, { status: 403 })
+      }
+
+      // Deduct 1 free credit
+      const newFree = currentFree - 1
+      
+      const { error: creditError } = await adminClient
+        .from('meeting_credits')
+        .update({
+          free_credits: newFree,
+          premium_credits: currentPremium, // Keep premium unchanged
+          balance: newFree + currentPremium // Keep legacy field in sync
+        })
+        .eq('user_id', initiatorId)
+
+      if (creditError) {
+        console.error('[Credit Deduction] Failed to deduct credit:', creditError)
+        return NextResponse.json({
+          error: 'Credit deduction failed',
+          message: 'Unable to process request. Please try again.'
+        }, { status: 500 })
+      }
+      
+      console.log('[Credit Deduction] Express Interest (free credits only):', {
+        user: initiatorId,
+        free_before: currentFree,
+        free_after: newFree,
+        premium_unchanged: currentPremium
+      })
 
       return NextResponse.json({
         success: true,
@@ -214,6 +229,7 @@ export async function POST(request: Request) {
         matchCreated: true,
         matchId: match.id
       })
+
     }
 
     // No mutual interest yet - just approved the intro request
