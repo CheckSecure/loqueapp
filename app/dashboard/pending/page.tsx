@@ -51,7 +51,7 @@ export default function PendingIntroductionsPage() {
         // Success - redirect to network
         router.push('/dashboard/network')
       } else {
-        alert(data.message || 'Unable to activate introduction. Please ensure you have available credits.')
+        alert(data.message || 'Unable to activate introduction.')
       }
     } catch (error) {
       alert('Failed to activate introduction')
@@ -73,7 +73,7 @@ export default function PendingIntroductionsPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Pending Introductions</h1>
         <p className="text-gray-600">
-          Confirmed introductions waiting for credit availability
+          Confirmed introductions ready to activate
         </p>
       </div>
 
@@ -110,11 +110,8 @@ export default function PendingIntroductionsPage() {
                     disabled={activating === intro.matchId}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
                   >
-                    {activating === intro.matchId ? 'Activating...' : 'Proceed with Introduction'}
+                    {activating === intro.matchId ? 'Activating...' : 'Activate Introduction'}
                   </button>
-                  <p className="text-xs text-gray-500 mt-2 text-center">
-                    Requires 1 credit
-                  </p>
                 </div>
               </div>
             </div>
@@ -125,8 +122,7 @@ export default function PendingIntroductionsPage() {
       {pending.length > 0 && (
         <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-sm text-blue-900">
-            <strong>Note:</strong> Both you and the other person need available credits to activate the introduction.
-            Add credits or wait for your monthly refill to proceed.
+            These introductions are ready to activate at no additional charge. You already paid when expressing interest.
           </p>
         </div>
       )}

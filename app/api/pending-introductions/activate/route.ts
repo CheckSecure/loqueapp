@@ -34,51 +34,8 @@ export async function POST(request: Request) {
       }, { status: 403 })
     }
 
-    // Check if BOTH users now have credits
-    const { data: userACredits } = await adminClient
-      .from('meeting_credits')
-      .select('free_credits, premium_credits')
-      .eq('user_id', match.user_a_id)
-      .single()
-
-    const { data: userBCredits } = await adminClient
-      .from('meeting_credits')
-      .select('free_credits, premium_credits')
-      .eq('user_id', match.user_b_id)
-      .single()
-
-    const userAHasCredits = (userACredits?.free_credits || 0) >= 1
-    const userBHasCredits = (userBCredits?.free_credits || 0) >= 1
-
-    if (!userAHasCredits || !userBHasCredits) {
-      return NextResponse.json({
-        error: 'Insufficient credits',
-        message: userAHasCredits 
-          ? 'The other user needs to add credits to proceed.'
-          : 'You need at least 1 free credit to activate this introduction.',
-        userAHasCredits,
-        userBHasCredits
-      }, { status: 403 })
-    }
-
-    // Both have credits - activate the match!
-    
-    // Deduct credits from both users
-    await adminClient
-      .from('meeting_credits')
-      .update({
-        free_credits: (userACredits?.free_credits || 0) - 1,
-        balance: ((userACredits?.free_credits || 0) - 1) + (userACredits?.premium_credits || 0)
-      })
-      .eq('user_id', match.user_a_id)
-
-    await adminClient
-      .from('meeting_credits')
-      .update({
-        free_credits: (userBCredits?.free_credits || 0) - 1,
-        balance: ((userBCredits?.free_credits || 0) - 1) + (userBCredits?.premium_credits || 0)
-      })
-      .eq('user_id', match.user_b_id)
+    // ✅ NO CREDIT DEDUCTION - users already paid when expressing interest
+    // Just activate the match that's been waiting
 
     // Update match status to active
     await adminClient
@@ -132,7 +89,7 @@ export async function POST(request: Request) {
       ).catch(e => console.error('Email error:', e))
     }
 
-    console.log('[Pending Introduction] Activated:', {
+    console.log('[Pending Introduction] Activated (no charge):', {
       matchId,
       userA: match.user_a_id,
       userB: match.user_b_id
