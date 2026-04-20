@@ -71,21 +71,17 @@ export async function POST(request: Request) {
 
     // Send credit notifications if running low
     if (newFree === 0) {
-      await createNotification({
+      await createNotificationSafe({
         userId: user.id,
         type: 'no_credits',
-        title: 'You're out of credits',
-        message: 'You've used all your credits. Your refill is coming soon, or you can upgrade for more.',
         data: {
           creditsRemaining: 0
         }
       })
     } else if (newFree === 1) {
-      await createNotification({
+      await createNotificationSafe({
         userId: user.id,
         type: 'low_credits',
-        title: 'You're running low on credits',
-        message: 'You have 1 credit left this month.',
         data: {
           creditsRemaining: 1
         }
