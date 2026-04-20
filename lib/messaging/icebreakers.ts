@@ -1,6 +1,13 @@
-import { Database } from '@/types/supabase'
-
-type Profile = Database['public']['Tables']['profiles']['Row']
+// Simple profile type
+type Profile = {
+  id: string
+  full_name: string | null
+  title: string | null
+  company: string | null
+  industry: string | null
+  practice_areas: string[] | null
+  [key: string]: any
+}
 
 interface IcebreakerContext {
   userA: Profile
