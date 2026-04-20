@@ -44,8 +44,9 @@ export async function POST(req: NextRequest) {
       .eq('status', 'generated')
 
     // Notify all members of new batch
-    const { createNotificationsForAllUsers } = await import('@/lib/notifications')
-    await createNotificationsForAllUsers(
+    import { createNotificationSafe } from '@/lib/notifications'
+    // Notifications handled by weekly-refresh cron job
+    // await createNotificationSafe({
       'new_batch',
       'Your introductions are ready',
       'Your curated introductions for this week are now available.',
