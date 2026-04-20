@@ -115,11 +115,13 @@ export async function createNotificationSafe({
       return null
     }
 
-    await adminClient.rpc('cleanup_old_notifications', {
-      user_id_input: userId
-    }).catch(err => {
+    try {
+      await adminClient.rpc('cleanup_old_notifications', {
+        user_id_input: userId
+      })
+    } catch (err) {
       console.warn('[Notifications] Cleanup failed:', err)
-    })
+    }
 
     console.log('[Notifications] Created:', {
       userId,
