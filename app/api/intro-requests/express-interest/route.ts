@@ -189,10 +189,23 @@ export async function POST(request: Request) {
         .single()
 
       if (conversation) {
+        // Fetch full profiles for icebreaker generation
+        const { data: expresserProfileFull } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', expresserId)
+          .single()
+
+        const { data: otherProfileFull } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', otherUserId)
+          .single()
+
         // Generate icebreakers based on both users' profiles
         const icebreakers = generateIcebreakers({
-          userA: expresserProfile,
-          userB: otherProfile
+          userA: expresserProfileFull || {} as any,
+          userB: otherProfileFull || {} as any
         })
 
         // Update conversation with suggested prompts
