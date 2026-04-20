@@ -28,7 +28,6 @@ export interface CreateNotificationParams {
   data?: NotificationData
 }
 
-// Premium notification copy
 const NOTIFICATION_COPY = {
   new_batch: {
     title: 'New curated introductions',
@@ -64,9 +63,6 @@ const NOTIFICATION_COPY = {
   }
 }
 
-/**
- * Create a notification safely (prevents duplicates within 24 hours)
- */
 export async function createNotificationSafe({
   userId,
   type,
@@ -79,7 +75,6 @@ export async function createNotificationSafe({
   const adminClient = createAdminClient()
 
   try {
-    // Check for duplicate notification in last 24 hours
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     
     const { data: existing } = await adminClient
@@ -95,14 +90,12 @@ export async function createNotificationSafe({
       return null
     }
 
-    // Get copy from mapping
     const copy = NOTIFICATION_COPY[type]
     if (!copy) {
       console.error(`[Notifications] Unknown type: ${type}`)
       return null
     }
 
-    // Create notification
     const { data: notification, error } = await adminClient
       .from('notifications')
       .insert({
@@ -122,11 +115,9 @@ export async function createNotificationSafe({
       return null
     }
 
-    // Cleanup old notifications (keep last 100)
     await adminClient.rpc('cleanup_old_notifications', {
       user_id_input: userId
     }).catch(err => {
-      // Don't fail if cleanup fails
       console.warn('[Notifications] Cleanup failed:', err)
     })
 
@@ -143,9 +134,6 @@ export async function createNotificationSafe({
   }
 }
 
-/**
- * Create a notification for a user (legacy - use createNotificationSafe instead)
- */
 export async function createNotification({
   userId,
   type,
@@ -188,9 +176,6 @@ export async function createNotification({
   }
 }
 
-/**
- * Mark notification as read
- */
 export async function markNotificationRead(notificationId: string, userId: string) {
   const adminClient = createAdminClient()
 
@@ -213,9 +198,6 @@ export async function markNotificationRead(notificationId: string, userId: strin
   }
 }
 
-/**
- * Mark all notifications as read for a user
- */
 export async function markAllNotificationsRead(userId: string) {
   const adminClient = createAdminClient()
 
@@ -238,9 +220,6 @@ export async function markAllNotificationsRead(userId: string) {
   }
 }
 
-/**
- * Get navigation route for notification type
- */
 export function getNotificationRoute(type: NotificationType, data?: NotificationData): string {
   switch (type) {
     case 'new_batch':
