@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { sendMatchCreatedEmail } from '@/lib/email'
+import { createNotificationSafe } from '@/lib/notifications'
 
 export async function POST(request: Request) {
   const supabase = createClient()
@@ -67,6 +68,29 @@ export async function POST(request: Request) {
       free_after: newFree
     })
 
+    // Send credit notifications if running low
+    if (newFree === 0) {
+      await createNotification({
+        userId: user.id,
+        type: 'no_credits',
+        title: 'You're out of credits',
+        message: 'You've used all your credits. Your refill is coming soon, or you can upgrade for more.',
+        data: {
+          creditsRemaining: 0
+        }
+      })
+    } else if (newFree === 1) {
+      await createNotification({
+        userId: user.id,
+        type: 'low_credits',
+        title: 'You're running low on credits',
+        message: 'You have 1 credit left this month.',
+        data: {
+          creditsRemaining: 1
+        }
+      })
+    }
+
     // STEP 2: Get the intro request
     const { data: introRequest } = await supabase
       .from('intro_requests')
@@ -86,6 +110,22 @@ export async function POST(request: Request) {
       .from('intro_requests')
       .update({ status: 'approved' })
       .eq('id', introRequestId)
+
+    // Notify the other user that someone expressed interest
+    const { data: expresserProfile } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', expresserId)
+      .single()
+
+    await createNotificationSafe({
+      userId: otherUserId,
+      type: 'interest_received',
+      data: {
+        fromUserId: expresserId,
+        fromUserName: expresserProfile?.full_name
+      }
+    })
 
     // STEP 4: Check for mutual interest (reverse intro request)
     const { data: reverseRequest } = await supabase

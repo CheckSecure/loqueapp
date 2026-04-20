@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createNotificationSafe } from '@/lib/notifications'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { getEffectiveTier } from '@/lib/tier-override'
 
