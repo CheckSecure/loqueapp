@@ -366,8 +366,8 @@ function applyThrottling(
     maxBusinessSolutions = Math.floor(maxBusinessSolutions * THROTTLING_CONFIG.preferenceAdjustment)
   }
   
-  // Ensure at least 1 business solution can appear (unless targetCount is very small)
-  if (maxBusinessSolutions === 0 && targetCount >= 3 && businessSolutions.length > 0) {
+  // Ensure at least 1 business solution can appear ONLY if user is open to solutions
+  if (maxBusinessSolutions === 0 && targetCount >= 3 && businessSolutions.length > 0 && userOpenToSolutions) {
     maxBusinessSolutions = 1
   }
   
