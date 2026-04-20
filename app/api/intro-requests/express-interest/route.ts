@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { sendMatchCreatedEmail } from '@/lib/email'
-import { deductCredits, hasEnoughCredits } from '@/lib/credits'
 
 export async function POST(request: Request) {
   const supabase = createClient()
@@ -13,7 +12,63 @@ export async function POST(request: Request) {
   const { introRequestId } = await request.json()
 
   try {
-    // Get the intro request
+    // STEP 1: Validate and deduct credit FIRST (before any DB writes)
+    const adminClient = createAdminClient()
+    
+    const { data: credits } = await adminClient
+      .from('meeting_credits')
+      .select('free_credits, premium_credits, balance')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!credits) {
+      return NextResponse.json({
+        error: 'Credit information not found',
+        message: 'Unable to process request. Please contact support.'
+      }, { status: 500 })
+    }
+
+    const currentFree = credits.free_credits || 0
+    const currentPremium = credits.premium_credits || 0
+    
+    // Express Interest requires FREE credits (no premium fallback)
+    if (currentFree < 1) {
+      return NextResponse.json({
+        error: 'Insufficient free credits',
+        message: 'No free credits remaining. Upgrade your plan or wait for your monthly refill to continue connecting.',
+        free_credits: currentFree,
+        premium_credits: currentPremium
+      }, { status: 403 })
+    }
+
+    // Deduct 1 free credit from the person clicking Express Interest
+    const newFree = currentFree - 1
+    
+    const { error: creditError } = await adminClient
+      .from('meeting_credits')
+      .update({
+        free_credits: newFree,
+        premium_credits: currentPremium,
+        balance: newFree + currentPremium
+      })
+      .eq('user_id', user.id)
+
+    if (creditError) {
+      console.error('[Credit Deduction] Failed to deduct credit:', creditError)
+      return NextResponse.json({
+        error: 'Credit deduction failed',
+        message: 'Unable to process request. Please try again.'
+      }, { status: 500 })
+    }
+    
+    console.log('[Express Interest] Credit deducted:', {
+      user: user.id,
+      free_before: currentFree,
+      free_after: newFree,
+      premium_unchanged: currentPremium
+    })
+
+    // STEP 2: Get the intro request
     const { data: introRequest } = await supabase
       .from('intro_requests')
       .select('*, requester:profiles!requester_id(*), target:profiles!target_user_id(*)')
@@ -22,28 +77,19 @@ export async function POST(request: Request) {
 
     if (!introRequest) throw new Error('Intro request not found')
 
-    // Determine who is expressing interest and who is the other party
+    // Determine who is expressing interest
     const isRequester = user.id === introRequest.requester_id
     const expresserId = user.id
     const otherUserId = isRequester ? introRequest.target_user_id : introRequest.requester_id
-    
-    console.log('[Express Interest Debug]', {
-      userId: user.id,
-      requesterId: introRequest.requester_id,
-      targetId: introRequest.target_user_id,
-      isRequester,
-      expresserId,
-      otherUserId
-    })
 
-    // Update intro request status to 'approved'
+    // STEP 3: Update intro request status to 'approved'
     await supabase
       .from('intro_requests')
       .update({ status: 'approved' })
       .eq('id', introRequestId)
 
-    // Check for mutual interest (reverse intro request)
-    const { data: reverseRequest, error: reverseError } = await supabase
+    // STEP 4: Check for mutual interest (reverse intro request)
+    const { data: reverseRequest } = await supabase
       .from('intro_requests')
       .select('*')
       .eq('requester_id', otherUserId)
@@ -52,41 +98,58 @@ export async function POST(request: Request) {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-    
-    console.log('[Reverse Request Debug]', {
-      reverseRequest,
-      reverseError,
-      searchingFor: { requester_id: otherUserId, target_user_id: expresserId }
-    })
 
-    // If mutual interest exists, auto-create the match
+    // If mutual interest exists, create match (active or pending)
     if (reverseRequest) {
-      console.log('[Auto-Match] Mutual interest detected, creating match...')
-      
-      const adminClient = createAdminClient()
+      console.log('[Mutual Interest] Detected, checking credits for both users...')
 
       // Check if match already exists
       const { data: existingMatch } = await supabase
         .from('matches')
-        .select('id')
+        .select('id, status')
         .or(`and(user_a_id.eq.${expresserId},user_b_id.eq.${otherUserId}),and(user_a_id.eq.${otherUserId},user_b_id.eq.${expresserId})`)
         .maybeSingle()
 
       if (existingMatch) {
-        return NextResponse.json({ 
-          success: true, 
+        return NextResponse.json({
+          success: true,
           mutualInterest: true,
-          matchAlreadyExists: true 
+          matchAlreadyExists: true,
+          matchStatus: existingMatch.status
         })
       }
 
-      // Create the match using admin client to bypass RLS
+      // Check if BOTH users have credits for facilitated introduction
+      const { data: otherUserCredits } = await adminClient
+        .from('meeting_credits')
+        .select('free_credits, premium_credits')
+        .eq('user_id', otherUserId)
+        .single()
+
+      const expresserHasCredits = newFree >= 0 // Already deducted above
+      const otherHasCredits = (otherUserCredits?.free_credits || 0) >= 1
+
+      const bothHaveCredits = expresserHasCredits && otherHasCredits
+
+      // Determine match status
+      const matchStatus = bothHaveCredits ? 'active' : 'pending_credits'
+
+      console.log('[Match Creation]', {
+        expresser: expresserId,
+        expresserCredits: newFree,
+        other: otherUserId,
+        otherCredits: otherUserCredits?.free_credits || 0,
+        bothHaveCredits,
+        matchStatus
+      })
+
+      // Create the match
       const { data: match, error: matchError } = await adminClient
         .from('matches')
         .insert({
           user_a_id: expresserId,
           user_b_id: otherUserId,
-          status: 'active',
+          status: matchStatus,
           admin_facilitated: false,
           created_at: new Date().toISOString()
         })
@@ -94,142 +157,127 @@ export async function POST(request: Request) {
         .single()
 
       if (matchError) {
-        console.error('Match creation error:', matchError)
+        console.error('[Match Creation] Error:', matchError)
         throw matchError
       }
 
-      // Create conversation
-      await adminClient.from('conversations').insert({
-        match_id: match.id
-      })
+      // If active match, complete the full facilitation flow
+      if (matchStatus === 'active') {
+        // Deduct credit from other user
+        const otherNewFree = (otherUserCredits?.free_credits || 0) - 1
+        await adminClient
+          .from('meeting_credits')
+          .update({
+            free_credits: otherNewFree,
+            balance: otherNewFree + (otherUserCredits?.premium_credits || 0)
+          })
+          .eq('user_id', otherUserId)
 
-      // Get full profile data
-      const { data: expresserProfile } = await supabase
-        .from('profiles')
-        .select('full_name, email, title, company')
-        .eq('id', expresserId)
-        .single()
-
-      const { data: otherProfile } = await supabase
-        .from('profiles')
-        .select('full_name, email, title, company')
-        .eq('id', otherUserId)
-        .single()
-
-      // Send notifications to both users - ONLY when mutual interest confirmed
-      await adminClient.from('notifications').insert([
-        {
-          user_id: expresserId,
-          type: 'new_connection',
-          title: 'Your introduction is ready',
-          body: `You're now connected with ${otherProfile?.full_name}. Start a conversation.`,
-          link: '/dashboard/network',
-          created_at: new Date().toISOString()
-        },
-        {
-          user_id: otherUserId,
-          type: 'new_connection',
-          title: 'Your introduction is ready',
-          body: `You're now connected with ${expresserProfile?.full_name}. Start a conversation.`,
-          link: '/dashboard/network',
-          created_at: new Date().toISOString()
-        }
-      ])
-
-      // Send emails
-      if (expresserProfile?.email) {
-        try {
-          await sendMatchCreatedEmail(
-            expresserProfile.email,
-            expresserProfile.full_name || 'there',
-            otherProfile?.full_name || 'New Connection',
-            otherProfile?.title,
-            otherProfile?.company
-          )
-        } catch (e) {
-          console.error('Email error:', e)
-        }
-      }
-
-      if (otherProfile?.email) {
-        try {
-          await sendMatchCreatedEmail(
-            otherProfile.email,
-            otherProfile.full_name || 'there',
-            expresserProfile?.full_name || 'New Connection',
-            expresserProfile?.title,
-            expresserProfile?.company
-          )
-        } catch (e) {
-          console.error('Email error:', e)
-        }
-      }
-
-      // Check credits BEFORE creating match (charge the original requester)
-      const initiatorId = introRequest.created_at < reverseRequest.created_at
-        ? introRequest.requester_id
-        : reverseRequest.requester_id
-
-      const { data: credits } = await adminClient
-        .from('meeting_credits')
-        .select('free_credits, premium_credits, balance')
-        .eq('user_id', initiatorId)
-        .single()
-
-      if (!credits) {
-        return NextResponse.json({
-          error: 'Credit information not found',
-          message: 'Unable to process request. Please contact support.'
-        }, { status: 500 })
-      }
-
-      const currentFree = credits.free_credits || 0
-      const currentPremium = credits.premium_credits || 0
-      
-      // Express Interest requires FREE credits (no premium fallback)
-      if (currentFree < 1) {
-        return NextResponse.json({
-          error: 'Insufficient free credits',
-          message: 'No free credits remaining. Upgrade your plan or wait for your monthly refill to continue connecting.',
-          free_credits: currentFree,
-          premium_credits: currentPremium
-        }, { status: 403 })
-      }
-
-      // Deduct 1 free credit
-      const newFree = currentFree - 1
-      
-      const { error: creditError } = await adminClient
-        .from('meeting_credits')
-        .update({
-          free_credits: newFree,
-          premium_credits: currentPremium, // Keep premium unchanged
-          balance: newFree + currentPremium // Keep legacy field in sync
+        // Create conversation
+        await adminClient.from('conversations').insert({
+          match_id: match.id
         })
-        .eq('user_id', initiatorId)
 
-      if (creditError) {
-        console.error('[Credit Deduction] Failed to deduct credit:', creditError)
+        // Get full profile data
+        const { data: expresserProfile } = await supabase
+          .from('profiles')
+          .select('full_name, email, title, company')
+          .eq('id', expresserId)
+          .single()
+
+        const { data: otherProfile } = await supabase
+          .from('profiles')
+          .select('full_name, email, title, company')
+          .eq('id', otherUserId)
+          .single()
+
+        // Send notifications
+        await adminClient.from('notifications').insert([
+          {
+            user_id: expresserId,
+            type: 'new_connection',
+            title: 'Your introduction is ready',
+            body: `You're now connected with ${otherProfile?.full_name}. Start a conversation.`,
+            link: '/dashboard/network',
+            created_at: new Date().toISOString()
+          },
+          {
+            user_id: otherUserId,
+            type: 'new_connection',
+            title: 'Your introduction is ready',
+            body: `You're now connected with ${expresserProfile?.full_name}. Start a conversation.`,
+            link: '/dashboard/network',
+            created_at: new Date().toISOString()
+          }
+        ])
+
+        // Send emails (async, don't wait)
+        if (expresserProfile?.email && otherProfile) {
+          sendMatchCreatedEmail({
+            to: expresserProfile.email,
+            matchName: otherProfile.full_name || 'Your connection',
+            matchTitle: otherProfile.title,
+            matchCompany: otherProfile.company
+          }).catch(e => console.error('Email error:', e))
+        }
+
+        if (otherProfile?.email && expresserProfile) {
+          sendMatchCreatedEmail({
+            to: otherProfile.email,
+            matchName: expresserProfile.full_name || 'Your connection',
+            matchTitle: expresserProfile.title,
+            matchCompany: expresserProfile.company
+          }).catch(e => console.error('Email error:', e))
+        }
+
         return NextResponse.json({
-          error: 'Credit deduction failed',
-          message: 'Unable to process request. Please try again.'
-        }, { status: 500 })
+          success: true,
+          mutualInterest: true,
+          matchCreated: true,
+          matchId: match.id,
+          matchStatus: 'active'
+        })
+      } else {
+        // Pending match - notify users
+        const { data: expresserProfile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', expresserId)
+          .single()
+
+        const { data: otherProfile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', otherUserId)
+          .single()
+
+        await adminClient.from('notifications').insert([
+          {
+            user_id: expresserId,
+            type: 'pending_introduction',
+            title: 'Introduction confirmed',
+            body: `Your introduction with ${otherProfile?.full_name} is confirmed. Visit Pending Introductions to proceed.`,
+            link: '/dashboard/pending',
+            created_at: new Date().toISOString()
+          },
+          {
+            user_id: otherUserId,
+            type: 'pending_introduction',
+            title: 'Introduction confirmed',
+            body: `Your introduction with ${expresserProfile?.full_name} is confirmed. Visit Pending Introductions to proceed.`,
+            link: '/dashboard/pending',
+            created_at: new Date().toISOString()
+          }
+        ])
+
+        return NextResponse.json({
+          success: true,
+          mutualInterest: true,
+          matchCreated: true,
+          matchId: match.id,
+          matchStatus: 'pending_credits'
+        })
       }
-      
-      console.log('[Credit Deduction] Express Interest (free credits only):', {
-        user: initiatorId,
-        free_before: currentFree,
-        free_after: newFree,
-        premium_unchanged: currentPremium
-      })
-
-      return NextResponse.json({
-        success: true,
-        mutualInterest: true,
-        matchCreated: true,
-        matchId: match.id
-      })
-
     }
 
     // No mutual interest yet - just approved the intro request
@@ -240,7 +288,7 @@ export async function POST(request: Request) {
     })
 
   } catch (error: any) {
-    console.error('Express interest error:', error)
+    console.error('[Express Interest] Error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
