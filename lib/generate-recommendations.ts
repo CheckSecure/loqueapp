@@ -210,11 +210,8 @@ function applyJuniorDistributionControl(
       maxJuniors = 1
     }
   } else {
-    // If NOT open to mentorship: suppress juniors (but allow rare exceptions)
-    // Allow 1 junior only if batch size >= 8
-    if (targetCount >= 8 && juniors.length > 0) {
-      maxJuniors = 1
-    }
+    // If NOT open to mentorship: no juniors allowed, no exceptions
+    maxJuniors = 0
   }
   
   // Select juniors up to cap
