@@ -44,14 +44,8 @@ export async function POST(req: NextRequest) {
       .eq('batch_id', batchId)
       .eq('status', 'generated')
 
-    // Notify all members of new batch
     // Notifications handled by weekly-refresh cron job
-    // // await createNotificationSafe({ // Handled by weekly-refresh cron
-      'new_batch',
-      'Your introductions are ready',
-      'Your curated introductions for this week are now available.',
-      '/dashboard/introductions'
-    )
+    // Notifications handled by weekly-refresh cron job
     return NextResponse.json({ success: true })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
