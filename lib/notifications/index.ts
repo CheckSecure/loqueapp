@@ -202,7 +202,7 @@ export async function markAllNotificationsRead(userId: string) {
   const adminClient = createAdminClient()
 
   try {
-    const { error } = await adminClient
+    const { error} = await adminClient
       .from('notifications')
       .update({ read: true })
       .eq('user_id', userId)
