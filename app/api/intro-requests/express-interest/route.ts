@@ -218,8 +218,8 @@ export async function POST(request: Request) {
 
         // Insert system intro message
         const systemMessage = generateSystemIntroMessage({
-          userA: expresserProfile,
-          userB: otherProfile,
+          userA: expresserProfileFull || {} as any,
+          userB: otherProfileFull || {} as any,
           reason: 'Mutual professional interest'
         })
 
