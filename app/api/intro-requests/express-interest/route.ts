@@ -64,8 +64,7 @@ export async function POST(request: Request) {
     console.log('[Express Interest] Credit deducted:', {
       user: user.id,
       free_before: currentFree,
-      free_after: newFree,
-      premium_unchanged: currentPremium
+      free_after: newFree
     })
 
     // STEP 2: Get the intro request
@@ -99,9 +98,9 @@ export async function POST(request: Request) {
       .limit(1)
       .maybeSingle()
 
-    // If mutual interest exists, create match (active or pending)
+    // If mutual interest exists, create ACTIVE match immediately
     if (reverseRequest) {
-      console.log('[Mutual Interest] Detected, checking credits for both users...')
+      console.log('[Mutual Interest] Detected, creating active match...')
 
       // Check if match already exists
       const { data: existingMatch } = await supabase
@@ -119,37 +118,13 @@ export async function POST(request: Request) {
         })
       }
 
-      // Check if BOTH users have credits for facilitated introduction
-      const { data: otherUserCredits } = await adminClient
-        .from('meeting_credits')
-        .select('free_credits, premium_credits')
-        .eq('user_id', otherUserId)
-        .single()
-
-      const expresserHasCredits = newFree >= 0 // Already deducted above
-      const otherHasCredits = (otherUserCredits?.free_credits || 0) >= 1
-
-      const bothHaveCredits = expresserHasCredits && otherHasCredits
-
-      // Determine match status
-      const matchStatus = bothHaveCredits ? 'active' : 'pending_credits'
-
-      console.log('[Match Creation]', {
-        expresser: expresserId,
-        expresserCredits: newFree,
-        other: otherUserId,
-        otherCredits: otherUserCredits?.free_credits || 0,
-        bothHaveCredits,
-        matchStatus
-      })
-
-      // Create the match
+      // Create ACTIVE match (both users already paid at Express Interest)
       const { data: match, error: matchError } = await adminClient
         .from('matches')
         .insert({
           user_a_id: expresserId,
           user_b_id: otherUserId,
-          status: matchStatus,
+          status: 'active',
           admin_facilitated: false,
           created_at: new Date().toISOString()
         })
@@ -161,125 +136,78 @@ export async function POST(request: Request) {
         throw matchError
       }
 
-      // If active match, complete the full facilitation flow
-      if (matchStatus === 'active') {
-        // Deduct credit from other user
-        const otherNewFree = (otherUserCredits?.free_credits || 0) - 1
-        await adminClient
-          .from('meeting_credits')
-          .update({
-            free_credits: otherNewFree,
-            balance: otherNewFree + (otherUserCredits?.premium_credits || 0)
-          })
-          .eq('user_id', otherUserId)
+      console.log('[Match Created] Active match, both users already paid:', {
+        matchId: match.id,
+        userA: expresserId,
+        userB: otherUserId
+      })
 
-        // Create conversation
-        await adminClient.from('conversations').insert({
-          match_id: match.id
-        })
+      // Create conversation immediately
+      await adminClient.from('conversations').insert({
+        match_id: match.id
+      })
 
-        // Get full profile data
-        const { data: expresserProfile } = await supabase
-          .from('profiles')
-          .select('full_name, email, title, company')
-          .eq('id', expresserId)
-          .single()
+      // Get full profile data
+      const { data: expresserProfile } = await supabase
+        .from('profiles')
+        .select('full_name, email, title, company')
+        .eq('id', expresserId)
+        .single()
 
-        const { data: otherProfile } = await supabase
-          .from('profiles')
-          .select('full_name, email, title, company')
-          .eq('id', otherUserId)
-          .single()
+      const { data: otherProfile } = await supabase
+        .from('profiles')
+        .select('full_name, email, title, company')
+        .eq('id', otherUserId)
+        .single()
 
-        // Send notifications
-        await adminClient.from('notifications').insert([
-          {
-            user_id: expresserId,
-            type: 'new_connection',
-            title: 'Your introduction is ready',
-            body: `You're now connected with ${otherProfile?.full_name}. Start a conversation.`,
-            link: '/dashboard/network',
-            created_at: new Date().toISOString()
-          },
-          {
-            user_id: otherUserId,
-            type: 'new_connection',
-            title: 'Your introduction is ready',
-            body: `You're now connected with ${expresserProfile?.full_name}. Start a conversation.`,
-            link: '/dashboard/network',
-            created_at: new Date().toISOString()
-          }
-        ])
-
-        // Send emails (async, don't wait)
-        if (expresserProfile?.email && otherProfile) {
-          sendMatchCreatedEmail(
-            expresserProfile.email,
-            expresserProfile.full_name || 'User',
-            otherProfile.full_name || 'Your connection',
-            otherProfile.title,
-            otherProfile.company
-          ).catch(e => console.error('Email error:', e))
+      // Send notifications to both users
+      await adminClient.from('notifications').insert([
+        {
+          user_id: expresserId,
+          type: 'new_connection',
+          title: 'Your introduction is ready',
+          body: `You're now connected with ${otherProfile?.full_name}. Start a conversation.`,
+          link: '/dashboard/network',
+          created_at: new Date().toISOString()
+        },
+        {
+          user_id: otherUserId,
+          type: 'new_connection',
+          title: 'Your introduction is ready',
+          body: `You're now connected with ${expresserProfile?.full_name}. Start a conversation.`,
+          link: '/dashboard/network',
+          created_at: new Date().toISOString()
         }
+      ])
 
-        if (otherProfile?.email && expresserProfile) {
-          sendMatchCreatedEmail(
-            otherProfile.email,
-            otherProfile.full_name || 'User',
-            expresserProfile.full_name || 'Your connection',
-            expresserProfile.title,
-            expresserProfile.company
-          ).catch(e => console.error('Email error:', e))
-        }
-
-        return NextResponse.json({
-          success: true,
-          mutualInterest: true,
-          matchCreated: true,
-          matchId: match.id,
-          matchStatus: 'active'
-        })
-      } else {
-        // Pending match - notify users
-        const { data: expresserProfile } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', expresserId)
-          .single()
-
-        const { data: otherProfile } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', otherUserId)
-          .single()
-
-        await adminClient.from('notifications').insert([
-          {
-            user_id: expresserId,
-            type: 'pending_introduction',
-            title: 'Introduction confirmed',
-            body: `Your introduction with ${otherProfile?.full_name} is confirmed. Visit Pending Introductions to proceed.`,
-            link: '/dashboard/pending',
-            created_at: new Date().toISOString()
-          },
-          {
-            user_id: otherUserId,
-            type: 'pending_introduction',
-            title: 'Introduction confirmed',
-            body: `Your introduction with ${expresserProfile?.full_name} is confirmed. Visit Pending Introductions to proceed.`,
-            link: '/dashboard/pending',
-            created_at: new Date().toISOString()
-          }
-        ])
-
-        return NextResponse.json({
-          success: true,
-          mutualInterest: true,
-          matchCreated: true,
-          matchId: match.id,
-          matchStatus: 'pending_credits'
-        })
+      // Send emails (async, don't wait)
+      if (expresserProfile?.email && otherProfile) {
+        sendMatchCreatedEmail(
+          expresserProfile.email,
+          expresserProfile.full_name || 'User',
+          otherProfile.full_name || 'Your connection',
+          otherProfile.title,
+          otherProfile.company
+        ).catch(e => console.error('Email error:', e))
       }
+
+      if (otherProfile?.email && expresserProfile) {
+        sendMatchCreatedEmail(
+          otherProfile.email,
+          otherProfile.full_name || 'User',
+          expresserProfile.full_name || 'Your connection',
+          expresserProfile.title,
+          expresserProfile.company
+        ).catch(e => console.error('Email error:', e))
+      }
+
+      return NextResponse.json({
+        success: true,
+        mutualInterest: true,
+        matchCreated: true,
+        matchId: match.id,
+        matchStatus: 'active'
+      })
     }
 
     // No mutual interest yet - just approved the intro request
