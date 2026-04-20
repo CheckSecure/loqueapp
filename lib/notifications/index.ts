@@ -247,4 +247,4 @@ export function getNotificationRoute(type: NotificationType, data?: Notification
     default:
       return '/dashboard'
   }
-}
+}// Force rebuild
