@@ -172,15 +172,40 @@ export async function POST(request: Request) {
 
       const { data: credits } = await adminClient
         .from('meeting_credits')
-        .select('balance')
+        .select('free_credits, premium_credits, balance')
         .eq('user_id', initiatorId)
         .single()
 
-      if (credits && credits.balance > 0) {
-        await adminClient
-          .from('meeting_credits')
-          .update({ balance: credits.balance - 1 })
-          .eq('user_id', initiatorId)
+      if (credits) {
+        const currentFree = credits.free_credits || 0
+        const currentPremium = credits.premium_credits || 0
+        
+        // Express Interest uses FREE credits ONLY (no premium fallback)
+        if (currentFree >= 1) {
+          const newFree = currentFree - 1
+          
+          await adminClient
+            .from('meeting_credits')
+            .update({
+              free_credits: newFree,
+              premium_credits: currentPremium, // Keep premium unchanged
+              balance: newFree + currentPremium // Keep legacy field in sync
+            })
+            .eq('user_id', initiatorId)
+          
+          console.log('[Credit Deduction] Express Interest (free credits only):', {
+            user: initiatorId,
+            free_before: currentFree,
+            free_after: newFree,
+            premium_unchanged: currentPremium
+          })
+        } else {
+          console.warn('[Credit Deduction] User has no free credits but match created:', {
+            user: initiatorId,
+            free_credits: currentFree,
+            premium_credits: currentPremium
+          })
+        }
       }
 
       return NextResponse.json({
