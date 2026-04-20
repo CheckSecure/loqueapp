@@ -64,7 +64,6 @@ const NOTIFICATION_COPY = {
   }
 }
 
-
 /**
  * Create a notification safely (prevents duplicates within 24 hours)
  */
@@ -145,7 +144,7 @@ export async function createNotificationSafe({
 }
 
 /**
- * Create a notification for a user
+ * Create a notification for a user (legacy - use createNotificationSafe instead)
  */
 export async function createNotification({
   userId,
@@ -154,7 +153,6 @@ export async function createNotification({
   message,
   data
 }: CreateNotificationParams) {
-  // Legacy function - use createNotificationSafe instead
   const adminClient = createAdminClient()
 
   try {
@@ -191,42 +189,6 @@ export async function createNotification({
 }
 
 /**
- * Create notifications for multiple users
- */
-export async function createBulkNotifications(
-  notifications: CreateNotificationParams[]
-) {
-  const adminClient = createAdminClient()
-
-  try {
-    const records = notifications.map(n => ({
-      user_id: n.userId,
-      type: n.type,
-      title: n.title,
-      message: n.message,
-      data: n.data,
-      read: false,
-      created_at: new Date().toISOString()
-    }))
-
-    const { error } = await adminClient
-      .from('notifications')
-      .insert(records)
-
-    if (error) {
-      console.error('[Notifications] Bulk create failed:', error)
-      return false
-    }
-
-    console.log(`[Notifications] Created ${records.length} notifications`)
-    return true
-  } catch (error) {
-    console.error('[Notifications] Bulk error:', error)
-    return false
-  }
-}
-
-/**
  * Mark notification as read
  */
 export async function markNotificationRead(notificationId: string, userId: string) {
@@ -237,7 +199,7 @@ export async function markNotificationRead(notificationId: string, userId: strin
       .from('notifications')
       .update({ read: true })
       .eq('id', notificationId)
-      .eq('user_id', userId) // Security: only mark own notifications
+      .eq('user_id', userId)
 
     if (error) {
       console.error('[Notifications] Failed to mark read:', error)
