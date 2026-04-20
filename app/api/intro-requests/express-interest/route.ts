@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { sendMatchCreatedEmail } from '@/lib/email'
 import { createNotificationSafe } from '@/lib/notifications'
+import { generateIcebreakers, generateSystemIntroMessage } from '@/lib/messaging/icebreakers'
 
 export async function POST(request: Request) {
   const supabase = createClient()
@@ -183,9 +184,44 @@ export async function POST(request: Request) {
       })
 
       // Create conversation immediately
-      await adminClient.from('conversations').insert({
-        match_id: match.id
-      })
+      const { data: conversation } = await adminClient
+        .from('conversations')
+        .insert({
+          match_id: match.id
+        })
+        .select()
+        .single()
+
+      if (conversation) {
+        // Generate icebreakers based on both users' profiles
+        const icebreakers = generateIcebreakers({
+          userA: expresserProfile,
+          userB: otherProfile
+        })
+
+        // Update conversation with suggested prompts
+        await adminClient
+          .from('conversations')
+          .update({
+            suggested_prompts: icebreakers
+          })
+          .eq('id', conversation.id)
+
+        // Insert system intro message
+        const systemMessage = generateSystemIntroMessage({
+          userA: expresserProfile,
+          userB: otherProfile,
+          reason: 'Mutual professional interest'
+        })
+
+        await adminClient.from('messages').insert({
+          conversation_id: conversation.id,
+          sender_id: null,
+          is_system: true,
+          content: systemMessage,
+          created_at: new Date().toISOString()
+        })
+      }
 
       // Get full profile data
       const { data: expresserProfile } = await supabase
