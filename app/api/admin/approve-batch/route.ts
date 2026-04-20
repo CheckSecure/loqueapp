@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createNotificationSafe } from '@/lib/notifications'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,9 +45,8 @@ export async function POST(req: NextRequest) {
       .eq('status', 'generated')
 
     // Notify all members of new batch
-    import { createNotificationSafe } from '@/lib/notifications'
     // Notifications handled by weekly-refresh cron job
-    // await createNotificationSafe({
+    // // await createNotificationSafe({ // Handled by weekly-refresh cron
       'new_batch',
       'Your introductions are ready',
       'Your curated introductions for this week are now available.',
