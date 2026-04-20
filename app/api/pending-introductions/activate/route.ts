@@ -113,21 +113,23 @@ export async function POST(request: Request) {
 
     // Send emails
     if (match.user_a.email && match.user_b) {
-      sendMatchCreatedEmail({
-        to: match.user_a.email,
-        matchName: match.user_b.full_name || 'Your connection',
-        matchTitle: match.user_b.title,
-        matchCompany: match.user_b.company
-      }).catch(e => console.error('Email error:', e))
+      sendMatchCreatedEmail(
+        match.user_a.email,
+        match.user_a.full_name || 'User',
+        match.user_b.full_name || 'Your connection',
+        match.user_b.title,
+        match.user_b.company
+      ).catch(e => console.error('Email error:', e))
     }
 
     if (match.user_b.email && match.user_a) {
-      sendMatchCreatedEmail({
-        to: match.user_b.email,
-        matchName: match.user_a.full_name || 'Your connection',
-        matchTitle: match.user_a.title,
-        matchCompany: match.user_a.company
-      }).catch(e => console.error('Email error:', e))
+      sendMatchCreatedEmail(
+        match.user_b.email,
+        match.user_b.full_name || 'User',
+        match.user_a.full_name || 'Your connection',
+        match.user_a.title,
+        match.user_a.company
+      ).catch(e => console.error('Email error:', e))
     }
 
     console.log('[Pending Introduction] Activated:', {

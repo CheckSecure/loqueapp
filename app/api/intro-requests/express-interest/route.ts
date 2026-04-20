@@ -213,21 +213,23 @@ export async function POST(request: Request) {
 
         // Send emails (async, don't wait)
         if (expresserProfile?.email && otherProfile) {
-          sendMatchCreatedEmail({
-            to: expresserProfile.email,
-            matchName: otherProfile.full_name || 'Your connection',
-            matchTitle: otherProfile.title,
-            matchCompany: otherProfile.company
-          }).catch(e => console.error('Email error:', e))
+          sendMatchCreatedEmail(
+            expresserProfile.email,
+            expresserProfile.full_name || 'User',
+            otherProfile.full_name || 'Your connection',
+            otherProfile.title,
+            otherProfile.company
+          ).catch(e => console.error('Email error:', e))
         }
 
         if (otherProfile?.email && expresserProfile) {
-          sendMatchCreatedEmail({
-            to: otherProfile.email,
-            matchName: expresserProfile.full_name || 'Your connection',
-            matchTitle: expresserProfile.title,
-            matchCompany: expresserProfile.company
-          }).catch(e => console.error('Email error:', e))
+          sendMatchCreatedEmail(
+            otherProfile.email,
+            otherProfile.full_name || 'User',
+            expresserProfile.full_name || 'Your connection',
+            expresserProfile.title,
+            expresserProfile.company
+          ).catch(e => console.error('Email error:', e))
         }
 
         return NextResponse.json({
