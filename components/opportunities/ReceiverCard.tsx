@@ -81,13 +81,13 @@ export function ReceiverCard({
   if (hidden) return null;
 
   return (
-    <article className="rounded-lg border border-[#C4922A]/30 bg-[#FDF9F0] p-6 shadow-sm">
+    <article className="rounded-lg border border-slate-200 border-l-4 border-l-[#C4922A] bg-white p-7 shadow-sm transition-shadow hover:shadow-md">
       <div className="text-[11px] font-medium uppercase tracking-wider text-[#C4922A]">
-        You were selected for this
+        Selected for you
       </div>
       <div className="mt-0.5 text-[11px] text-slate-500">Based on your experience</div>
 
-      <h3 className="mt-2 text-lg font-semibold text-slate-900">{opportunity.title}</h3>
+      <h3 className="mt-3 text-xl font-semibold text-slate-900">{opportunity.title}</h3>
 
       {opportunity.profiles && (opportunity.profiles.full_name || opportunity.profiles.company) && (
         <div className="mt-1 text-sm text-slate-700">
