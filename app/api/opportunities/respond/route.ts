@@ -155,5 +155,14 @@ export async function POST(request: Request) {
     data: { opportunity_id: opportunityId, responder_id: user.id },
   });
 
+  // Observability
+  const { logEvent } = await import('@/lib/opportunities/events');
+  await logEvent({
+    eventType: 'response_clicked',
+    opportunityId: opportunityId,
+    userId: user.id,
+    metadata: { role },
+  });
+
   return NextResponse.json({ status: 'interested', id: inserted.id, comped }, { status: 201 });
 }

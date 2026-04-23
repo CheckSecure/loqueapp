@@ -33,6 +33,17 @@ export default async function OpportunitiesPage() {
     .order('shown_at', { ascending: false })
     .limit(5);
 
+  // Mark all currently-visible candidate rows as seen. This feeds the
+  // 'unseen' count used by the soft-nudge cron. Fire-and-forget.
+  const forYouCandidateIds = (forYouRows ?? []).map((r) => r.id);
+  if (forYouCandidateIds.length > 0) {
+    await admin
+      .from('opportunity_candidates')
+      .update({ viewed_at: new Date().toISOString() })
+      .in('id', forYouCandidateIds)
+      .is('viewed_at', null);
+  }
+
   const forYouOppIds = (forYouRows ?? []).map((r) => r.opportunity_id);
   let respondedSet = new Set<string>();
   if (forYouOppIds.length > 0) {

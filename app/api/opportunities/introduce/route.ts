@@ -50,6 +50,15 @@ export async function POST(request: Request) {
     match_id: result.match_id,
   });
 
+  // Observability
+  const { logEvent } = await import('@/lib/opportunities/events');
+  await logEvent({
+    eventType: 'connection_made',
+    opportunityId: opportunity_id,
+    userId: user_id,
+    metadata: { creator_id: user.id, match_id: result.match_id },
+  });
+
   return NextResponse.json(
     { match_id: result.match_id, conversation_id: result.conversation_id },
     { status: 201 }
