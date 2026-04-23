@@ -17,7 +17,7 @@ const URGENCY_COPY: Record<Urgency, { label: string; window: string }> = {
 export default function BusinessForm() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [need, setNeed] = useState('');
   const [industry, setIndustry] = useState('');
@@ -25,10 +25,16 @@ export default function BusinessForm() {
   const [expertise, setExpertise] = useState('');
   const [description, setDescription] = useState('');
 
-  async function send() {
-    setError(null);
-    if (need.trim().length < 3) { setError('Describe the need.'); return; }
+  function clearError(key: string) {
+    setFieldErrors((prev) => {
+      if (!(key in prev)) return prev;
+      const { [key]: _, ...rest } = prev;
+      return rest;
+    });
+  }
 
+  async function send() {
+    setFieldErrors({});
     setBusy(true);
     try {
       const res = await fetch('/api/opportunities/create', {
@@ -48,13 +54,17 @@ export default function BusinessForm() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        setError(body.error ?? 'Could not send.');
+        if (body && body.fields && typeof body.fields === 'object') {
+          setFieldErrors(body.fields);
+        } else {
+          setFieldErrors({ _root: body.error || 'Could not send.' });
+        }
         setBusy(false);
         return;
       }
       router.push('/dashboard/opportunities?tab=yours');
     } catch {
-      setError('Network error.');
+      setFieldErrors({ _root: 'Network error.' });
       setBusy(false);
     }
   }
@@ -65,8 +75,16 @@ export default function BusinessForm() {
       <p className="mt-2 text-sm text-slate-500">Sent only to 3 highly-relevant providers.</p>
 
       <div className="mt-8 space-y-5">
-        <Field label="Need">
-          <input type="text" value={need} onChange={(e) => setNeed(e.target.value)} list="need-suggestions" maxLength={140} placeholder="Privacy counsel" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <Field label="Need" error={fieldErrors.title}>
+          <input
+            type="text"
+            value={need}
+            onChange={(e) => { clearError('title'); setNeed(e.target.value); }}
+            list="need-suggestions"
+            maxLength={140}
+            placeholder="Privacy counsel"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
           <datalist id="need-suggestions">
             {NEED_SUGGESTIONS.map((n) => (<option key={n} value={n} />))}
           </datalist>
@@ -76,10 +94,10 @@ export default function BusinessForm() {
           <input type="text" value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Fintech" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
         </Field>
 
-        <Field label="Urgency">
+        <Field label="Urgency" error={fieldErrors.urgency}>
           <div className="grid grid-cols-3 gap-2">
             {(['low', 'medium', 'urgent'] as Urgency[]).map((u) => (
-              <button key={u} type="button" onClick={() => setUrgency(u)} className={`rounded-md border px-3 py-2 text-left ${urgency === u ? 'border-[#1B2850] bg-[#1B2850]/5' : 'border-slate-300 hover:border-slate-400'}`}>
+              <button key={u} type="button" onClick={() => { clearError('urgency'); setUrgency(u); }} className={`rounded-md border px-3 py-2 text-left ${urgency === u ? 'border-[#1B2850] bg-[#1B2850]/5' : 'border-slate-300 hover:border-slate-400'}`}>
                 <div className="text-sm font-medium text-slate-900">{URGENCY_COPY[u].label}</div>
                 <div className="text-xs text-slate-500">{URGENCY_COPY[u].window}</div>
               </button>
@@ -87,15 +105,21 @@ export default function BusinessForm() {
           </div>
         </Field>
 
-        <Field label="Expertise tags (comma-separated)">
-          <input type="text" value={expertise} onChange={(e) => setExpertise(e.target.value)} placeholder="privacy, GDPR, ad tech" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <Field label="Expertise tags (comma-separated)" error={fieldErrors.expertise}>
+          <input
+            type="text"
+            value={expertise}
+            onChange={(e) => { clearError('expertise'); setExpertise(e.target.value); }}
+            placeholder="privacy, GDPR, ad tech"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
           <p className="mt-1 text-xs text-slate-500">Must match at least one tag on a provider's profile — strict filter.</p>
         </Field>
 
-        <Field label="Description (optional)">
+        <Field label="Description (optional)" error={fieldErrors.description}>
           <textarea
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => { clearError('description'); setDescription(e.target.value); }}
             maxLength={2000}
             rows={4}
             placeholder="Describe the need. Don't include email, phone, or direct contact — Andrel handles introductions."
@@ -104,7 +128,7 @@ export default function BusinessForm() {
           <p className="mt-1 text-xs text-slate-500">Contact details will be removed before providers see this.</p>
         </Field>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {fieldErrors._root && <p className="text-sm text-red-600">{fieldErrors._root}</p>}
 
         <div className="flex items-center justify-between pt-4">
           <Link href="/dashboard/opportunities/new" className="text-sm text-slate-500 hover:text-slate-700">← Back</Link>
@@ -117,11 +141,12 @@ export default function BusinessForm() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) {
   return (
     <div>
       <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-slate-500">{label}</label>
       {children}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );
 }

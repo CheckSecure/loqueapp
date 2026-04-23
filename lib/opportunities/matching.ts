@@ -2,16 +2,54 @@
  * lib/opportunities/matching.ts
  *
  * Candidate selection for the three opportunity paths.
+ *
+ * Prompt #15 changes:
+ * - Normalized scoring in ~0-95 range
+ * - Threshold filter: 40 hiring / 50 business / 55 recruiter
+ * - Near-threshold fallback: deliver 1 if top candidate scores within 5 of threshold
+ * - Min tag rules: 1 (hiring) / 2 (business) / 2 (recruiter)
+ * - Bootstrap behavior: users with < 3 past deliveries get median (0.5) stubs
+ *   for opp_response_rate and opp_conversation_continuation_rate
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   DELIVERY_CEILING,
-  OPPORTUNITY_NOTIF_SUPPRESSION_DAYS,
+  TRANCHE_CEILING,
   REMOVED_MATCH_COOLDOWN_DAYS,
   RECRUITER_WEEKLY_CAP,
 } from './caps';
+import { shouldNotify } from './notifications';
+import { rateLimitedUserIds } from './rateLimits';
+import { logMatcherRun, logEvent } from './events';
 import { acceptedRoleTypesForNeed } from './relevance';
+
+// ------------------------------------------------------------
+// Threshold configuration — Prompt #15
+// ------------------------------------------------------------
+
+export const THRESHOLDS = {
+  hiring: 40,
+  business: 50,
+  recruiter: 55,
+} as const;
+
+export const NEAR_THRESHOLD_WINDOW = 5;
+
+export const MIN_TAGS = {
+  hiring: 1,
+  business: 2,
+  recruiter: 2,
+} as const;
+
+export const BOOTSTRAP_DELIVERED_CUTOFF = 3;
+export const BOOTSTRAP_MEDIAN_RATE = 0.5;
+
+export type DeliveryMode =
+  | 'above_threshold'
+  | 'near_threshold_fallback'
+  | 'below_quality_threshold'
+  | 'no_qualified_pool';
 
 type OpportunityRow = {
   id: string;
@@ -36,9 +74,24 @@ type CandidateProfile = {
   trust_score: number | null;
   responsivenessScore: number | null;
   networkValueScore: number | null;
+  opp_delivered_count: number | null;
+  opp_response_rate: number | null;
+  opp_conversation_continuation_rate: number | null;
 };
 
 type ScoredCandidate = { userId: string; score: number };
+
+type SelectResult = {
+  delivered: ScoredCandidate[];
+  mode: DeliveryMode;
+  topScore: number | null;
+  qualifiedCount: number;
+  threshold: number;
+};
+
+// ------------------------------------------------------------
+// Exclusions
+// ------------------------------------------------------------
 
 function isoWeekStart(d = new Date()): string {
   const copy = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -94,18 +147,7 @@ async function excludedUserIdsFor(creatorId: string): Promise<Set<string>> {
   return excluded;
 }
 
-async function suppressedUserIds(): Promise<Set<string>> {
-  const admin = createAdminClient();
-  const cutoff = new Date(
-    Date.now() - OPPORTUNITY_NOTIF_SUPPRESSION_DAYS * 86400_000
-  ).toISOString();
-  const { data } = await admin
-    .from('notifications')
-    .select('user_id')
-    .in('type', ['opportunity_received', 'recruiter_request'])
-    .gte('created_at', cutoff);
-  return new Set((data ?? []).map((r) => r.user_id));
-}
+
 
 async function alreadyDeliveredFor(opportunityId: string): Promise<Set<string>> {
   const admin = createAdminClient();
@@ -115,6 +157,10 @@ async function alreadyDeliveredFor(opportunityId: string): Promise<Set<string>> 
     .eq('opportunity_id', opportunityId);
   return new Set((data ?? []).map((r) => r.user_id));
 }
+
+// ------------------------------------------------------------
+// Expertise + scoring helpers
+// ------------------------------------------------------------
 
 /**
  * profiles.expertise is stored as TEXT containing a Postgres array literal
@@ -127,7 +173,6 @@ function parseExpertise(raw: unknown): string[] {
   if (typeof raw !== 'string') return [];
   const trimmed = raw.trim();
   if (trimmed === '' || trimmed === '{}' || trimmed === '[]') return [];
-  // JSON array shape: ["a","b"]
   if (trimmed.startsWith('[')) {
     try {
       const j = JSON.parse(trimmed);
@@ -136,7 +181,6 @@ function parseExpertise(raw: unknown): string[] {
       return [];
     }
   }
-  // Postgres array literal shape: {a,"b c",d}
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
     const inner = trimmed.slice(1, -1);
     if (inner === '') return [];
@@ -159,7 +203,6 @@ function parseExpertise(raw: unknown): string[] {
     if (buf.length > 0) out.push(buf.trim());
     return out.filter((s) => s.length > 0);
   }
-  // Bare comma-separated fallback.
   return trimmed.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
@@ -170,124 +213,303 @@ function expertiseOverlapCount(a: unknown, b: string[] | undefined): number {
   return parsed.filter((t) => set.has(t.toLowerCase())).length;
 }
 
-function seniorityFitBonus(candidate: string | null, target: string | undefined): number {
+/**
+ * Seniority alignment: 15 points max for exact match, 7 for one step off,
+ * 0 for two+ steps or missing data.
+ */
+function seniorityAlignment(candidate: string | null, target: string | undefined): number {
   if (!candidate || !target) return 0;
   const order = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite'];
   const ci = order.indexOf(candidate);
   const ti = order.indexOf(target);
   if (ci < 0 || ti < 0) return 0;
   const diff = Math.abs(ci - ti);
-  if (diff === 0) return 5;
-  if (diff === 1) return 2;
+  if (diff === 0) return 15;
+  if (diff === 1) return 7;
   return 0;
 }
 
+/**
+ * Bootstrap a behavioral rate when the user has insufficient history.
+ * Returns the provided value clamped to [0,1], or the bootstrap median if
+ * the user has fewer than BOOTSTRAP_DELIVERED_CUTOFF prior deliveries.
+ */
+function bootstrapRate(value: number | null, deliveredCount: number | null): number {
+  const count = Number(deliveredCount ?? 0);
+  if (count < BOOTSTRAP_DELIVERED_CUTOFF || value === null) {
+    return BOOTSTRAP_MEDIAN_RATE;
+  }
+  const v = Number(value);
+  if (Number.isNaN(v)) return BOOTSTRAP_MEDIAN_RATE;
+  return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * Clamp a 0-100 score signal (trust, responsiveness, network) to a weighted range.
+ * Contribution is (value / 100) * maxPoints.
+ */
+function scaled(value: number | null, maxPoints: number): number {
+  const v = Number(value ?? 0);
+  if (Number.isNaN(v)) return 0;
+  const clamped = Math.max(0, Math.min(100, v));
+  return (clamped / 100) * maxPoints;
+}
+
+// ------------------------------------------------------------
+// Normalized scoring — Prompt #15 design weights
+// ------------------------------------------------------------
+
 function scoreHiring(c: CandidateProfile, o: OpportunityRow): number {
-  const overlap = expertiseOverlapCount(c.expertise, o.criteria.expertise);
+  // Expertise overlap: 12 per tag, capped at 3 tags (max 36)
+  const overlap = Math.min(3, expertiseOverlapCount(c.expertise, o.criteria.expertise));
+  const expertisePts = overlap * 12;
+
+  // Seniority alignment: 0-15
+  const seniorityPts = seniorityAlignment(c.seniority, o.criteria.seniority);
+
+  // Role-type match boost: Prompt #15 / Option C — role_type is a scoring
+  // signal for hiring (not a hard filter). Candidates whose role_type is in
+  // the creator's requested list get +15; others get 0.
+  const requested = o.criteria.role_types ?? [];
+  const roleTypePts =
+    requested.length === 0 || requested.includes(c.role_type ?? '') ? 15 : 0;
+
+  // Behavioral signals (bootstrap for new users)
+  const responseRate = bootstrapRate(c.opp_response_rate, c.opp_delivered_count);
+  const continuationRate = bootstrapRate(
+    c.opp_conversation_continuation_rate,
+    c.opp_delivered_count
+  );
+  const responsePts = responseRate * 10;
+  const continuationPts = continuationRate * 8;
+
+  // Scaled signals (0-100 → bounded contribution)
+  const responsivenessPts = scaled(c.responsivenessScore, 10);
+  const trustPts = scaled(c.trust_score, 10);
+  const networkPts = scaled(c.networkValueScore, 6);
+
   return (
-    overlap * 2 +
-    (Number(c.trust_score ?? 0) * 1.5) +
-    Number(c.responsivenessScore ?? 0) +
-    (Number(c.networkValueScore ?? 0) * 0.5) +
-    seniorityFitBonus(c.seniority, o.criteria.seniority)
+    expertisePts +
+    seniorityPts +
+    roleTypePts +
+    responsePts +
+    continuationPts +
+    responsivenessPts +
+    trustPts +
+    networkPts
   );
 }
 
 function scoreBusiness(c: CandidateProfile, o: OpportunityRow): number {
-  const overlap = expertiseOverlapCount(c.expertise, o.criteria.expertise);
-  return (
-    overlap * 3 +
-    (Number(c.trust_score ?? 0) * 1.5) +
-    Number(c.responsivenessScore ?? 0) +
-    (Number(c.networkValueScore ?? 0) * 0.5)
+  const overlap = Math.min(3, expertiseOverlapCount(c.expertise, o.criteria.expertise));
+  const expertisePts = overlap * 12;
+
+  // Business doesn't use seniority alignment — providers match on expertise
+  const responseRate = bootstrapRate(c.opp_response_rate, c.opp_delivered_count);
+  const continuationRate = bootstrapRate(
+    c.opp_conversation_continuation_rate,
+    c.opp_delivered_count
   );
+  const responsePts = responseRate * 10;
+  const continuationPts = continuationRate * 8;
+
+  const responsivenessPts = scaled(c.responsivenessScore, 10);
+  const trustPts = scaled(c.trust_score, 10);
+  const networkPts = scaled(c.networkValueScore, 6);
+
+  return expertisePts + responsePts + continuationPts + responsivenessPts + trustPts + networkPts;
 }
 
-export async function selectCandidates(
-  opportunity: OpportunityRow
-): Promise<ScoredCandidate[]> {
+function scoreRecruiter(c: CandidateProfile): number {
+  const responseRate = bootstrapRate(c.opp_response_rate, c.opp_delivered_count);
+  const continuationRate = bootstrapRate(
+    c.opp_conversation_continuation_rate,
+    c.opp_delivered_count
+  );
+  const responsePts = responseRate * 10;
+  const continuationPts = continuationRate * 8;
+
+  const responsivenessPts = scaled(c.responsivenessScore, 10);
+  const trustPts = scaled(c.trust_score, 10);
+  const networkPts = scaled(c.networkValueScore, 6);
+
+  return responsePts + continuationPts + responsivenessPts + trustPts + networkPts;
+}
+
+// ------------------------------------------------------------
+// Threshold + fallback application
+// ------------------------------------------------------------
+
+/**
+ * Apply the threshold filter + near-threshold fallback per Prompt #15.
+ *
+ * Preconditions: scored is already filtered to min-tag-qualified candidates
+ * and sorted descending by score.
+ *
+ * Returns: selection + delivery mode metadata.
+ */
+function applyThresholdAndFallback(
+  scored: ScoredCandidate[],
+  threshold: number,
+  deliveryCeiling: number
+): {
+  delivered: ScoredCandidate[];
+  mode: DeliveryMode;
+  topScore: number | null;
+} {
+  if (scored.length === 0) {
+    return { delivered: [], mode: 'no_qualified_pool', topScore: null };
+  }
+
+  const topScore = scored[0].score;
+  const above = scored.filter((s) => s.score >= threshold);
+
+  if (above.length > 0) {
+    return {
+      delivered: above.slice(0, deliveryCeiling),
+      mode: 'above_threshold',
+      topScore,
+    };
+  }
+
+  // Zero above threshold — is top candidate within near-threshold window?
+  if (topScore >= threshold - NEAR_THRESHOLD_WINDOW) {
+    return {
+      delivered: [scored[0]],
+      mode: 'near_threshold_fallback',
+      topScore,
+    };
+  }
+
+  return { delivered: [], mode: 'below_quality_threshold', topScore };
+}
+
+// ------------------------------------------------------------
+// Selection (hiring / business / recruiter)
+// ------------------------------------------------------------
+
+const PROFILE_SELECT =
+  'id, seniority, role_type, expertise, trust_score, ' +
+  '"networkValueScore", "responsivenessScore", ' +
+  'opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate';
+
+export async function selectCandidates(opportunity: OpportunityRow): Promise<SelectResult> {
   const admin = createAdminClient();
 
-  const [excluded, suppressed, alreadyDelivered] = await Promise.all([
+  const [excluded, alreadyDelivered, rateLimited] = await Promise.all([
     excludedUserIdsFor(opportunity.creator_id),
-    suppressedUserIds(),
     alreadyDeliveredFor(opportunity.id),
+    rateLimitedUserIds(opportunity.creator_id),
   ]);
 
   const { data: pool } = await admin
     .from('profiles')
-    .select(
-      'id, seniority, role_type, expertise, trust_score, ' +
-      '"networkValueScore", "responsivenessScore"'
-    )
+    .select(PROFILE_SELECT)
     .eq('open_to_roles', true)
     .eq('account_status', 'active')
     .eq('profile_complete', true);
 
+  const requestedRoleTypes = opportunity.criteria.role_types ?? [];
+
   const filtered = (pool ?? [])
     .filter((p) => !excluded.has(p.id))
-    .filter((p) => !suppressed.has(p.id))
     .filter((p) => !alreadyDelivered.has(p.id))
-    .filter((p) => {
-      const overlap = expertiseOverlapCount(p.expertise, opportunity.criteria.expertise);
-      const roleMatch = opportunity.criteria.role_types?.includes(p.role_type ?? '');
-      return overlap > 0 || roleMatch;
-    });
+    .filter((p) => !rateLimited.has(p.id))
+    // Option C: role_type is a scoring boost for hiring, not a hard filter.
+    // (See scoreHiring roleTypePts.) Business KEEPS the hard filter.
+    // Min-tag rule for hiring: >=1 overlap
+    .filter(
+      (p) =>
+        expertiseOverlapCount(p.expertise, opportunity.criteria.expertise) >=
+        MIN_TAGS.hiring
+    );
 
   const scored: ScoredCandidate[] = filtered.map((p) => ({
     userId: p.id,
-    score: scoreHiring(p, opportunity),
+    score: scoreHiring(p as CandidateProfile, opportunity),
   }));
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, DELIVERY_CEILING.hiring);
+
+  const result = applyThresholdAndFallback(
+    scored,
+    THRESHOLDS.hiring,
+    TRANCHE_CEILING.hiring
+  );
+
+  return {
+    delivered: result.delivered,
+    mode: result.mode,
+    topScore: result.topScore,
+    qualifiedCount: scored.length,
+    threshold: THRESHOLDS.hiring,
+  };
 }
 
-export async function selectProviders(
-  opportunity: OpportunityRow
-): Promise<ScoredCandidate[]> {
+export async function selectProviders(opportunity: OpportunityRow): Promise<SelectResult> {
   const admin = createAdminClient();
 
-  const [excluded, suppressed, alreadyDelivered] = await Promise.all([
+  const [excluded, alreadyDelivered, rateLimited] = await Promise.all([
     excludedUserIdsFor(opportunity.creator_id),
-    suppressedUserIds(),
     alreadyDeliveredFor(opportunity.id),
+    rateLimitedUserIds(opportunity.creator_id),
   ]);
 
   const acceptedRoles = acceptedRoleTypesForNeed(opportunity.criteria.need);
 
   const { data: pool } = await admin
     .from('profiles')
-    .select(
-      'id, seniority, role_type, expertise, trust_score, ' +
-      '"networkValueScore", "responsivenessScore"'
-    )
+    .select(PROFILE_SELECT)
     .eq('open_to_business_solutions', true)
     .eq('account_status', 'active')
     .eq('profile_complete', true);
 
   const filtered = (pool ?? [])
     .filter((p) => !excluded.has(p.id))
-    .filter((p) => !suppressed.has(p.id))
     .filter((p) => !alreadyDelivered.has(p.id))
+    .filter((p) => !rateLimited.has(p.id))
     .filter((p) => acceptedRoles.includes(p.role_type ?? ''))
-    .filter((p) => expertiseOverlapCount(p.expertise, opportunity.criteria.expertise) >= 1);
+    // Min-tag rule for business: >=2 overlap (strict)
+    .filter(
+      (p) =>
+        expertiseOverlapCount(p.expertise, opportunity.criteria.expertise) >=
+        MIN_TAGS.business
+    );
 
   const scored: ScoredCandidate[] = filtered.map((p) => ({
     userId: p.id,
-    score: scoreBusiness(p, opportunity),
+    score: scoreBusiness(p as CandidateProfile, opportunity),
   }));
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, DELIVERY_CEILING.business);
+
+  const result = applyThresholdAndFallback(
+    scored,
+    THRESHOLDS.business,
+    TRANCHE_CEILING.business
+  );
+
+  return {
+    delivered: result.delivered,
+    mode: result.mode,
+    topScore: result.topScore,
+    qualifiedCount: scored.length,
+    threshold: THRESHOLDS.business,
+  };
 }
 
-export async function selectRecruiters(
-  opportunity: OpportunityRow
-): Promise<ScoredCandidate[]> {
+export async function selectRecruiters(opportunity: OpportunityRow): Promise<SelectResult> {
   const admin = createAdminClient();
 
-  if (!opportunity.include_recruiters || opportunity.type !== 'hiring') return [];
+  if (!opportunity.include_recruiters || opportunity.type !== 'hiring') {
+    return {
+      delivered: [],
+      mode: 'no_qualified_pool',
+      topScore: null,
+      qualifiedCount: 0,
+      threshold: THRESHOLDS.recruiter,
+    };
+  }
 
   const { data: networkMatches } = await admin
     .from('matches')
@@ -302,12 +524,20 @@ export async function selectRecruiters(
     networkIds.add(other);
   });
 
-  if (networkIds.size === 0) return [];
+  if (networkIds.size === 0) {
+    return {
+      delivered: [],
+      mode: 'no_qualified_pool',
+      topScore: null,
+      qualifiedCount: 0,
+      threshold: THRESHOLDS.recruiter,
+    };
+  }
 
-  const [excluded, suppressed, alreadyDelivered] = await Promise.all([
+  const [excluded, alreadyDelivered, rateLimited] = await Promise.all([
     excludedUserIdsFor(opportunity.creator_id),
-    suppressedUserIds(),
     alreadyDeliveredFor(opportunity.id),
+    rateLimitedUserIds(opportunity.creator_id),
   ]);
 
   const week = isoWeekStart();
@@ -320,7 +550,11 @@ export async function selectRecruiters(
 
   const { data: pool } = await admin
     .from('profiles')
-    .select('id, trust_score, "networkValueScore", "responsivenessScore"')
+    .select(
+      'id, seniority, role_type, expertise, trust_score, ' +
+        '"networkValueScore", "responsivenessScore", ' +
+        'opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate'
+    )
     .eq('recruiter', true)
     .eq('account_status', 'active')
     .eq('profile_complete', true)
@@ -328,45 +562,85 @@ export async function selectRecruiters(
 
   const filtered = (pool ?? [])
     .filter((p) => !excluded.has(p.id))
-    .filter((p) => !suppressed.has(p.id))
     .filter((p) => !alreadyDelivered.has(p.id))
-    .filter((p) => !overCap.has(p.id));
+    .filter((p) => !rateLimited.has(p.id))
+    .filter((p) => !overCap.has(p.id))
+    // Min-tag rule for recruiter: >=2 overlap
+    .filter(
+      (p) =>
+        expertiseOverlapCount(p.expertise, opportunity.criteria.expertise) >=
+        MIN_TAGS.recruiter
+    );
 
   const scored: ScoredCandidate[] = filtered.map((p) => ({
     userId: p.id,
-    score: Number(p.trust_score ?? 0) * 1.5 + Number(p.responsivenessScore ?? 0),
+    score: scoreRecruiter(p as CandidateProfile),
   }));
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, DELIVERY_CEILING.recruiter);
+
+  const result = applyThresholdAndFallback(
+    scored,
+    THRESHOLDS.recruiter,
+    TRANCHE_CEILING.recruiter
+  );
+
+  return {
+    delivered: result.delivered,
+    mode: result.mode,
+    topScore: result.topScore,
+    qualifiedCount: scored.length,
+    threshold: THRESHOLDS.recruiter,
+  };
 }
 
+// ------------------------------------------------------------
+// Delivery
+// ------------------------------------------------------------
+
+export type DeliveryResult = {
+  candidatesNotified: number;
+  recruitersNotified: number;
+  candidateMode: DeliveryMode;
+  recruiterMode: DeliveryMode;
+  candidateTopScore: number | null;
+  recruiterTopScore: number | null;
+  candidateThreshold: number;
+  recruiterThreshold: number;
+  candidateQualified: number;
+  recruiterQualified: number;
+};
+
 export async function deliverOpportunity(
-  opportunity: OpportunityRow
-): Promise<{ candidatesNotified: number; recruitersNotified: number }> {
+  opportunity: OpportunityRow,
+  options: { tranche?: 1 | 2 } = {}
+): Promise<DeliveryResult> {
+  const tranche = options.tranche ?? 1;
   const admin = createAdminClient();
 
-  const candidates =
+  const candidateResult =
     opportunity.type === 'hiring'
       ? await selectCandidates(opportunity)
       : await selectProviders(opportunity);
 
-  const recruiters = await selectRecruiters(opportunity);
+  const recruiterResult = await selectRecruiters(opportunity);
 
   const candidateRole = opportunity.type === 'hiring' ? 'candidate' : 'provider';
 
   const rows = [
-    ...candidates.map((c) => ({
+    ...candidateResult.delivered.map((c) => ({
       opportunity_id: opportunity.id,
       user_id: c.userId,
       role: candidateRole,
-      relevance_score: c.score,
+      relevance_score: Math.round(c.score),
+      tranche,
     })),
-    ...recruiters.map((c) => ({
+    ...recruiterResult.delivered.map((c) => ({
       opportunity_id: opportunity.id,
       user_id: c.userId,
       role: 'recruiter',
-      relevance_score: c.score,
+      relevance_score: Math.round(c.score),
+      tranche,
     })),
   ];
 
@@ -377,22 +651,86 @@ export async function deliverOpportunity(
 
   const { createNotificationSafe } = await import('@/lib/notifications');
 
-  await Promise.all([
-    ...candidates.map((c) =>
-      createNotificationSafe({
-        userId: c.userId,
-        type: 'opportunity_received',
-        data: { opportunity_id: opportunity.id, role: candidateRole },
-      })
-    ),
-    ...recruiters.map((c) =>
-      createNotificationSafe({
-        userId: c.userId,
-        type: 'recruiter_request',
-        data: { opportunity_id: opportunity.id, role: 'recruiter' },
-      })
-    ),
-  ]);
+  // Per-type notification cooldowns: users receive candidate rows (delivery)
+  // regardless, but notifications are gated by shouldNotify() per type.
+  // This is the delivery/notification split introduced in Prompt #15.
+  const candidateType = opportunity.type === 'hiring' ? 'opportunity_received' : 'opportunity_received';
+  await Promise.all(
+    candidateResult.delivered.map(async (c) => {
+      if (await shouldNotify(c.userId, candidateType)) {
+        await createNotificationSafe({
+          userId: c.userId,
+          type: candidateType,
+          data: { opportunity_id: opportunity.id, role: candidateRole },
+        });
+      }
+    })
+  );
+  await Promise.all(
+    recruiterResult.delivered.map(async (c) => {
+      if (await shouldNotify(c.userId, 'recruiter_request')) {
+        await createNotificationSafe({
+          userId: c.userId,
+          type: 'recruiter_request',
+          data: { opportunity_id: opportunity.id, role: 'recruiter' },
+        });
+      }
+    })
+  );
 
-  return { candidatesNotified: candidates.length, recruitersNotified: recruiters.length };
+  // Track matcher run on the opportunity itself.
+  await admin
+    .from('opportunities')
+    .update({ last_matcher_run_at: new Date().toISOString() })
+    .eq('id', opportunity.id);
+
+  // Observability: log matcher runs and per-candidate deliveries.
+  // Fail-open — logging errors don't block delivery.
+  await logMatcherRun({
+    opportunityId: opportunity.id,
+    tranche,
+    deliveryMode: candidateResult.mode,
+    deliveredCount: candidateResult.delivered.length,
+    topScore: candidateResult.topScore,
+    reason: candidateResult.mode,
+  });
+  if (recruiterResult.delivered.length > 0 || recruiterResult.mode !== 'no_qualified_pool') {
+    await logMatcherRun({
+      opportunityId: opportunity.id,
+      tranche,
+      deliveryMode: recruiterResult.mode,
+      deliveredCount: recruiterResult.delivered.length,
+      topScore: recruiterResult.topScore,
+      reason: `recruiter_${recruiterResult.mode}`,
+    });
+  }
+  for (const c of candidateResult.delivered) {
+    await logEvent({
+      eventType: 'candidates_delivered',
+      opportunityId: opportunity.id,
+      userId: c.userId,
+      metadata: { role: candidateRole, tranche, score: Math.round(c.score) },
+    });
+  }
+  for (const c of recruiterResult.delivered) {
+    await logEvent({
+      eventType: 'candidates_delivered',
+      opportunityId: opportunity.id,
+      userId: c.userId,
+      metadata: { role: 'recruiter', tranche, score: Math.round(c.score) },
+    });
+  }
+
+  return {
+    candidatesNotified: candidateResult.delivered.length,
+    recruitersNotified: recruiterResult.delivered.length,
+    candidateMode: candidateResult.mode,
+    recruiterMode: recruiterResult.mode,
+    candidateTopScore: candidateResult.topScore,
+    recruiterTopScore: recruiterResult.topScore,
+    candidateThreshold: candidateResult.threshold,
+    recruiterThreshold: recruiterResult.threshold,
+    candidateQualified: candidateResult.qualifiedCount,
+    recruiterQualified: recruiterResult.qualifiedCount,
+  };
 }

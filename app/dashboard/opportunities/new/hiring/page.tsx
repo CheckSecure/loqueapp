@@ -10,7 +10,7 @@ const ROLE_TYPE_OPTIONS = ['In-house Counsel', 'Law firm attorney', 'Consultant'
 export default function HiringForm() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [title, setTitle] = useState('');
   const [seniority, setSeniority] = useState('');
@@ -20,15 +20,21 @@ export default function HiringForm() {
   const [description, setDescription] = useState('');
   const [includeRecruiters, setIncludeRecruiters] = useState(false);
 
+  function clearError(key: string) {
+    setFieldErrors((prev) => {
+      if (!(key in prev)) return prev;
+      const { [key]: _, ...rest } = prev;
+      return rest;
+    });
+  }
+
   function toggleRoleType(t: string) {
+    clearError('role_types');
     setRoleTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
   }
 
   async function send() {
-    setError(null);
-    if (title.trim().length < 3) { setError('Give it a short title.'); return; }
-    if (!seniority) { setError('Seniority is required.'); return; }
-
+    setFieldErrors({});
     setBusy(true);
     try {
       const res = await fetch('/api/opportunities/create', {
@@ -50,13 +56,17 @@ export default function HiringForm() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        setError(body.error ?? 'Could not send.');
+        if (body && body.fields && typeof body.fields === 'object') {
+          setFieldErrors(body.fields);
+        } else {
+          setFieldErrors({ _root: body.error || 'Could not send.' });
+        }
         setBusy(false);
         return;
       }
       router.push('/dashboard/opportunities?tab=yours');
     } catch {
-      setError('Network error.');
+      setFieldErrors({ _root: 'Network error.' });
       setBusy(false);
     }
   }
@@ -67,12 +77,23 @@ export default function HiringForm() {
       <p className="mt-2 text-sm text-slate-500">Sent only to matched members who are open to new roles.</p>
 
       <div className="mt-8 space-y-5">
-        <Field label="Role title">
-          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={140} placeholder="Senior Privacy Counsel" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <Field label="Role title" error={fieldErrors.title}>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => { clearError('title'); setTitle(e.target.value); }}
+            maxLength={140}
+            placeholder="Senior Privacy Counsel"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
         </Field>
 
-        <Field label="Seniority">
-          <select value={seniority} onChange={(e) => setSeniority(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+        <Field label="Seniority" error={fieldErrors.seniority}>
+          <select
+            value={seniority}
+            onChange={(e) => { clearError('seniority'); setSeniority(e.target.value); }}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          >
             <option value="">Select…</option>
             {SENIORITY_OPTIONS.map((s) => (<option key={s} value={s}>{s}</option>))}
           </select>
@@ -82,7 +103,7 @@ export default function HiringForm() {
           <input type="text" value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Fintech" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
         </Field>
 
-        <Field label="Role types to consider">
+        <Field label="Role types to consider" error={fieldErrors.role_types}>
           <div className="flex flex-wrap gap-2">
             {ROLE_TYPE_OPTIONS.map((t) => (
               <button type="button" key={t} onClick={() => toggleRoleType(t)} className={`rounded-full border px-3 py-1 text-xs ${roleTypes.includes(t) ? 'border-[#1B2850] bg-[#1B2850] text-white' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>
@@ -92,14 +113,20 @@ export default function HiringForm() {
           </div>
         </Field>
 
-        <Field label="Expertise tags (comma-separated, optional)">
-          <input type="text" value={expertise} onChange={(e) => setExpertise(e.target.value)} placeholder="privacy, GDPR, ad tech" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <Field label="Expertise tags (comma-separated)" error={fieldErrors.expertise}>
+          <input
+            type="text"
+            value={expertise}
+            onChange={(e) => { clearError('expertise'); setExpertise(e.target.value); }}
+            placeholder="privacy, GDPR, ad tech"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
         </Field>
 
-        <Field label="Description (optional)">
+        <Field label="Description (optional)" error={fieldErrors.description}>
           <textarea
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => { clearError('description'); setDescription(e.target.value); }}
             maxLength={2000}
             rows={4}
             placeholder="Describe the role. Don't include email addresses, phone numbers, or direct contact info — Andrel handles introductions."
@@ -116,7 +143,7 @@ export default function HiringForm() {
           </div>
         </label>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {fieldErrors._root && <p className="text-sm text-red-600">{fieldErrors._root}</p>}
 
         <div className="flex items-center justify-between pt-4">
           <Link href="/dashboard/opportunities/new" className="text-sm text-slate-500 hover:text-slate-700">← Back</Link>
@@ -129,11 +156,12 @@ export default function HiringForm() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) {
   return (
     <div>
       <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-slate-500">{label}</label>
       {children}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );
 }
