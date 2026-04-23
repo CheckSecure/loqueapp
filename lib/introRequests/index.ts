@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from '@/lib/supabase/server'
+import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 
 async function resolveProfileId(supabase: ReturnType<typeof createClient>, authUserId: string, authUserEmail?: string) {
   const orClause = authUserEmail
@@ -210,8 +211,7 @@ export async function approveIntroRequest(requestId: string) {
       .from('matches')
       .select('id')
       .or(
-        `and(user_a_id.eq.${req.requester_id},user_b_id.eq.${req.target_user_id}),` +
-        `and(user_a_id.eq.${req.target_user_id},user_b_id.eq.${req.requester_id})`
+        buildBidirectionalMatchFilter(req.requester_id, req.target_user_id)
       )
       .limit(1)
       .single()

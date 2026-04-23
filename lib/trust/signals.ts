@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 type SignalType = 'profile_complete' | 'message_sent' | 'message_replied' | 'meeting_scheduled' | 'meeting_completed' | 'intro_accepted'
 
@@ -14,7 +14,7 @@ const SIGNAL_WEIGHTS: Record<SignalType, number> = {
 }
 
 export async function trackTrustSignal(userId: string, signalType: SignalType) {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   
   await supabase.from('trust_signals').insert({
     user_id: userId,
@@ -26,7 +26,7 @@ export async function trackTrustSignal(userId: string, signalType: SignalType) {
 }
 
 async function updateTrustScore(userId: string) {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   
   const { data: signals } = await supabase
     .from('trust_signals')
@@ -58,7 +58,7 @@ async function updateTrustScore(userId: string) {
 }
 
 export async function checkProfileCompletion(userId: string) {
-  const supabase = createClient()
+  const supabase = createAdminClient()
   
   const { data: profile } = await supabase
     .from('profiles')

@@ -812,18 +812,39 @@ export async function generateOnboardingRecommendations(userId: string) {
   
   // EXCLUSION LOGIC: Get users to exclude from matching
   
-  // 1. Users already matched (bidirectional)
+  // 1. Users already matched (bidirectional), except soft-removed matches past the 180-day cooldown
   const { data: existingMatches } = await adminClient
     .from('matches')
-    .select('user_a_id, user_b_id')
+    .select('user_a_id, user_b_id, status, removed_at')
     .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
-  
+
+  const REMOVAL_COOLDOWN_MS = 180 * 24 * 60 * 60 * 1000
+  const nowMs = Date.now()
   const matchedUserIds = new Set<string>()
   existingMatches?.forEach(m => {
+    // Removed matches past the cooldown are considered historical and no longer exclude
+    if (m.status === 'removed' && m.removed_at) {
+      const removedMs = new Date(m.removed_at).getTime()
+      if (!Number.isNaN(removedMs) && (nowMs - removedMs) > REMOVAL_COOLDOWN_MS) {
+        return
+      }
+    }
     matchedUserIds.add(m.user_a_id)
     matchedUserIds.add(m.user_b_id)
   })
   matchedUserIds.delete(userId) // Remove self
+
+  // 1b. Blocked users (either direction)
+  const { data: blockRows } = await adminClient
+    .from('blocked_users')
+    .select('user_id, blocked_user_id')
+    .or(`user_id.eq.${userId},blocked_user_id.eq.${userId}`)
+
+  const blockedUserIds = new Set<string>()
+  for (const row of blockRows || []) {
+    if (row.user_id === userId) blockedUserIds.add(row.blocked_user_id)
+    else blockedUserIds.add(row.user_id)
+  }
   
   // 2. Users hidden or passed (bidirectional with cooldown)
   const cooldownDate = new Date()
@@ -858,7 +879,7 @@ export async function generateOnboardingRecommendations(userId: string) {
     .from('intro_requests')
     .select('target_user_id, requester_id')
     .or(`requester_id.eq.${userId},target_user_id.eq.${userId}`)
-    .in('status', ['suggested', 'pending', 'accepted'])
+    .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
   
   existingIntros?.forEach(req => {
     const otherId = req.requester_id === userId ? req.target_user_id : req.requester_id
@@ -873,10 +894,12 @@ export async function generateOnboardingRecommendations(userId: string) {
   
   const usersWithData = allUsers
     .filter(u => {
-      // Exclude matched users
+      // Exclude matched users (with removed-cooldown logic applied above)
       if (matchedUserIds.has(u.id)) return false
       // Exclude hidden/passed/suggested users
       if (excludedUserIds.has(u.id)) return false
+      // Exclude blocked users in either direction
+      if (blockedUserIds.has(u.id)) return false
       // Continue with existing data validation
       return true
     })

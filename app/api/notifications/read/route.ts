@@ -16,9 +16,9 @@ export async function POST(request: Request) {
       // Mark all notifications as read
       const { error } = await adminClient
         .from('notifications')
-        .update({ read: true })
+        .update({ read_at: new Date().toISOString() })
         .eq('user_id', user.id)
-        .eq('read', false)
+        .is('read_at', null)
 
       if (error) throw error
 
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       // Mark single notification as read
       const { error } = await adminClient
         .from('notifications')
-        .update({ read: true })
+        .update({ read_at: new Date().toISOString() })
         .eq('id', notificationId)
         .eq('user_id', user.id) // Security: only mark own notifications
 

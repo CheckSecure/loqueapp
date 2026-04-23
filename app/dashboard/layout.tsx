@@ -68,6 +68,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           .select('id', { count: 'exact', head: true })
           .in('conversation_id', convIds)
           .neq('sender_id', user.id)
+          .eq('is_system', false)
           .is('read_at', null)
 
         if (!error) {
@@ -78,6 +79,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             .select('id', { count: 'exact', head: true })
             .in('conversation_id', convIds)
             .neq('sender_id', user.id)
+            .eq('is_system', false)
           unreadCount = fallbackCount ?? 0
         }
       }

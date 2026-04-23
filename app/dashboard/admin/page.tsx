@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, GitBranch, UserPlus, Inbox, TrendingUp, MessageSquare, Calendar, Network } from 'lucide-react'
+import { Users, GitBranch, UserPlus, Inbox, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench } from 'lucide-react'
 
 export const metadata = { title: 'Admin Dashboard | Andrel' }
 
@@ -152,27 +152,6 @@ export default async function AdminDashboard() {
             </div>
           </Link>
 
-          {/* Intro Requests */}
-          <Link
-            href="/dashboard/admin/intros"
-            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
-                <Inbox className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
-              </div>
-              {(pendingIntros || 0) > 0 && (
-                <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded">
-                  {pendingIntros} pending
-                </span>
-              )}
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Intro Requests</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Review and approve member-initiated introduction requests
-            </p>
-          </Link>
-
           {/* Waitlist */}
           <Link
             href="/dashboard/admin/waitlist"
@@ -189,6 +168,44 @@ export default async function AdminDashboard() {
             </p>
             <div className="flex items-center gap-4 text-xs text-slate-600">
               <span>{waitlistCount || 0} pending approval</span>
+            </div>
+          </Link>
+
+          {/* Operations */}
+          <Link
+            href="/dashboard/admin/operations"
+            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
+                <Wrench className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Operations</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Advanced tools for debugging, manual overrides, and system support.
+            </p>
+            <div className="flex items-center gap-4 text-xs text-slate-600">
+              <span>Support &amp; debug tools</span>
+            </div>
+          </Link>
+
+          {/* Match Inspector */}
+          <Link
+            href="/dashboard/admin/match-inspector"
+            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
+                <Search className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Match Inspector</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Inspect any pair — relationship state, eligibility, insights, and override tools
+            </p>
+            <div className="flex items-center gap-4 text-xs text-slate-600">
+              <span>Pair lookup &amp; manual actions</span>
             </div>
           </Link>
 

@@ -1,7 +1,24 @@
 import Stripe from 'stripe'
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-02-25.clover',
+let _stripeClient: Stripe | null = null
+
+export function getStripe(): Stripe {
+  if (!_stripeClient) {
+    const key = process.env.STRIPE_SECRET_KEY
+    if (!key) throw new Error('STRIPE_SECRET_KEY is not set')
+    _stripeClient = new Stripe(key, { apiVersion: '2026-02-25.clover' })
+  }
+  return _stripeClient
+}
+
+// Backward-compat: lazy proxy so existing `import { stripe }` callers keep working
+// without triggering instantiation at module load.
+export const stripe = new Proxy({} as Stripe, {
+  get(_target, prop) {
+    const client = getStripe() as any
+    const value = client[prop]
+    return typeof value === 'function' ? value.bind(client) : value
+  }
 })
 
 export const PLANS = {

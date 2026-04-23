@@ -1,6 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+
+import { useState, useEffect } from 'react'
 import { Calendar, Clock, Video, Plus, MapPin, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ScheduleMeetingModal from './ScheduleMeetingModal'
@@ -110,6 +112,27 @@ export default function MeetingsClient({
 }) {
   const [view, setView] = useState<'list' | 'calendar'>('list')
   const [showSchedule, setShowSchedule] = useState(false)
+  const [initialRecipientId, setInitialRecipientId] = useState<string | undefined>(undefined)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  useEffect(() => {
+    const wantsSchedule = searchParams.get('schedule') === '1'
+    const withUser = searchParams.get('with') || undefined
+    if (wantsSchedule) {
+      setInitialRecipientId(withUser)
+      setShowSchedule(true)
+    }
+  }, [searchParams])
+
+  function handleCloseSchedule() {
+    setShowSchedule(false)
+    setInitialRecipientId(undefined)
+    // Strip query params so a refresh doesn't re-open the modal
+    if (searchParams.get('schedule') || searchParams.get('with')) {
+      router.replace('/dashboard/meetings')
+    }
+  }
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null)
 
   const MeetingCard = ({ m, faded }: { m: Meeting; faded?: boolean }) => (
@@ -274,7 +297,8 @@ export default function MeetingsClient({
 
       {showSchedule && (
         <ScheduleMeetingModal
-          onClose={() => setShowSchedule(false)}
+          onClose={handleCloseSchedule}
+          initialRecipientId={initialRecipientId}
           matchedUsers={matchedUsers}
         />
       )}

@@ -1,97 +1,145 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import MessagesClient from '@/components/MessagesClient'
+'use client'
 
-export const metadata = { title: 'Messages | Andrel' }
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { formatDistanceToNow } from 'date-fns'
 
-export default async function MessagesPage() {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+interface Conversation {
+  id: string
+  otherUser: {
+    id: string
+    full_name: string
+    title: string | null
+    company: string | null
+    avatar_url: string | null
+    subscription_tier: string | null | null
+  } | null
+  lastMessage: {
+    id: string
+    content: string
+    sender_id: string
+    is_system: boolean
+    created_at: string
+  } | null
+  unreadCount: number
+  firstMessageSentAt: string | null
+  lastMessageAt: string | null
+  messageCount: number
+  createdAt: string
+}
 
-  // Step 1: get all matches for this user
-  const { data: matchRows, error: matchErr } = await supabase
-    .from('matches')
-    .select('id, user_a_id, user_b_id')
-    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
+export default function MessagesPage() {
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const matchIds = (matchRows || []).map((m: any) => m.id)
-  const conversations: any[] = []
+  useEffect(() => {
+    fetchConversations()
+  }, [])
 
-  if (matchIds.length > 0) {
-    // Step 2: get conversations linked to those matches (with messages)
-    const { data: convRows, error: convErr } = await supabase
-      .from('conversations')
-      .select('id, match_id, created_at, messages(id, content, sender_id, created_at, read_at)')
-      .in('match_id', matchIds)
-
-    // Step 3: collect the other user IDs from each match
-    const matchMap: Record<string, { user_a_id: string; user_b_id: string }> = {}
-    for (const m of matchRows || []) {
-      matchMap[m.id] = { user_a_id: m.user_a_id, user_b_id: m.user_b_id }
+  async function fetchConversations() {
+    try {
+      const res = await fetch('/api/messages/conversations')
+      const data = await res.json()
+      setConversations(data.conversations || [])
+    } catch (err) {
+      console.error('Failed to fetch conversations:', err)
+    } finally {
+      setLoading(false)
     }
+  }
 
-    const otherIds = (matchRows || []).map((m: any) =>
-      m.user_a_id === user.id ? m.user_b_id : m.user_a_id
-    ).filter(Boolean)
-
-    // Step 4: fetch other users' profiles
-    let profileById: Record<string, any> = {}
-    if (otherIds.length > 0) {
-      const { data: profileRows } = await supabase
-        .from('profiles')
-        .select('id, full_name, title, company')
-        .in('id', otherIds)
-      
-      for (const p of profileRows || []) profileById[p.id] = p
-    }
-
-    // Step 4b: auto-create conversations for matches that don't have one yet
-    const matchIdsWithConvs = new Set((convRows || []).map((c: any) => c.match_id))
-    for (const m of matchRows || []) {
-      if (!matchIdsWithConvs.has(m.id)) {
-        const { data: newConv } = await supabase
-          .from('conversations')
-          .insert({ match_id: m.id })
-          .select('id, match_id, created_at')
-          .single()
-        if (newConv) {
-          ;(convRows as any[])?.push({ ...newConv, messages: [] })
-        }
-      }
-    }
-
-    // Step 5: assemble conversation objects
-    for (const c of convRows || []) {
-      const match = matchMap[c.match_id]
-      if (!match) continue
-      const otherId = match.user_a_id === user.id ? match.user_b_id : match.user_a_id
-      const other = profileById[otherId] ?? null
-
-      const sortedMessages = [...((c.messages as any[]) || [])].sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      )
-      const lastMsg = sortedMessages[sortedMessages.length - 1]
-
-      // Count unread messages from the other person
-      const unreadCount = sortedMessages.filter(
-        (m: any) => m.sender_id !== user.id && !m.read_at
-      ).length
-
-      conversations.push({
-        id: c.id,
-        other,
-        messages: sortedMessages,
-        lastMessage: lastMsg?.content || '',
-        lastTime: lastMsg?.created_at || c.created_at,
-        unreadCount,
-      })
-    }
-
-    conversations.sort((a, b) =>
-      new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime()
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-8">
+        <div className="animate-pulse space-y-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-20 bg-gray-100 rounded-lg" />
+          ))}
+        </div>
+      </div>
     )
   }
 
-  return <MessagesClient conversations={conversations} currentUserId={user.id} />
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-serif text-gray-900">Introductions</h1>
+        <p className="text-gray-600 mt-1">Your active conversations</p>
+      </div>
+
+      {conversations.length === 0 ? (
+        <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+          <p className="text-gray-700 font-medium mb-2">No introductions yet</p>
+          <p className="text-sm text-gray-500">
+            When you and another member express mutual interest, your conversation will appear here.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 overflow-hidden">
+          {conversations.map(conv => (
+            <Link
+              key={conv.id}
+              href={`/dashboard/messages/${conv.id}`}
+              className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex-shrink-0">
+                {conv.otherUser?.avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={conv.otherUser.avatar_url}
+                    alt={conv.otherUser.full_name}
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium">
+                    {conv.otherUser?.full_name?.[0] || '?'}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h3 className="font-medium text-gray-900 truncate">
+                    {conv.otherUser?.full_name || 'Unknown'}
+                  </h3>
+                  {conv.lastMessage && (
+                    <span className="text-xs text-gray-400 flex-shrink-0">
+                      {formatDistanceToNow(new Date(conv.lastMessage.created_at), { addSuffix: true })}
+                    </span>
+                  )}
+                </div>
+
+                {conv.otherUser?.title && (
+                  <p className="text-sm text-gray-500 truncate">
+                    {conv.otherUser.title}
+                    {conv.otherUser.company && ` · ${conv.otherUser.company}`}
+                  </p>
+                )}
+
+                {conv.lastMessage ? (
+                  <p className={`text-sm truncate mt-1 ${conv.unreadCount > 0 ? 'font-medium text-gray-900' : 'text-gray-500'}`}>
+                    {conv.lastMessage.is_system
+                      ? <span className="italic text-gray-400">Introduction made — say hello</span>
+                      : conv.lastMessage.content}
+                  </p>
+                ) : (
+                  <p className="text-sm italic text-gray-400 mt-1">
+                    Introduction made — say hello to start the conversation
+                  </p>
+                )}
+              </div>
+
+              {conv.unreadCount > 0 && (
+                <div className="flex-shrink-0">
+                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-medium">
+                    {conv.unreadCount}
+                  </span>
+                </div>
+              )}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }

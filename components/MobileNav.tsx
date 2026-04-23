@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, MoreHorizontal, CreditCard, Settings, ShieldCheck, LogOut, X, Network } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, MoreHorizontal, CreditCard, Settings, ShieldCheck, LogOut, X, Network, Sparkles } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 import { cn } from '@/lib/utils'
 import { useState, useEffect } from 'react'
@@ -82,6 +82,15 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            <Link
+              href="/dashboard/opportunities"
+              onClick={() => setShowMore(false)}
+              className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Sparkles className="w-5 h-5 text-slate-400" />
+              Opportunities
+            </Link>
 
             <Link
               href="/dashboard/billing"

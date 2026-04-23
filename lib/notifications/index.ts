@@ -9,6 +9,8 @@ export type NotificationType =
   | 'no_credits'
   | 'nudge_reply'
   | 'nudge_interest'
+  | 'admin_intro'
+  | 'admin_intro_nudge'
 
 export interface NotificationData {
   matchId?: string
@@ -39,7 +41,7 @@ const NOTIFICATION_COPY = {
   },
   mutual_match: {
     title: 'Introduction ready',
-    message: 'Your introduction has been facilitated. You can now connect.'
+    message: 'You\'re now connected.'
   },
   message_received: {
     title: 'New message',
@@ -60,7 +62,28 @@ const NOTIFICATION_COPY = {
   nudge_reply: {
     title: 'Introduction awaiting response',
     message: 'A connection is waiting to hear from you.'
+  },
+  admin_intro_nudge: {
+    title: 'Introduction update',
+    message: 'Someone is ready to connect with you.'
+  },
+  admin_intro: {
+    title: 'A curated introduction',
+    message: 'We think you should meet — this is a strong match.'
   }
+}
+
+const LINK_BY_TYPE: Partial<Record<string, string>> = {
+  admin_intro: '/dashboard/introductions',
+  admin_intro_nudge: '/dashboard/introductions',
+  interest_received: '/dashboard/introductions',
+  mutual_match: '/dashboard/messages',
+  message_received: '/dashboard/messages',
+  new_batch: '/dashboard/introductions',
+  nudge_interest: '/dashboard/introductions',
+  nudge_reply: '/dashboard/messages',
+  low_credits: '/dashboard/billing',
+  no_credits: '/dashboard/billing'
 }
 
 export async function createNotificationSafe({
@@ -74,16 +97,19 @@ export async function createNotificationSafe({
 }) {
   const adminClient = createAdminClient()
 
+  console.log('[Notifications] createNotificationSafe called:', { userId, type })
   try {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     
-    const { data: existing } = await adminClient
+    const { data: existing, error: dupeErr } = await adminClient
       .from('notifications')
       .select('id')
       .eq('user_id', userId)
       .eq('type', type)
       .gte('created_at', twentyFourHoursAgo)
       .maybeSingle()
+    
+    if (dupeErr) console.error('[Notifications] Dupe check error:', dupeErr)
 
     if (existing) {
       console.log(`[Notifications] Duplicate prevented: ${type} for user ${userId}`)
@@ -96,19 +122,26 @@ export async function createNotificationSafe({
       return null
     }
 
+    console.log('[Notifications] Inserting:', { type, userId, copy })
     const { data: notification, error } = await adminClient
       .from('notifications')
       .insert({
+        link: LINK_BY_TYPE[type] || null,
         user_id: userId,
         type,
         title: copy.title,
-        message: copy.message,
+        body: copy.message,
         data,
-        read: false,
         created_at: new Date().toISOString()
       })
       .select()
       .single()
+
+    if (error) {
+      console.error('[Notifications] Insert error:', error)
+      return null
+    }
+    console.log('[Notifications] Inserted OK:', notification?.id)
 
     if (error) {
       console.error('[Notifications] Failed to create:', error)
@@ -154,11 +187,16 @@ export async function createNotification({
         title,
         message,
         data,
-        read: false,
         created_at: new Date().toISOString()
       })
       .select()
       .single()
+
+    if (error) {
+      console.error('[Notifications] Insert error:', error)
+      return null
+    }
+    console.log('[Notifications] Inserted OK:', notification?.id)
 
     if (error) {
       console.error('[Notifications] Failed to create:', error)

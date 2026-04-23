@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Briefcase, MapPin, Inbox, Star, Sparkles, Clock } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
+import AdminIntroCard from '@/components/AdminIntroCard'
 import WithdrawInterestButton from '@/components/WithdrawInterestButton'
 import IntroductionCard from '@/components/IntroductionCard'
 import HideSuggestionButton from '@/components/HideSuggestionButton'
@@ -88,6 +89,40 @@ export default async function IntroductionsPage() {
     .eq('status', 'suggested')
     .order('created_at', { ascending: false })
 
+  // Admin-curated intros (where this user is the TARGET and intro is admin_pending)
+  const { data: adminIntrosRaw } = await supabase
+    .from('intro_requests')
+    .select('id, requester_id, target_user_id, status, created_at, is_admin_initiated, other:profiles!requester_id(id, full_name, title, company, location, bio, seniority, role_type, avatar_url)')
+    .eq('target_user_id', profileId)
+    .eq('is_admin_initiated', true)
+    .in('status', ['admin_pending', 'approved'])
+    .order('created_at', { ascending: false })
+
+  // For each admin intro, check if the reverse intro (other user's side) is already approved
+  const adminIntros = await Promise.all((adminIntrosRaw || []).map(async (intro: any) => {
+    const { data: reverse } = await supabase
+      .from('intro_requests')
+      .select('status')
+      .eq('requester_id', intro.target_user_id)
+      .eq('target_user_id', intro.requester_id)
+      .eq('is_admin_initiated', true)
+      .in('status', ['admin_pending', 'approved', 'declined'])
+      .maybeSingle()
+    // Show admin_pending (user needs to decide) OR approved (user accepted, waiting on other)
+    if (intro.status !== 'admin_pending' && intro.status !== 'approved') return null
+    // Hide once the other side declines (silent decline per spec)
+    if (reverse?.status === 'declined') return null
+    // If both are approved, match has (or will be) created — drop from intros list
+    if (intro.status === 'approved' && reverse?.status === 'approved') return null
+    return {
+      ...intro,
+      userAlreadyAccepted: intro.status === 'approved',
+      otherAlreadyApproved: reverse?.status === 'approved'
+    }
+  }))
+
+  const adminIntrosFiltered = adminIntros.filter(Boolean)
+
   // Active batch
   const { data: activeBatchRows } = await supabase
     .from('introduction_batches')
@@ -156,7 +191,13 @@ export default async function IntroductionsPage() {
     }))
     .filter((r: any) => r.profile)
 
-  const allSuggestions = [...suggestedProfiles, ...batchSuggestions]
+  const allSuggestions = Array.from(
+    new Map(
+      [...suggestedProfiles, ...batchSuggestions]
+        .filter((item: any) => item?.profile?.id)
+        .map((item: any) => [item.profile.id, item])
+    ).values()
+  )
 
 
   return (
@@ -185,6 +226,24 @@ export default async function IntroductionsPage() {
         )}
 
 
+        {/* SECTION: Introduced by Andrel (admin-curated) — top priority */}
+        {adminIntrosFiltered.length > 0 && (
+          <div className="mb-6 p-4 rounded-xl border border-[#C4922A]/30 bg-[#C4922A]/5">
+            <h3 className="text-sm font-semibold text-[#1B2850] mb-3">Introduced by Andrel</h3>
+            <div className="grid sm:grid-cols-2 gap-4">
+              {adminIntrosFiltered.map((intro: any) => (
+                <AdminIntroCard
+                  key={intro.id}
+                  introRequestId={intro.id}
+                  otherUser={intro.other}
+                  otherAlreadyApproved={intro.otherAlreadyApproved}
+                  userAlreadyAccepted={intro.userAlreadyAccepted}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* SECTION 1 — This Week's Introductions */}
         <div className="mb-10">
           <div className="flex items-center justify-between mb-3">
@@ -205,12 +264,10 @@ export default async function IntroductionsPage() {
                 <Inbox className="w-6 h-6 text-slate-400" />
               </div>
               <p className="text-sm font-semibold text-slate-700 mb-1">
-                {!activeBatch ? 'No active batch right now' : 'You have reviewed all introductions this week'}
+                No introductions right now
               </p>
               <p className="text-xs text-slate-400">
-                {!activeBatch
-                  ? 'Your next batch of introductions will appear here once it goes live.'
-                  : 'Check back next week for your next curated batch.'}
+                We&rsquo;ll notify you when there&rsquo;s a strong match.
               </p>
             </div>
           ) : (

@@ -5,9 +5,15 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getTotalCredits } from '@/lib/credits'
 import { getEffectiveTier, getMonthlyCredits, getCreditCap } from '@/lib/tier-override'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-02-25.clover'
-})
+let _stripeClient: Stripe | null = null
+function getStripe(): Stripe {
+  if (!_stripeClient) {
+    const key = process.env.STRIPE_SECRET_KEY
+    if (!key) throw new Error('STRIPE_SECRET_KEY is not set')
+    _stripeClient = new Stripe(key, { apiVersion: '2026-02-25.clover' })
+  }
+  return _stripeClient
+}
 
 const TIER_CREDIT_FLOORS: Record<string, number> = {
   free: 3,
@@ -21,6 +27,7 @@ const TIER_CREDIT_CAPS: Record<string, number> = {
 }
 
 export async function POST(req: Request) {
+  const stripe = getStripe()
   const body = await req.text()
   const signature = headers().get('stripe-signature')!
   

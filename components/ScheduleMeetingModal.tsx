@@ -17,9 +17,11 @@ interface MatchedUser {
 export default function ScheduleMeetingModal({
   onClose,
   matchedUsers,
+  initialRecipientId,
 }: {
   onClose: () => void
   matchedUsers: MatchedUser[]
+  initialRecipientId?: string
 }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -73,7 +75,7 @@ export default function ScheduleMeetingModal({
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               Meeting with <span className="text-red-400">*</span>
             </label>
-            <select name="recipient_id" required className={fieldClass}>
+            <select name="recipient_id" required defaultValue={initialRecipientId || ""} className={fieldClass}>
               <option value="">Select a connection…</option>
               {matchedUsers.map((u) => (
                 <option key={u.id} value={u.id}>

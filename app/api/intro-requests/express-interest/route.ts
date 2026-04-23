@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { sendMatchCreatedEmail } from '@/lib/email'
 import { createNotificationSafe } from '@/lib/notifications'
 import { generateIcebreakers, generateSystemIntroMessage } from '@/lib/messaging/icebreakers'
+import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 
 export async function POST(request: Request) {
   const supabase = createClient()
@@ -115,27 +116,50 @@ export async function POST(request: Request) {
       .eq('id', expresserId)
       .single()
 
-    await createNotificationSafe({
-      userId: otherUserId,
-      type: 'interest_received',
-      data: {
-        fromUserId: expresserId,
-        fromUserName: expresserProfile?.full_name
-      }
-    })
+    // For admin intros, fire admin_intro_nudge instead of interest_received so the other
+    // user gets a contextual nudge pointing to the Introductions page.
+    if (introRequest.is_admin_initiated) {
+      await createNotificationSafe({
+        userId: otherUserId,
+        type: 'admin_intro_nudge',
+        data: {
+          fromUserId: expresserId,
+          fromUserName: expresserProfile?.full_name
+        }
+      })
+    } else {
+      await createNotificationSafe({
+        userId: otherUserId,
+        type: 'interest_received',
+        data: {
+          fromUserId: expresserId,
+          fromUserName: expresserProfile?.full_name
+        }
+      })
+    }
 
     // STEP 4: Check for mutual interest (reverse intro request)
-    const { data: reverseRequest } = await supabase
-      .from('intro_requests')
-      .select('*')
-      .eq('requester_id', otherUserId)
-      .eq('target_user_id', expresserId)
-      .in('status', ['pending', 'approved'])
+    // For admin-initiated intros, the reverse row must be 'approved' (the other user
+    // has clicked Accept), NOT just 'admin_pending' (pending their acceptance).
+    // For user-initiated intros, the reverse can be 'pending' or 'approved' per existing flow.
+    const reverseStatusFilter = introRequest.is_admin_initiated
+      ? ['approved']
+      : ['pending', 'approved']
+
+    // For admin intros: other user's row has requester=expresser, target=other (the other admin row).
+    // For user-initiated: other user's row has requester=other, target=expresser (the counter-interest row).
+    const reverseQuery = introRequest.is_admin_initiated
+      ? supabase.from('intro_requests').select('*').eq('requester_id', expresserId).eq('target_user_id', otherUserId)
+      : supabase.from('intro_requests').select('*').eq('requester_id', otherUserId).eq('target_user_id', expresserId)
+
+    const { data: reverseRequest } = await reverseQuery
+      .neq('id', introRequestId)
+      .in('status', reverseStatusFilter)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
-    // If mutual interest exists, create ACTIVE match immediately
+    // If mutual interest exists (per the correct filter above), create ACTIVE match immediately
     if (reverseRequest) {
       console.log('[Mutual Interest] Detected, creating active match...')
 
@@ -143,7 +167,7 @@ export async function POST(request: Request) {
       const { data: existingMatch } = await supabase
         .from('matches')
         .select('id, status')
-        .or(`and(user_a_id.eq.${expresserId},user_b_id.eq.${otherUserId}),and(user_a_id.eq.${otherUserId},user_b_id.eq.${expresserId})`)
+        .or(buildBidirectionalMatchFilter(expresserId, otherUserId))
         .maybeSingle()
 
       if (existingMatch) {
@@ -162,7 +186,8 @@ export async function POST(request: Request) {
           user_a_id: expresserId,
           user_b_id: otherUserId,
           status: 'active',
-          admin_facilitated: false,
+          admin_facilitated: Boolean(introRequest.is_admin_initiated),
+          admin_notes: introRequest.is_admin_initiated ? 'manual_create' : null,
           created_at: new Date().toISOString()
         })
         .select()
@@ -232,7 +257,7 @@ export async function POST(request: Request) {
         })
       }
 
-      // Get full profile data
+      // Get full profile data (for emails)
       const { data: expresserProfile } = await supabase
         .from('profiles')
         .select('full_name, email, title, company')
@@ -245,25 +270,29 @@ export async function POST(request: Request) {
         .eq('id', otherUserId)
         .single()
 
-      // Send notifications to both users
-      await adminClient.from('notifications').insert([
-        {
-          user_id: expresserId,
-          type: 'new_connection',
-          title: 'Your introduction is ready',
-          body: `You're now connected with ${otherProfile?.full_name}. Start a conversation.`,
-          link: '/dashboard/network',
-          created_at: new Date().toISOString()
-        },
-        {
-          user_id: otherUserId,
-          type: 'new_connection',
-          title: 'Your introduction is ready',
-          body: `You're now connected with ${expresserProfile?.full_name}. Start a conversation.`,
-          link: '/dashboard/network',
-          created_at: new Date().toISOString()
+      // Send mutual_match notifications via createNotificationSafe
+      // so routing goes to /dashboard/messages/{conversationId}
+      await createNotificationSafe({
+        userId: expresserId,
+        type: 'mutual_match',
+        data: {
+          conversationId: conversation?.id,
+          matchId: match.id,
+          otherUserId: otherUserId,
+          otherUserName: otherProfile?.full_name
         }
-      ])
+      })
+
+      await createNotificationSafe({
+        userId: otherUserId,
+        type: 'mutual_match',
+        data: {
+          conversationId: conversation?.id,
+          matchId: match.id,
+          otherUserId: expresserId,
+          otherUserName: expresserProfile?.full_name
+        }
+      })
 
       // Send emails (async, don't wait)
       if (expresserProfile?.email && otherProfile) {

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import NetworkCard from '@/components/NetworkCard'
 import MarkNetworkNotificationsRead from '@/components/MarkNetworkNotificationsRead'
+import { generateMatchInsights } from '@/lib/matching/matchInsights'
 
 export const metadata = { title: 'Network | Andrel' }
 
@@ -19,12 +20,32 @@ export default async function NetworkPage() {
 
   const profileId = profileRows?.[0]?.id ?? user.id
 
-  const { data: matches } = await supabase
+  const { data: rawMatches } = await supabase
     .from('matches')
-    .select('id, user_a_id, user_b_id, matched_at')
+    .select('id, user_a_id, user_b_id, matched_at, status, removed_at')
     .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`)
 
-  const matchedUserIds = (matches || []).map((m: any) =>
+  // Filter out removed matches from network view
+  const activeMatches = (rawMatches || []).filter((m: any) => m.status !== 'removed')
+
+  // Filter out anyone the user has blocked or been blocked by
+  const { data: blocks } = await supabase
+    .from('blocked_users')
+    .select('user_id, blocked_user_id')
+    .or(`user_id.eq.${profileId},blocked_user_id.eq.${profileId}`)
+
+  const blockedIds = new Set<string>()
+  for (const b of blocks || []) {
+    if (b.user_id === profileId) blockedIds.add(b.blocked_user_id)
+    else blockedIds.add(b.user_id)
+  }
+
+  const matches = activeMatches.filter((m: any) => {
+    const otherId = m.user_a_id === profileId ? m.user_b_id : m.user_a_id
+    return !blockedIds.has(otherId)
+  })
+
+  const matchedUserIds = matches.map((m: any) =>
     m.user_a_id === profileId ? m.user_b_id : m.user_a_id
   )
 
@@ -50,19 +71,46 @@ export default async function NetworkPage() {
   if (matchedUserIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, title, company, location, bio, role_type, avatar_url')
+      .select('id, full_name, title, company, location, city, state, bio, role_type, seniority, avatar_url, purposes, intro_preferences, interests, expertise, open_to_mentorship, open_to_business_solutions, linkedin_url')
       .in('id', matchedUserIds)
     for (const p of profiles || []) profileMap[p.id] = p
+  }
+
+  // Fetch current user's own profile for insight generation
+  const { data: selfProfile } = await supabase
+    .from('profiles')
+    .select('id, full_name, title, company, bio, seniority, role_type, purposes, intro_preferences, interests, expertise, open_to_mentorship')
+    .eq('id', profileId)
+    .maybeSingle()
+
+  // Fetch conversations keyed by match_id so cards can link directly
+  const matchIdList = matches.map((m: any) => m.id)
+  const { data: matchConversations } = matchIdList.length > 0
+    ? await supabase.from('conversations').select('id, match_id').in('match_id', matchIdList)
+    : { data: [] }
+  const conversationByMatchId: Record<string, string> = {}
+  for (const c of (matchConversations || [])) {
+    conversationByMatchId[c.match_id] = c.id
   }
 
   const connections = (matches || []).map((m: any) => {
     const otherId = m.user_a_id === profileId ? m.user_b_id : m.user_a_id
     const profile = profileMap[otherId]
+    let matchInsights: { text: string; kind: string }[] = []
+    if (profile && selfProfile) {
+      try {
+        matchInsights = generateMatchInsights(selfProfile, profile)
+      } catch (e) {
+        matchInsights = []
+      }
+    }
     return {
       matchId: m.id,
       profile,
       connectedAt: m.matched_at,
-      isNew: profile ? newConnectionNames.has(profile.full_name) : false
+      isNew: profile ? newConnectionNames.has(profile.full_name) : false,
+      matchInsights,
+      conversationId: conversationByMatchId[m.id] || null
     }
   }).filter((c: any) => c.profile)
 
@@ -85,13 +133,15 @@ export default async function NetworkPage() {
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 gap-4">
-            {connections.map(({ matchId, profile, connectedAt, isNew }: any) => (
+            {connections.map(({ matchId, profile, connectedAt, isNew, matchInsights, conversationId }: any) => (
               <NetworkCard
                 key={matchId}
                 matchId={matchId}
                 profile={profile}
                 connectedAt={connectedAt}
                 isNew={isNew}
+                matchInsights={matchInsights}
+                conversationId={conversationId}
               />
             ))}
           </div>

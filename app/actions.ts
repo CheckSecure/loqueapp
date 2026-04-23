@@ -11,6 +11,8 @@ import {
 } from '@/lib/introRequests'
 import { sendNewMessageEmail } from '@/lib/email'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
+import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
+import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -177,24 +179,46 @@ export async function completeOnboarding(formData: FormData) {
     console.error('[completeOnboarding] Error generating recommendations:', err)
   }
 
-  // Assign initial credits (3 for free tier)
+  // Assign initial credits (3 for free tier) — idempotent
   try {
-    const { error: creditsError } = await adminClient
+    const { data: existingCredits } = await adminClient
       .from('meeting_credits')
-      .insert({
-        user_id: user.id,
-        balance: 3,
-        lifetime_earned: 3
-      })
-    if (creditsError) {
-      console.error('[completeOnboarding] Error assigning credits:', creditsError)
+      .select('user_id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!existingCredits) {
+      const { error: creditsError } = await adminClient
+        .from('meeting_credits')
+        .insert({
+          user_id: user.id,
+          balance: 3,
+          lifetime_earned: 3
+        })
+      if (creditsError) {
+        console.error('[completeOnboarding] Error assigning credits:', creditsError)
+      } else {
+        console.log('[completeOnboarding] Assigned 3 credits to new user')
+      }
     } else {
-      console.log('[completeOnboarding] Assigned 3 credits to new user')
+      console.log('[completeOnboarding] Credits already present, skipping assignment')
     }
   } catch (err) {
     console.error('[completeOnboarding] Error in credits assignment:', err)
   }
-  
+
+  // Fire admin welcome introduction (idempotent, non-blocking on failure)
+  try {
+    const welcome = await sendAdminWelcome(user.id)
+    if (welcome.created) {
+      console.log('[completeOnboarding] Admin welcome sent:', welcome.conversationId)
+    } else {
+      console.log('[completeOnboarding] Admin welcome skipped:', welcome.reason)
+    }
+  } catch (err) {
+    console.error('[completeOnboarding] Admin welcome error (non-blocking):', err)
+  }
+
   revalidatePath('/dashboard')
   return { success: true }
 }
@@ -314,7 +338,7 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
     const { data: existing } = await supabase
       .from('matches')
       .select('id')
-      .or(`and(user_a_id.eq.${intro.requester_id},user_b_id.eq.${intro.target_user_id}),and(user_a_id.eq.${intro.target_user_id},user_b_id.eq.${intro.requester_id})`)
+      .or(buildBidirectionalMatchFilter(intro.requester_id, intro.target_user_id))
       .limit(1)
       .single()
     if (existing) matchId = existing.id
@@ -1192,7 +1216,7 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
   const { data: existing } = await supabase
     .from('matches')
     .select('id')
-    .or(`and(user_a_id.eq.${userAId},user_b_id.eq.${userBId}),and(user_a_id.eq.${userBId},user_b_id.eq.${userAId})`)
+    .or(buildBidirectionalMatchFilter(userAId, userBId))
     .single()
 
   if (existing) return { error: 'Match already exists' }

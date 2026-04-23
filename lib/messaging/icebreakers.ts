@@ -4,8 +4,7 @@ type Profile = {
   full_name: string | null
   title: string | null
   company: string | null
-  industry: string | null
-  practice_areas: string[] | null
+  bio: string | null
   [key: string]: any
 }
 
@@ -18,83 +17,80 @@ interface IcebreakerContext {
 }
 
 /**
- * Generate contextual icebreaker prompts for a new introduction
+ * Extract the first sentence of a bio, trimmed and cleaned for inline use.
  */
-export function generateIcebreakers(context: IcebreakerContext): string[] {
-  const { userA, userB } = context
-  
-  const icebreakers: string[] = []
-
-  // Role-based icebreaker
-  if (userB.company) {
-    icebreakers.push(
-      `What are you currently focused on in your role at ${userB.company}?`
-    )
-  } else if (userB.title) {
-    icebreakers.push(
-      `What are you currently focused on in your ${userB.title} role?`
-    )
-  }
-
-  // Industry/field discussion
-  const industries = [userA.industry, userB.industry].filter(Boolean)
-  if (industries.length > 0) {
-    const industry = industries[0]
-    icebreakers.push(
-      `Would be great to hear your perspective on trends in ${industry}.`
-    )
-  }
-
-  // Practice area for legal professionals
-  const practices = [
-    userA.practice_areas?.[0], 
-    userB.practice_areas?.[0]
-  ].filter(Boolean)
-  
-  if (practices.length > 0) {
-    icebreakers.push(
-      `Curious about your experience with ${practices[0]} matters.`
-    )
-  }
-
-  // Generic professional icebreakers as fallback
-  if (icebreakers.length < 2) {
-    icebreakers.push(
-      'What brought you to the platform?',
-      'What are you hoping to get out of this connection?'
-    )
-  }
-
-  // Return top 3
-  return icebreakers.slice(0, 3)
+function firstBioClause(bio: string): string {
+  const firstSentence = bio.split(/[.!?]/)[0] || ''
+  return firstSentence
+    .trim()
+    .replace(/^(and|but|so|however)\s+/i, '')
+    .replace(/\s+/g, ' ')
 }
 
 /**
- * Generate system intro message for a new conversation
+ * Generate contextual icebreaker prompts for a new introduction.
+ * Uses title / company / bio — the fields actually present on profiles.
+ */
+export function generateIcebreakers(context: IcebreakerContext): string[] {
+  const { userB } = context
+  const prompts: string[] = []
+
+  if (userB.title && userB.company) {
+    prompts.push(
+      `Would be great to hear how you're approaching your role as ${userB.title} at ${userB.company}.`
+    )
+  } else if (userB.company) {
+    prompts.push(
+      `Would be great to hear what you're currently focused on at ${userB.company}.`
+    )
+  } else if (userB.title) {
+    prompts.push(
+      `Curious what you're currently focused on as ${userB.title}.`
+    )
+  }
+
+  if (userB.bio) {
+    const clause = firstBioClause(userB.bio)
+    if (clause && clause.length >= 8 && clause.length <= 140) {
+      prompts.push(
+        `Your background stood out — would be great to hear more about ${clause}.`
+      )
+    }
+  }
+
+  // Generic fallbacks to ensure we always return at least 2 prompts
+  prompts.push(
+    `Curious what you're currently focused on in your work.`,
+    `Would be great to exchange perspectives on your area of focus.`
+  )
+
+  return prompts.slice(0, 3)
+}
+
+/**
+ * Generate system intro message for a new conversation.
  */
 export function generateSystemIntroMessage(context: IcebreakerContext): string {
   const { userA, userB, reason } = context
-  
+
   const lines: string[] = [
     "You've been introduced based on shared professional interests."
   ]
 
-  // Add reason if available
   if (reason) {
     lines.push('', `Reason for connection: ${reason}`)
   }
 
-  // Add shared context
   const sharedElements: string[] = []
-  
-  if (userA.industry && userB.industry && userA.industry === userB.industry) {
-    sharedElements.push(`Both work in ${userA.industry}`)
+
+  if ((userA as any).industry && (userB as any).industry && (userA as any).industry === (userB as any).industry) {
+    sharedElements.push(`Both work in ${(userA as any).industry}`)
   }
-  
-  if (userA.practice_areas && userB.practice_areas) {
-    const shared = userA.practice_areas.filter(pa => 
-      userB.practice_areas?.includes(pa)
-    )
+
+  const aPractices = (userA as any).practice_areas as string[] | undefined
+  const bPractices = (userB as any).practice_areas as string[] | undefined
+  if (aPractices && bPractices) {
+    const shared = aPractices.filter(pa => bPractices.includes(pa))
     if (shared.length > 0) {
       sharedElements.push(`Shared practice area: ${shared[0]}`)
     }
