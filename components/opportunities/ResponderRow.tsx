@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 function parseExpertise(raw: unknown): string[] {
@@ -40,6 +41,7 @@ type Responder = {
   id: string;
   user_id: string;
   status: 'interested' | 'introduced' | 'withdrawn';
+  conversation_id?: string | null;
   profiles: {
     id: string;
     full_name: string | null;
@@ -55,10 +57,12 @@ export function ResponderRow({
   opportunityId,
   responder,
   canIntroduce,
+  onIntroduced,
 }: {
   opportunityId: string;
   responder: Responder;
   canIntroduce: boolean;
+  onIntroduced?: (args: { conversationId: string; responderName: string }) => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -84,6 +88,10 @@ export function ResponderRow({
         setBusy(false);
         setConfirming(false);
         return;
+      }
+      const body = await res.json().catch(() => ({}));
+      if (onIntroduced && body?.conversation_id) {
+        onIntroduced({ conversationId: body.conversation_id, responderName: displayName });
       }
       router.refresh();
     } catch {
@@ -123,7 +131,16 @@ export function ResponderRow({
         </div>
 
         {responder.status === 'introduced' ? (
-          <span className="ml-4 text-xs font-medium text-[#1B2850]">Introduced</span>
+          responder.conversation_id ? (
+            <Link
+              href={`/dashboard/messages/${responder.conversation_id}`}
+              className="ml-4 rounded-md border border-[#1B2850] px-3 py-1.5 text-xs font-medium text-[#1B2850] hover:bg-[#1B2850] hover:text-white"
+            >
+              Open conversation →
+            </Link>
+          ) : (
+            <span className="ml-4 text-xs font-medium text-[#1B2850]">Introduced</span>
+          )
         ) : canIntroduce ? (
           <div className="ml-4 flex-shrink-0">
             {confirming ? (

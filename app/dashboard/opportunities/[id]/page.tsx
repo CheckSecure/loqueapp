@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { TouchOnMount } from '@/components/opportunities/TouchOnMount';
 import { ResponderRow } from '@/components/opportunities/ResponderRow';
+import { IntroducedBannerHost } from '@/components/opportunities/IntroducedBannerHost';
 import { CloseButton } from '@/components/opportunities/CloseButton';
 
 export const dynamic = 'force-dynamic';
@@ -37,6 +38,34 @@ export default async function OpportunityDetail({
 
   const waiting = (responses ?? []).filter((r) => r.status === 'interested');
   const introduced = (responses ?? []).filter((r) => r.status === 'introduced');
+
+  // Attach conversation_id to introduced rows so they render "Open conversation".
+  const introducedUserIds = introduced.map((r) => r.user_id);
+  let convoByUser = new Map<string, string>();
+  if (introducedUserIds.length > 0) {
+    const { data: oppMatches } = await admin
+      .from('matches')
+      .select('id, user_a_id, user_b_id')
+      .eq('opportunity_id', opp.id);
+    const matchIds = (oppMatches ?? []).map((m) => m.id);
+    if (matchIds.length > 0) {
+      const { data: convos } = await admin
+        .from('conversations')
+        .select('id, match_id')
+        .in('match_id', matchIds);
+      const matchToConvo = new Map<string, string>();
+      (convos ?? []).forEach((c) => matchToConvo.set(c.match_id, c.id));
+      (oppMatches ?? []).forEach((m) => {
+        const peer = m.user_a_id === opp.creator_id ? m.user_b_id : m.user_a_id;
+        const cid = matchToConvo.get(m.id);
+        if (cid) convoByUser.set(peer, cid);
+      });
+    }
+  }
+  const introducedWithConvo = introduced.map((r) => ({
+    ...r,
+    conversation_id: convoByUser.get(r.user_id) ?? null,
+  }));
 
   const expiresAt = new Date(opp.expires_at);
   const daysLeft = Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 86400_000));
@@ -77,20 +106,18 @@ export default async function OpportunityDetail({
           {waiting.length === 0 ? 'No responses yet.' : `${waiting.length} waiting`}
         </p>
 
-        {waiting.length > 0 && (
-          <div className="mt-4 space-y-3">
-            {waiting.map((r) => (
-              <ResponderRow key={r.id} opportunityId={opp.id} responder={r as any} canIntroduce={!isClosedOrExpired} />
-            ))}
-          </div>
-        )}
+        <IntroducedBannerHost
+          opportunityId={opp.id}
+          waiting={waiting as any}
+          canIntroduce={!isClosedOrExpired}
+        />
       </section>
 
-      {introduced.length > 0 && (
+      {introducedWithConvo.length > 0 && (
         <section className="mt-10">
           <h2 className="text-sm font-medium text-slate-900">Introduced</h2>
           <div className="mt-4 space-y-3">
-            {introduced.map((r) => (
+            {introducedWithConvo.map((r) => (
               <ResponderRow key={r.id} opportunityId={opp.id} responder={r as any} canIntroduce={false} />
             ))}
           </div>
