@@ -9,6 +9,7 @@ import {
   TIER_OPPORTUNITY_LIMIT,
   CREATOR_MIN_ACCOUNT_AGE_DAYS,
   CREATOR_MIN_TRUST_SCORE,
+  ADMIN_OVERRIDE_EMAILS,
   type Tier,
 } from './caps';
 
@@ -29,7 +30,7 @@ export async function checkCreatorEligibility(userId: string): Promise<Eligibili
   const { data: profile, error } = await admin
     .from('profiles')
     .select(
-      'id, profile_complete, account_status, subscription_tier, is_founding_member, ' +
+      'id, email, profile_complete, account_status, subscription_tier, is_founding_member, ' +
       'trust_score, created_at'
     )
     .eq('id', userId)
@@ -41,6 +42,11 @@ export async function checkCreatorEligibility(userId: string): Promise<Eligibili
 
   if (!profile.profile_complete) {
     return { ok: false, code: 'profile_incomplete', message: 'Complete your profile to signal a need.' };
+  }
+
+  // Admin override — bypass all caps and thresholds for seeding/testing.
+  if (profile.email && ADMIN_OVERRIDE_EMAILS.has(profile.email)) {
+    return { ok: true };
   }
 
   if (profile.account_status !== 'active') {

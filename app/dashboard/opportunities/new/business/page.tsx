@@ -93,7 +93,15 @@ export default function BusinessForm() {
         </Field>
 
         <Field label="Description (optional)">
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} maxLength={2000} rows={4} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={2000}
+            rows={4}
+            placeholder="Describe the need. Don't include email, phone, or direct contact — Andrel handles introductions."
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+          <p className="mt-1 text-xs text-slate-500">Contact details will be removed before providers see this.</p>
         </Field>
 
         {error && <p className="text-sm text-red-600">{error}</p>}

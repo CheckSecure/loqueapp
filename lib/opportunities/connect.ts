@@ -199,16 +199,19 @@ export async function connectOpportunityResponder(args: {
     .eq('id', response.id);
 
   const { createNotificationSafe } = await import('@/lib/notifications');
+  const conversationLink = `/dashboard/messages/${conversation.id}`;
   await Promise.all([
     createNotificationSafe({
       userId: creatorId,
       type: 'mutual_match',
-      data: { match_id: match.id, source: 'opportunity', opportunity_id: opportunityId },
+      link: conversationLink,
+      data: { match_id: match.id, source: 'opportunity', opportunity_id: opportunityId, conversation_id: conversation.id },
     }),
     createNotificationSafe({
       userId: responderId,
       type: 'mutual_match',
-      data: { match_id: match.id, source: 'opportunity', opportunity_id: opportunityId },
+      link: conversationLink,
+      data: { match_id: match.id, source: 'opportunity', opportunity_id: opportunityId, conversation_id: conversation.id },
     }),
   ]);
 

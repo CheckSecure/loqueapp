@@ -80,7 +80,7 @@ async function ForYouPanel({ userId }: { userId: string }) {
   const admin = createAdminClient();
   const { data: rows } = await admin
     .from('opportunity_candidates')
-    .select('id, opportunity_id, role, opportunities!inner(id, creator_id, type, title, description, urgency, status, expires_at)')
+    .select('id, opportunity_id, role, opportunities!inner(id, creator_id, type, title, description, urgency, status, expires_at, profiles!opportunities_creator_id_fkey(full_name, company))')
     .eq('user_id', userId)
     .is('dismissed_at', null)
     .eq('opportunities.status', 'active')
@@ -134,8 +134,9 @@ async function YoursPanel({ userId, canCreate }: { userId: string; canCreate: bo
   const admin = createAdminClient();
   const { data } = await admin
     .from('opportunities')
-    .select('id, type, title, status, expires_at, urgency, created_at')
+    .select('id, type, title, status, expires_at, urgency, created_at, archived_at')
     .eq('creator_id', userId)
+    .is('archived_at', null)
     .order('created_at', { ascending: false });
 
   const rows = data ?? [];

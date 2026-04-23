@@ -5,6 +5,17 @@ import { checkCreatorEligibility } from '@/lib/opportunities/eligibility';
 import { deliverOpportunity } from '@/lib/opportunities/matching';
 import { computeExpiryDays, type OpportunityType, type Urgency } from '@/lib/opportunities/caps';
 
+function stripContactInfo(text: string | null | undefined): string | null {
+  if (!text) return null;
+  return text
+    // emails
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/gi, '[redacted]')
+    // phone-ish: sequences with 7+ digits allowing spaces/dashes/parens
+    .replace(/(?:\+?\d[\s-.()]*){7,}/g, '[redacted]')
+    // obvious URLs
+    .replace(/https?:\/\/\S+/gi, '[redacted]');
+}
+
 type CreatePayload = {
   type: OpportunityType;
   title: string;
@@ -77,7 +88,7 @@ export async function POST(request: Request) {
       creator_id: user.id,
       type: payload.type,
       title: payload.title.trim(),
-      description: payload.description?.trim() ?? null,
+      description: stripContactInfo(payload.description?.trim() ?? null),
       criteria: payload.criteria,
       include_recruiters: payload.type === 'hiring' && !!payload.include_recruiters,
       urgency: payload.type === 'business' ? payload.urgency : null,

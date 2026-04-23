@@ -29,7 +29,7 @@ export async function GET(
   // 2. Verify access via match
   const { data: match } = await adminClient
     .from('matches')
-    .select('id, user_a_id, user_b_id, admin_facilitated')
+    .select('id, user_a_id, user_b_id, admin_facilitated, is_opportunity_initiated, opportunity_id')
     .eq('id', conversation.match_id)
     .maybeSingle()
 
@@ -69,6 +69,17 @@ export async function GET(
     .eq('is_system', false)
     .is('read_at', null)
 
+  // Load opportunity title if this conversation came from an opportunity.
+  let opportunityTitle: string | null = null
+  if (match.opportunity_id) {
+    const { data: opp } = await adminClient
+      .from('opportunities')
+      .select('title')
+      .eq('id', match.opportunity_id)
+      .maybeSingle()
+    opportunityTitle = opp?.title ?? null
+  }
+
   return NextResponse.json({
     conversation: {
       id: conversation.id,
@@ -78,7 +89,9 @@ export async function GET(
       messageCount: conversation.message_count,
       suggestedPrompts: conversation.suggested_prompts,
       createdAt: conversation.created_at,
-      adminFacilitated: match.admin_facilitated || false
+      adminFacilitated: match.admin_facilitated || false,
+      isOpportunityInitiated: !!match.is_opportunity_initiated,
+      opportunityTitle
     }
   })
 }

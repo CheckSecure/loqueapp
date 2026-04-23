@@ -97,7 +97,15 @@ export default function HiringForm() {
         </Field>
 
         <Field label="Description (optional)">
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} maxLength={2000} rows={4} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={2000}
+            rows={4}
+            placeholder="Describe the role. Don't include email addresses, phone numbers, or direct contact info — Andrel handles introductions."
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+          <p className="mt-1 text-xs text-slate-500">Contact details will be removed before candidates see this.</p>
         </Field>
 
         <label className="flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-4">

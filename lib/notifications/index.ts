@@ -89,12 +89,10 @@ const LINK_BY_TYPE: Partial<Record<string, string>> = {
 export async function createNotificationSafe({
   userId,
   type,
-  data
-}: {
+  data, link}: {
   userId: string
   type: NotificationType
-  data?: NotificationData
-}) {
+  data?: NotificationData; link?: string}) {
   const adminClient = createAdminClient()
 
   console.log('[Notifications] createNotificationSafe called:', { userId, type })
@@ -126,7 +124,7 @@ export async function createNotificationSafe({
     const { data: notification, error } = await adminClient
       .from('notifications')
       .insert({
-        link: LINK_BY_TYPE[type] || null,
+        link: (link ?? LINK_BY_TYPE[type]) || null,
         user_id: userId,
         type,
         title: copy.title,

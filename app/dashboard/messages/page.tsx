@@ -26,6 +26,8 @@ interface Conversation {
   lastMessageAt: string | null
   messageCount: number
   createdAt: string
+  isOpportunityInitiated?: boolean
+  opportunityTitle?: string | null
 }
 
 export default function MessagesPage() {
@@ -114,6 +116,17 @@ export default function MessagesPage() {
                     {conv.otherUser.title}
                     {conv.otherUser.company && ` · ${conv.otherUser.company}`}
                   </p>
+                )}
+
+                {conv.isOpportunityInitiated && (
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <span className="inline-flex items-center rounded-full bg-[#C4922A]/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#C4922A]">
+                      Opportunity
+                    </span>
+                    {conv.opportunityTitle && (
+                      <span className="text-xs text-gray-500 truncate">{conv.opportunityTitle}</span>
+                    )}
+                  </div>
                 )}
 
                 {conv.lastMessage ? (

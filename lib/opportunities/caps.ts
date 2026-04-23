@@ -47,3 +47,9 @@ export const OPPORTUNITY_NOTIF_SUPPRESSION_DAYS = 7;
 export const REMOVED_MATCH_COOLDOWN_DAYS = 180;
 export const CREATOR_MIN_ACCOUNT_AGE_DAYS = 14;
 export const CREATOR_MIN_TRUST_SCORE = 0.4;
+
+// Admin testing/seeding override. These emails bypass tier caps and trust checks
+// on opportunity creation. Keep this list short and audited.
+export const ADMIN_OVERRIDE_EMAILS = new Set<string>([
+  'bizdev91@gmail.com',
+]);

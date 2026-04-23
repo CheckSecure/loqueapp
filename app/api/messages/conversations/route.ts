@@ -15,7 +15,7 @@ export async function GET() {
   // 1. Find all matches the user is part of (excluding removed & blocked)
   const { data: rawMatches, error: matchErr } = await adminClient
     .from('matches')
-    .select('id, user_a_id, user_b_id, status, admin_facilitated')
+    .select('id, user_a_id, user_b_id, status, admin_facilitated, is_opportunity_initiated, opportunity_id')
     .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
 
   const { data: blockRows } = await adminClient
@@ -90,6 +90,7 @@ export async function GET() {
       ])
 
       return {
+        __match_id: conv.match_id,
         id: conv.id,
         otherUser: profileRes.data,
         lastMessage: lastMessageRes.data,
@@ -103,5 +104,38 @@ export async function GET() {
     })
   )
 
-  return NextResponse.json({ conversations: enriched.filter(Boolean) })
+  // Load opportunity titles for any conversations that came from opportunities.
+  const validEnriched = enriched.filter(Boolean) as any[]
+  const oppIds = new Set<string>()
+  for (const conv of validEnriched) {
+    const match = matchById.get(conv.id === null ? '' : conv.__match_id || '')
+  }
+  // Simpler: read opportunity_id straight from the match we already have.
+  const oppIdsList: string[] = []
+  for (const conv of validEnriched) {
+    const match = matchById.get((conv as any).__match_id)
+    if (match?.opportunity_id) oppIdsList.push(match.opportunity_id)
+  }
+
+  const oppTitleById = new Map<string, string>()
+  if (oppIdsList.length > 0) {
+    const { data: opps } = await adminClient
+      .from('opportunities')
+      .select('id, title')
+      .in('id', oppIdsList)
+    for (const o of opps || []) oppTitleById.set(o.id, o.title)
+  }
+
+  // Attach opportunity context and strip internal helpers before returning.
+  const finalList = validEnriched.map((conv) => {
+    const match = matchById.get((conv as any).__match_id)
+    const { __match_id, ...rest } = conv as any
+    return {
+      ...rest,
+      isOpportunityInitiated: !!match?.is_opportunity_initiated,
+      opportunityTitle: match?.opportunity_id ? (oppTitleById.get(match.opportunity_id) || null) : null,
+    }
+  })
+
+  return NextResponse.json({ conversations: finalList })
 }

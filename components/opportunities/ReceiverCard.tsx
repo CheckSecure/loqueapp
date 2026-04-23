@@ -11,6 +11,7 @@ type OpportunitySummary = {
   title: string;
   description: string | null;
   urgency: 'low' | 'medium' | 'urgent' | null;
+  profiles?: { full_name: string | null; company: string | null } | null;
 };
 
 const BUTTON_LABEL: Record<Role, string> = {
@@ -87,6 +88,12 @@ export function ReceiverCard({
       <div className="mt-0.5 text-[11px] text-slate-500">Based on your experience</div>
 
       <h3 className="mt-2 text-lg font-semibold text-slate-900">{opportunity.title}</h3>
+
+      {opportunity.profiles && (opportunity.profiles.full_name || opportunity.profiles.company) && (
+        <div className="mt-1 text-sm text-slate-700">
+          {[opportunity.profiles.full_name, opportunity.profiles.company].filter(Boolean).join(' · ')}
+        </div>
+      )}
 
       <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
         <span className="capitalize">{opportunity.type === 'hiring' ? 'Hiring' : 'Business need'}</span>

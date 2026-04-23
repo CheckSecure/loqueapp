@@ -15,6 +15,8 @@ interface ConversationData {
     avatar_url: string | null
     subscription_tier: string | null | null
   }
+  isOpportunityInitiated?: boolean
+  opportunityTitle?: string | null
 }
 
 export default function ConversationPage() {
@@ -104,6 +106,16 @@ export default function ConversationPage() {
               {conversation.otherUser.title}
               {conversation.otherUser.company && ` · ${conversation.otherUser.company}`}
             </p>
+          )}
+          {conversation.isOpportunityInitiated && (
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className="inline-flex items-center rounded-full bg-[#C4922A]/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#C4922A]">
+                Opportunity
+              </span>
+              {conversation.opportunityTitle && (
+                <span className="text-xs text-gray-500">{conversation.opportunityTitle}</span>
+              )}
+            </div>
           )}
         </div>
       </div>
