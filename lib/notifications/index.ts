@@ -11,6 +11,12 @@ export type NotificationType =
   | 'nudge_interest'
   | 'admin_intro'
   | 'admin_intro_nudge'
+  | 'opportunity_received'
+  | 'recruiter_request'
+  | 'opportunity_response'
+  | 'opportunity_nudge_creator'
+  | 'opportunity_nudge_receiver'
+  | 'opportunity_closed'
 
 export interface NotificationData {
   matchId?: string
@@ -70,6 +76,30 @@ const NOTIFICATION_COPY = {
   admin_intro: {
     title: 'A curated introduction',
     message: 'We think you should meet — this is a strong match.'
+  },
+  opportunity_received: {
+    title: 'A curated opportunity',
+    message: 'Someone is signaling a need you can help with.'
+  },
+  recruiter_request: {
+    title: 'A hiring signal in your network',
+    message: 'Someone you know is hiring for a role in your reach.'
+  },
+  opportunity_response: {
+    title: 'Someone responded to your signal',
+    message: 'Review the response to make an introduction.'
+  },
+  opportunity_nudge_creator: {
+    title: 'Responses waiting for review',
+    message: 'Take a look at who’s interested in your signal.'
+  },
+  opportunity_nudge_receiver: {
+    title: 'You have opportunities waiting',
+    message: 'Curated opportunities are in your inbox.'
+  },
+  opportunity_closed: {
+    title: 'Opportunity closed',
+    message: 'A signal you responded to is no longer active.'
   }
 }
 
@@ -83,7 +113,13 @@ const LINK_BY_TYPE: Partial<Record<string, string>> = {
   nudge_interest: '/dashboard/introductions',
   nudge_reply: '/dashboard/messages',
   low_credits: '/dashboard/billing',
-  no_credits: '/dashboard/billing'
+  no_credits: '/dashboard/billing',
+  opportunity_received: '/dashboard/opportunities',
+  recruiter_request: '/dashboard/opportunities',
+  opportunity_response: '/dashboard/opportunities/signals',
+  opportunity_nudge_creator: '/dashboard/opportunities/signals',
+  opportunity_nudge_receiver: '/dashboard/opportunities',
+  opportunity_closed: '/dashboard/opportunities/responses'
 }
 
 export async function createNotificationSafe({
