@@ -34,9 +34,23 @@ export default async function OpportunityDetail({
     .from('opportunity_responses')
     .select('id, user_id, role, status, created_at, profiles!opportunity_responses_user_id_fkey(id, full_name, title, company, bio, avatar_url, expertise, seniority, role_type)')
     .eq('opportunity_id', id)
+    .is('declined_by_creator_at', null)
     .order('created_at', { ascending: true });
 
+  // Capture unseen interested responses BEFORE marking them seen, so we can
+  // show NEW badges on this render. Next render they will not be unseen.
+  const unseenIds = new Set((responses ?? []).filter((r) => r.status === 'interested' && !r.seen_by_creator_at).map((r) => r.id));
+
+  // Mark all interested responses as seen on detail-page view (fire-and-forget).
+  if (unseenIds.size > 0) {
+    await admin
+      .from('opportunity_responses')
+      .update({ seen_by_creator_at: new Date().toISOString() })
+      .in('id', Array.from(unseenIds));
+  }
+
   const waiting = (responses ?? []).filter((r) => r.status === 'interested');
+  const waitingWithFlag = waiting.map((r) => ({ ...r, is_new: unseenIds.has(r.id) }));
   const introduced = (responses ?? []).filter((r) => r.status === 'introduced');
 
   // Attach conversation_id to introduced rows so they render "Open conversation".
@@ -108,7 +122,7 @@ export default async function OpportunityDetail({
 
         <IntroducedBannerHost
           opportunityId={opp.id}
-          waiting={waiting as any}
+          waiting={waitingWithFlag as any}
           canIntroduce={!isClosedOrExpired}
         />
       </section>
