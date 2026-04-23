@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getOpportunityBadgeCount } from '@/lib/opportunities/unreadCount'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import MobileNav from '@/components/MobileNav'
@@ -118,9 +120,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
     meetingNotifCount = 0
   }
 
+  // Opportunity badge — sum of:
+  //   receiver side: active, non-responded, non-dismissed For You opportunities
+  //   creator side: interested responses waiting on action across active signals
+  let opportunityBadgeCount = 0
+  try {
+    const admin = createAdminClient()
+    const { total } = await getOpportunityBadgeCount(admin, user.id)
+    opportunityBadgeCount = total
+  } catch {
+    opportunityBadgeCount = 0
+  }
+
   return (
     <>
-      <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} />
+      <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} opportunityBadgeCount={opportunityBadgeCount} />
       <div className="min-h-screen md:flex bg-slate-50">
         <Sidebar
           displayName={displayName}
@@ -132,6 +146,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           unreadCount={unreadCount}
           networkNotifCount={networkNotifCount}
           meetingNotifCount={meetingNotifCount}
+          opportunityBadgeCount={opportunityBadgeCount}
         />
         <main className="flex-1 min-w-0 overflow-x-hidden">
           {children}

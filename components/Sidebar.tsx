@@ -31,6 +31,7 @@ interface SidebarProps {
   unreadCount: number
   networkNotifCount: number
   meetingNotifCount: number
+  opportunityBadgeCount: number
 }
 
 function CreditsChip({ credits }: { credits: number }) {
@@ -101,6 +102,7 @@ export default function Sidebar({
   unreadCount,
   networkNotifCount,
   meetingNotifCount,
+  opportunityBadgeCount,
 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -133,7 +135,8 @@ export default function Sidebar({
           const isMessages = href === '/dashboard/messages'
           const isNetwork = href === '/dashboard/network'
           const isMeetings = href === '/dashboard/meetings'
-          const badgeCount = isMessages ? unreadCount : isNetwork ? networkNotifCount : isMeetings ? meetingNotifCount : 0
+          const isOpportunities = href === '/dashboard/opportunities'
+          const badgeCount = isMessages ? unreadCount : isNetwork ? networkNotifCount : isMeetings ? meetingNotifCount : isOpportunities ? opportunityBadgeCount : 0
           // DEBUG: Log badge count for Network tab
           if (isNetwork) console.log('[NETWORK BADGE]', { networkNotifCount, badgeCount, href })
           

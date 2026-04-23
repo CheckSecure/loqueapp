@@ -18,7 +18,7 @@ const bottomNavItems = [
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
 ]
 
-export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0 }: { credits: number; unreadCount?: number; meetingNotifCount?: number }) {
+export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0, opportunityBadgeCount = 0 }: { credits: number; unreadCount?: number; meetingNotifCount?: number; opportunityBadgeCount?: number }) {
   const pathname = usePathname()
   const router = useRouter()
   const [showMore, setShowMore] = useState(false)
@@ -89,7 +89,12 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
               className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
             >
               <Sparkles className="w-5 h-5 text-slate-400" />
-              Opportunities
+              <span className="flex-1">Opportunities</span>
+              {opportunityBadgeCount > 0 && (
+                <span className="w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {opportunityBadgeCount > 9 ? '9+' : opportunityBadgeCount}
+                </span>
+              )}
             </Link>
 
             <Link
