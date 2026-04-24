@@ -55,7 +55,7 @@ export default function MessagesPage() {
       <div className="max-w-3xl mx-auto px-4 py-8">
         <div className="animate-pulse space-y-4">
           {[1, 2, 3].map(i => (
-            <div key={i} className="h-20 bg-gray-100 rounded-lg" />
+            <div key={i} className="h-20 bg-slate-100 rounded-2xl" />
           ))}
         </div>
       </div>
@@ -65,24 +65,24 @@ export default function MessagesPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-serif text-gray-900">Introductions</h1>
-        <p className="text-gray-600 mt-1">Your active conversations</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Messages</h1>
+        <p className="text-slate-500 text-sm mt-2">Your active conversations.</p>
       </div>
 
       {conversations.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-          <p className="text-gray-700 font-medium mb-2">No introductions yet</p>
-          <p className="text-sm text-gray-500">
+        <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center shadow-sm">
+          <p className="text-slate-900 font-semibold mb-2">No conversations yet</p>
+          <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">
             When you and another member express mutual interest, your conversation will appear here.
           </p>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 overflow-hidden">
+        <div className="bg-white border border-slate-100 rounded-2xl divide-y divide-slate-100 overflow-hidden shadow-sm">
           {conversations.map(conv => (
             <Link
               key={conv.id}
               href={`/dashboard/messages/${conv.id}`}
-              className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors"
             >
               <div className="flex-shrink-0">
                 {conv.otherUser?.avatar_url ? (
@@ -93,7 +93,7 @@ export default function MessagesPage() {
                     className="w-12 h-12 rounded-full object-cover"
                   />
                 ) : (
-                  <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium">
+                  <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-medium">
                     {conv.otherUser?.full_name?.[0] || '?'}
                   </div>
                 )}
@@ -101,18 +101,18 @@ export default function MessagesPage() {
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline justify-between gap-2">
-                  <h3 className="font-medium text-gray-900 truncate">
+                  <h3 className="font-semibold text-slate-900 truncate">
                     {conv.otherUser?.full_name || 'Unknown'}
                   </h3>
                   {conv.lastMessage && (
-                    <span className="text-xs text-gray-400 flex-shrink-0">
+                    <span className="text-xs text-slate-400 flex-shrink-0">
                       {formatDistanceToNow(new Date(conv.lastMessage.created_at), { addSuffix: true })}
                     </span>
                   )}
                 </div>
 
                 {conv.otherUser?.title && (
-                  <p className="text-sm text-gray-500 truncate">
+                  <p className="text-sm text-slate-500 truncate">
                     {conv.otherUser.title}
                     {conv.otherUser.company && ` · ${conv.otherUser.company}`}
                   </p>
@@ -120,23 +120,23 @@ export default function MessagesPage() {
 
                 {conv.isOpportunityInitiated && (
                   <div className="mt-1 flex items-center gap-1.5">
-                    <span className="inline-flex items-center rounded-full bg-[#C4922A]/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#C4922A]">
+                    <span className="inline-flex items-center rounded-full bg-brand-gold-soft px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-brand-gold">
                       Opportunity
                     </span>
                     {conv.opportunityTitle && (
-                      <span className="text-xs text-gray-500 truncate">{conv.opportunityTitle}</span>
+                      <span className="text-xs text-slate-500 truncate">{conv.opportunityTitle}</span>
                     )}
                   </div>
                 )}
 
                 {conv.lastMessage ? (
-                  <p className={`text-sm truncate mt-1 ${conv.unreadCount > 0 ? 'font-medium text-gray-900' : 'text-gray-500'}`}>
+                  <p className={`text-sm truncate mt-1 ${conv.unreadCount > 0 ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>
                     {conv.lastMessage.is_system
-                      ? <span className="italic text-gray-400">Introduction made — say hello</span>
+                      ? <span className="italic text-slate-400">Introduction made — say hello</span>
                       : conv.lastMessage.content}
                   </p>
                 ) : (
-                  <p className="text-sm italic text-gray-400 mt-1">
+                  <p className="text-sm italic text-slate-400 mt-1">
                     Introduction made — say hello to start the conversation
                   </p>
                 )}
@@ -144,7 +144,7 @@ export default function MessagesPage() {
 
               {conv.unreadCount > 0 && (
                 <div className="flex-shrink-0">
-                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-medium">
+                  <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-brand-gold text-white text-xs font-semibold">
                     {conv.unreadCount}
                   </span>
                 </div>
