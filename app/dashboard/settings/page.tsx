@@ -4,6 +4,7 @@ import ProfileEditForm from '@/components/ProfileEditForm'
 import EmailChangeForm from '@/components/EmailChangeForm'
 import PasswordChangeForm from '@/components/PasswordChangeForm'
 import AccountDeletion from '@/components/AccountDeletion'
+import { OpportunityPreferences } from '@/components/opportunities/OpportunityPreferences'
 import { Mail, FileText } from 'lucide-react'
 
 export const metadata = { title: 'Settings | Andrel' }
@@ -31,6 +32,22 @@ export default async function SettingsPage() {
       <ProfileEditForm initialData={profile} />
       <EmailChangeForm />
       <PasswordChangeForm />
+
+      {/* Opportunities */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Opportunities</h2>
+        </div>
+        <div className="px-6 py-5">
+          <OpportunityPreferences
+            initial={{
+              open_to_roles: profile.open_to_roles ?? false,
+              open_to_business_solutions: profile.open_to_business_solutions ?? false,
+              recruiter: profile.recruiter ?? false,
+            }}
+          />
+        </div>
+      </div>
 
       {/* Help & Support */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">

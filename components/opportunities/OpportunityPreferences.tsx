@@ -13,7 +13,7 @@ type Props = {
 
 export function OpportunityPreferences({
   initial,
-  saveEndpoint = '/api/profile/update',
+  saveEndpoint = '/api/profile/opportunity-preferences',
 }: Props) {
   const [prefs, setPrefs] = useState(initial);
   const [saving, setSaving] = useState(false);
