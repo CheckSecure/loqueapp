@@ -69,9 +69,9 @@ const CREDIT_PACKS = [
 ]
 
 const TIER_VALUE: Record<string, string> = {
-  free: 'You have access to a curated set of introductions each week based on your profile and goals.',
-  professional: 'You receive priority matching with higher-quality members and increased visibility in the network.',
-  executive: 'You have top placement in the matching system with concierge-level curation and the highest-value introductions.',
+  free: 'Curated introductions to start building your network, with 3 credits per month.',
+  professional: 'Priority matching, more frequent introductions, and the ability to signal hiring or business needs.',
+  executive: 'Concierge-level curation, highest matching priority, and up to 2 active opportunity signals at a time.',
 }
 
 function BillingInner() {
