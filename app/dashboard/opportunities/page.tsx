@@ -4,6 +4,9 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { TIER_OPPORTUNITY_LIMIT, type Tier } from '@/lib/opportunities/caps';
 import { ReceiverCard } from '@/components/opportunities/ReceiverCard';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Inbox } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,17 +78,14 @@ export default async function OpportunitiesPage() {
     <div className="mx-auto max-w-4xl px-6 py-10">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Opportunities</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Private, curated opportunities — no noise, no browsing.
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Opportunities</h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Private, curated signals — no noise, no browsing.
           </p>
         </div>
         {canCreate && (
-          <Link
-            href="/dashboard/opportunities/new"
-            className="rounded-md bg-[#1B2850] px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#151f3d]"
-          >
-            Signal a need
+          <Link href="/dashboard/opportunities/new">
+            <Button variant="primary" size="md">Signal a need</Button>
           </Link>
         )}
       </div>
@@ -102,10 +102,10 @@ export default async function OpportunitiesPage() {
 
       <section className="mt-10">
         <div className="mb-5">
-          <h2 className="text-sm font-medium uppercase tracking-wider text-slate-500">
-            Opportunities for you
+          <h2 className="text-base font-semibold text-slate-900">
+            For you
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-sm text-slate-500">
             Private opportunities selected based on your experience.
           </p>
         </div>
@@ -127,10 +127,10 @@ export default async function OpportunitiesPage() {
       </section>
 
       <section className="mt-14">
-        <h2 className="text-sm font-medium uppercase tracking-wider text-slate-500">
+        <h2 className="text-base font-semibold text-slate-900">
           Your activity
         </h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <DestinationCard
             href="/dashboard/opportunities/signals"
             title="Your signals"
@@ -155,15 +155,11 @@ export default async function OpportunitiesPage() {
 
 function EmptyFor() {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-8 py-14 text-center">
-      <h3 className="text-base font-medium text-slate-900">No opportunities right now</h3>
-      <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
-        We'll notify you when something highly relevant comes up.
-      </p>
-      <p className="mt-1 text-xs text-slate-400">
-        Opportunities are curated and infrequent.
-      </p>
-    </div>
+    <EmptyState
+      icon={<Inbox className="w-6 h-6 text-slate-400" />}
+      title="No opportunities right now"
+      description="We'll notify you when something highly relevant comes up. Opportunities are curated and infrequent."
+    />
   );
 }
 
@@ -185,23 +181,23 @@ function DestinationCard({
   return (
     <Link
       href={href}
-      className="group flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-5 transition-colors hover:border-[#1B2850]/50 hover:shadow-sm"
+      className="group flex flex-col justify-between rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition-all hover:border-brand-navy/40 hover:shadow-md"
     >
       <div>
         <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-sm font-medium text-slate-900 group-hover:text-[#1B2850]">{title}</h3>
+          <h3 className="text-sm font-semibold text-slate-900 group-hover:text-brand-navy">{title}</h3>
           {count > 0 && (
-            <span className="text-xs text-slate-500">
+            <span className="text-xs font-medium text-slate-500">
               {count} {countLabel}
             </span>
           )}
         </div>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-2 text-sm text-slate-500 leading-relaxed">
           {count > 0 ? description : emptyHint}
         </p>
       </div>
-      <div className="mt-4 text-xs text-slate-400 group-hover:text-[#1B2850]">
-        View →
+      <div className="mt-6 text-sm font-medium text-slate-400 group-hover:text-brand-navy transition-colors">
+        View <span className="inline-block transition-transform group-hover:translate-x-0.5">&rarr;</span>
       </div>
     </Link>
   );
