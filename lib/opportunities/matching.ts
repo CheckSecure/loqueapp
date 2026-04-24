@@ -18,6 +18,8 @@ import {
   TRANCHE_CEILING,
   REMOVED_MATCH_COOLDOWN_DAYS,
   RECRUITER_WEEKLY_CAP,
+  SCORING_TIER_BOOST,
+  type Tier,
 } from './caps';
 import { shouldNotify } from './notifications';
 import { rateLimitedUserIds } from './rateLimits';
@@ -77,6 +79,7 @@ type CandidateProfile = {
   opp_delivered_count: number | null;
   opp_response_rate: number | null;
   opp_conversation_continuation_rate: number | null;
+  subscription_tier?: string | null;
 };
 
 type ScoredCandidate = { userId: string; score: number };
@@ -259,6 +262,11 @@ function scaled(value: number | null, maxPoints: number): number {
 // Normalized scoring — Prompt #15 design weights
 // ------------------------------------------------------------
 
+function tierBoost(c: CandidateProfile): number {
+  const tier = ((c.subscription_tier as Tier) || 'free');
+  return SCORING_TIER_BOOST[tier] ?? 0;
+}
+
 function scoreHiring(c: CandidateProfile, o: OpportunityRow): number {
   // Expertise overlap: 12 per tag, capped at 3 tags (max 36)
   const overlap = Math.min(3, expertiseOverlapCount(c.expertise, o.criteria.expertise));
@@ -297,7 +305,7 @@ function scoreHiring(c: CandidateProfile, o: OpportunityRow): number {
     responsivenessPts +
     trustPts +
     networkPts
-  );
+  ) + tierBoost(c);
 }
 
 function scoreBusiness(c: CandidateProfile, o: OpportunityRow): number {
@@ -317,7 +325,7 @@ function scoreBusiness(c: CandidateProfile, o: OpportunityRow): number {
   const trustPts = scaled(c.trust_score, 10);
   const networkPts = scaled(c.networkValueScore, 6);
 
-  return expertisePts + responsePts + continuationPts + responsivenessPts + trustPts + networkPts;
+  return expertisePts + responsePts + continuationPts + responsivenessPts + trustPts + networkPts + tierBoost(c);
 }
 
 function scoreRecruiter(c: CandidateProfile): number {
@@ -333,7 +341,7 @@ function scoreRecruiter(c: CandidateProfile): number {
   const trustPts = scaled(c.trust_score, 10);
   const networkPts = scaled(c.networkValueScore, 6);
 
-  return responsePts + continuationPts + responsivenessPts + trustPts + networkPts;
+  return responsePts + continuationPts + responsivenessPts + trustPts + networkPts + tierBoost(c);
 }
 
 // ------------------------------------------------------------
@@ -391,7 +399,7 @@ function applyThresholdAndFallback(
 const PROFILE_SELECT =
   'id, seniority, role_type, expertise, trust_score, ' +
   '"networkValueScore", "responsivenessScore", ' +
-  'opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate';
+  'opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate, subscription_tier';
 
 export async function selectCandidates(opportunity: OpportunityRow): Promise<SelectResult> {
   const admin = createAdminClient();
@@ -550,8 +558,7 @@ export async function selectRecruiters(opportunity: OpportunityRow): Promise<Sel
 
   const { data: pool } = await admin
     .from('profiles')
-    .select(
-      'id, seniority, role_type, expertise, trust_score, ' +
+    .select('id, seniority, role_type, expertise, trust_score, subscription_tier' +
         '"networkValueScore", "responsivenessScore", ' +
         'opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate'
     )

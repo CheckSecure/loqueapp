@@ -95,7 +95,10 @@ export default async function RespondedOpportunityPage({
   } else if (status === 'withdrawn') {
     statusLine = `Withdrawn on ${formatDate(response.created_at)}`;
   } else {
-    statusLine = `Open to this on ${formatDate(response.created_at)}`;
+    // status === 'interested' — wording differs for hiring vs business.
+    statusLine = oppRow.type === 'hiring'
+      ? `Open to this on ${formatDate(response.created_at)}`
+      : `Offered help on ${formatDate(response.created_at)}`;
   }
 
   const canOpenConversation = status === 'introduced' && conversationId && !isNoLongerActive;

@@ -16,11 +16,12 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
-  MAX_ACTIVE_IN_FOR_YOU,
+  MAX_ACTIVE_IN_FOR_YOU_BY_TIER,
   MAX_DELIVERIES_PER_7_DAYS,
   MAX_DELIVERIES_PER_30_DAYS,
   MAX_APPEARANCES_PER_30_DAYS,
   SAME_PAIR_INTRO_COOLDOWN_DAYS,
+  type Tier,
 } from './caps';
 
 /**
@@ -65,8 +66,22 @@ export async function rateLimitedUserIds(creatorId: string): Promise<Set<string>
         if (respondedSet.has(key)) continue;
         activeCountByUser.set(c.user_id, (activeCountByUser.get(c.user_id) ?? 0) + 1);
       }
-      for (const [uid, count] of Array.from(activeCountByUser.entries())) {
-        if (count >= MAX_ACTIVE_IN_FOR_YOU) limited.add(uid);
+      // Tier-aware cap: free users max 2, paid tiers max 5. Pull each
+      // user's subscription_tier and apply the tier-specific cap.
+      const uidsToCheck = Array.from(activeCountByUser.keys());
+      if (uidsToCheck.length > 0) {
+        const { data: tierRows } = await admin
+          .from('profiles')
+          .select('id, subscription_tier')
+          .in('id', uidsToCheck);
+        const tierMap = new Map(
+          (tierRows ?? []).map((t: any) => [t.id as string, ((t.subscription_tier as string) || 'free') as Tier])
+        );
+        for (const [uid, count] of Array.from(activeCountByUser.entries())) {
+          const tier = tierMap.get(uid) ?? 'free';
+          const cap = MAX_ACTIVE_IN_FOR_YOU_BY_TIER[tier] ?? MAX_ACTIVE_IN_FOR_YOU_BY_TIER.free;
+          if (count >= cap) limited.add(uid);
+        }
       }
     }
   }

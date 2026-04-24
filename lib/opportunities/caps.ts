@@ -72,7 +72,27 @@ export const ADMIN_OVERRIDE_EMAILS = new Set<string>([
 // Receiver-side: protect a member's attention.
 // Only counts active (non-responded, non-dismissed) opportunity_candidates rows
 // for opportunities in 'active' status.
-export const MAX_ACTIVE_IN_FOR_YOU = 5;
+// Tier-keyed cap on active (non-responded, non-dismissed) candidate rows
+// a user can have in their For You surface. Protects free users from
+// firehose delivery; gives paid tiers more headroom.
+export const MAX_ACTIVE_IN_FOR_YOU_BY_TIER: Record<Tier, number> = {
+  free: 2,
+  professional: 5,
+  executive: 5,
+  founding: 5,
+};
+
+// Legacy name retained for any external import. Prefer the _BY_TIER map.
+export const MAX_ACTIVE_IN_FOR_YOU = MAX_ACTIVE_IN_FOR_YOU_BY_TIER.professional;
+
+// Additive score boost applied to candidate scoring by tier. Lets premium
+// users clear thresholds more easily and rank above free-tier peers.
+export const SCORING_TIER_BOOST: Record<Tier, number> = {
+  free: 0,
+  professional: 5,
+  executive: 10,
+  founding: 5,
+};
 
 // Cap on raw deliveries per rolling window.
 export const MAX_DELIVERIES_PER_7_DAYS = 4;

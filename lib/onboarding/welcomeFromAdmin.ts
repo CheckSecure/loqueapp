@@ -3,30 +3,30 @@ import { createNotificationSafe } from '@/lib/notifications'
 import { getAdminUser } from '@/lib/admin/getAdminUser'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 
-const WELCOME_MESSAGE = `Welcome to Andrel.
+const WELCOME_MESSAGE = `Welcome to Andrel — glad you're here.
 
-I'm glad you joined. Andrel is designed to help professionals make thoughtful, high-value connections through curated introductions rather than open-ended networking.
+Andrel is a curated professional network built around thoughtful introductions, not feeds or browsing.
 
-Here's how it works:
+Here's how to get the most out of it:
 
-- Each cycle, you'll receive a curated set of introductions based on your profile, preferences, and overall fit.
-- If you're interested in meeting someone, you can express interest using a credit.
-- If the interest is mutual, your introduction becomes active and you can begin messaging right away.
-- From there, you can use the conversation to get to know each other and, if helpful, schedule a meeting.
+1. Complete your profile carefully.
+Your title, company, bio, expertise, interests, and preferences help us understand who would be valuable for you to meet.
 
-A few important things to know:
+2. Review your introductions.
+When someone is suggested, you can express interest or pass. Andrel uses a simple credit system to keep introductions intentional and high-quality — you'll only use a credit when a connection is actually made.
 
-- Your subscription tier affects the number and quality of introductions you receive, along with your monthly credit allocation.
-- Free credits are used for standard actions like expressing interest.
-- Premium credits are reserved for premium features when available.
-- Once you're connected, messaging is available immediately, and meetings can be coordinated directly through the conversation.
+3. Use Messages to build the relationship.
+Once an introduction is active, you can message directly and use the suggested prompts to start the conversation.
 
-Andrel works best when profiles are complete and outreach is intentional. The goal is not volume — it's relevance.
+4. Check Opportunities.
+Opportunities are private, curated signals for hiring or business needs — whether you're looking for a role or offering help on a specific problem. You can opt in from Settings if you're open to relevant opportunities or recruiter outreach.
 
-Take a look through your introductions and feel free to start connecting.
+5. Keep it intentional.
+Andrel works best when users respond thoughtfully, accept introductions they genuinely want, and use the platform to build real professional relationships.
 
-Welcome again,
-Daniel`
+If you have questions or want help getting started, just reply here.
+
+— Daniel`
 
 export interface WelcomeResult {
   created: boolean
