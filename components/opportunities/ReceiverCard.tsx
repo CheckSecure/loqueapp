@@ -2,6 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
+import { Pill } from '@/components/ui/Pill';
 
 type Role = 'candidate' | 'provider' | 'recruiter';
 
@@ -11,7 +14,13 @@ type OpportunitySummary = {
   title: string;
   description: string | null;
   urgency: 'low' | 'medium' | 'urgent' | null;
-  profiles?: { full_name: string | null; company: string | null } | null;
+  creator_id?: string | null;
+  profiles?: {
+    id?: string | null;
+    full_name: string | null;
+    company: string | null;
+    avatar_url?: string | null;
+  } | null;
 };
 
 const BUTTON_LABEL: Record<Role, string> = {
@@ -80,23 +89,44 @@ export function ReceiverCard({
 
   if (hidden) return null;
 
+  const creatorId =
+    opportunity.profiles?.id ||
+    opportunity.creator_id ||
+    opportunity.id;
+  const creatorName = opportunity.profiles?.full_name || undefined;
+  const creatorCompany = opportunity.profiles?.company || undefined;
+  const creatorAvatar = opportunity.profiles?.avatar_url || undefined;
+
   return (
-    <article className="rounded-lg border border-slate-200 border-l-4 border-l-[#C4922A] bg-white p-7 shadow-sm transition-shadow hover:shadow-md">
-      <div className="text-[11px] font-medium uppercase tracking-wider text-[#C4922A]">
-        Selected for you
+    <article className="group rounded-2xl border border-slate-100 border-l-4 border-l-brand-gold bg-white p-7 shadow-sm transition-all hover:shadow-md hover:border-slate-200 hover:border-l-brand-gold">
+      <div className="flex items-center gap-2">
+        <Pill variant="gold" dot>Selected for you</Pill>
+        <span className="text-xs text-slate-400">Based on your experience</span>
       </div>
-      <div className="mt-0.5 text-[11px] text-slate-500">Based on your experience</div>
 
-      <h3 className="mt-3 text-xl font-semibold text-slate-900">{opportunity.title}</h3>
+      <h3 className="mt-4 text-xl font-semibold text-slate-900 tracking-tight leading-snug">{opportunity.title}</h3>
 
-      {opportunity.profiles && (opportunity.profiles.full_name || opportunity.profiles.company) && (
-        <div className="mt-1 text-sm text-slate-700">
-          {[opportunity.profiles.full_name, opportunity.profiles.company].filter(Boolean).join(' · ')}
+      {(creatorName || creatorCompany) && (
+        <div className="mt-4 flex items-center gap-3">
+          <Avatar
+            id={creatorId}
+            name={creatorName}
+            src={creatorAvatar}
+            size="md"
+          />
+          <div className="min-w-0">
+            {creatorName && (
+              <div className="text-sm font-medium text-slate-900 truncate">{creatorName}</div>
+            )}
+            {creatorCompany && (
+              <div className="text-xs text-slate-500 truncate">{creatorCompany}</div>
+            )}
+          </div>
         </div>
       )}
 
-      <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-        <span className="capitalize">{opportunity.type === 'hiring' ? 'Hiring' : 'Business need'}</span>
+      <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+        <span>{opportunity.type === 'hiring' ? 'Hiring' : 'Business need'}</span>
         {opportunity.urgency && (
           <>
             <span>·</span>
@@ -108,18 +138,23 @@ export function ReceiverCard({
       </div>
 
       {opportunity.description && (
-        <p className="mt-3 text-sm leading-relaxed text-slate-700 line-clamp-3">
+        <p className="mt-4 text-sm leading-relaxed text-slate-700 line-clamp-3">
           {opportunity.description}
         </p>
       )}
 
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
-      <div className="mt-5 flex items-center gap-3">
-        <button type="button" onClick={respond} disabled={busy} className="rounded-md bg-[#1B2850] px-4 py-2 text-sm font-medium text-white hover:bg-[#151f3d] disabled:opacity-60">
+      <div className="mt-6 flex items-center gap-4">
+        <Button variant="primary" size="md" onClick={respond} disabled={busy}>
           {BUTTON_LABEL[role]}
-        </button>
-        <button type="button" onClick={dismiss} disabled={busy} className="text-sm text-slate-500 hover:text-slate-700 disabled:opacity-60">
+        </Button>
+        <button
+          type="button"
+          onClick={dismiss}
+          disabled={busy}
+          className="text-sm text-slate-500 hover:text-slate-700 underline-offset-4 hover:underline disabled:opacity-60 transition-colors"
+        >
           Not for me
         </button>
       </div>
