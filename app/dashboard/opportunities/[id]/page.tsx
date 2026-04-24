@@ -32,7 +32,7 @@ export default async function OpportunityDetail({
 
   const { data: responses } = await admin
     .from('opportunity_responses')
-    .select('id, user_id, role, status, created_at, profiles!opportunity_responses_user_id_fkey(id, full_name, title, company, bio, avatar_url, expertise, seniority, role_type)')
+    .select('id, user_id, role, status, created_at, seen_by_creator_at, profiles!opportunity_responses_user_id_fkey(id, full_name, title, company, bio, avatar_url, expertise, seniority, role_type)')
     .eq('opportunity_id', id)
     .is('declined_by_creator_at', null)
     .order('created_at', { ascending: true });
