@@ -50,13 +50,14 @@ export default async function RespondedOpportunityPage({
     .maybeSingle();
 
   if (!opp) notFound();
+  const oppRow = opp as any;
 
-  const creator = (opp as any).profiles;
+  const creator = oppRow.profiles;
   const creatorLine = creator
     ? [creator.full_name, creator.company].filter(Boolean).join(' · ')
     : '';
 
-  const isNoLongerActive = ['closed', 'expired', 'dormant'].includes(opp.status) || !!opp.archived_at;
+  const isNoLongerActive = ['closed', 'expired', 'dormant'].includes(oppRow.status) || !!oppRow.archived_at;
   const status = response.status as Status;
 
   // For introduced responses, look up the conversation via the match row.
@@ -110,11 +111,11 @@ export default async function RespondedOpportunityPage({
 
       <article className="mt-6 rounded-lg border border-slate-200 border-l-4 border-l-[#C4922A] bg-white p-7 shadow-sm">
         <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-          {opp.type === 'hiring' ? 'Hiring' : 'Business need'}
-          {opp.urgency && opp.type === 'business' && ` · ${opp.urgency}`}
+          {oppRow.type === 'hiring' ? 'Hiring' : 'Business need'}
+          {oppRow.urgency && oppRow.type === 'business' && ` · ${oppRow.urgency}`}
         </div>
 
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900">{opp.title}</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900">{oppRow.title}</h1>
 
         {creatorLine && (
           <p className="mt-1 text-sm text-slate-700">{creatorLine}</p>
@@ -122,10 +123,10 @@ export default async function RespondedOpportunityPage({
 
         <p className="mt-3 text-xs text-slate-500">{statusLine}</p>
 
-        {opp.description && (
+        {oppRow.description && (
           <div className="mt-6 border-t border-slate-100 pt-6">
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-              {opp.description}
+              {oppRow.description}
             </p>
           </div>
         )}
