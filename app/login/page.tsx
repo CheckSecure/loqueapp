@@ -31,12 +31,22 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex">
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#1B2850] to-[#2E4080] flex-col justify-between p-12">
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-brand-navy to-brand-navy-light flex-col justify-between p-12">
         <Link href="/" className="text-2xl font-bold text-white tracking-tight">Andrel</Link>
-        <div className="text-white">
-          <p className="text-3xl font-bold mb-3 leading-snug">Welcome back to your professional network.</p>
-          <p className="text-white/60">Your introductions, messages, and meetings are waiting.</p>
+
+        <div className="space-y-6 text-white">
+          <div className="space-y-3">
+            <p className="text-2xl font-semibold leading-snug text-white">Curated introductions.</p>
+            <p className="text-2xl font-semibold leading-snug text-white">Private opportunities.</p>
+            <p className="text-2xl font-semibold leading-snug text-brand-gold">No feeds, no cold outreach.</p>
+          </div>
+          <div className="h-px w-12 bg-white/20" />
+          <div>
+            <p className="text-lg font-medium mb-1.5 text-white">Welcome back.</p>
+            <p className="text-sm text-white/60">Your introductions, messages, and meetings are waiting.</p>
+          </div>
         </div>
+
         <p className="text-white/40 text-sm">© {new Date().getFullYear()} Andrel</p>
       </div>
 
@@ -47,7 +57,7 @@ export default function LoginPage() {
             <h2 className="text-2xl font-bold text-slate-900">Sign in</h2>
             <p className="mt-1 text-sm text-slate-500">
               New to Andrel?{' '}
-              <Link href="/signup" className="text-[#1B2850] font-semibold hover:underline">Create an account</Link>
+              <Link href="/signup" className="text-brand-navy font-semibold hover:underline">Create an account</Link>
             </p>
           </div>
 
@@ -66,7 +76,7 @@ export default function LoginPage() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-transparent transition"
                 placeholder="you@example.com"
               />
             </div>
@@ -81,7 +91,7 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold focus:border-transparent transition"
                 placeholder="••••••••"
               />
             </div>
@@ -89,7 +99,7 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               className={cn(
-                'w-full flex items-center justify-center gap-2 bg-[#1B2850] text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-[#2E4080] transition-colors mt-2',
+                'w-full flex items-center justify-center gap-2 bg-brand-navy text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-brand-navy-dark transition-colors mt-2',
                 loading && 'opacity-70 cursor-not-allowed'
               )}
             >

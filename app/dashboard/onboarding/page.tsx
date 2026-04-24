@@ -45,23 +45,31 @@ export default function OnboardingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F5F6FB]">
+      <div className="min-h-screen flex items-center justify-center bg-brand-cream">
         <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F6FB] py-12 px-4">
+    <div className="min-h-screen bg-brand-cream py-12 px-4">
       <div className="max-w-2xl mx-auto">
         {/* Progress indicator */}
         <div className="mb-8">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${currentStep === 1 ? 'bg-[#1B2850] text-white' : 'bg-[#C4922A] text-white'}`}>
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
+              currentStep === 1
+                ? 'bg-brand-navy text-white'
+                : 'bg-brand-gold text-white'
+            }`}>
               1
             </div>
-            <div className={`h-1 w-16 ${currentStep === 2 ? 'bg-[#C4922A]' : 'bg-slate-200'}`} />
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${currentStep === 2 ? 'bg-[#1B2850] text-white' : 'bg-slate-200 text-slate-400'}`}>
+            <div className={`h-0.5 w-16 transition-colors ${currentStep === 2 ? 'bg-brand-gold' : 'bg-slate-200'}`} />
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
+              currentStep === 2
+                ? 'bg-brand-navy text-white'
+                : 'bg-slate-200 text-slate-400'
+            }`}>
               2
             </div>
           </div>
@@ -71,7 +79,7 @@ export default function OnboardingPage() {
         </div>
 
         {/* Welcome banner */}
-        <div className="bg-white rounded-2xl shadow-lg p-8 mb-6">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8 mb-6">
           <h1 className="text-3xl font-bold text-slate-900 mb-2">
             {currentStep === 1 ? 'Welcome to Andrel!' : 'Almost done!'}
           </h1>

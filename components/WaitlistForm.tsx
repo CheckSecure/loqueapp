@@ -33,6 +33,7 @@ export default function WaitlistForm() {
   const [linkedinUrl, setLinkedinUrl] = useState('')
   const [meetingInterests, setMeetingInterests] = useState('')
   const [referral, setReferral] = useState('')
+  const [showMore, setShowMore] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
@@ -153,6 +154,18 @@ export default function WaitlistForm() {
         </select>
       </div>
 
+      {!showMore && (
+        <button
+          type="button"
+          onClick={() => setShowMore(true)}
+          className="w-full text-left text-xs font-medium text-white/60 hover:text-white/90 transition-colors underline-offset-2 hover:underline pt-1"
+        >
+          + Add context to improve your matches (optional)
+        </button>
+      )}
+
+      {showMore && (
+        <div className="space-y-3.5">
       <div>
         <label className="block text-xs font-medium text-white/70 mb-1.5 flex items-center gap-1.5">
           <Linkedin className="w-3 h-3" />
@@ -189,6 +202,9 @@ export default function WaitlistForm() {
           className="w-full px-3.5 py-2.5 bg-white/10 border border-white/20 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#C4922A] focus:border-transparent transition"
         />
       </div>
+
+        </div>
+      )}
 
       <button
         type="submit"
