@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 interface Message {
@@ -34,6 +35,8 @@ export default function ConversationView({ conversationId }: ConversationViewPro
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const router = useRouter()
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -46,6 +49,21 @@ export default function ConversationView({ conversationId }: ConversationViewPro
 
   useEffect(() => {
     fetchMessages(true)
+
+    // Mark inbound unread messages as read. Fire-and-forget: if it fails,
+    // the sidebar unread count won't update but nothing else breaks.
+    fetch('/api/messages/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId }),
+    })
+      .then(res => {
+        if (res.ok) router.refresh()
+      })
+      .catch(() => {
+        /* non-fatal */
+      })
+
     intervalRef.current = setInterval(() => fetchMessages(false), 5000)
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
