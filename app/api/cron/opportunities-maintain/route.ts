@@ -116,7 +116,8 @@ export async function GET(request: Request) {
     const { shouldNotify } = await import('@/lib/opportunities/notifications');
     const { createNotificationSafe } = await import('@/lib/notifications');
 
-    for (const [uid, count] of unseenByUser.entries()) {
+    const entries = Array.from(unseenByUser.entries());
+    for (const [uid, count] of entries) {
       if (count < 2) continue;
       const allow = await shouldNotify(uid, 'opportunity_nudge_receiver');
       if (!allow) continue;

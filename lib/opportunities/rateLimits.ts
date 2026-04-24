@@ -65,7 +65,7 @@ export async function rateLimitedUserIds(creatorId: string): Promise<Set<string>
         if (respondedSet.has(key)) continue;
         activeCountByUser.set(c.user_id, (activeCountByUser.get(c.user_id) ?? 0) + 1);
       }
-      for (const [uid, count] of activeCountByUser.entries()) {
+      for (const [uid, count] of Array.from(activeCountByUser.entries())) {
         if (count >= MAX_ACTIVE_IN_FOR_YOU) limited.add(uid);
       }
     }
@@ -89,10 +89,10 @@ export async function rateLimitedUserIds(creatorId: string): Promise<Set<string>
         deliveries7.set(uid, (deliveries7.get(uid) ?? 0) + 1);
       }
     }
-    for (const [uid, count] of deliveries7.entries()) {
+    for (const [uid, count] of Array.from(deliveries7.entries())) {
       if (count >= MAX_DELIVERIES_PER_7_DAYS) limited.add(uid);
     }
-    for (const [uid, count] of deliveries30.entries()) {
+    for (const [uid, count] of Array.from(deliveries30.entries())) {
       if (count >= MAX_DELIVERIES_PER_30_DAYS) limited.add(uid);
       if (count >= MAX_APPEARANCES_PER_30_DAYS) limited.add(uid);
     }
