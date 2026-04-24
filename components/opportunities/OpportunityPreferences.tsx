@@ -1,6 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { Lock } from 'lucide-react';
+import { Toggle } from '@/components/ui/Toggle';
+import { Pill } from '@/components/ui/Pill';
 
 type Props = {
   initial: {
@@ -40,22 +43,46 @@ export function OpportunityPreferences({
   }
 
   return (
-    <section className="space-y-4">
-      <div>
-        <h3 className="text-sm font-medium text-slate-900">Opportunities</h3>
-        <p className="mt-1 text-xs text-slate-500">These preferences are never shown to other members.</p>
+    <section className="space-y-5">
+      <div className="flex items-start gap-2.5 rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
+        <Lock className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-slate-600 leading-relaxed">
+          Your preferences are never shown to other members.
+        </p>
       </div>
 
-      <Toggle label="Open to new roles" description="You'll be considered for hiring opportunities that match." checked={prefs.open_to_roles} onToggle={() => toggle('open_to_roles')} disabled={saving} />
-      <Toggle label="Open to business opportunities" description="You'll be considered when someone needs a service you provide." checked={prefs.open_to_business_solutions} onToggle={() => toggle('open_to_business_solutions')} disabled={saving} />
-      <Toggle label="I'm a recruiter" description="Members in your network can ask you to help when they hire." checked={prefs.recruiter} onToggle={() => toggle('recruiter')} disabled={saving} />
+      <div className="space-y-3">
+        <PreferenceRow
+          label="Open to new roles"
+          description="Let hiring managers in your network privately consider you for relevant roles."
+          checked={prefs.open_to_roles}
+          onToggle={() => toggle('open_to_roles')}
+          disabled={saving}
+        />
+        <PreferenceRow
+          label="Open to business opportunities"
+          description="Be considered when members need help with work that matches your expertise."
+          checked={prefs.open_to_business_solutions}
+          onToggle={() => toggle('open_to_business_solutions')}
+          disabled={saving}
+        />
+        <PreferenceRow
+          label="I'm a recruiter"
+          description="Let members in your network include you when they need recruiting help."
+          checked={prefs.recruiter}
+          onToggle={() => toggle('recruiter')}
+          disabled={saving}
+        />
+      </div>
 
-      {saved && <p className="text-xs text-slate-400">Saved.</p>}
+      <div className="h-6 flex items-center">
+        {saved && <Pill variant="gold" dot>Saved</Pill>}
+      </div>
     </section>
   );
 }
 
-function Toggle({
+function PreferenceRow({
   label,
   description,
   checked,
@@ -69,12 +96,17 @@ function Toggle({
   disabled: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 bg-white p-4 hover:border-slate-300">
-      <input type="checkbox" checked={checked} onChange={onToggle} disabled={disabled} className="mt-0.5" />
-      <div>
-        <div className="text-sm font-medium text-slate-900">{label}</div>
-        <p className="mt-0.5 text-xs text-slate-500">{description}</p>
+    <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-100 bg-white px-4 py-4 transition-colors hover:border-slate-200">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-semibold text-slate-900">{label}</div>
+        <p className="mt-1 text-xs text-slate-500 leading-relaxed">{description}</p>
       </div>
-    </label>
+      <Toggle
+        checked={checked}
+        onToggle={onToggle}
+        disabled={disabled}
+        ariaLabel={label}
+      />
+    </div>
   );
 }
