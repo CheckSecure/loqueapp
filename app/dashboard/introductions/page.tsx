@@ -13,26 +13,14 @@ import { EmptyState } from '@/components/ui/EmptyState'
 
 export const metadata = { title: 'Introductions | Andrel' }
 
-const AVATAR_COLORS = [
-  'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
-  'bg-cyan-600','bg-teal-600','bg-pink-500','bg-slate-600',
-]
-
-function pickColor(id: string) {
-  const n = (id || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-  return AVATAR_COLORS[n % AVATAR_COLORS.length]
-}
-
-function getInitials(name?: string) {
-  return (name || '?').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
-}
+// Avatar helpers moved to components/ui/Avatar (Phase 0 primitive).
 
 function Tag({ children, color = 'slate' }: { children: React.ReactNode; color?: string }) {
   const styles: Record<string, string> = {
     slate:  'bg-slate-50 text-slate-600 border-slate-100',
-    indigo: 'bg-[#F5F6FB] text-[#1B2850] border-[#1B2850]/10',
+    indigo: 'bg-brand-cream text-brand-navy border-brand-navy/10',
     violet: 'bg-slate-50 text-slate-600 border-slate-100',
-    emerald:'bg-[#FDF3E3] text-[#C4922A] border-[#C4922A]/20',
+    emerald:'bg-brand-gold-soft text-brand-gold border-brand-gold/20',
     amber:  'bg-amber-50 text-amber-700 border-amber-100',
   }
   return (
@@ -43,15 +31,13 @@ function Tag({ children, color = 'slate' }: { children: React.ReactNode; color?:
 }
 
 function Avatar({ profile, size = 'md' }: { profile: any; size?: 'sm' | 'md' }) {
-  const avatarColor = pickColor(profile.id)
-  const initials = getInitials(profile.full_name)
-  const sizeClass = size === 'sm' ? 'w-9 h-9 text-xs' : 'w-11 h-11 text-sm'
-  return profile.avatar_url ? (
-    <img src={profile.avatar_url} alt={profile.full_name} className={`${sizeClass} rounded-full object-cover flex-shrink-0`} />
-  ) : (
-    <div className={`${sizeClass} rounded-full ${avatarColor} flex items-center justify-center text-white font-bold flex-shrink-0`}>
-      {initials}
-    </div>
+  return (
+    <UIAvatar
+      id={profile.id}
+      name={profile.full_name}
+      src={profile.avatar_url}
+      size={size === 'sm' ? 'sm' : 'lg'}
+    />
   )
 }
 
