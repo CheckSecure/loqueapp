@@ -26,29 +26,37 @@ export default async function AdminDashboard() {
   const { count: totalMeetings } = await supabase
     .from('meetings')
     .select('id', { count: 'exact', head: true })
+    .eq('status', 'confirmed')
 
   const { count: pendingIntros } = await supabase
     .from('intro_requests')
     .select('id', { count: 'exact', head: true })
-    .eq('status', 'pending')
+    .eq('status', 'admin_pending')
 
   const { count: waitlistCount } = await supabase
     .from('waitlist')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'pending')
 
-  const { count: activeWeekCount } = await supabase
-    .from('profiles')
-    .select('id', { count: 'exact', head: true })
-    .gte('updated_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+  // Count distinct users who sent a real message in the last 7 days.
+  // This replaces profiles.updated_at which measured profile mutations, not activity.
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const { data: recentSenders } = await supabase
+    .from('messages')
+    .select('sender_id')
+    .gte('created_at', sevenDaysAgo)
+    .eq('is_system', false)
+    .not('sender_id', 'is', null)
+  const activeWeekCount = new Set((recentSenders || []).map(m => m.sender_id)).size
 
-  // Get current batch info
+  // Get current batch info. Approval state is tracked via status:
+  // generated -> active (approved) -> completed. No approved_at column exists.
   const { data: currentBatch } = await supabase
-    .from('batches')
-    .select('id, created_at, approved_at')
+    .from('introduction_batches')
+    .select('id, status, created_at')
     .order('created_at', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   const { count: batchSuggestions } = currentBatch ? await supabase
     .from('batch_suggestions')
@@ -74,7 +82,7 @@ export default async function AdminDashboard() {
               <span className="text-xs text-slate-500">Active</span>
             </div>
             <p className="text-3xl font-bold text-slate-900">{totalMembers || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Total Members</p>
+            <p className="text-xs text-slate-500 mt-1">Active Members</p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -83,7 +91,7 @@ export default async function AdminDashboard() {
               <span className="text-xs text-slate-500">All time</span>
             </div>
             <p className="text-3xl font-bold text-slate-900">{totalMatches || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Connections Made</p>
+            <p className="text-xs text-slate-500 mt-1">Active Connections</p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -92,7 +100,7 @@ export default async function AdminDashboard() {
               <span className="text-xs text-slate-500">All time</span>
             </div>
             <p className="text-3xl font-bold text-slate-900">{totalMeetings || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Meetings Booked</p>
+            <p className="text-xs text-slate-500 mt-1">Meetings Confirmed</p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -124,7 +132,7 @@ export default async function AdminDashboard() {
             </p>
             <div className="flex items-center gap-4 text-xs text-slate-600">
               <span>{totalMembers || 0} active</span>
-              {(pendingIntros || 0) > 0 && <span className="text-amber-600 font-medium">{pendingIntros} pending intros</span>}
+              {(pendingIntros || 0) > 0 && <span className="text-amber-600 font-medium">{pendingIntros} admin intro{pendingIntros === 1 ? '' : 's'} awaiting response</span>}
             </div>
           </Link>
 
@@ -137,7 +145,7 @@ export default async function AdminDashboard() {
               <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
                 <GitBranch className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
               </div>
-              {!currentBatch?.approved_at && (
+              {currentBatch && currentBatch.status !== 'active' && (
                 <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded">
                   Needs Review
                 </span>
