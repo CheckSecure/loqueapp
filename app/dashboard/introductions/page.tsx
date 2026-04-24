@@ -31,13 +31,26 @@ function Tag({ children, color = 'slate' }: { children: React.ReactNode; color?:
 }
 
 function Avatar({ profile, size = 'md' }: { profile: any; size?: 'sm' | 'md' }) {
+  // On mobile use md (48px); on sm+ jump to lg (64px) for more presence.
   return (
-    <UIAvatar
-      id={profile.id}
-      name={profile.full_name}
-      src={profile.avatar_url}
-      size={size === 'sm' ? 'sm' : 'lg'}
-    />
+    <>
+      <span className="sm:hidden">
+        <UIAvatar
+          id={profile.id}
+          name={profile.full_name}
+          src={profile.avatar_url}
+          size={size === 'sm' ? 'sm' : 'md'}
+        />
+      </span>
+      <span className="hidden sm:inline-block">
+        <UIAvatar
+          id={profile.id}
+          name={profile.full_name}
+          src={profile.avatar_url}
+          size={size === 'sm' ? 'sm' : 'lg'}
+        />
+      </span>
+    </>
   )
 }
 
@@ -199,7 +212,7 @@ export default async function IntroductionsPage() {
 
         {/* Tier banner */}
         {!isPaid && (
-          <div className="mb-6 flex items-center justify-between gap-3 bg-brand-gold-soft border border-brand-gold/20 rounded-xl px-4 py-3">
+          <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 bg-brand-gold-soft border border-brand-gold/20 rounded-xl px-4 py-3">
             <div className="flex items-center gap-3 min-w-0">
               <Pill variant="gold" dot>Free</Pill>
               <span className="text-xs text-slate-600 truncate">Upgrade for priority matching and more introductions</span>
@@ -235,7 +248,7 @@ export default async function IntroductionsPage() {
 
         {/* SECTION 1 — This Week's Introductions */}
         <div className="mb-10">
-          <div className="flex items-end justify-between gap-4 mb-4">
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-4 mb-4">
             <div>
               <h2 className="text-base font-semibold text-slate-900">
                 This week's introductions{activeBatch ? <span className="text-slate-400 font-normal"> &middot; batch {activeBatch.batch_number}</span> : ''}
@@ -301,7 +314,7 @@ export default async function IntroductionsPage() {
                         </div>
                       )}
                       {row.alreadyRequested ? (
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
                             <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>

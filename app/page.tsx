@@ -42,7 +42,7 @@ export default async function Home() {
   return (
     <div className="min-h-screen bg-white flex flex-col">
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-100">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <span className="text-xl font-bold text-brand-navy tracking-tight">Andrel</span>
           <div className="flex items-center gap-3">
             <Link href="/pricing" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
@@ -57,9 +57,9 @@ export default async function Home() {
 
       <main className="flex-1">
         {/* Hero + Waitlist Form */}
-        <section className="bg-gradient-to-br from-brand-navy to-brand-navy-light py-20 lg:py-28">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="grid lg:grid-cols-2 gap-14 items-center">
+        <section className="bg-gradient-to-br from-brand-navy to-brand-navy-light py-14 lg:py-28">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
+            <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
               {/* Left: copy */}
               <div>
                 <div className="inline-flex items-center gap-2 bg-white/10 text-white/80 text-xs font-semibold px-3 py-1.5 rounded-full mb-6 tracking-wide uppercase border border-white/20">
@@ -67,9 +67,7 @@ export default async function Home() {
                   Andrel is currently invite-only
                 </div>
                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-[1.05] tracking-tight mb-5">
-                  Your next opportunity
-                  <br />
-                  <span className="text-brand-gold">starts with an introduction.</span>
+                  Your next opportunity <span className="text-brand-gold">starts with an introduction.</span>
                 </h1>
                 <p className="text-lg text-white/60 leading-relaxed mb-6">
                   Andrel is the professional network built on trust. Join the waitlist to request access.
@@ -93,8 +91,8 @@ export default async function Home() {
         </section>
 
         {/* Opportunities */}
-        <section className="bg-brand-cream py-20">
-          <div className="max-w-6xl mx-auto px-6">
+        <section className="bg-brand-cream py-14 lg:py-20">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="text-center mb-14">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-gold mb-3">More than introductions</p>
               <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4 tracking-tight">
@@ -106,7 +104,7 @@ export default async function Home() {
             </div>
 
             <div className="grid md:grid-cols-2 gap-6">
-              <div className="bg-white rounded-2xl p-8 border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+              <div className="bg-white rounded-2xl p-6 lg:p-8 border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
                 <div className="w-11 h-11 bg-brand-gold-soft rounded-xl flex items-center justify-center mb-5">
                   <Briefcase className="w-5 h-5 text-brand-gold" />
                 </div>
@@ -117,7 +115,7 @@ export default async function Home() {
                 <p className="text-xs text-slate-400">For hiring managers, in-house counsel, and partners.</p>
               </div>
 
-              <div className="bg-white rounded-2xl p-8 border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+              <div className="bg-white rounded-2xl p-6 lg:p-8 border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
                 <div className="w-11 h-11 bg-brand-gold-soft rounded-xl flex items-center justify-center mb-5">
                   <Lightbulb className="w-5 h-5 text-brand-gold" />
                 </div>
@@ -136,7 +134,7 @@ export default async function Home() {
         </section>
 
         {/* Why invite-only */}
-        <section className="max-w-6xl mx-auto px-6 py-20">
+        <section className="max-w-6xl mx-auto px-4 sm:px-6 py-14 lg:py-20">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div>
               <h2 className="text-3xl font-bold text-slate-900 mb-4">Networking the way it should be</h2>
@@ -147,7 +145,7 @@ export default async function Home() {
                 We personally review every application to maintain the quality of our network. When your spot is ready, we'll reach out.
               </p>
             </div>
-            <div className="bg-gradient-to-br from-brand-navy to-brand-navy-light rounded-3xl p-8 text-white">
+            <div className="bg-gradient-to-br from-brand-navy to-brand-navy-light rounded-2xl lg:rounded-3xl p-6 lg:p-8 text-white">
               <div className="flex items-center gap-2 mb-5">
                 <ShieldCheck className="w-5 h-5 text-brand-gold" />
                 <span className="text-brand-gold text-sm font-semibold uppercase tracking-wide">Invite-only access</span>

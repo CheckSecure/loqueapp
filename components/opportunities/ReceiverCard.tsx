@@ -98,7 +98,7 @@ export function ReceiverCard({
   const creatorAvatar = opportunity.profiles?.avatar_url || undefined;
 
   return (
-    <article className="group rounded-2xl border border-slate-100 border-l-4 border-l-brand-gold bg-white p-7 shadow-sm transition-all hover:shadow-md hover:border-slate-200 hover:border-l-brand-gold">
+    <article className="group rounded-2xl border border-slate-100 border-l-4 border-l-brand-gold bg-white p-6 sm:p-7 shadow-sm transition-all hover:shadow-md hover:border-slate-200 hover:border-l-brand-gold">
       <div className="flex items-center gap-2">
         <Pill variant="gold" dot>Selected for you</Pill>
         <span className="text-xs text-slate-400">Based on your experience</span>
@@ -145,15 +145,15 @@ export function ReceiverCard({
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
-      <div className="mt-6 flex items-center gap-4">
-        <Button variant="primary" size="md" onClick={respond} disabled={busy}>
+      <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:gap-4">
+        <Button variant="primary" size="md" onClick={respond} disabled={busy} className="w-full sm:w-auto">
           {BUTTON_LABEL[role]}
         </Button>
         <button
           type="button"
           onClick={dismiss}
           disabled={busy}
-          className="text-sm text-slate-500 hover:text-slate-700 underline-offset-4 hover:underline disabled:opacity-60 transition-colors"
+          className="text-sm text-slate-500 hover:text-slate-700 underline-offset-4 hover:underline disabled:opacity-60 transition-colors self-center sm:self-auto"
         >
           Not for me
         </button>

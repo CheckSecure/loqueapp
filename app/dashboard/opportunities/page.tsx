@@ -75,17 +75,17 @@ export default async function OpportunitiesPage() {
   const responses = responsesCount ?? 0;
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <div className="flex items-start justify-between gap-4">
+    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8 sm:py-10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Opportunities</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Opportunities</h1>
           <p className="mt-2 text-sm text-slate-500">
             Private, curated signals — no noise, no browsing.
           </p>
         </div>
         {canCreate && (
-          <Link href="/dashboard/opportunities/new">
-            <Button variant="primary" size="md">Signal a need</Button>
+          <Link href="/dashboard/opportunities/new" className="w-full sm:w-auto">
+            <Button variant="primary" size="md" className="w-full sm:w-auto">Signal a need</Button>
           </Link>
         )}
       </div>

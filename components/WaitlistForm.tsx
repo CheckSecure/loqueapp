@@ -62,7 +62,7 @@ export default function WaitlistForm() {
 
   if (done) {
     return (
-      <div className="bg-white/10 backdrop-blur border border-white/20 rounded-2xl p-8 text-center">
+      <div className="bg-white/10 backdrop-blur border border-white/20 rounded-2xl p-6 sm:p-8 text-center">
         <div className="w-12 h-12 bg-[#C4922A]/20 rounded-full flex items-center justify-center mx-auto mb-4">
           <CheckCircle className="w-6 h-6 text-[#C4922A]" />
         </div>
@@ -75,7 +75,7 @@ export default function WaitlistForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur border border-white/20 rounded-2xl p-6 space-y-3.5">
+    <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur border border-white/20 rounded-2xl p-5 sm:p-6 space-y-3.5">
       <div className="flex items-center gap-2 mb-1">
         <Lock className="w-3.5 h-3.5 text-[#C4922A]" />
         <span className="text-xs font-semibold text-[#C4922A] uppercase tracking-wide">Request Access</span>
@@ -158,7 +158,7 @@ export default function WaitlistForm() {
         <button
           type="button"
           onClick={() => setShowMore(true)}
-          className="w-full text-left text-xs font-medium text-white/60 hover:text-white/90 transition-colors underline-offset-2 hover:underline pt-1"
+          className="w-full text-left text-xs font-medium text-white/60 hover:text-white/90 transition-colors underline-offset-2 hover:underline py-2"
         >
           + Add context to improve your matches (optional)
         </button>

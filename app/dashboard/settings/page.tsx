@@ -23,7 +23,7 @@ export default async function SettingsPage() {
   if (!profile) redirect('/login')
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-12 space-y-8">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 sm:py-12 space-y-6 sm:space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Settings</h1>
         <p className="text-slate-500 text-sm mt-2">Manage your account and preferences.</p>
