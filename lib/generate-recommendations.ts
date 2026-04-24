@@ -854,12 +854,12 @@ export async function generateOnboardingRecommendations(userId: string) {
     .from('intro_requests')
     .select('requester_id, target_user_id, status, updated_at')
     .or(`requester_id.eq.${userId},target_user_id.eq.${userId}`)
-    .in('status', ['hidden', 'passed'])
+    .in('status', ['hidden', 'hidden_permanent', 'passed'])
   
   const excludedUserIds = new Set<string>()
   hiddenOrPassed?.forEach(req => {
     // Hidden = permanent exclusion
-    if (req.status === 'hidden') {
+    if (req.status === 'hidden' || req.status === 'hidden_permanent') {
       const otherId = req.requester_id === userId ? req.target_user_id : req.requester_id
       excludedUserIds.add(otherId)
     }

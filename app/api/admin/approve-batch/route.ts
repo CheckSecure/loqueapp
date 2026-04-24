@@ -44,9 +44,26 @@ export async function POST(req: NextRequest) {
       .eq('batch_id', batchId)
       .eq('status', 'generated')
 
-    // Notifications handled by weekly-refresh cron job
-    // Notifications handled by weekly-refresh cron job
-    return NextResponse.json({ success: true })
+    // Fire new_batch notification to every user with suggestions in this batch.
+    // Dedupe by recipient_id since a user may have multiple suggestions.
+    const { data: approvedSuggestions } = await adminClient
+      .from('batch_suggestions')
+      .select('recipient_id')
+      .eq('batch_id', batchId)
+      .eq('status', 'shown')
+
+    const recipientIds = Array.from(new Set((approvedSuggestions || []).map(s => s.recipient_id).filter(Boolean)))
+
+    for (const recipientId of recipientIds) {
+      await createNotificationSafe({
+        userId: recipientId,
+        type: 'new_batch'
+      })
+    }
+
+    console.log('[approve-batch] Fired new_batch notifications to ' + recipientIds.length + ' users')
+
+    return NextResponse.json({ success: true, notifiedUsers: recipientIds.length })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
