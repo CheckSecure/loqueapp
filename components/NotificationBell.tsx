@@ -107,14 +107,14 @@ export default function NotificationBell() {
       >
         <Bell className="w-4 h-4" />
         {unreadCount > 0 && (
-          <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-[#C4922A] text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+          <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-brand-gold text-white text-[8px] font-bold rounded-full flex items-center justify-center">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-2 w-80 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 overflow-hidden">
+        <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-w-[calc(100vw-1rem)] bg-white border border-slate-100 rounded-2xl shadow-xl z-50 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-900">Notifications</p>
             <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">
@@ -140,7 +140,7 @@ export default function NotificationBell() {
                 className={cn(
                   'px-4 py-3 transition-colors relative',
                   n.link ? 'cursor-pointer hover:bg-slate-50' : '',
-                  !n.read_at ? 'bg-[#FDF9F3]' : ''
+                  !n.read_at ? 'bg-brand-gold-soft' : ''
                 )}
               >
                 <div className="flex items-start gap-2">
@@ -150,7 +150,7 @@ export default function NotificationBell() {
                     <p className="text-[10px] text-slate-400 mt-1">{timeAgo(n.created_at)}</p>
                   </div>
                   {!n.read_at && (
-                    <div className="w-1.5 h-1.5 bg-[#C4922A] rounded-full flex-shrink-0 mt-1.5" />
+                    <div className="w-1.5 h-1.5 bg-brand-gold rounded-full flex-shrink-0 mt-1.5" />
                   )}
                 </div>
               </div>
