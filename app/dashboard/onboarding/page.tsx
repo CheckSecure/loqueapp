@@ -79,7 +79,7 @@ export default function OnboardingPage() {
         </div>
 
         {/* Welcome banner */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8 mb-6">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 md:p-8 mb-6">
           <h1 className="text-3xl font-bold text-slate-900 mb-2">
             {currentStep === 1 ? 'Welcome to Andrel!' : 'Almost done!'}
           </h1>
