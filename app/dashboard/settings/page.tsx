@@ -5,7 +5,8 @@ import EmailChangeForm from '@/components/EmailChangeForm'
 import PasswordChangeForm from '@/components/PasswordChangeForm'
 import AccountDeletion from '@/components/AccountDeletion'
 import { OpportunityPreferences } from '@/components/opportunities/OpportunityPreferences'
-import { Mail, FileText } from 'lucide-react'
+import ReportIssueButton from '@/components/ReportIssueButton'
+import { Mail, FileText, AlertCircle } from 'lucide-react'
 
 export const metadata = { title: 'Settings | Andrel' }
 
@@ -58,15 +59,18 @@ export default async function SettingsPage() {
           </div>
         </div>
         <div className="px-6 py-5 space-y-4">
-          <a href="mailto:support@andrel.app" className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 hover:border-brand-navy/20 hover:bg-slate-50 transition-colors group">
-            <div className="w-9 h-9 rounded-lg bg-brand-cream flex items-center justify-center flex-shrink-0">
-              <Mail className="w-4 h-4 text-brand-navy" />
+          <div className="flex items-center justify-between gap-4 p-4 rounded-xl border border-slate-100">
+            <div className="flex items-center gap-4">
+              <div className="w-9 h-9 rounded-lg bg-brand-cream flex items-center justify-center flex-shrink-0">
+                <Mail className="w-4 h-4 text-brand-navy" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Message support</p>
+                <p className="text-xs text-slate-500 mt-0.5">Questions or need help? We'll respond within 24 hours.</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-900">Email Support</p>
-              <p className="text-xs text-slate-500 mt-0.5">support@andrel.app — we respond within 24 hours</p>
-            </div>
-          </a>
+            <ReportIssueButton variant="support" />
+          </div>
           <a href="/faq" target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 hover:border-brand-navy/20 hover:bg-slate-50 transition-colors group">
             <div className="w-9 h-9 rounded-lg bg-brand-cream flex items-center justify-center flex-shrink-0">
               <FileText className="w-4 h-4 text-brand-navy" />
@@ -76,6 +80,18 @@ export default async function SettingsPage() {
               <p className="text-xs text-slate-500 mt-0.5">Answers to common questions about Andrel</p>
             </div>
           </a>
+          <div className="flex items-center justify-between gap-4 p-4 rounded-xl border border-slate-100">
+            <div className="flex items-center gap-4">
+              <div className="w-9 h-9 rounded-lg bg-brand-cream flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="w-4 h-4 text-brand-navy" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Report an issue</p>
+                <p className="text-xs text-slate-500 mt-0.5">Found a bug or have feedback? Let us know.</p>
+              </div>
+            </div>
+            <ReportIssueButton />
+          </div>
         </div>
       </div>
 
