@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, GitBranch, UserPlus, Inbox, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench } from 'lucide-react'
+import { Users, GitBranch, UserPlus, Inbox, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle } from 'lucide-react'
 
 export const metadata = { title: 'Admin Dashboard | Andrel' }
 
@@ -37,6 +38,13 @@ export default async function AdminDashboard() {
     .from('waitlist')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'pending')
+
+  // Issue reports — uses admin client so RLS doesn't restrict to admin's own reports
+  const adminClient = createAdminClient()
+  const { count: newIssueCount } = await adminClient
+    .from('issue_reports')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'new')
 
   // Count distinct users who sent a real message in the last 7 days.
   // This replaces profiles.updated_at which measured profile mutations, not activity.
@@ -214,6 +222,30 @@ export default async function AdminDashboard() {
             </p>
             <div className="flex items-center gap-4 text-xs text-slate-600">
               <span>Pair lookup &amp; manual actions</span>
+            </div>
+          </Link>
+
+          {/* Issue Reports */}
+          <Link
+            href="/dashboard/admin/issues"
+            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
+                <AlertCircle className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
+              </div>
+              {(newIssueCount || 0) > 0 ? (
+                <span className="text-xs font-semibold px-2 py-1 rounded-full bg-brand-gold-soft text-brand-gold">
+                  {newIssueCount} new
+                </span>
+              ) : null}
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Issue Reports</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              User-submitted bug reports and support questions
+            </p>
+            <div className="flex items-center gap-4 text-xs text-slate-600">
+              <span>{(newIssueCount || 0) > 0 ? `${newIssueCount} unreviewed` : 'No new reports'}</span>
             </div>
           </Link>
 
