@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, GitBranch, UserPlus, Inbox, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle } from 'lucide-react'
+import { Users, GitBranch, UserPlus, Inbox, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, Briefcase } from 'lucide-react'
 
 export const metadata = { title: 'Admin Dashboard | Andrel' }
 
@@ -45,6 +45,17 @@ export default async function AdminDashboard() {
     .from('issue_reports')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'new')
+
+  // Opportunities activity (last 7 days) — read-only metrics, no navigation
+  const opportunityWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const { count: opportunitiesCreated7d } = await adminClient
+    .from('opportunities')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', opportunityWindowStart)
+  const { count: opportunityResponses7d } = await adminClient
+    .from('opportunity_responses')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', opportunityWindowStart)
 
   // Count distinct users who sent a real message in the last 7 days.
   // This replaces profiles.updated_at which measured profile mutations, not activity.
@@ -248,6 +259,26 @@ export default async function AdminDashboard() {
               <span>{(newIssueCount || 0) > 0 ? `${newIssueCount} unreviewed` : 'No new reports'}</span>
             </div>
           </Link>
+
+          {/* Opportunities — read-only metrics card */}
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center">
+                <Briefcase className="w-6 h-6 text-[#1B2850]" />
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-4">Opportunities</h3>
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm text-slate-500">Created (7d)</p>
+                <p className="text-2xl font-bold text-slate-900">{opportunitiesCreated7d || 0}</p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500">Responses (7d)</p>
+                <p className="text-2xl font-bold text-slate-900">{opportunityResponses7d || 0}</p>
+              </div>
+            </div>
+          </div>
 
         </div>
       </div>
