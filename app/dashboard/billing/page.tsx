@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Check, Zap, ArrowRight } from 'lucide-react'
+import { FoundingMemberBadge } from '@/components/ui/FoundingMemberBadge'
 import { cn } from '@/lib/utils'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
@@ -72,11 +73,22 @@ const TIER_VALUE: Record<string, string> = {
   free: 'Curated introductions to start building your network, with 3 credits per month.',
   professional: 'Priority matching, more frequent introductions, and the ability to signal hiring or business needs.',
   executive: 'Concierge-level curation, highest matching priority, and up to 2 active opportunity signals at a time.',
+  founding: 'Early access with expanded benefits and priority placement.',
 }
+
+const FOUNDING_BENEFITS = [
+  '30 credits per month',
+  'Priority matching in introductions',
+  'Up to 5 active introductions at a time',
+  'Access to premium opportunities',
+  'Higher daily usage limits',
+]
 
 function BillingInner() {
   const searchParams = useSearchParams()
   const [currentTier, setCurrentTier] = useState('free')
+  const [isFoundingMember, setIsFoundingMember] = useState(false)
+  const [foundingExpiresAt, setFoundingExpiresAt] = useState<string | null>(null)
   const [credits, setCredits] = useState(0)
   const [periodEnd, setPeriodEnd] = useState<string | null>(null)
   const [annual, setAnnual] = useState(false)
@@ -92,10 +104,12 @@ function BillingInner() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const [{ data: profile }, { data: creditRow }] = await Promise.all([
-        supabase.from('profiles').select('subscription_tier, current_period_end').eq('id', user.id).single(),
+        supabase.from('profiles').select('subscription_tier, current_period_end, is_founding_member, founding_member_expires_at').eq('id', user.id).single(),
         supabase.from('meeting_credits').select('balance').eq('user_id', user.id).single(),
       ])
       setCurrentTier(profile?.subscription_tier ?? 'free')
+      setIsFoundingMember(Boolean(profile?.is_founding_member))
+      setFoundingExpiresAt(profile?.founding_member_expires_at ?? null)
       setCredits(creditRow?.balance ?? 0)
       if (profile?.current_period_end) {
         setPeriodEnd(new Date(profile.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }))
@@ -157,13 +171,39 @@ function BillingInner() {
               <Zap className="w-5 h-5 text-white" />
             </div>
             <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <p className="text-sm font-bold text-slate-900 capitalize">{currentTier}</p>
-                {currentTier !== 'free' && periodEnd && (
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                {isFoundingMember ? (
+                  <FoundingMemberBadge size="md" />
+                ) : (
+                  <p className="text-sm font-bold text-slate-900 capitalize">{currentTier}</p>
+                )}
+                {!isFoundingMember && currentTier !== 'free' && periodEnd && (
                   <span className="text-xs text-slate-400">· Renews {periodEnd}</span>
                 )}
+                {isFoundingMember && foundingExpiresAt && (
+                  <span className="text-xs text-slate-400">
+                    · Founding access through {new Date(foundingExpiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </span>
+                )}
               </div>
-              <p className="text-sm text-slate-500 leading-relaxed">{TIER_VALUE[currentTier]}</p>
+              {isFoundingMember && (
+                <p className="text-xs text-brand-gold mt-1 mb-1">
+                  You're an early member with expanded access and priority placement.
+                </p>
+              )}
+              <p className="text-sm text-slate-500 leading-relaxed">
+                {isFoundingMember ? TIER_VALUE.founding : TIER_VALUE[currentTier]}
+              </p>
+              {isFoundingMember && (
+                <ul className="mt-3 space-y-1.5">
+                  {FOUNDING_BENEFITS.map((benefit) => (
+                    <li key={benefit} className="text-sm text-slate-600 flex items-start gap-2">
+                      <Check className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
+                      <span>{benefit}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               <p className="text-xs text-slate-400 mt-2">{credits} credit{credits !== 1 ? 's' : ''} remaining</p>
             </div>
           </div>
