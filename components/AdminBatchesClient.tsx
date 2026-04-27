@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Sparkles, Trash2, CheckCircle, Clock, Calendar, Users, TrendingUp } from 'lucide-react'
 
 interface Batch {
@@ -155,6 +156,12 @@ export default function AdminBatchesClient({ batches }: { batches: Batch[] }) {
                     </div>
 
                     <div className="flex gap-2">
+                      <Link
+                        href={`/dashboard/admin/batches/${batch.id}/review`}
+                        className="px-4 py-2 bg-white border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50"
+                      >
+                        Review
+                      </Link>
                       <button
                         onClick={() => handleApproveBatch(batch.id)}
                         className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700"
