@@ -15,8 +15,37 @@ export async function POST(request: Request) {
   const { introRequestId } = await request.json()
 
   try {
-    // STEP 1: Validate and deduct credit FIRST (before any DB writes)
     const adminClient = createAdminClient()
+
+    // STEP 0: Block if the other user is deactivated, before any credit deduction
+    const { data: introReqCheck } = await adminClient
+      .from('intro_requests')
+      .select('requester_id, target_user_id')
+      .eq('id', introRequestId)
+      .maybeSingle()
+
+    if (!introReqCheck) {
+      return NextResponse.json({ error: 'Intro request not found' }, { status: 404 })
+    }
+
+    const otherUserIdCheck = user.id === introReqCheck.requester_id
+      ? introReqCheck.target_user_id
+      : introReqCheck.requester_id
+
+    const { data: otherProfileCheck } = await adminClient
+      .from('profiles')
+      .select('account_status')
+      .eq('id', otherUserIdCheck)
+      .maybeSingle()
+
+    if (!otherProfileCheck || otherProfileCheck.account_status !== 'active') {
+      return NextResponse.json(
+        { error: 'This member is no longer active', message: 'This member is no longer active. No credit was used.' },
+        { status: 410 }
+      )
+    }
+
+    // STEP 1: Validate and deduct credit FIRST (before any DB writes)
     
     const { data: credits } = await adminClient
       .from('meeting_credits')
