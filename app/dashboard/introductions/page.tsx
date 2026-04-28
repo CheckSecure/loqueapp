@@ -158,6 +158,26 @@ export default async function IntroductionsPage() {
     .map((r: any) => r.suggested_id)
     .filter((id: string) => id && !matchedUserIds.has(id))
 
+  // Sidecar: collect all other-party IDs and find which are not active (catches deactivated + flagged)
+  const allOtherPartyIds = Array.from(new Set([
+    ...(adminIntrosRaw || []).map((i: any) => i.requester_id),
+    ...(suggestedIntros || []).map((i: any) => i.target_user_id),
+    ...allSuggestionIds,
+  ]))
+  const deactivatedIds = new Set<string>()
+  if (allOtherPartyIds.length > 0) {
+    const { data: statusRows } = await supabase
+      .from('profiles')
+      .select('id, account_status')
+      .in('id', allOtherPartyIds)
+      .neq('account_status', 'active')
+    for (const r of statusRows || []) deactivatedIds.add(r.id)
+  }
+
+  const adminIntrosVisible = adminIntrosFiltered.filter(
+    (intro: any) => !deactivatedIds.has(intro.requester_id)
+  )
+
   // Fetch all profiles needed
   let profileMap: Record<string, any> = {}
   if (allSuggestionIds.length > 0) {
@@ -173,7 +193,7 @@ export default async function IntroductionsPage() {
 
 
   const suggestedProfiles = (suggestedIntros || [])
-    .filter((intro: any) => intro.target && !matchedUserIds.has(intro.target.id))
+    .filter((intro: any) => intro.target && !matchedUserIds.has(intro.target.id) && !deactivatedIds.has(intro.target.id))
     .map((intro: any) => ({
       rowId: intro.id,
       profile: intro.target,
@@ -184,6 +204,7 @@ export default async function IntroductionsPage() {
 
   // All suggestions with their state (batch + onboarding)
   const batchSuggestions = allSuggestionIds
+    .filter((id: string) => !deactivatedIds.has(id))
     .map((id: string) => ({
       rowId: rowMap[id]?.id,
       profile: profileMap[id],
@@ -229,11 +250,11 @@ export default async function IntroductionsPage() {
 
 
         {/* SECTION: Introduced by Andrel (admin-curated) — top priority */}
-        {adminIntrosFiltered.length > 0 && (
+        {adminIntrosVisible.length > 0 && (
           <div className="mb-6 p-4 rounded-xl border border-brand-gold/30 bg-brand-gold/5">
             <h3 className="text-sm font-semibold text-brand-navy mb-3">Introduced by Andrel</h3>
             <div className="grid sm:grid-cols-2 gap-4">
-              {adminIntrosFiltered.map((intro: any) => (
+              {adminIntrosVisible.map((intro: any) => (
                 <AdminIntroCard
                   key={intro.id}
                   introRequestId={intro.id}
