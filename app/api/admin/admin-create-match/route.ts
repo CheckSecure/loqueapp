@@ -17,6 +17,24 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient()
 
+  // Block if either user is deactivated
+  const { data: deactProfiles } = await admin
+    .from('profiles')
+    .select('id, full_name, account_status')
+    .in('id', [userIdA, userIdB])
+
+  const deactA = (deactProfiles || []).find(p => p.id === userIdA)
+  const deactB = (deactProfiles || []).find(p => p.id === userIdB)
+
+  if (!deactA || deactA.account_status !== 'active') {
+    const name = deactA?.full_name
+    return NextResponse.json({ error: `User A is no longer active${name ? ` (${name})` : ''}` }, { status: 409 })
+  }
+  if (!deactB || deactB.account_status !== 'active') {
+    const name = deactB?.full_name
+    return NextResponse.json({ error: `User B is no longer active${name ? ` (${name})` : ''}` }, { status: 409 })
+  }
+
   // Safety check: no active block
   const { data: blocks } = await admin
     .from('blocked_users')
