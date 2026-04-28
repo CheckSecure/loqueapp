@@ -41,6 +41,11 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
   const [saving, setSaving] = useState(false)
   const [simulating, setSimulating] = useState(false)
   const [simulationResult, setSimulationResult] = useState<any>(null)
+  const [deactivatingUser, setDeactivatingUser] = useState<Profile | null>(null)
+  const [reactivatingUser, setReactivatingUser] = useState<Profile | null>(null)
+  const [deactivateReason, setDeactivateReason] = useState('')
+  const [actionLoading, setActionLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
   // Filtered profiles
   const filtered = useMemo(() => {
@@ -112,6 +117,56 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
       router.refresh()
     } else {
       alert(result.error)
+    }
+  }
+
+  const handleDeactivate = async () => {
+    if (!deactivatingUser || !deactivateReason.trim()) return
+    if (deactivatingUser.account_status === 'flagged') return
+    setActionLoading(true)
+    setErrorMessage('')
+    try {
+      const res = await fetch('/api/admin/users/deactivate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: deactivatingUser.id, reason: deactivateReason.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setErrorMessage(data.error || 'Deactivation failed')
+      } else {
+        setDeactivatingUser(null)
+        setDeactivateReason('')
+        router.refresh()
+      }
+    } catch {
+      setErrorMessage('Deactivation error')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleReactivate = async () => {
+    if (!reactivatingUser) return
+    setActionLoading(true)
+    setErrorMessage('')
+    try {
+      const res = await fetch('/api/admin/users/reactivate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: reactivatingUser.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setErrorMessage(data.error || 'Reactivation failed')
+      } else {
+        setReactivatingUser(null)
+        router.refresh()
+      }
+    } catch {
+      setErrorMessage('Reactivation error')
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -268,6 +323,7 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
                       <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
                         user.account_status === 'active' ? 'bg-green-100 text-green-700' :
                         user.account_status === 'flagged' ? 'bg-red-100 text-red-700' :
+                        user.account_status === 'deactivated' ? 'bg-amber-100 text-amber-700' :
                         'bg-slate-100 text-slate-700'
                       }`}>
                         {user.account_status}
@@ -298,12 +354,30 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
                       />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => setSelectedUser(user)}
-                        className="text-sm text-[#1B2850] hover:underline"
-                      >
-                        Edit
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setSelectedUser(user)}
+                          className="text-sm text-[#1B2850] hover:underline"
+                        >
+                          Edit
+                        </button>
+                        {user.account_status === 'active' && (
+                          <button
+                            onClick={() => { setDeactivatingUser(user); setDeactivateReason(''); setErrorMessage('') }}
+                            className="text-sm text-red-600 hover:underline"
+                          >
+                            Deactivate
+                          </button>
+                        )}
+                        {user.account_status === 'deactivated' && (
+                          <button
+                            onClick={() => { setReactivatingUser(user); setErrorMessage('') }}
+                            className="text-sm text-amber-600 hover:underline"
+                          >
+                            Reactivate
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -407,6 +481,77 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
                     Cancel
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Deactivate Modal */}
+        {deactivatingUser && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+              <h2 className="text-lg font-bold text-slate-900 mb-1">Deactivate Member</h2>
+              <p className="text-sm text-slate-500 mb-4">{deactivatingUser.full_name || deactivatingUser.email}</p>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={deactivateReason}
+                  onChange={e => setDeactivateReason(e.target.value)}
+                  rows={3}
+                  placeholder="Required — explain why this member is being deactivated"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 resize-none"
+                />
+                {errorMessage && (
+                  <p className="mt-1 text-xs text-red-600">{errorMessage}</p>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDeactivate}
+                  disabled={!deactivateReason.trim() || actionLoading}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Deactivating...' : 'Deactivate'}
+                </button>
+                <button
+                  onClick={() => { setDeactivatingUser(null); setDeactivateReason(''); setErrorMessage('') }}
+                  disabled={actionLoading}
+                  className="px-4 py-2 border border-slate-200 text-sm font-medium rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reactivate Modal */}
+        {reactivatingUser && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+              <h2 className="text-lg font-bold text-slate-900 mb-1">Reactivate Member</h2>
+              <p className="text-sm text-slate-500 mb-4">{reactivatingUser.full_name || reactivatingUser.email}</p>
+              <p className="text-sm text-slate-700 mb-6">This will restore their account status to active. Previously cancelled meetings, blocked connections, and other state will not be restored.</p>
+              {errorMessage && (
+                <p className="mb-4 text-xs text-red-600">{errorMessage}</p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={handleReactivate}
+                  disabled={actionLoading}
+                  className="flex-1 px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded-lg hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Reactivating...' : 'Reactivate'}
+                </button>
+                <button
+                  onClick={() => { setReactivatingUser(null); setErrorMessage('') }}
+                  disabled={actionLoading}
+                  className="px-4 py-2 border border-slate-200 text-sm font-medium rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>
