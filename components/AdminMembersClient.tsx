@@ -27,7 +27,7 @@ interface Profile {
   active_intros: number
 }
 
-export default function AdminMembersClient({ profiles }: { profiles: Profile[] }) {
+export default function AdminMembersClient({ profiles, currentUserId }: { profiles: Profile[]; currentUserId: string }) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [filterTier, setFilterTier] = useState<string>('')
@@ -361,7 +361,7 @@ export default function AdminMembersClient({ profiles }: { profiles: Profile[] }
                         >
                           Edit
                         </button>
-                        {user.account_status === 'active' && (
+                        {user.account_status === 'active' && user.id !== currentUserId && (
                           <button
                             onClick={() => { setDeactivatingUser(user); setDeactivateReason(''); setErrorMessage('') }}
                             className="text-sm text-red-600 hover:underline"

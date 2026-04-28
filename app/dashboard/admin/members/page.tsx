@@ -84,5 +84,5 @@ export default async function AdminMembersPage() {
 
   console.log('[AdminMembers] Enriched profiles:', enrichedProfiles.length)
   
-  return <AdminMembersClient profiles={enrichedProfiles} />
+  return <AdminMembersClient profiles={enrichedProfiles} currentUserId={user.id} />
 }
