@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import { parseExpertise } from '@/lib/parseExpertise'
+import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
 import { Loader2, CheckCircle, User, ChevronDown, ChevronUp } from 'lucide-react'
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite']
-const EXPERTISE_OPTIONS = ['Strategy', 'Operations', 'Legal', 'Finance', 'Sales', 'Marketing', 'Product', 'Engineering', 'HR', 'Other']
+
 const PURPOSE_OPTIONS = ['Fundraising', 'Hiring', 'Partnerships', 'Mentorship', 'Business Development', 'Market Insights', 'Career Growth']
 
 export default function ProfileEditForm({ initialData }: { initialData: any }) {
@@ -19,7 +21,9 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
   const [city, setCity] = useState(initialData.city || '')
   const [state, setState] = useState(initialData.state || '')
   const [seniority, setSeniority] = useState(initialData.seniority || '')
-  const [expertise, setExpertise] = useState<string[]>(Array.isArray(initialData.expertise) ? initialData.expertise : [])
+  const initialExpertiseAll = parseExpertise(initialData.expertise)
+  const [expertise, setExpertise] = useState<string[]>(initialExpertiseAll.filter(e => EXPERTISE_OPTIONS.includes(e)))
+  const [additionalExpertise, setAdditionalExpertise] = useState<string[]>(initialExpertiseAll.filter(e => !EXPERTISE_OPTIONS.includes(e)))
   const [purposes, setPurposes] = useState<string[]>(Array.isArray(initialData.purposes) ? initialData.purposes : [])
   const [meetingFormat, setMeetingFormat] = useState(initialData.meeting_format_preference || 'both')
   const [geoScope, setGeoScope] = useState(initialData.geographic_scope || 'us-wide')
@@ -47,7 +51,7 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     formData.append('city', city)
     formData.append('state', state)
     formData.append('seniority', seniority)
-    formData.append('expertise', expertise.join(','))
+    formData.append('expertise', [...expertise, ...additionalExpertise].join(','))
     formData.append('purposes', purposes.join(','))
     formData.append('meeting_format_preference', meetingFormat)
     formData.append('geographic_scope', geoScope)
@@ -212,6 +216,27 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
               ))}
             </div>
           </div>
+
+          {additionalExpertise.length > 0 && (
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Additional expertise <span className="text-slate-400 font-normal">(legacy values you've previously saved)</span></label>
+              <div className="flex flex-wrap gap-2">
+                {additionalExpertise.map(item => (
+                  <span key={item} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border bg-slate-50 text-slate-600 border-slate-200">
+                    {item}
+                    <button
+                      type="button"
+                      onClick={() => setAdditionalExpertise(prev => prev.filter(x => x !== item))}
+                      className="text-slate-400 hover:text-slate-700 transition-colors"
+                      aria-label={`Remove ${item}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="col-span-2">
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Current Goals (select all that apply)</label>

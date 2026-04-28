@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { parseExpertise } from '@/lib/parseExpertise'
+import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
 import { Loader2, ArrowRight } from 'lucide-react'
 import { Linkedin, Twitter, Link as LinkIcon } from 'lucide-react'
 import AvatarUpload from '@/components/AvatarUpload'
@@ -34,6 +36,12 @@ export default function OnboardingStep1({
 }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const initialExpertiseAll = parseExpertise(profile?.expertise)
+  const [expertise, setExpertise] = useState<string[]>(initialExpertiseAll.filter(e => EXPERTISE_OPTIONS.includes(e)))
+  const [additionalExpertise, setAdditionalExpertise] = useState<string[]>(initialExpertiseAll.filter(e => !EXPERTISE_OPTIONS.includes(e)))
+  const toggleExpertise = (item: string) => {
+    setExpertise(prev => prev.includes(item) ? prev.filter(x => x !== item) : [...prev, item])
+  }
 
   const initials = (profile?.full_name || email)
     .split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
@@ -44,6 +52,7 @@ export default function OnboardingStep1({
     setError(null)
 
     const formData = new FormData(e.currentTarget)
+    formData.set('expertise', [...expertise, ...additionalExpertise].join(','))
     
     const response = await fetch('/api/profile/update', {
       method: 'POST',
@@ -178,15 +187,43 @@ export default function OnboardingStep1({
       {/* Expertise */}
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6">
         <h3 className="text-sm font-semibold text-slate-900 mb-1">Expertise</h3>
-        <p className="text-xs text-slate-400 mb-3">Comma-separated list of your areas of expertise.</p>
-        <input
-          name="expertise"
-          type="text"
-          defaultValue={Array.isArray(profile?.expertise) ? profile.expertise.join(', ') : ''}
-          placeholder="M&A, Securities Law, Corporate Governance"
-          className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
-          required
-        />
+        <p className="text-xs text-slate-400 mb-3">Select your areas of expertise.</p>
+        <div className="flex flex-wrap gap-2">
+          {EXPERTISE_OPTIONS.map(item => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => toggleExpertise(item)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                expertise.includes(item)
+                  ? 'bg-[#1B2850] text-white border-[#1B2850]'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/30'
+              }`}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+        {additionalExpertise.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs font-semibold text-slate-700 mb-1.5">Additional expertise <span className="text-slate-400 font-normal">(legacy values you've previously saved)</span></p>
+            <div className="flex flex-wrap gap-2">
+              {additionalExpertise.map(item => (
+                <span key={item} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border bg-slate-50 text-slate-600 border-slate-200">
+                  {item}
+                  <button
+                    type="button"
+                    onClick={() => setAdditionalExpertise(prev => prev.filter(x => x !== item))}
+                    className="text-slate-400 hover:text-slate-700 transition-colors"
+                    aria-label={`Remove ${item}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Links */}

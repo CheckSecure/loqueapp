@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { parseExpertise } from '@/lib/parseExpertise'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare } from 'lucide-react'
@@ -177,11 +178,11 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
           )}
 
           {/* Expertise */}
-          {Array.isArray(profile.expertise) && profile.expertise.length > 0 && (
+          {parseExpertise(profile.expertise).length > 0 && (
             <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
               <Section icon={Star} title="Expertise">
                 <div className="flex flex-wrap gap-2">
-                  {profile.expertise.map((tag: string) => (
+                  {parseExpertise(profile.expertise).map((tag: string) => (
                     <Badge key={tag} label={tag} />
                   ))}
                 </div>

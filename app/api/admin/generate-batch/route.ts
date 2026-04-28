@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { parseExpertise } from '@/lib/parseExpertise'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -95,8 +96,8 @@ function scoreMatch(recipient: any, candidate: any): number {
   ).length
   score += purposeOverlap * 12
 
-  const recipientExpertise: string[] = Array.isArray(recipient.expertise) ? recipient.expertise : []
-  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
+  const recipientExpertise = parseExpertise(recipient.expertise)
+  const candidateExpertise = parseExpertise(candidate.expertise)
   const expertiseOverlap = recipientExpertise.filter((e: string) =>
     candidateExpertise.some((ce: string) => ce.toLowerCase() === e.toLowerCase())
   ).length
@@ -197,8 +198,8 @@ function generateReason(recipient: any, candidate: any): string {
   const candidateRole: string = candidate.role_type || ''
   const recipientPurposes: string[] = Array.isArray(recipient.purposes) ? recipient.purposes : []
   const candidatePurposes: string[] = Array.isArray(candidate.purposes) ? candidate.purposes : []
-  const recipientExpertise: string[] = Array.isArray(recipient.expertise) ? recipient.expertise : []
-  const candidateExpertise: string[] = Array.isArray(candidate.expertise) ? candidate.expertise : []
+  const recipientExpertise = parseExpertise(recipient.expertise)
+  const candidateExpertise = parseExpertise(candidate.expertise)
   const recipientInterests: string[] = Array.isArray(recipient.interests) ? recipient.interests : []
   const candidateInterests: string[] = Array.isArray(candidate.interests) ? candidate.interests : []
 

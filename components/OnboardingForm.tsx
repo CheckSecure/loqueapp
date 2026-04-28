@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { completeOnboarding } from '@/app/actions'
@@ -23,21 +24,6 @@ const SENIORITY_LEVELS = [
   'Senior',
   'Executive',
   'C-Suite',
-]
-
-const EXPERTISE_AREAS = [
-  'Strategy',
-  'Operations',
-  'Legal',
-  'Finance',
-  'Marketing',
-  'Sales',
-  'Product',
-  'Technology',
-  'Healthcare',
-  'Policy',
-  'Fundraising',
-  'M&A',
 ]
 
 const MEET_ROLE_TYPES = [
@@ -291,7 +277,7 @@ export default function OnboardingForm() {
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-2">Areas of expertise <span className="text-slate-400 font-normal text-xs ml-1">select all that apply</span></label>
               <div className="flex flex-wrap gap-2">
-                {EXPERTISE_AREAS.map(area => (
+                {EXPERTISE_OPTIONS.map(area => (
                   <button key={area} type="button" onClick={() => toggleItem(expertise, setExpertise, area)} className={cn('px-3.5 py-2 rounded-lg text-sm font-medium border transition-all', expertise.includes(area) ? 'bg-[#1B2850] text-white border-[#1B2850]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/40 hover:text-[#1B2850]')}>{area}</button>
                 ))}
               </div>
