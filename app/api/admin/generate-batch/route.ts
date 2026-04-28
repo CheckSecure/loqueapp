@@ -101,9 +101,10 @@ function scoreMatch(recipient: any, candidate: any): number {
   const expertiseOverlap = recipientExpertise.filter((e: string) =>
     candidateExpertise.some((ce: string) => ce.toLowerCase() === e.toLowerCase())
   ).length
-  // Bonus for SOME overlap but not total overlap (complementary is better)
+  // Bonus for SOME overlap but not total overlap (complementary is better).
+  // Cap counted overlap at 5 so users with broad expertise lists do not dominate.
   if (expertiseOverlap > 0 && expertiseOverlap < Math.min(recipientExpertise.length, candidateExpertise.length)) {
-    score += expertiseOverlap * 8
+    score += Math.min(5, expertiseOverlap) * 8
   }
 
   // 5. Geographic alignment bonus

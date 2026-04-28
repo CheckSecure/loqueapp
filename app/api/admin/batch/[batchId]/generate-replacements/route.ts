@@ -115,7 +115,8 @@ function scoreMatch(recipient: any, candidate: any): number {
   const expertiseOverlap = recipientExpertise.filter((e: string) =>
     candidateExpertise.some((ce: string) => ce.toLowerCase() === e.toLowerCase())
   ).length
-  score += expertiseOverlap * 8
+  // Cap counted overlap at 5 so users with broad expertise lists do not dominate.
+  score += Math.min(5, expertiseOverlap) * 8
 
   return score
 }
