@@ -83,8 +83,19 @@ export async function requestIntroduction(targetId: string) {
 }
 
 export async function submitIntroRequest(targetUserId: string, note?: string) {
-  const { user } = await getSupabaseAndUser()
+  const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
+
+  const { data: target } = await supabase
+    .from('profiles')
+    .select('account_status')
+    .eq('id', targetUserId)
+    .maybeSingle()
+
+  if (!target || target.account_status !== 'active') {
+    return { error: 'This member is no longer active' }
+  }
+
   const result = await createIntroRequest(user.id, user.email ?? '', targetUserId, note)
   if (result.error) return { error: result.error }
   revalidatePath('/dashboard/introductions')
