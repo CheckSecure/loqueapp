@@ -21,6 +21,7 @@ export type ConnectFailureCode =
   | 'already_connected'
   | 'intro_pending'
   | 'blocked'
+  | 'user_inactive'
   | 'cooldown'
   | 'not_creator'
   | 'internal';
@@ -74,6 +75,19 @@ export async function connectOpportunityResponder(args: {
     );
   if ((blocks ?? []).length > 0) {
     return { ok: false, code: 'blocked', message: 'Cannot introduce — block exists.' };
+  }
+
+  const { data: statusProfiles } = await admin
+    .from('profiles')
+    .select('id, account_status')
+    .in('id', [creatorId, responderId]);
+
+  const creatorStatus = (statusProfiles ?? []).find(p => p.id === creatorId);
+  const responderStatus = (statusProfiles ?? []).find(p => p.id === responderId);
+
+  if (!creatorStatus || creatorStatus.account_status !== 'active' ||
+      !responderStatus || responderStatus.account_status !== 'active') {
+    return { ok: false, code: 'user_inactive', message: 'This member is no longer active.' };
   }
 
   const { data: existingMatches } = await admin
