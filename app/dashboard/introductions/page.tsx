@@ -61,7 +61,7 @@ export default async function IntroductionsPage() {
 
   const { data: profileRows } = await supabase
     .from('profiles')
-    .select('id, full_name, email, subscription_tier')
+    .select('id, full_name, email, subscription_tier, is_founding_member')
     .or(`id.eq.${user.id},email.eq.${user.email}`)
     .limit(1)
 
@@ -70,6 +70,11 @@ export default async function IntroductionsPage() {
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
   const userTier = (profileRow as any)?.subscription_tier ?? 'free'
   const isPaid = userTier !== 'free'
+  const tierCap = (profileRow as any)?.is_founding_member ? 5
+    : userTier === 'executive' ? 8
+    : userTier === 'professional' ? 5
+    : userTier === 'free' ? 3
+    : 3
 
   // Get all existing matches for this user
   const { data: existingMatches } = await supabase
@@ -220,7 +225,7 @@ export default async function IntroductionsPage() {
         .filter((item: any) => item?.profile?.id)
         .map((item: any) => [item.profile.id, item])
     ).values()
-  )
+  ).slice(0, tierCap)
 
 
   return (
