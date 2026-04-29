@@ -60,6 +60,17 @@ export default function RequestIntroButton({
 
         const data = await response.json()
 
+        if (!response.ok) {
+          if (response.status === 403) {
+            setOutOfCredits(true)
+            setState('idle')
+            return
+          }
+          setErrorMsg(data.error || 'Something went wrong')
+          setState('error')
+          return
+        }
+
         if (data.mutualInterest && data.matchCreated) {
           // Auto-match happened!
           setState('facilitating')
