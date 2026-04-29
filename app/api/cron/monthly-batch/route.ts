@@ -90,9 +90,9 @@ export async function GET(req: Request) {
       // 2. Count active suggestions (preserve important states)
       const { data: activeIntros, error: activeError } = await adminClient
         .from('intro_requests')
-        .select('id, status')
-        .eq('requester_id', user.id)
-        .in('status', ['suggested', 'pending', 'accepted', 'matched'])
+        .select('id')
+        .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
+        .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
       
       if (activeError) {
         console.error(`[Monthly Refill] Error fetching intros for ${user.email}:`, activeError)
@@ -100,10 +100,9 @@ export async function GET(req: Request) {
         continue
       }
       
-      const activeSuggestions = activeIntros?.filter(i => i.status === 'suggested') || []
-      const activeCount = activeSuggestions.length
-      
-      console.log(`[Monthly Refill] ${user.email}: ${activeCount} active suggestions, target: ${targetSlots}`)
+      const activeCount = activeIntros?.length || 0
+
+      console.log(`[Monthly Refill] ${user.email}: ${activeCount} visible intros (pre-archive), target: ${targetSlots}`)
       
       // 3. Archive stale untouched suggestions (older than 7 days)
       const sevenDaysAgo = new Date()
@@ -120,14 +119,18 @@ export async function GET(req: Request) {
         console.error(`[Monthly Refill] Error archiving for ${user.email}:`, archiveError)
       }
       
-      // 4. Generate new suggestions to fill target slots
-      const slotsNeeded = targetSlots - activeCount
-      
-      if (slotsNeeded > 0) {
-        console.log(`[Monthly Refill] ${user.email}: Generating ${slotsNeeded} new suggestions`)
-        
-        // Generate recommendations (it will create up to targetSlots total)
-        await generateOnboardingRecommendations(user.id)
+      // 4. Recount after archive — slotsToFill would be stale if computed from pre-archive activeCount
+      const { data: activeAfterArchive } = await adminClient
+        .from('intro_requests')
+        .select('id')
+        .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
+        .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
+
+      const slotsToFill = Math.max(0, targetSlots - (activeAfterArchive?.length || 0))
+
+      if (slotsToFill > 0) {
+        console.log(`[Monthly Refill] ${user.email}: Generating ${slotsToFill} new suggestions`)
+        await generateOnboardingRecommendations(user.id, slotsToFill)
       }
       
       processedCount++
