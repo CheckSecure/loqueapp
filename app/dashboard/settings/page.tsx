@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProfileEditForm from '@/components/ProfileEditForm'
@@ -6,7 +7,7 @@ import PasswordChangeForm from '@/components/PasswordChangeForm'
 import AccountDeletion from '@/components/AccountDeletion'
 import { OpportunityPreferences } from '@/components/opportunities/OpportunityPreferences'
 import ReportIssueButton from '@/components/ReportIssueButton'
-import { Mail, FileText, AlertCircle } from 'lucide-react'
+import { Mail, FileText, AlertCircle, UserPlus } from 'lucide-react'
 
 export const metadata = { title: 'Settings | Andrel' }
 
@@ -47,6 +48,28 @@ export default async function SettingsPage() {
               recruiter: profile.recruiter ?? false,
             }}
           />
+        </div>
+      </div>
+
+      {/* Referrals */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Referrals</h2>
+        </div>
+        <div className="px-6 py-5">
+          <Link
+            href="/dashboard/referrals"
+            className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 hover:border-brand-navy/20 hover:bg-slate-50 transition-colors group"
+          >
+            <div className="w-9 h-9 rounded-lg bg-brand-cream flex items-center justify-center flex-shrink-0">
+              <UserPlus className="w-4 h-4 text-brand-navy" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-slate-900">Manage referrals</p>
+              <p className="text-xs text-slate-500 mt-0.5">Invite people you vouch for to join Andrel.</p>
+            </div>
+            <span className="text-slate-400 text-sm">→</span>
+          </Link>
         </div>
       </div>
 
