@@ -741,7 +741,7 @@ function generateIntroReason(userProfile: any, candidate: any): string {
   return `${pronoun} could be a valuable addition to your network`
 }
 
-export async function generateOnboardingRecommendations(userId: string) {
+export async function generateOnboardingRecommendations(userId: string, maxCount?: number) {
   const adminClient = createAdminClient()
   
   const { data: newUserProfile, error: profileError } = await adminClient
@@ -943,7 +943,7 @@ export async function generateOnboardingRecommendations(userId: string) {
     recommendationCount
   )
   
-  const sorted = mentorshipControlled.slice(0, recommendationCount)
+  const sorted = mentorshipControlled.slice(0, maxCount ?? recommendationCount)
   
   console.log('[generate-recommendations] Top 3 final scores:', sorted.slice(0, 3).map(c => ({ email: c.email, score: c.finalScore.toFixed(1) })))
   
