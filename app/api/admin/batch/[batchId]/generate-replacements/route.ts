@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 
 export const dynamic = 'force-dynamic'
 
@@ -287,6 +288,8 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
         if (row.target_user_id) dismissedExclude.add(row.target_user_id)
       }
 
+      const referralExclude = await getReferralExclusionsForUser(r.recipientId)
+
       const scored: { candidate: any; score: number }[] = []
       for (const candidate of candidatePool) {
         if (candidate.id === r.recipientId) continue
@@ -294,6 +297,7 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
         if (droppedExclude.has(candidate.id)) continue
         if (shownExclude.has(candidate.id)) continue
         if (dismissedExclude.has(candidate.id)) continue
+        if (referralExclude.has(candidate.id)) continue
         if (!isCompatiblePair(recipient, candidate)) continue
         const score = scoreMatch(recipient, candidate)
         if (score < MIN_RELEVANCE_SCORE) continue

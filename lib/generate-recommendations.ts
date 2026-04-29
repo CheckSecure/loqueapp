@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getEffectiveTier } from '@/lib/tier-override'
+import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 
 const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
   free: 3,
@@ -846,6 +847,9 @@ export async function generateOnboardingRecommendations(userId: string, maxCount
     else blockedUserIds.add(row.user_id)
   }
   
+  // 2b. Referral pairs — bidirectional: referrer cannot appear in referred's batch and vice versa
+  const referralExcludedIds = await getReferralExclusionsForUser(userId)
+
   // 2. Users hidden or passed (bidirectional with cooldown)
   const cooldownDate = new Date()
   cooldownDate.setDate(cooldownDate.getDate() - 75) // 75 day cooldown
@@ -900,6 +904,8 @@ export async function generateOnboardingRecommendations(userId: string, maxCount
       if (excludedUserIds.has(u.id)) return false
       // Exclude blocked users in either direction
       if (blockedUserIds.has(u.id)) return false
+      // Exclude referral pairs (bidirectional)
+      if (referralExcludedIds.has(u.id)) return false
       // Continue with existing data validation
       return true
     })

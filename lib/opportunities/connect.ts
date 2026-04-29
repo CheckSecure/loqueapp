@@ -6,6 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { generateIcebreakers, generateSystemIntroMessage } from '@/lib/messaging/icebreakers';
+import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions';
 
 const OPPORTUNITY_INTRO_REASON = 'Shared opportunity';
 
@@ -133,6 +134,13 @@ export async function connectOpportunityResponder(args: {
 
   if ((pendingIntros ?? []).length > 0) {
     return { ok: false, code: 'intro_pending', message: 'An intro is already in flight.' };
+  }
+
+  // Defense-in-depth: matching.ts already filters referral pairs before opportunity
+  // delivery. This guard catches any case that slips through (e.g. direct admin actions).
+  const referralPairs = await getReferralExclusionsForUser(creatorId)
+  if (referralPairs.has(responderId)) {
+    return { ok: false, code: 'blocked', message: 'Cannot connect — referral relationship exists.' }
   }
 
   const { data: match, error: matchErr } = await admin

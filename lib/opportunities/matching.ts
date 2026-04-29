@@ -25,6 +25,7 @@ import { shouldNotify } from './notifications';
 import { rateLimitedUserIds } from './rateLimits';
 import { logMatcherRun, logEvent } from './events';
 import { acceptedRoleTypesForNeed } from './relevance';
+import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions';
 
 // ------------------------------------------------------------
 // Threshold configuration — Prompt #15
@@ -146,6 +147,10 @@ async function excludedUserIdsFor(creatorId: string): Promise<Set<string>> {
   openIntros?.forEach((r) => {
     excluded.add(r.requester_id === creatorId ? r.target_user_id : r.requester_id);
   });
+
+  // Referral pairs — bidirectional exclusion (helper fetches email internally)
+  const referralExcluded = await getReferralExclusionsForUser(creatorId)
+  referralExcluded.forEach(id => excluded.add(id))
 
   return excluded;
 }
