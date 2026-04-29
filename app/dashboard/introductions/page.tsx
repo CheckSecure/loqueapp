@@ -277,7 +277,7 @@ export default async function IntroductionsPage() {
           <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-4 mb-4">
             <div>
               <h2 className="text-base font-semibold text-slate-900">
-                This week's introductions{activeBatch ? <span className="text-slate-400 font-normal"> &middot; batch {activeBatch.batch_number}</span> : ''}
+                This week's introductions
               </h2>
               <p className="text-sm text-slate-500 mt-1">Review and express interest &mdash; Andrel facilitates when there's strong mutual alignment.</p>
             </div>
