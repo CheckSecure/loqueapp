@@ -36,14 +36,12 @@ export async function GET(req: Request) {
       const tier = getEffectiveTier(user)
       const targetSlots = TIER_ACTIVE_SLOTS[tier]
       
-      // Count current active suggestions
+      // Count current visible intros (bidirectional, all active statuses)
       const { data: activeIntros } = await adminClient
         .from('intro_requests')
         .select('id')
-        .eq('requester_id', user.id)
-        .eq('status', 'suggested')
-      
-      const currentCount = activeIntros?.length || 0
+        .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
+        .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
       
       // Archive stale suggestions (>72 hours old)
       const staleDate = new Date()
@@ -61,18 +59,19 @@ export async function GET(req: Request) {
         console.log(`[Weekly Refresh] Archived ${archivedIntros.length} stale intros for ${user.email}`)
       }
       
-      // Recount after archiving
+      // Recount after archiving (bidirectional, all active statuses)
       const { data: activeAfterArchive } = await adminClient
         .from('intro_requests')
         .select('id')
-        .eq('requester_id', user.id)
-        .eq('status', 'suggested')
+        .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
+        .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
       
       const currentCountAfterArchive = activeAfterArchive?.length || 0
       
-      // Generate new recommendations if below target
-      if (currentCountAfterArchive < targetSlots) {
-        await generateOnboardingRecommendations(user.id)
+      // Generate only the gap to tier cap
+      const slotsToFill = targetSlots - currentCountAfterArchive
+      if (slotsToFill > 0) {
+        await generateOnboardingRecommendations(user.id, slotsToFill)
         processed++
       }
       
