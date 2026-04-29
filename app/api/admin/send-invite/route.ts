@@ -56,5 +56,11 @@ export async function POST(req: Request) {
     .update({ status: 'invited', invited_at: new Date().toISOString() })
     .eq('id', entryId)
 
+  // Sync referrals table — no-op if this waitlist row has no referral.
+  await adminClient
+    .from('referrals')
+    .update({ status: 'invited' })
+    .eq('waitlist_id', entryId)
+
   return NextResponse.json({ success: true })
 }
