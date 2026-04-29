@@ -38,8 +38,8 @@ export async function GET(req: Request) {
       const { data: activeIntros } = await adminClient
         .from('intro_requests')
         .select('id')
-        .eq('requester_id', user.id)
-        .eq('status', 'suggested')
+        .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
+        .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
       
       const currentCount = activeIntros?.length || 0
       const slotsNeeded = targetSlots - currentCount
@@ -63,8 +63,17 @@ export async function GET(req: Request) {
             .eq('id', oldest.id)
         }
         
-        // Generate fresh recommendations
-        await generateOnboardingRecommendations(user.id)
+        // Recount after rotation — slotsNeeded is stale after archive
+        const { data: activeAfterRotate } = await adminClient
+          .from('intro_requests')
+          .select('id')
+          .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
+          .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
+
+        const slotsToFill = Math.max(0, targetSlots - (activeAfterRotate?.length || 0))
+        if (slotsToFill > 0) {
+          await generateOnboardingRecommendations(user.id, slotsToFill)
+        }
         topped++
       }
       
