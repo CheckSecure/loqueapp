@@ -19,11 +19,11 @@ interface WaitlistEntry {
   status: string
   created_at: string
   invited_at: string | null
-  referrals?: Array<{
+  referrals?: {
     referral_note: string
     status: string
     referrer: { id: string; full_name: string | null; account_status: string } | null
-  }>
+  } | null
 }
 
 export default function AdminWaitlistClient({ 
@@ -198,17 +198,17 @@ export default function AdminWaitlistClient({
                           )}
                         </div>
 
-                        {entry.referral_source === 'referral' && entry.referrals?.[0] ? (
+                        {entry.referral_source === 'referral' && entry.referrals ? (
                           <>
                             <div className="flex items-center gap-1.5 mb-2">
                               <UserPlus className="w-3.5 h-3.5 text-[#C4922A]" />
                               <span className="text-xs font-medium text-[#C4922A] bg-[#FDF3E3] px-2 py-0.5 rounded-full">
-                                Referred by {entry.referrals[0].referrer?.full_name ?? 'unknown'}
+                                Referred by {entry.referrals.referrer?.full_name ?? 'unknown'}
                               </span>
                             </div>
-                            {entry.referrals[0].referral_note && (
+                            {entry.referrals.referral_note && (
                               <div className="border-l-2 border-slate-200 pl-3 mb-2">
-                                <p className="text-xs italic text-slate-500">"{entry.referrals[0].referral_note}"</p>
+                                <p className="text-xs italic text-slate-500">"{entry.referrals.referral_note}"</p>
                               </div>
                             )}
                           </>

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import AdminWaitlistClient from '@/components/AdminWaitlistClient'
 
@@ -11,7 +12,10 @@ export default async function AdminWaitlistPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user || user.email !== ADMIN_EMAIL) redirect('/dashboard')
 
-  const { data: waitlist } = await supabase
+  // Use adminClient to bypass RLS on the referrals join.
+  // Safe: auth gate above already enforces admin-only access.
+  const adminClient = createAdminClient()
+  const { data: waitlist } = await adminClient
     .from('waitlist')
     .select(`
       id, full_name, email, company, title, role_type,
@@ -27,9 +31,10 @@ export default async function AdminWaitlistPage() {
   //   - deactivated referrers (per V1 spec)
   //   - orphaned referral_source='referral' rows with no joined referral
   //   - referrer rows missing for any reason (stale data, FK issues)
+  // Note: PostgREST returns the to-one referrals join as an object, not an array.
   const visible = (waitlist ?? []).filter(w =>
     w.referral_source !== 'referral' ||
-    (w.referrals as any[])?.[0]?.referrer?.account_status === 'active'
+    (w.referrals as any)?.referrer?.account_status === 'active'
   )
 
   const counts = {
