@@ -55,7 +55,7 @@ export default async function ReferralsPage() {
         <p className="text-slate-500 text-sm mt-2">
           Andrel grows through trusted referrals. Invite someone you'd genuinely want to meet or introduce to others.
         </p>
-        <p className="text-slate-400 text-xs mt-1">When someone you refer becomes a member, you'll receive 1 credit, up to 5 per month.</p>
+        <p className="text-slate-400 text-xs mt-1">When someone you refer becomes a member, you'll receive 1 credit.</p>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
