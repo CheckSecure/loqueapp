@@ -56,7 +56,7 @@ export async function GET(
 
   const { data: otherUser } = await adminClient
     .from('profiles')
-    .select('id, full_name, title, company, avatar_url, subscription_tier')
+    .select('id, full_name, title, company, avatar_url, subscription_tier, account_status')
     .eq('id', otherUserId)
     .single()
 

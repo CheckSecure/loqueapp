@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import ConversationView from '@/components/messages/ConversationView'
+import FormerMemberBadge from '@/components/FormerMemberBadge'
 
 interface ConversationData {
   id: string
@@ -14,6 +15,7 @@ interface ConversationData {
     company: string | null
     avatar_url: string | null
     subscription_tier: string | null | null
+    account_status: string | null
   }
   isOpportunityInitiated?: boolean
   opportunityTitle?: string | null
@@ -100,13 +102,17 @@ export default function ConversationPage() {
           </div>
         )}
         <div>
-          <h1 className="font-medium text-gray-900">{conversation.otherUser.full_name}</h1>
-          {conversation.otherUser.title && (
+          <h1 className="font-medium text-gray-900">
+            {conversation.otherUser.account_status === 'deactivated' ? 'Former member' : conversation.otherUser.full_name}
+          </h1>
+          {conversation.otherUser.account_status === 'deactivated' ? (
+            <p className="text-sm text-gray-500">This member is no longer active</p>
+          ) : conversation.otherUser.title ? (
             <p className="text-sm text-gray-500">
               {conversation.otherUser.title}
               {conversation.otherUser.company && ` · ${conversation.otherUser.company}`}
             </p>
-          )}
+          ) : null}
           {conversation.isOpportunityInitiated && (
             <div className="mt-1 flex items-center gap-1.5">
               <span className="inline-flex items-center rounded-full bg-[#C4922A]/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#C4922A]">
@@ -121,7 +127,10 @@ export default function ConversationPage() {
       </div>
 
       <div className="bg-white border border-t-0 border-gray-200 rounded-b-lg">
-        <ConversationView conversationId={conversationId} />
+        <ConversationView
+          conversationId={conversationId}
+          isDeactivated={conversation.otherUser.account_status === 'deactivated'}
+        />
       </div>
     </div>
   )

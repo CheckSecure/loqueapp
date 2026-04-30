@@ -22,9 +22,10 @@ interface Message {
 
 interface ConversationViewProps {
   conversationId: string
+  isDeactivated?: boolean
 }
 
-export default function ConversationView({ conversationId }: ConversationViewProps) {
+export default function ConversationView({ conversationId, isDeactivated }: ConversationViewProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([])
   const [matchInsights, setMatchInsights] = useState<Array<{text: string; kind: string}>>([])
@@ -238,26 +239,38 @@ export default function ConversationView({ conversationId }: ConversationViewPro
         </div>
       )}
 
-      <div className="border-t border-gray-200 p-3 flex gap-2 items-end">
-        <textarea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Write a message..."
-          rows={1}
-          className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent"
-          style={{ maxHeight: 120 }}
-          disabled={sending}
-        />
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={!input.trim() || sending}
-          className="px-4 py-2 bg-[#1B2850] text-white text-sm font-medium rounded-lg hover:bg-[#2E4080] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {sending ? 'Sending…' : 'Send'}
-        </button>
-      </div>
+      {isDeactivated ? (
+        <div className="border-t border-gray-200 p-3">
+          <textarea
+            placeholder=""
+            rows={1}
+            disabled
+            className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-400 cursor-not-allowed"
+          />
+          <p className="text-xs text-slate-400 mt-2">This member is no longer active. You can no longer send messages.</p>
+        </div>
+      ) : (
+        <div className="border-t border-gray-200 p-3 flex gap-2 items-end">
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Write a message..."
+            rows={1}
+            className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent"
+            style={{ maxHeight: 120 }}
+            disabled={sending}
+          />
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!input.trim() || sending}
+            className="px-4 py-2 bg-[#1B2850] text-white text-sm font-medium rounded-lg hover:bg-[#2E4080] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {sending ? 'Sending…' : 'Send'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

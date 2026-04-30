@@ -71,7 +71,7 @@ export default async function NetworkPage() {
   if (matchedUserIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, title, company, location, city, state, bio, role_type, seniority, avatar_url, purposes, intro_preferences, interests, expertise, open_to_mentorship, open_to_business_solutions, linkedin_url')
+      .select('id, full_name, title, company, location, city, state, bio, role_type, seniority, avatar_url, purposes, intro_preferences, interests, expertise, open_to_mentorship, open_to_business_solutions, linkedin_url, account_status')
       .in('id', matchedUserIds)
     for (const p of profiles || []) profileMap[p.id] = p
   }

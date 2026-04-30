@@ -5,6 +5,7 @@ import { Briefcase, MapPin, MessageSquare, Calendar, Eye } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import ConnectionDetailModal from '@/components/network/ConnectionDetailModal'
+import FormerMemberBadge from '@/components/FormerMemberBadge'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -33,6 +34,7 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
   const [navigatingToMessage, setNavigatingToMessage] = useState(false)
   const router = useRouter()
 
+  const isDeactivated = profile.account_status === 'deactivated'
   const avatarColor = pickColor(profile.id)
   const initials = getInitials(profile.full_name)
   const connectedDate = connectedAt
@@ -95,7 +97,7 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
       >
         <div className="flex items-start gap-3">
           {profile.avatar_url ? (
-            <img src={profile.avatar_url} alt={profile.full_name} className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
+            <img src={profile.avatar_url} alt={profile.full_name} className={`w-11 h-11 rounded-full object-cover flex-shrink-0 ${isDeactivated ? 'grayscale opacity-60' : ''}`} />
           ) : (
             <div className={`w-11 h-11 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>
               {initials}
@@ -103,17 +105,20 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
           )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-slate-900 truncate">{profile.full_name}</p>
-              {highlighted && (
+              <p className="text-sm font-semibold text-slate-900 truncate">
+                {isDeactivated ? 'Former member' : profile.full_name}
+              </p>
+              {highlighted && !isDeactivated && (
                 <span className="px-1.5 py-0.5 bg-[#C4922A] text-white text-[10px] font-bold rounded uppercase">New</span>
               )}
             </div>
-            {(profile.title || profile.company) && (
+            {!isDeactivated && (profile.title || profile.company) && (
               <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
                 <Briefcase className="w-3 h-3 flex-shrink-0" />
                 <span className="truncate">{[profile.title, profile.company].filter(Boolean).join(' at ')}</span>
               </div>
             )}
+            {isDeactivated && <FormerMemberBadge />}
             {profile.location && (
               <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
                 <MapPin className="w-3 h-3 flex-shrink-0" />
@@ -123,7 +128,7 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
           </div>
         </div>
 
-        {profile.bio && (
+        {!isDeactivated && profile.bio && (
           <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{profile.bio}</p>
         )}
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
+import FormerMemberBadge from '@/components/FormerMemberBadge'
 
 interface Conversation {
   id: string
@@ -13,6 +14,7 @@ interface Conversation {
     company: string | null
     avatar_url: string | null
     subscription_tier: string | null | null
+    account_status: string | null
   } | null
   lastMessage: {
     id: string
@@ -102,7 +104,7 @@ export default function MessagesPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline justify-between gap-2">
                   <h3 className="font-semibold text-slate-900 truncate">
-                    {conv.otherUser?.full_name || 'Unknown'}
+                    {conv.otherUser?.account_status === 'deactivated' ? 'Former member' : (conv.otherUser?.full_name || 'Unknown')}
                   </h3>
                   {conv.lastMessage && (
                     <span className="text-xs text-slate-400 flex-shrink-0">
@@ -111,11 +113,15 @@ export default function MessagesPage() {
                   )}
                 </div>
 
-                {conv.otherUser?.title && (
+                {conv.otherUser?.account_status !== 'deactivated' && conv.otherUser?.title && (
                   <p className="text-sm text-slate-500 truncate">
                     {conv.otherUser.title}
                     {conv.otherUser.company && ` · ${conv.otherUser.company}`}
                   </p>
+                )}
+
+                {conv.otherUser?.account_status === 'deactivated' && (
+                  <FormerMemberBadge />
                 )}
 
                 {conv.isOpportunityInitiated && (
