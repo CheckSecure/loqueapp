@@ -47,9 +47,23 @@ export async function POST(request: Request) {
     }
 
     // Determine recipient
-    const recipientId = match.user_a_id === user.id 
-      ? match.user_b_id 
+    const recipientId = match.user_a_id === user.id
+      ? match.user_b_id
       : match.user_a_id
+
+    // Block sends to deactivated recipients
+    const { data: recipientProfile } = await adminClient
+      .from('profiles')
+      .select('account_status')
+      .eq('id', recipientId)
+      .single()
+
+    if (recipientProfile?.account_status === 'deactivated') {
+      return NextResponse.json(
+        { ok: false, code: 'RECIPIENT_INACTIVE', message: 'This member is no longer active. Messages cannot be sent.' },
+        { status: 403 }
+      )
+    }
 
     // Insert message
     const { data: message, error: messageError } = await adminClient
