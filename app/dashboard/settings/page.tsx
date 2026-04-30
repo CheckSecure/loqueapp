@@ -66,7 +66,7 @@ export default async function SettingsPage() {
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-slate-900">Invite someone valuable</p>
-              <p className="text-xs text-slate-500 mt-0.5">Andrel grows through trusted referrals. Invite someone you'd genuinely want to meet or introduce to others.</p>
+              <p className="text-xs text-slate-500 mt-0.5">Andrel grows through trusted referrals. Invite someone you'd genuinely want to meet — you'll earn 1 credit if they join.</p>
             </div>
             <span className="text-slate-400 text-sm">Manage referrals →</span>
           </Link>
