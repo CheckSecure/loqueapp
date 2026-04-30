@@ -89,41 +89,63 @@ export default function ConversationPage() {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-t-lg p-4 flex items-center gap-3">
-        {conversation.otherUser.avatar_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={conversation.otherUser.avatar_url}
-            alt={conversation.otherUser.full_name}
-            className="w-10 h-10 rounded-full object-cover"
-          />
-        ) : (
-          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium">
-            {conversation.otherUser.full_name[0]}
+        {conversation.otherUser.account_status === 'deactivated' ? (
+          <div className="flex items-center gap-3 flex-1">
+            {conversation.otherUser.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={conversation.otherUser.avatar_url}
+                alt={conversation.otherUser.full_name}
+                className="w-10 h-10 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium">
+                {conversation.otherUser.full_name[0]}
+              </div>
+            )}
+            <div>
+              <h1 className="font-medium text-gray-900">Former member</h1>
+              <p className="text-sm text-gray-500">This member is no longer active</p>
+            </div>
           </div>
-        )}
-        <div>
-          <h1 className="font-medium text-gray-900">
-            {conversation.otherUser.account_status === 'deactivated' ? 'Former member' : conversation.otherUser.full_name}
-          </h1>
-          {conversation.otherUser.account_status === 'deactivated' ? (
-            <p className="text-sm text-gray-500">This member is no longer active</p>
-          ) : conversation.otherUser.title ? (
-            <p className="text-sm text-gray-500">
-              {conversation.otherUser.title}
-              {conversation.otherUser.company && ` · ${conversation.otherUser.company}`}
-            </p>
-          ) : null}
-          {conversation.isOpportunityInitiated && (
-            <div className="mt-1 flex items-center gap-1.5">
-              <span className="inline-flex items-center rounded-full bg-[#C4922A]/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#C4922A]">
-                Opportunity
-              </span>
-              {conversation.opportunityTitle && (
-                <span className="text-xs text-gray-500">{conversation.opportunityTitle}</span>
+        ) : (
+          <Link
+            href={`/dashboard/profile/${conversation.otherUser.id}`}
+            className="flex items-center gap-3 flex-1 hover:bg-slate-50 transition-colors rounded -mx-2 px-2 py-1"
+          >
+            {conversation.otherUser.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={conversation.otherUser.avatar_url}
+                alt={conversation.otherUser.full_name}
+                className="w-10 h-10 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium">
+                {conversation.otherUser.full_name[0]}
+              </div>
+            )}
+            <div>
+              <h1 className="font-medium text-gray-900">{conversation.otherUser.full_name}</h1>
+              {conversation.otherUser.title && (
+                <p className="text-sm text-gray-500">
+                  {conversation.otherUser.title}
+                  {conversation.otherUser.company && ` · ${conversation.otherUser.company}`}
+                </p>
               )}
             </div>
-          )}
-        </div>
+          </Link>
+        )}
+        {conversation.isOpportunityInitiated && (
+          <div className="flex items-center gap-1.5">
+            <span className="inline-flex items-center rounded-full bg-[#C4922A]/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#C4922A]">
+              Opportunity
+            </span>
+            {conversation.opportunityTitle && (
+              <span className="text-xs text-gray-500">{conversation.opportunityTitle}</span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="bg-white border border-t-0 border-gray-200 rounded-b-lg">
