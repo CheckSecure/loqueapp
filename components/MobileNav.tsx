@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, MoreHorizontal, CreditCard, Settings, ShieldCheck, LogOut, X, Network, Sparkles, UserPlus } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, MoreHorizontal, CreditCard, Settings, ShieldCheck, LogOut, X, Network, Sparkles } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 import { cn } from '@/lib/utils'
 import { useState, useEffect } from 'react'
@@ -95,15 +95,6 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
                   {opportunityBadgeCount > 9 ? '9+' : opportunityBadgeCount}
                 </span>
               )}
-            </Link>
-
-            <Link
-              href="/dashboard/referrals"
-              onClick={() => setShowMore(false)}
-              className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <UserPlus className="w-5 h-5 text-slate-400" />
-              Referrals
             </Link>
 
             <Link

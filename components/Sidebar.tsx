@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, LogOut, CreditCard, ShieldCheck, Settings, Network, Sparkles, UserPlus } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, LogOut, CreditCard, ShieldCheck, Settings, Network, Sparkles } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
@@ -13,7 +13,6 @@ const ADMIN_EMAIL = 'bizdev91@gmail.com'
 const navItems = [
   { href: '/dashboard/introductions', label: 'Introductions', icon: Users },
   { href: '/dashboard/opportunities', label: 'Opportunities', icon: Sparkles },
-  { href: '/dashboard/referrals',     label: 'Referrals',     icon: UserPlus },
   { href: '/dashboard/network',       label: 'Network',       icon: Network },
   { href: '/dashboard/messages', label: 'Messages', icon: MessageSquare },
   { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar },

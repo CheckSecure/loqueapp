@@ -65,10 +65,10 @@ export default async function SettingsPage() {
               <UserPlus className="w-4 h-4 text-brand-navy" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-slate-900">Manage referrals</p>
-              <p className="text-xs text-slate-500 mt-0.5">Invite people you vouch for to join Andrel.</p>
+              <p className="text-sm font-semibold text-slate-900">Invite someone valuable</p>
+              <p className="text-xs text-slate-500 mt-0.5">Andrel grows through trusted referrals. Invite someone you'd genuinely want to meet or introduce to others.</p>
             </div>
-            <span className="text-slate-400 text-sm">→</span>
+            <span className="text-slate-400 text-sm">Manage referrals →</span>
           </Link>
         </div>
       </div>
