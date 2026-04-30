@@ -5,12 +5,6 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
-const TIER_BATCH_SIZES: Record<string, number> = {
-  free: 3,
-  professional: 5,
-  executive: 8,
-}
-
 // MINIMUM RELEVANCE THRESHOLD - pairs below this are not considered
 const MIN_RELEVANCE_SCORE = 40
 
