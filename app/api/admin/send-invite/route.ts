@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { sendInviteEmail } from '@/lib/email'
+import { sendInviteEmail, sendReferralInviteEmail } from '@/lib/email'
 
 export async function POST(req: Request) {
   const supabase = createClient()
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
   }
 
   const tempPassword = Math.random().toString(36).slice(-12)
-  
+
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -40,8 +40,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: authError.message }, { status: 500 })
   }
 
+  // If this is a referral invite, fetch the referrer's name for the personalised email
+  let referrerName: string | null = null
+  if (entry.referral_source === 'referral') {
+    const { data: referralRow } = await adminClient
+      .from('referrals')
+      .select('referrer:profiles!referrer_user_id(full_name)')
+      .eq('waitlist_id', entryId)
+      .maybeSingle()
+    referrerName = (referralRow?.referrer as any)?.full_name ?? null
+
+    if (!referrerName) {
+      console.warn('[admin/send-invite] Referral invite missing referrer name, falling back to generic', {
+        waitlistId: entryId,
+        email: entry.email,
+      })
+    }
+  }
+
   console.log('[send-invite] Sending email to:', entry.email, 'with temp password:', tempPassword)
-  const emailResult = await sendInviteEmail(entry.email, entry.full_name || 'there', tempPassword)
+  const emailResult = entry.referral_source === 'referral' && referrerName
+    ? await sendReferralInviteEmail(entry.email, entry.full_name || 'there', tempPassword, referrerName)
+    : await sendInviteEmail(entry.email, entry.full_name || 'there', tempPassword)
   console.log('[send-invite] Email result:', emailResult)
   
   if (!emailResult.success) {

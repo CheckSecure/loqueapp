@@ -157,6 +157,60 @@ export async function sendInviteEmail(
   }
 }
 
+export async function sendReferralInviteEmail(
+  toEmail: string,
+  toName: string,
+  tempPassword: string,
+  referrerName: string
+) {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: toEmail,
+      subject: "You've been invited to Andrel",
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #1B2850; margin-bottom: 24px;">You've been invited to Andrel</h2>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Hi ${toName},
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+            ${referrerName} thought you'd be a strong addition to Andrel.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+            Andrel is a curated professional network focused on high-quality introductions — no feeds, no cold outreach, just relevant connections with people worth meeting.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Your account is ready. Use the credentials below to sign in:
+          </p>
+          <div style="background: #F5F6FB; border: 2px solid #1B2850; padding: 16px; margin: 24px 0; border-radius: 8px;">
+            <p style="color: #334155; font-size: 15px; margin: 0 0 8px 0;"><strong>Email:</strong> ${toEmail}</p>
+            <p style="color: #334155; font-size: 15px; margin: 0;"><strong>Temporary password:</strong> <code style="color: #1B2850; font-weight: 700; letter-spacing: 1px;">${tempPassword}</code></p>
+          </div>
+          <a href="https://andrel.app/login"
+             style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+            Log In to Andrel
+          </a>
+          <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+            Daniel
+          </p>
+        </div>
+      `,
+    })
+
+    if (error) {
+      console.error('[sendReferralInviteEmail] Resend API error:', JSON.stringify(error, null, 2))
+      return { success: false, error: error.message }
+    }
+
+    console.log('[sendReferralInviteEmail] Resend success, message ID:', data?.id)
+    return { success: true }
+  } catch (error: any) {
+    console.error('[sendReferralInviteEmail] exception:', error)
+    return { success: false, error: error.message }
+  }
+}
+
 export async function sendMeetingRequestEmail(
   toEmail: string,
   toName: string,
