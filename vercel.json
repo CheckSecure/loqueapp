@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/opportunities-maintain",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/expire-pending-intros",
+      "schedule": "0 2 * * *"
     }
   ]
 }
