@@ -20,19 +20,30 @@ export default async function NetworkPage() {
 
   const profileId = profileRows?.[0]?.id ?? user.id
 
-  const { data: rawMatches } = await supabase
-    .from('matches')
-    .select('id, user_a_id, user_b_id, matched_at, status, removed_at')
-    .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`)
+  // Fetch matches, blocks, and notifications in parallel
+  const [
+    { data: rawMatches },
+    { data: blocks },
+    { data: unreadNotifs },
+  ] = await Promise.all([
+    supabase
+      .from('matches')
+      .select('id, user_a_id, user_b_id, matched_at, status, removed_at')
+      .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`),
+    supabase
+      .from('blocked_users')
+      .select('user_id, blocked_user_id')
+      .or(`user_id.eq.${profileId},blocked_user_id.eq.${profileId}`),
+    supabase
+      .from('notifications')
+      .select('body')
+      .eq('user_id', profileId)
+      .in('type', ['intro_accepted', 'new_connection'])
+      .is('read_at', null),
+  ])
 
   // Filter out removed matches from network view
   const activeMatches = (rawMatches || []).filter((m: any) => m.status !== 'removed')
-
-  // Filter out anyone the user has blocked or been blocked by
-  const { data: blocks } = await supabase
-    .from('blocked_users')
-    .select('user_id, blocked_user_id')
-    .or(`user_id.eq.${profileId},blocked_user_id.eq.${profileId}`)
 
   const blockedIds = new Set<string>()
   for (const b of blocks || []) {
@@ -49,14 +60,6 @@ export default async function NetworkPage() {
     m.user_a_id === profileId ? m.user_b_id : m.user_a_id
   )
 
-  // Get unread connection notifications to identify new connections
-  const { data: unreadNotifs } = await supabase
-    .from('notifications')
-    .select('body')
-    .eq('user_id', profileId)
-    .in('type', ['intro_accepted', 'new_connection'])
-    .is('read_at', null)
-
   // Extract names from notification bodies: "You're now connected with [Name]"
   const newConnectionNames = new Set(
     (unreadNotifs || [])
@@ -67,21 +70,22 @@ export default async function NetworkPage() {
       .filter(Boolean)
   )
 
+  // Fetch matched-user profiles and own profile in parallel
   let profileMap: Record<string, any> = {}
-  if (matchedUserIds.length > 0) {
-    const { data: profiles } = await supabase
+  const [{ data: matchedProfiles }, { data: selfProfile }] = await Promise.all([
+    matchedUserIds.length > 0
+      ? supabase
+          .from('profiles')
+          .select('id, full_name, title, company, location, city, state, bio, role_type, seniority, avatar_url, purposes, intro_preferences, interests, expertise, open_to_mentorship, open_to_business_solutions, linkedin_url, account_status')
+          .in('id', matchedUserIds)
+      : Promise.resolve({ data: [] as any[], error: null }),
+    supabase
       .from('profiles')
-      .select('id, full_name, title, company, location, city, state, bio, role_type, seniority, avatar_url, purposes, intro_preferences, interests, expertise, open_to_mentorship, open_to_business_solutions, linkedin_url, account_status')
-      .in('id', matchedUserIds)
-    for (const p of profiles || []) profileMap[p.id] = p
-  }
-
-  // Fetch current user's own profile for insight generation
-  const { data: selfProfile } = await supabase
-    .from('profiles')
-    .select('id, full_name, title, company, bio, seniority, role_type, purposes, intro_preferences, interests, expertise, open_to_mentorship')
-    .eq('id', profileId)
-    .maybeSingle()
+      .select('id, full_name, title, company, bio, seniority, role_type, purposes, intro_preferences, interests, expertise, open_to_mentorship')
+      .eq('id', profileId)
+      .maybeSingle(),
+  ])
+  for (const p of matchedProfiles || []) profileMap[p.id] = p
 
   // Fetch conversations keyed by match_id so cards can link directly
   const matchIdList = matches.map((m: any) => m.id)
