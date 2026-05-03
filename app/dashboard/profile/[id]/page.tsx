@@ -90,6 +90,20 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
     neither: 'Neither',
   }
 
+  const currentStatusLabel: Record<string, string> = {
+    between_roles: 'Between roles',
+    consulting_advisory: 'Consulting / advisory',
+    open_to_opportunities: 'Open to opportunities',
+  }
+  const showCurrentStatus = !!profile.current_status &&
+    !['employed', 'prefer_not_to_say'].includes(profile.current_status) &&
+    !!currentStatusLabel[profile.current_status]
+
+  const previousRoles: { company: string; title: string; start_date?: string | null; end_date?: string | null }[] =
+    Array.isArray(profile.previous_roles)
+      ? profile.previous_roles.filter((r: any) => r.company && r.title)
+      : []
+
   return (
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
       <div className="max-w-2xl">
@@ -144,7 +158,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
           )}
 
           {/* Role details */}
-          {(profile.seniority || profile.role_type || profile.mentorship_role) && (
+          {(profile.seniority || profile.role_type || profile.mentorship_role || showCurrentStatus) && (
             <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
               <Section icon={Users} title="Professional details">
                 <dl className="space-y-3">
@@ -169,6 +183,14 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                       <dt className="text-xs text-slate-500 flex-shrink-0 pt-0.5">Mentorship</dt>
                       <dd className="text-sm font-medium text-slate-800 text-right">
                         {mentorshipLabel[profile.mentorship_role] ?? profile.mentorship_role}
+                      </dd>
+                    </div>
+                  )}
+                  {showCurrentStatus && (
+                    <div className="flex items-start justify-between gap-4">
+                      <dt className="text-xs text-slate-500 flex-shrink-0 pt-0.5">Status</dt>
+                      <dd className="text-sm font-medium text-slate-800 text-right">
+                        {currentStatusLabel[profile.current_status]}
                       </dd>
                     </div>
                   )}
@@ -197,6 +219,29 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                 <div className="flex flex-wrap gap-2">
                   {profile.intro_preferences.map((tag: string) => (
                     <Badge key={tag} label={tag} />
+                  ))}
+                </div>
+              </Section>
+            </div>
+          )}
+
+          {/* Previous roles */}
+          {previousRoles.length > 0 && (
+            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+              <Section icon={Briefcase} title="Previous Roles">
+                <div className="space-y-3">
+                  {previousRoles.map((role, i) => (
+                    <div key={i} className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{role.title}</p>
+                        <p className="text-xs text-slate-500">{role.company}</p>
+                      </div>
+                      {(role.start_date || role.end_date) && (
+                        <p className="text-xs text-slate-400 flex-shrink-0">
+                          {[role.start_date, role.end_date].filter(Boolean).join(' – ')}
+                        </p>
+                      )}
+                    </div>
                   ))}
                 </div>
               </Section>
