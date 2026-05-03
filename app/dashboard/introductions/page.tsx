@@ -76,34 +76,48 @@ export default async function IntroductionsPage() {
     : userTier === 'free' ? 3
     : 3
 
-  // Get all existing matches for this user
-  const { data: existingMatches } = await supabase
-    .from('matches')
-    .select('user_a_id, user_b_id')
-    .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`)
+  // Fetch all profile-scoped queries in parallel
+  const [
+    { data: existingMatches },
+    { data: suggestedIntros },
+    { data: adminIntrosRaw },
+    { data: activeBatchRows },
+    { data: existingRequests },
+  ] = await Promise.all([
+    supabase
+      .from('matches')
+      .select('user_a_id, user_b_id')
+      .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`),
+    supabase
+      .from('intro_requests')
+      .select('id, target_user_id, created_at, match_reason, target:profiles!target_user_id(id, full_name, title, company, location, bio, interests, seniority, role_type, avatar_url)')
+      .eq('requester_id', profileId)
+      .eq('status', 'suggested')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('intro_requests')
+      .select('id, requester_id, target_user_id, status, created_at, is_admin_initiated, other:profiles!requester_id(id, full_name, title, company, location, bio, seniority, role_type, avatar_url)')
+      .eq('target_user_id', profileId)
+      .eq('is_admin_initiated', true)
+      .in('status', ['admin_pending', 'approved'])
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('introduction_batches')
+      .select('id, batch_number')
+      .eq('status', 'active')
+      .limit(1),
+    supabase
+      .from('intro_requests')
+      .select('target_user_id, created_at')
+      .eq('requester_id', user.id)
+      .order('created_at', { ascending: false }),
+  ])
 
   const matchedUserIds = new Set(
-    (existingMatches || []).flatMap((m: any) => 
+    (existingMatches || []).flatMap((m: any) =>
       [m.user_a_id, m.user_b_id].filter(id => id !== profileId)
     )
   )
-
-  // Suggested intro requests (onboarding recommendations for this user)
-  const { data: suggestedIntros } = await supabase
-    .from('intro_requests')
-    .select('id, target_user_id, created_at, match_reason, target:profiles!target_user_id(id, full_name, title, company, location, bio, interests, seniority, role_type, avatar_url)')
-    .eq('requester_id', profileId)
-    .eq('status', 'suggested')
-    .order('created_at', { ascending: false })
-
-  // Admin-curated intros (where this user is the TARGET and intro is admin_pending)
-  const { data: adminIntrosRaw } = await supabase
-    .from('intro_requests')
-    .select('id, requester_id, target_user_id, status, created_at, is_admin_initiated, other:profiles!requester_id(id, full_name, title, company, location, bio, seniority, role_type, avatar_url)')
-    .eq('target_user_id', profileId)
-    .eq('is_admin_initiated', true)
-    .in('status', ['admin_pending', 'approved'])
-    .order('created_at', { ascending: false })
 
   // For each admin intro, check if the reverse intro (other user's side) is already approved
   const adminIntros = await Promise.all((adminIntrosRaw || []).map(async (intro: any) => {
@@ -130,13 +144,6 @@ export default async function IntroductionsPage() {
 
   const adminIntrosFiltered = adminIntros.filter(Boolean)
 
-  // Active batch
-  const { data: activeBatchRows } = await supabase
-    .from('introduction_batches')
-    .select('id, batch_number')
-    .eq('status', 'active')
-    .limit(1)
-
   const activeBatch = activeBatchRows?.[0] ?? null
 
   // This week's suggestions (not yet acted on)
@@ -148,13 +155,6 @@ export default async function IntroductionsPage() {
         .eq('recipient_id', profileId)
         .not('status', 'in', '(passed,hidden_permanent)')
     : { data: [], error: null }
-
-  // Already expressed interest (across all batches)
-  const { data: existingRequests } = await supabase
-    .from('intro_requests')
-    .select('target_user_id, created_at')
-    .eq('requester_id', user.id)
-    .order('created_at', { ascending: false })
 
   const requestedIds = new Set((existingRequests || []).map((r: any) => r.target_user_id))
 
