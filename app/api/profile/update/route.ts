@@ -21,6 +21,28 @@ export async function POST(req: NextRequest) {
     const introPref = (formData.get('intro_preferences') as string || '')
       .split(',').map(s => s.trim()).filter(Boolean)
 
+    const currentStatusRaw = (formData.get('current_status') as string || '').trim()
+    const currentStatus = currentStatusRaw || null
+
+    let parsedPreviousRoles: any[] = []
+    const previousRolesRaw = formData.get('previous_roles') as string
+    if (previousRolesRaw) {
+      try {
+        const parsed = JSON.parse(previousRolesRaw)
+        if (Array.isArray(parsed)) {
+          parsedPreviousRoles = parsed
+            .filter((r: any) => r.company?.trim() && r.title?.trim())
+            .slice(0, 5)
+            .map((r: any) => ({
+              company: r.company.trim(),
+              title: r.title.trim(),
+              start_date: r.start_date?.trim() || null,
+              end_date: r.end_date?.trim() || null,
+            }))
+        }
+      } catch { /* malformed JSON — ignore */ }
+    }
+
     const city = (formData.get('city') as string || '').trim()
     const state = (formData.get('state') as string || '').trim()
     const location = city && state ? `${city}, ${state}` : city || state || null
@@ -43,6 +65,8 @@ export async function POST(req: NextRequest) {
         geographic_scope: formData.get('geographic_scope'),
         open_to_business_solutions: formData.get('open_to_business_solutions') === 'true',
         bio: formData.get('bio'),
+        current_status: currentStatus,
+        previous_roles: parsedPreviousRoles,
         updated_at: new Date().toISOString(),
       })
       .eq('id', user.id)

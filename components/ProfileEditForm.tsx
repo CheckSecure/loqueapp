@@ -21,6 +21,10 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
   const [city, setCity] = useState(initialData.city || '')
   const [state, setState] = useState(initialData.state || '')
   const [seniority, setSeniority] = useState(initialData.seniority || '')
+  const [currentStatus, setCurrentStatus] = useState(initialData.current_status || '')
+  const [previousRoles, setPreviousRoles] = useState<{ company: string; title: string; start_date: string; end_date: string }[]>(
+    Array.isArray(initialData.previous_roles) ? initialData.previous_roles : []
+  )
   const initialExpertiseAll = parseExpertise(initialData.expertise)
   const [expertise, setExpertise] = useState<string[]>(initialExpertiseAll.filter(e => EXPERTISE_OPTIONS.includes(e)))
   const [additionalExpertise, setAdditionalExpertise] = useState<string[]>(initialExpertiseAll.filter(e => !EXPERTISE_OPTIONS.includes(e)))
@@ -51,6 +55,8 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     formData.append('city', city)
     formData.append('state', state)
     formData.append('seniority', seniority)
+    formData.append('current_status', currentStatus)
+    formData.append('previous_roles', JSON.stringify(previousRoles))
     formData.append('expertise', [...expertise, ...additionalExpertise].join(','))
     formData.append('purposes', purposes.join(','))
     formData.append('meeting_format_preference', meetingFormat)
@@ -198,6 +204,22 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
           </div>
 
           <div className="col-span-2">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Employment Status <span className="text-slate-400 font-normal">(optional)</span></label>
+            <select
+              value={currentStatus}
+              onChange={e => setCurrentStatus(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
+            >
+              <option value="">Select status</option>
+              <option value="employed">Currently employed</option>
+              <option value="between_roles">Between roles</option>
+              <option value="consulting_advisory">Consulting / advisory</option>
+              <option value="open_to_opportunities">Open to opportunities</option>
+              <option value="prefer_not_to_say">Prefer not to say</option>
+            </select>
+          </div>
+
+          <div className="col-span-2">
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Expertise (select all that apply)</label>
             <div className="flex flex-wrap gap-2">
               {EXPERTISE_OPTIONS.map(e => (
@@ -311,6 +333,74 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
               placeholder="A brief professional bio..."
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
             />
+          </div>
+
+          <div className="col-span-2">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Previous Roles <span className="text-slate-400 font-normal">(optional)</span></label>
+            <div className="space-y-3">
+              {previousRoles.map((role, i) => (
+                <div key={i} className="border border-slate-200 rounded-lg p-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Company *</label>
+                      <input
+                        type="text"
+                        value={role.company}
+                        onChange={e => { const u = [...previousRoles]; u[i] = { ...u[i], company: e.target.value }; setPreviousRoles(u) }}
+                        placeholder="Acme Corp"
+                        className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Title *</label>
+                      <input
+                        type="text"
+                        value={role.title}
+                        onChange={e => { const u = [...previousRoles]; u[i] = { ...u[i], title: e.target.value }; setPreviousRoles(u) }}
+                        placeholder="General Counsel"
+                        className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">Start date</label>
+                      <input
+                        type="text"
+                        value={role.start_date}
+                        onChange={e => { const u = [...previousRoles]; u[i] = { ...u[i], start_date: e.target.value }; setPreviousRoles(u) }}
+                        placeholder="Jan 2019"
+                        className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">End date</label>
+                      <input
+                        type="text"
+                        value={role.end_date}
+                        onChange={e => { const u = [...previousRoles]; u[i] = { ...u[i], end_date: e.target.value }; setPreviousRoles(u) }}
+                        placeholder="Mar 2023"
+                        className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPreviousRoles(prev => prev.filter((_, idx) => idx !== i))}
+                    className="text-xs text-red-500 hover:text-red-700 transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              {previousRoles.length < 5 && (
+                <button
+                  type="button"
+                  onClick={() => setPreviousRoles(prev => [...prev, { company: '', title: '', start_date: '', end_date: '' }])}
+                  className="text-xs font-medium text-[#1B2850] hover:text-[#2E4080] transition-colors"
+                >
+                  + Add role
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
