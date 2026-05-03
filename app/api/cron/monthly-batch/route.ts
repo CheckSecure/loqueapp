@@ -92,8 +92,8 @@ export async function GET(req: Request) {
         .from('intro_requests')
         .select('id')
         .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
-        .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
-      
+        .in('status', ['suggested', 'accepted', 'admin_pending', 'approved'])
+
       if (activeError) {
         console.error(`[Monthly Refill] Error fetching intros for ${user.email}:`, activeError)
         errorCount++
@@ -124,7 +124,7 @@ export async function GET(req: Request) {
         .from('intro_requests')
         .select('id')
         .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
-        .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
+        .in('status', ['suggested', 'accepted', 'admin_pending', 'approved'])
 
       const slotsToFill = Math.max(0, targetSlots - (activeAfterArchive?.length || 0))
 

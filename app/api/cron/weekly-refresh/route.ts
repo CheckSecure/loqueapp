@@ -41,8 +41,8 @@ export async function GET(req: Request) {
         .from('intro_requests')
         .select('id')
         .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
-        .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
-      
+        .in('status', ['suggested', 'accepted', 'admin_pending', 'approved'])
+
       // Archive stale suggestions (>72 hours old)
       const staleDate = new Date()
       staleDate.setHours(staleDate.getHours() - 72)
@@ -64,8 +64,8 @@ export async function GET(req: Request) {
         .from('intro_requests')
         .select('id')
         .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
-        .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
-      
+        .in('status', ['suggested', 'accepted', 'admin_pending', 'approved'])
+
       const currentCountAfterArchive = activeAfterArchive?.length || 0
       
       // Generate only the gap to tier cap

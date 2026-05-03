@@ -39,8 +39,8 @@ export async function GET(req: Request) {
         .from('intro_requests')
         .select('id')
         .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
-        .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
-      
+        .in('status', ['suggested', 'accepted', 'admin_pending', 'approved'])
+
       const currentCount = activeIntros?.length || 0
       const slotsNeeded = targetSlots - currentCount
       
@@ -68,7 +68,7 @@ export async function GET(req: Request) {
           .from('intro_requests')
           .select('id')
           .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
-          .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
+          .in('status', ['suggested', 'accepted', 'admin_pending', 'approved'])
 
         const slotsToFill = Math.max(0, targetSlots - (activeAfterRotate?.length || 0))
         if (slotsToFill > 0) {
