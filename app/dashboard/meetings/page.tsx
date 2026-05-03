@@ -10,17 +10,43 @@ export default async function MeetingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // ── 1. Get all user IDs the current user is matched with ──────────────────
-  const { data: matchRows } = await supabase
-    .from('matches')
-    .select('id, user_a_id, user_b_id')
-    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
+  // ── 1–4. Fetch matches, meetings, join-meetings, and notifications in parallel ──
+  const [
+    { data: matchRows },
+    { data: meetingRows, error: meetingErr },
+    { data: joinRows, error: joinErr },
+    { data: unreadMeetingNotifs },
+  ] = await Promise.all([
+    supabase
+      .from('matches')
+      .select('id, user_a_id, user_b_id')
+      .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`),
+    supabase
+      .from('meetings')
+      .select('id, purpose, purpose_category, format, status, scheduled_at, duration_minutes, location, zoom_link, notes, requester_id, recipient_id, proposed_scheduled_at, proposed_duration_minutes, proposed_format, proposed_location, proposed_zoom_link, proposed_notes, updated_at')
+      .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
+      .order('scheduled_at', { ascending: true }),
+    supabase
+      .from('meetings')
+      .select(`
+      id,
+      requester:profiles!requester_id(id, full_name),
+      recipient:profiles!recipient_id(id, full_name)
+    `)
+      .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`),
+    supabase
+      .from('notifications')
+      .select('type, created_at')
+      .eq('user_id', user.id)
+      .in('type', ['meeting_request', 'meeting_accepted', 'meeting_declined'])
+      .is('read_at', null),
+  ])
 
   const matchedUserIds = (matchRows || []).map((r: any) =>
     r.user_a_id === user.id ? r.user_b_id : r.user_a_id
   ).filter(Boolean)
 
-  // ── 2. Fetch profiles for all matched users — this query WORKS (same as modal) ──
+  // ── 2. Fetch profiles for all matched users ───────────────────────────────
   let profileById: Record<string, any> = {}
   let matchedUsers: { id: string; full_name: string; title?: string; company?: string }[] = []
 
@@ -36,26 +62,6 @@ export default async function MeetingsPage() {
   console.log('[Meetings] user.id:', user.id)
   console.log('[Meetings] matchedUserIds:', JSON.stringify(matchedUserIds))
   console.log('[Meetings] profileById keys:', Object.keys(profileById))
-
-  // ── 3. Fetch meetings ─────────────────────────────────────────────────────
-  const { data: meetingRows, error: meetingErr } = await supabase
-    .from('meetings')
-    .select('id, purpose, purpose_category, format, status, scheduled_at, duration_minutes, location, zoom_link, notes, requester_id, recipient_id, proposed_scheduled_at, proposed_duration_minutes, proposed_format, proposed_location, proposed_zoom_link, proposed_notes, updated_at')
-    .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
-    .order('scheduled_at', { ascending: true })
-
-  console.log('[Meetings] meetingErr:', meetingErr?.message ?? 'none')
-  console.log('[Meetings] meetingRows count:', meetingRows?.length ?? 0)
-
-  // ── 4. Also try PostgREST join in case the profiles aren't in matchedUserIds ──
-  const { data: joinRows, error: joinErr } = await supabase
-    .from('meetings')
-    .select(`
-      id,
-      requester:profiles!requester_id(id, full_name),
-      recipient:profiles!recipient_id(id, full_name)
-    `)
-    .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`)
 
   console.log('[Meetings] joinErr:', joinErr?.message ?? 'none')
 
@@ -110,14 +116,6 @@ export default async function MeetingsPage() {
 
   const upcoming = enriched.filter((m: any) => !m.isPast)
   const past = enriched.filter((m: any) => m.isPast).reverse()
-
-    // Get unread meeting notification types to highlight new meetings
-  const { data: unreadMeetingNotifs } = await supabase
-    .from('notifications')
-    .select('type, created_at')
-    .eq('user_id', user.id)
-    .in('type', ['meeting_request', 'meeting_accepted', 'meeting_declined'])
-    .is('read_at', null)
 
   // Meetings created/updated in last 24h with unread notifs are "new"
   const hasUnreadNotif = (unreadMeetingNotifs || []).length > 0
