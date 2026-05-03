@@ -39,6 +39,11 @@ export default function RequestIntroButton({
     const result = await submitIntroRequest(targetId)
 
     if (result.error) {
+      if ((result as any).code === 'OUTBOUND_PENDING_CAP_REACHED') {
+        setErrorMsg('You have 5 active interests. Withdraw one before expressing interest in someone new.')
+        setState('error')
+        return
+      }
       if (result.error.toLowerCase().includes('credit')) {
         setOutOfCredits(true)
         setState('idle')

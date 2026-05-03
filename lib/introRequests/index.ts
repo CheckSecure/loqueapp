@@ -49,7 +49,7 @@ export async function createIntroRequest(
     .eq('status', 'pending')
 
   if ((activeCount ?? 0) >= 5) {
-    return { error: 'You have reached the maximum of 5 active interests. Withdraw one to express interest in someone new.' }
+    return { error: 'You have reached the maximum of 5 active interests. Withdraw one to express interest in someone new.', code: 'OUTBOUND_PENDING_CAP_REACHED' }
   }
 
   // Soft rate limit: max 5 new interests per 24 hours

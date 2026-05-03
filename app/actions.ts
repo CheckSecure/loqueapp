@@ -97,7 +97,7 @@ export async function submitIntroRequest(targetUserId: string, note?: string) {
   }
 
   const result = await createIntroRequest(user.id, user.email ?? '', targetUserId, note)
-  if (result.error) return { error: result.error }
+  if (result.error) return { error: result.error, code: (result as any).code }
   revalidatePath('/dashboard/introductions')
   return { success: true, introRequestId: result.introRequestId }
 }
