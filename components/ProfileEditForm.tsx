@@ -218,6 +218,12 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
             </select>
           </div>
 
+          {['between_roles', 'consulting_advisory'].includes(currentStatus) && (
+            <div className="col-span-2 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+              <p className="text-xs text-slate-500">Make sure your title, company, and bio are up to date so members have accurate context before connecting.</p>
+            </div>
+          )}
+
           <div className="col-span-2">
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Expertise (select all that apply)</label>
             <div className="flex flex-wrap gap-2">
