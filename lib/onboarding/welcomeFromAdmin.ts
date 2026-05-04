@@ -13,7 +13,7 @@ Here's how to get the most out of it:
 Your title, company, bio, expertise, interests, and preferences help us understand who would be valuable for you to meet.
 
 2. Review your introductions.
-When someone is suggested, you can express interest or pass. Andrel uses a simple credit system to keep introductions intentional and high-quality — you'll only use a credit when a connection is actually made.
+When someone is suggested, you can express interest or pass. Andrel uses a simple credit system to keep introductions intentional and high-quality — expressing interest uses a credit, so the focus stays on the right connections.
 
 3. Use Messages to build the relationship.
 Once an introduction is active, you can message directly and use the suggested prompts to start the conversation.
