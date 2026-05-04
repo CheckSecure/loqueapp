@@ -214,7 +214,6 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
               <option value="employed">Currently employed</option>
               <option value="between_roles">Between roles</option>
               <option value="consulting_advisory">Consulting / advisory</option>
-              <option value="prefer_not_to_say">Prefer not to say</option>
             </select>
           </div>
 
