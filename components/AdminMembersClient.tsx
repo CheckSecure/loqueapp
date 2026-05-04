@@ -618,7 +618,6 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                     <option value="employed">Employed</option>
                     <option value="between_roles">Between Roles</option>
                     <option value="consulting_advisory">Consulting/Advisory</option>
-                    <option value="open_to_opportunities">Open to Opportunities</option>
                     <option value="prefer_not_to_say">Prefer Not to Say</option>
                   </select>
                 </div>
