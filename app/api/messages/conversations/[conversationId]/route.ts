@@ -69,16 +69,21 @@ export async function GET(
     .eq('is_system', false)
     .is('read_at', null)
 
-  // Load opportunity title if this conversation came from an opportunity.
-  let opportunityTitle: string | null = null
-  if (match.opportunity_id) {
-    const { data: opp } = await adminClient
-      .from('opportunities')
-      .select('title')
-      .eq('id', match.opportunity_id)
-      .maybeSingle()
-    opportunityTitle = opp?.title ?? null
-  }
+  // Load opportunity title and issue report context in parallel
+  const [opportunityResult, issueResult] = await Promise.all([
+    match.opportunity_id
+      ? adminClient.from('opportunities').select('title').eq('id', match.opportunity_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    adminClient
+      .from('issue_reports')
+      .select('report_text, created_at')
+      .eq('conversation_id', params.conversationId)
+      .maybeSingle(),
+  ])
+  const opportunityTitle = opportunityResult.data?.title ?? null
+  const issueReport = issueResult.data
+    ? { reportText: issueResult.data.report_text, reportedAt: issueResult.data.created_at }
+    : null
 
   return NextResponse.json({
     conversation: {
@@ -91,7 +96,8 @@ export async function GET(
       createdAt: conversation.created_at,
       adminFacilitated: match.admin_facilitated || false,
       isOpportunityInitiated: !!match.is_opportunity_initiated,
-      opportunityTitle
+      opportunityTitle,
+      issueReport,
     }
   })
 }

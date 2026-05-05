@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import ConversationView from '@/components/messages/ConversationView'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
+import IssueReportBanner from '@/components/IssueReportBanner'
 
 interface ConversationData {
   id: string
@@ -19,6 +20,7 @@ interface ConversationData {
   }
   isOpportunityInitiated?: boolean
   opportunityTitle?: string | null
+  issueReport?: { reportedAt: string; reportText: string } | null
 }
 
 export default function ConversationPage() {
@@ -147,6 +149,13 @@ export default function ConversationPage() {
           </div>
         )}
       </div>
+
+      {conversation.issueReport && (
+        <IssueReportBanner
+          reportedAt={conversation.issueReport.reportedAt}
+          reportText={conversation.issueReport.reportText}
+        />
+      )}
 
       <div className="bg-white border border-t-0 border-gray-200 rounded-b-lg">
         <ConversationView
