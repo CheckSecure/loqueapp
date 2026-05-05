@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -28,5 +29,6 @@ export async function POST(request: Request) {
     .update({ status: 'rejected', rejected_at: new Date().toISOString() })
     .eq('waitlist_id', entryId)
 
+  revalidatePath('/dashboard', 'layout')
   return NextResponse.json({ success: true })
 }
