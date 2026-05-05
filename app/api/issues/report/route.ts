@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sendAdminAlertEmail, escapeHtml } from '@/lib/email'
 
 /**
  * POST /api/issues/report
@@ -55,6 +56,23 @@ export async function POST(req: Request) {
   if (error) {
     console.error('[issues/report] insert error:', error)
     return NextResponse.json({ error: 'Failed to save report' }, { status: 500 })
+  }
+
+  const alertResult = await sendAdminAlertEmail(
+    `New issue report from ${escapeHtml(user.email)}`,
+    `
+      <h2 style="color: #1B2850; margin-bottom: 24px;">New issue report</h2>
+      <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;"><strong>Reporter:</strong> ${escapeHtml(user.email)}</p>
+      <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;"><strong>Page:</strong> ${escapeHtml(pageUrl)}</p>
+      <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;"><strong>Report:</strong></p>
+      <div style="background: #F5F6FB; border-left: 3px solid #1B2850; padding: 16px; margin: 16px 0; border-radius: 4px;">
+        <p style="color: #334155; font-size: 15px; margin: 0;">${escapeHtml(reportText)}</p>
+      </div>
+      <a href="https://andrel.app/dashboard/admin" style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">View in Admin</a>
+    `
+  )
+  if (!alertResult.success) {
+    console.error('[issues/report] admin alert failed:', alertResult.error)
   }
 
   return NextResponse.json({ success: true })

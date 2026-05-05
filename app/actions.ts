@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail } from '@/lib/email'
+import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail, sendAdminAlertEmail, escapeHtml } from '@/lib/email'
 import {
   createIntroRequest,
   approveIntroRequest,
@@ -686,6 +686,21 @@ export async function submitWaitlist(data: {
   if (error) {
     if (error.code === '23505') return { error: 'This email is already on the waitlist.' }
     return { error: error.message }
+  }
+  const alertResult = await sendAdminAlertEmail(
+    `New waitlist signup: ${escapeHtml(data.fullName)}`,
+    `
+      <h2 style="color: #1B2850; margin-bottom: 24px;">New waitlist signup</h2>
+      <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;"><strong>Name:</strong> ${escapeHtml(data.fullName)}</p>
+      <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;"><strong>Email:</strong> ${escapeHtml(data.email)}</p>
+      <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;"><strong>Title:</strong> ${escapeHtml(data.title)}</p>
+      <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;"><strong>Company:</strong> ${escapeHtml(data.company)}</p>
+      <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;"><strong>LinkedIn:</strong> ${escapeHtml(data.linkedinUrl)}</p>
+      <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;"><strong>Referral:</strong> ${escapeHtml(data.referral)}</p>
+    `
+  )
+  if (!alertResult.success) {
+    console.error('[submitWaitlist] admin alert failed:', alertResult.error)
   }
   return { success: true }
 }

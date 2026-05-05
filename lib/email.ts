@@ -2,6 +2,22 @@ import { Resend } from 'resend'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+export function escapeHtml(s: string | null | undefined): string {
+  if (!s) return '—'
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+export function truncate(s: string, max: number): string {
+  if (s.length <= max) return s
+  const cut = s.lastIndexOf(' ', max)
+  return (cut > 0 ? s.slice(0, cut) : s.slice(0, max)) + '…'
+}
+
 export async function sendMatchCreatedEmail(
   toEmail: string,
   toName: string,
@@ -348,4 +364,28 @@ export async function sendMeetingRescheduledEmail(
       </div>
     `,
   })
+}
+
+export async function sendAdminAlertEmail(subject: string, htmlBody: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: 'bizdev91@gmail.com',
+      subject: `[Andrel Admin] ${subject}`,
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          ${htmlBody}
+          <p style="color: #64748b; font-size: 14px; margin-top: 32px;">— The Andrel Team</p>
+        </div>
+      `,
+    })
+    if (error) {
+      console.error('[sendAdminAlertEmail] error:', error)
+      return { success: false, error: error.message }
+    }
+    return { success: true }
+  } catch (err: any) {
+    console.error('[sendAdminAlertEmail] exception:', err)
+    return { success: false, error: err.message }
+  }
 }
