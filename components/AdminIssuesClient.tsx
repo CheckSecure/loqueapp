@@ -68,6 +68,19 @@ export default function AdminIssuesClient({ reports }: { reports: IssueReport[] 
     router.refresh()
   }
 
+  async function handleReply(id: string) {
+    clearError(id)
+    setProcessing(id)
+    const res = await fetch(`/api/admin/issues/${id}/reply`, { method: 'POST' })
+    const data = await res.json()
+    setProcessing(null)
+    if (res.ok && data.conversationId) {
+      router.push(`/dashboard/messages/${data.conversationId}`)
+    } else {
+      setErrorByReportId(prev => ({ ...prev, [id]: data.error || 'Failed to open conversation' }))
+    }
+  }
+
   async function deleteReport(id: string) {
     clearError(id)
     setProcessing(id)
@@ -140,6 +153,14 @@ export default function AdminIssuesClient({ reports }: { reports: IssueReport[] 
                     Won't Fix
                   </button>
                 )}
+                <button
+                  onClick={() => handleReply(report.id)}
+                  disabled={processing === report.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#1B2850] border border-[#1B2850]/30 rounded-lg hover:bg-[#1B2850]/5 disabled:opacity-50 transition-colors"
+                >
+                  {processing === report.id && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Reply
+                </button>
                 <button
                   onClick={() => { clearError(report.id); setConfirmDeleteId(report.id) }}
                   disabled={processing === report.id}
