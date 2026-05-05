@@ -133,10 +133,25 @@ export default async function DashboardLayout({ children }: { children: React.Re
     opportunityBadgeCount = 0
   }
 
+  // Admin badge — waitlist pending + issue reports new (admin only)
+  let adminBadgeCount = 0
+  if (user.email === ADMIN_EMAIL) {
+    try {
+      const adminSupa = createAdminClient()
+      const [{ count: wl }, { count: iss }] = await Promise.all([
+        supabase.from('waitlist').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        adminSupa.from('issue_reports').select('id', { count: 'exact', head: true }).eq('status', 'new'),
+      ])
+      adminBadgeCount = (wl ?? 0) + (iss ?? 0)
+    } catch {
+      adminBadgeCount = 0
+    }
+  }
+
   return (
     <>
       <WelcomeModal />
-      <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} opportunityBadgeCount={opportunityBadgeCount} />
+      <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} opportunityBadgeCount={opportunityBadgeCount} adminBadgeCount={adminBadgeCount} />
       <div className="min-h-screen md:flex bg-slate-50">
         <Sidebar
           displayName={displayName}
@@ -149,6 +164,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           networkNotifCount={networkNotifCount}
           meetingNotifCount={meetingNotifCount}
           opportunityBadgeCount={opportunityBadgeCount}
+          adminBadgeCount={adminBadgeCount}
         />
         <main className="flex-1 min-w-0 overflow-x-hidden">
           {children}

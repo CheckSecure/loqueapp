@@ -188,6 +188,11 @@ export default async function AdminDashboard() {
               <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
                 <UserPlus className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
               </div>
+              {(waitlistCount || 0) > 0 && (
+                <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
+                  {(waitlistCount || 0) > 9 ? '9+' : waitlistCount}
+                </span>
+              )}
             </div>
             <h3 className="text-lg font-bold text-slate-900 mb-2">Waitlist</h3>
             <p className="text-sm text-slate-500 mb-4">
@@ -245,11 +250,11 @@ export default async function AdminDashboard() {
               <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
                 <AlertCircle className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
               </div>
-              {(newIssueCount || 0) > 0 ? (
-                <span className="text-xs font-semibold px-2 py-1 rounded-full bg-brand-gold-soft text-brand-gold">
-                  {newIssueCount} new
+              {(newIssueCount || 0) > 0 && (
+                <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
+                  {(newIssueCount || 0) > 9 ? '9+' : newIssueCount}
                 </span>
-              ) : null}
+              )}
             </div>
             <h3 className="text-lg font-bold text-slate-900 mb-2">Issue Reports</h3>
             <p className="text-sm text-slate-500 mb-4">

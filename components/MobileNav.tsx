@@ -18,7 +18,7 @@ const bottomNavItems = [
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
 ]
 
-export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0, opportunityBadgeCount = 0 }: { credits: number; unreadCount?: number; meetingNotifCount?: number; opportunityBadgeCount?: number }) {
+export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0, opportunityBadgeCount = 0, adminBadgeCount = 0 }: { credits: number; unreadCount?: number; meetingNotifCount?: number; opportunityBadgeCount?: number; adminBadgeCount?: number }) {
   const pathname = usePathname()
   const router = useRouter()
   const [showMore, setShowMore] = useState(false)
@@ -122,7 +122,12 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
                 className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
               >
                 <ShieldCheck className="w-5 h-5 text-slate-400" />
-                Admin
+                <span className="flex-1">Admin</span>
+                {adminBadgeCount > 0 && (
+                  <span className="w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {adminBadgeCount > 9 ? '9+' : adminBadgeCount}
+                  </span>
+                )}
               </Link>
             )}
 
@@ -175,7 +180,12 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
           className="flex-1 flex flex-col items-center justify-center gap-0.5 relative py-2"
         >
           {showMore && <span className="absolute top-0 left-3 right-3 h-0.5 rounded-full bg-[#C4922A]" />}
-          <MoreHorizontal className={cn('w-5 h-5', showMore ? 'text-[#C4922A]' : 'text-slate-400')} />
+          <span className="relative inline-flex">
+            <MoreHorizontal className={cn('w-5 h-5', showMore ? 'text-[#C4922A]' : 'text-slate-400')} />
+            {!showMore && adminBadgeCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+            )}
+          </span>
           <span className={cn('text-[10px] font-medium', showMore ? 'text-[#C4922A]' : 'text-slate-400')}>More</span>
         </button>
       </nav>

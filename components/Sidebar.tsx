@@ -32,6 +32,7 @@ interface SidebarProps {
   networkNotifCount: number
   meetingNotifCount: number
   opportunityBadgeCount: number
+  adminBadgeCount: number
 }
 
 function CreditsChip({ credits }: { credits: number }) {
@@ -103,6 +104,7 @@ export default function Sidebar({
   networkNotifCount,
   meetingNotifCount,
   opportunityBadgeCount,
+  adminBadgeCount,
 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -172,6 +174,11 @@ export default function Sidebar({
           >
             <ShieldCheck className="w-4 h-4 flex-shrink-0" />
             Admin
+            {adminBadgeCount > 0 && (
+              <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {adminBadgeCount > 9 ? '9+' : adminBadgeCount}
+              </span>
+            )}
           </Link>
         )}
       </nav>
