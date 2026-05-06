@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
+import ExpertisePicker from '@/components/ExpertisePicker';
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite'];
 const ROLE_TYPE_OPTIONS = ['In-house Counsel', 'Law firm attorney', 'Consultant', 'Compliance', 'Legal Operations'];
@@ -15,7 +16,7 @@ export default function HiringForm() {
   const [title, setTitle] = useState('');
   const [seniority, setSeniority] = useState('');
   const [industry, setIndustry] = useState('');
-  const [expertise, setExpertise] = useState('');
+  const [expertise, setExpertise] = useState<string[]>([]);
   const [roleTypes, setRoleTypes] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [includeRecruiters, setIncludeRecruiters] = useState(false);
@@ -37,6 +38,11 @@ export default function HiringForm() {
     setFieldErrors({});
     setBusy(true);
     try {
+      if (expertise.length < 1) {
+        setFieldErrors({ expertise: 'Hiring needs require at least 1 expertise tag.' });
+        setBusy(false);
+        return;
+      }
       const res = await fetch('/api/opportunities/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -48,7 +54,7 @@ export default function HiringForm() {
             role_title: title.trim(),
             seniority,
             industry: industry.trim() || undefined,
-            expertise: expertise.split(',').map((s) => s.trim()).filter(Boolean),
+            expertise,
             role_types: roleTypes,
           },
           include_recruiters: includeRecruiters,
@@ -113,14 +119,12 @@ export default function HiringForm() {
           </div>
         </Field>
 
-        <Field label="Expertise tags (comma-separated)" error={fieldErrors.expertise}>
-          <input
-            type="text"
-            value={expertise}
-            onChange={(e) => { clearError('expertise'); setExpertise(e.target.value); }}
-            placeholder="privacy, GDPR, ad tech"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+        <Field label="Expertise tags" error={fieldErrors.expertise}>
+          <ExpertisePicker
+            selected={expertise}
+            onChange={(next) => { clearError('expertise'); setExpertise(next); }}
           />
+          <p className="mt-1 text-xs text-slate-500">Select at least 1 that matches the role.</p>
         </Field>
 
         <Field label="Description (optional)" error={fieldErrors.description}>

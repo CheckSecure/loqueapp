@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
+import ExpertisePicker from '@/components/ExpertisePicker';
 
 type Urgency = 'low' | 'medium' | 'urgent';
 
@@ -22,7 +23,7 @@ export default function BusinessForm() {
   const [need, setNeed] = useState('');
   const [industry, setIndustry] = useState('');
   const [urgency, setUrgency] = useState<Urgency>('medium');
-  const [expertise, setExpertise] = useState('');
+  const [expertise, setExpertise] = useState<string[]>([]);
   const [description, setDescription] = useState('');
 
   function clearError(key: string) {
@@ -37,6 +38,11 @@ export default function BusinessForm() {
     setFieldErrors({});
     setBusy(true);
     try {
+      if (expertise.length < 2) {
+        setFieldErrors({ expertise: 'Business needs require at least 2 expertise tags.' });
+        setBusy(false);
+        return;
+      }
       const res = await fetch('/api/opportunities/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -48,7 +54,7 @@ export default function BusinessForm() {
           criteria: {
             need: need.trim(),
             industry: industry.trim() || undefined,
-            expertise: expertise.split(',').map((s) => s.trim()).filter(Boolean),
+            expertise,
           },
         }),
       });
@@ -105,15 +111,12 @@ export default function BusinessForm() {
           </div>
         </Field>
 
-        <Field label="Expertise tags (comma-separated)" error={fieldErrors.expertise}>
-          <input
-            type="text"
-            value={expertise}
-            onChange={(e) => { clearError('expertise'); setExpertise(e.target.value); }}
-            placeholder="privacy, GDPR, ad tech"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+        <Field label="Expertise tags" error={fieldErrors.expertise}>
+          <ExpertisePicker
+            selected={expertise}
+            onChange={(next) => { clearError('expertise'); setExpertise(next); }}
           />
-          <p className="mt-1 text-xs text-slate-500">Must match at least one tag on a provider's profile — strict filter.</p>
+          <p className="mt-1 text-xs text-slate-500">Select at least 2. Must match tags on provider profiles.</p>
         </Field>
 
         <Field label="Description (optional)" error={fieldErrors.description}>
