@@ -366,6 +366,59 @@ export async function sendMeetingRescheduledEmail(
   })
 }
 
+export async function sendDigestEmail(
+  toEmail: string,
+  toName: string,
+  unreadMessages: number,
+  pendingMeetings: number
+): Promise<{ success: boolean; error?: string }> {
+  const items: string[] = []
+  if (unreadMessages > 0) {
+    items.push(
+      `<li style="margin-bottom: 8px;"><a href="https://andrel.app/dashboard/messages" style="color: #1B2850; font-weight: 600;">${unreadMessages} unread message${unreadMessages > 1 ? 's' : ''}</a></li>`
+    )
+  }
+  if (pendingMeetings > 0) {
+    items.push(
+      `<li style="margin-bottom: 8px;"><a href="https://andrel.app/dashboard/meetings" style="color: #1B2850; font-weight: 600;">${pendingMeetings} meeting request${pendingMeetings > 1 ? 's' : ''} awaiting your response</a></li>`
+    )
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: toEmail,
+      subject: 'Things waiting for you on Andrel',
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #1B2850; margin-bottom: 24px;">You have things waiting</h2>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">Hi ${escapeHtml(toName)},</p>
+          <ul style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px; padding-left: 20px;">
+            ${items.join('\n')}
+          </ul>
+          <a href="https://andrel.app/dashboard"
+             style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+            Go to Andrel
+          </a>
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 32px;">
+            To stop receiving these, go to
+            <a href="https://andrel.app/dashboard/settings" style="color: #94a3b8;">Settings</a>
+            and turn off email notifications.
+          </p>
+        </div>
+      `,
+    })
+    if (error) {
+      console.error('[sendDigestEmail] error:', error)
+      return { success: false, error: error.message }
+    }
+    return { success: true }
+  } catch (err: any) {
+    console.error('[sendDigestEmail] exception:', err)
+    return { success: false, error: err.message }
+  }
+}
+
 export async function sendAdminAlertEmail(subject: string, htmlBody: string): Promise<{ success: boolean; error?: string }> {
   try {
     const { error } = await resend.emails.send({
