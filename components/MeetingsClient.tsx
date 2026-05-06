@@ -87,13 +87,21 @@ interface MatchedUser {
   company?: string
 }
 
-function getStatusBadge(status: string) {
+function getStatusBadge(status: string, isNew: boolean) {
   if (status === 'confirmed') {
     return { text: 'Confirmed', color: 'bg-green-100 text-green-700 border-green-200' }
-  } else if (status === 'requested' || status === 'reschedule_requested') {
-    return { text: status === 'reschedule_requested' ? 'Reschedule Pending' : 'Pending', color: 'bg-orange-100 text-orange-700 border-orange-200' }
-  } else if (status === 'declined' || status === 'reschedule_declined') {
-    return { text: status === 'reschedule_declined' ? 'Reschedule Declined' : 'Declined', color: 'bg-red-100 text-red-700 border-red-200' }
+  }
+  if (status === 'requested' || status === 'reschedule_requested') {
+    if (isNew) {
+      return { text: 'Awaiting your response', color: 'bg-amber-100 text-amber-800 border-amber-200' }
+    }
+    return { text: 'Awaiting their response', color: 'bg-slate-100 text-slate-500 border-slate-200' }
+  }
+  if (status === 'declined' || status === 'reschedule_declined') {
+    return {
+      text: status === 'reschedule_declined' ? 'Reschedule Declined' : 'Declined',
+      color: 'bg-red-100 text-red-700 border-red-200',
+    }
   }
   return { text: status, color: 'bg-gray-100 text-gray-700 border-gray-200' }
 }
@@ -142,8 +150,10 @@ export default function MeetingsClient({
       onClick={() => setSelectedMeeting(m)}
       onKeyDown={e => e.key === 'Enter' && setSelectedMeeting(m)}
       className={cn(
-        'bg-white border border-slate-100 rounded-xl p-4 md:p-5 shadow-sm flex flex-col gap-3 cursor-pointer',
-        'hover:border-slate-200 hover:shadow-md transition-all',
+        'rounded-xl p-4 md:p-5 shadow-sm flex flex-col gap-3 cursor-pointer transition-all',
+        m.isNew && !faded
+          ? 'bg-amber-50/40 border border-amber-200 hover:border-amber-300 hover:shadow-md'
+          : 'bg-white border border-slate-100 hover:border-slate-200 hover:shadow-md',
         faded && 'opacity-60'
       )}
     >
@@ -156,7 +166,7 @@ export default function MeetingsClient({
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-semibold text-slate-900 truncate flex-1 min-w-0">{m.title}</p>
             {(() => {
-              const badge = getStatusBadge(m.status)
+              const badge = getStatusBadge(m.status, m.isNew ?? false)
               return (
                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${badge.color}`}>
                   {badge.text}
