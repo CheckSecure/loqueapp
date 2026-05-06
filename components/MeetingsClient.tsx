@@ -153,7 +153,17 @@ export default function MeetingsClient({
           <Calendar className={cn('w-4 h-4', faded ? 'text-slate-400' : 'text-[#1B2850]')} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-900 truncate">{m.title}</p>
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="text-sm font-semibold text-slate-900 truncate flex-1 min-w-0">{m.title}</p>
+            {(() => {
+              const badge = getStatusBadge(m.status)
+              return (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${badge.color}`}>
+                  {badge.text}
+                </span>
+              )
+            })()}
+          </div>
           {m.purpose_category && (
             <p className="text-xs text-slate-500 truncate mt-0.5">
               <span className="text-slate-400">•</span> {m.purpose_category}
@@ -163,10 +173,23 @@ export default function MeetingsClient({
             <p className={m.isNew ? "text-xs text-slate-900 font-bold truncate mt-0.5" : "text-xs text-slate-400 truncate mt-0.5"}>with {m.other.full_name}</p>
           )}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
-            <span className={m.isNew ? "flex items-center gap-1 text-xs text-slate-900 font-semibold" : "flex items-center gap-1 text-xs text-slate-500"}>
-              <Clock className="w-3 h-3" />
-              {formatDate(m.scheduled_at)} · {formatTime(m.scheduled_at, m.duration_minutes)} {getTimezoneAbbr()}
-            </span>
+            {m.proposed_scheduled_at ? (
+              <span className="flex flex-col gap-0.5">
+                <span className="flex items-center gap-1 text-xs text-slate-400 line-through">
+                  <Clock className="w-3 h-3" />
+                  {formatDate(m.scheduled_at)} · {formatTime(m.scheduled_at, m.duration_minutes)} {getTimezoneAbbr()}
+                </span>
+                <span className="flex items-center gap-1 text-xs text-blue-600 font-semibold">
+                  <Clock className="w-3 h-3" />
+                  {formatDate(m.proposed_scheduled_at)} · {formatTime(m.proposed_scheduled_at, m.proposed_duration_minutes || m.duration_minutes)} {getTimezoneAbbr()}
+                </span>
+              </span>
+            ) : (
+              <span className={m.isNew ? "flex items-center gap-1 text-xs text-slate-900 font-semibold" : "flex items-center gap-1 text-xs text-slate-500"}>
+                <Clock className="w-3 h-3" />
+                {formatDate(m.scheduled_at)} · {formatTime(m.scheduled_at, m.duration_minutes)} {getTimezoneAbbr()}
+              </span>
+            )}
             {m.meeting_type === 'virtual' || m.meeting_type === 'video' ? (
               <span className="flex items-center gap-1 text-xs text-[#1B2850] font-medium">
                 <Video className="w-3 h-3" /> Virtual
