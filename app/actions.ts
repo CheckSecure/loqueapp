@@ -1229,6 +1229,36 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
     created_at: new Date().toISOString()
   })
 
+  // Send email
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', [user.id, otherUserId])
+
+  const reschedulerProfile = profiles?.find(p => p.id === user.id)
+  const otherProfile = profiles?.find(p => p.id === otherUserId)
+
+  if (otherProfile?.email && reschedulerProfile && scheduled_at) {
+    const newDate = new Date(scheduled_at).toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric'
+    })
+    const newTime = new Date(scheduled_at).toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+    })
+    try {
+      await sendMeetingRescheduledEmail(
+        otherProfile.email,
+        otherProfile.full_name || 'there',
+        reschedulerProfile.full_name || user.email || 'Someone',
+        newDate,
+        newTime,
+        (formData.get('notes') as string) || undefined
+      )
+    } catch (emailError) {
+      console.error('[rescheduleMeeting] Email error:', emailError)
+    }
+  }
+
   revalidatePath('/dashboard/meetings')
   return { success: true }
 }
