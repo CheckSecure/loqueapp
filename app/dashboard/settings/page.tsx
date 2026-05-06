@@ -7,6 +7,7 @@ import PasswordChangeForm from '@/components/PasswordChangeForm'
 import AccountDeletion from '@/components/AccountDeletion'
 import { OpportunityPreferences } from '@/components/opportunities/OpportunityPreferences'
 import ReportIssueButton from '@/components/ReportIssueButton'
+import EmailNotificationToggle from '@/components/EmailNotificationToggle'
 import { Mail, FileText, AlertCircle, UserPlus } from 'lucide-react'
 
 export const metadata = { title: 'Settings | Andrel' }
@@ -70,6 +71,16 @@ export default async function SettingsPage() {
             </div>
             <span className="text-slate-400 text-sm">Manage referrals →</span>
           </Link>
+        </div>
+      </div>
+
+      {/* Notifications */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
+        </div>
+        <div className="px-6 py-5">
+          <EmailNotificationToggle enabled={profile.email_notifications_enabled ?? true} />
         </div>
       </div>
 

@@ -37,7 +37,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   const [{ data: profile }, { data: creditRow }] = await Promise.all([
-    supabase.from('profiles').select('full_name, avatar_url').eq('id', user.id).single(),
+    supabase.from('profiles').select('full_name, avatar_url, last_active_at').eq('id', user.id).single(),
     supabase.from('meeting_credits').select('balance').eq('user_id', user.id).single(),
   ])
 
@@ -146,6 +146,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
     } catch {
       adminBadgeCount = 0
     }
+  }
+
+  // Throttled activity tracking — at most one write per 5 minutes per user
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
+  const lastActiveAt = (profile as any)?.last_active_at
+  if (!lastActiveAt || new Date(lastActiveAt) < fiveMinAgo) {
+    try {
+      await supabase
+        .from('profiles')
+        .update({ last_active_at: new Date().toISOString() })
+        .eq('id', user.id)
+    } catch { /* best-effort */ }
   }
 
   return (
