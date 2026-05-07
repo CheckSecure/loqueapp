@@ -178,6 +178,7 @@ export default function OnboardingStep1({
               <option value="Law Firm Attorney">Law Firm Attorney</option>
               <option value="Legal Operations">Legal Operations</option>
               <option value="Compliance">Compliance</option>
+              <option value="Government / Public Sector">Government / Public Sector</option>
               <option value="Other">Other</option>
             </select>
           </div>

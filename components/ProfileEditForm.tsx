@@ -6,6 +6,7 @@ import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
 import { Loader2, CheckCircle, User, ChevronDown, ChevronUp } from 'lucide-react'
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite']
+const ROLE_TYPE_OPTIONS = ['In-house Counsel', 'Law Firm Attorney', 'Legal Operations', 'Compliance', 'Government / Public Sector', 'Other']
 
 const PURPOSE_OPTIONS = ['Fundraising', 'Hiring', 'Partnerships', 'Mentorship', 'Business Development', 'Market Insights', 'Career Growth']
 
@@ -21,6 +22,7 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
   const [city, setCity] = useState(initialData.city || '')
   const [state, setState] = useState(initialData.state || '')
   const [seniority, setSeniority] = useState(initialData.seniority || '')
+  const [roleType, setRoleType] = useState(initialData.role_type || '')
   const [currentStatus, setCurrentStatus] = useState(initialData.current_status || '')
   const [previousRoles, setPreviousRoles] = useState<{ company: string; title: string; start_date: string; end_date: string }[]>(
     Array.isArray(initialData.previous_roles) ? initialData.previous_roles : []
@@ -55,6 +57,7 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     formData.append('city', city)
     formData.append('state', state)
     formData.append('seniority', seniority)
+    formData.append('role_type', roleType)
     formData.append('current_status', currentStatus)
     formData.append('previous_roles', JSON.stringify(previousRoles))
     formData.append('expertise', [...expertise, ...additionalExpertise].join(','))
@@ -200,6 +203,18 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
             >
               <option value="">Select seniority</option>
               {SENIORITY_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <div className="col-span-2">
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Role Type</label>
+            <select
+              value={roleType}
+              onChange={e => setRoleType(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
+            >
+              <option value="">Select role type</option>
+              {ROLE_TYPE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
 
