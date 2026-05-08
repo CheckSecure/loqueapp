@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getUncachableStripeClient } from '@/lib/stripe/stripeClient'
+import { stripe } from '@/lib/stripe'
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,12 +18,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No billing account found' }, { status: 400 })
     }
 
-    const stripe = await getUncachableStripeClient()
-    const domain = process.env.REPLIT_DOMAINS?.split(',')[0]
-
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: profile.stripe_customer_id,
-      return_url: `https://${domain}/dashboard/billing`,
+      return_url: `${process.env.NEXT_PUBLIC_SITE_URL}/dashboard/billing`,
     })
 
     return NextResponse.json({ url: portalSession.url })
