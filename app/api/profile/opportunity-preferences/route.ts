@@ -7,7 +7,6 @@ import { createClient } from '@/lib/supabase/server';
  * Accepts a partial JSON body with any subset of:
  *   - open_to_roles: boolean
  *   - open_to_business_solutions: boolean
- *   - recruiter: boolean
  *
  * Updates only the provided fields on the authenticated user's profile.
  * Silently ignores any other keys for safety.
@@ -15,12 +14,15 @@ import { createClient } from '@/lib/supabase/server';
  * The OpportunityPreferences component auto-saves on toggle, one field per
  * request. We accept either POST (what the component uses today) or PATCH
  * for future callers.
+ *
+ * Note: `recruiter` is intentionally excluded. Recruiter status is admin-only
+ * (SQL-flipped). Any future user-facing recruiter opt-in must go through a
+ * dedicated endpoint, not this catch-all.
  */
 
 const ALLOWED_FIELDS = [
   'open_to_roles',
   'open_to_business_solutions',
-  'recruiter',
 ] as const;
 
 type AllowedField = (typeof ALLOWED_FIELDS)[number];
@@ -64,7 +66,7 @@ async function updatePreferences(req: Request) {
     .from('profiles')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', user.id)
-    .select('open_to_roles, open_to_business_solutions, recruiter')
+    .select('open_to_roles, open_to_business_solutions')
     .single();
 
   if (error) {

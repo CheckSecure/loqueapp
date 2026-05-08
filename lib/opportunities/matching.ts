@@ -563,7 +563,7 @@ export async function selectRecruiters(opportunity: OpportunityRow): Promise<Sel
 
   const { data: pool } = await admin
     .from('profiles')
-    .select('id, seniority, role_type, expertise, trust_score, subscription_tier' +
+    .select('id, seniority, role_type, expertise, trust_score, subscription_tier, ' +
         '"networkValueScore", "responsivenessScore", ' +
         'opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate'
     )
