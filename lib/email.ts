@@ -419,6 +419,55 @@ export async function sendDigestEmail(
   }
 }
 
+export async function sendWaitlistConfirmationEmail(
+  toEmail: string,
+  toName: string,
+): Promise<{ success: boolean; error?: string }> {
+  const firstName = toName.split(' ')[0]
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: toEmail,
+      subject: "You're on the Andrel waitlist",
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Hi ${escapeHtml(firstName)},
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Thanks for your interest in Andrel.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Andrel is a curated professional network designed to help attorneys, executives, consultants, and business leaders build more meaningful professional relationships through thoughtful introductions and high-signal networking.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Andrel's early members include senior in-house counsel, law firm attorneys, consultants, and executives, and we're intentionally onboarding members gradually to maintain a highly curated experience from the outset.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Your spot on the waitlist has been confirmed, and we'll reach out as access opens.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
+            Looking forward to having you involved.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6;">
+            — Daniel Abramoff<br>
+            <span style="color: #64748b; font-size: 14px;">Founder, Andrel</span>
+          </p>
+        </div>
+      `,
+    })
+    if (error) {
+      console.error('[waitlist-confirmation] Resend API error:', error.message)
+      return { success: false, error: error.message }
+    }
+    console.log('[waitlist-confirmation] sent, message ID:', data?.id)
+    return { success: true }
+  } catch (err: any) {
+    console.error('[waitlist-confirmation] exception:', err?.message)
+    return { success: false, error: err?.message }
+  }
+}
+
 export async function sendAdminAlertEmail(subject: string, htmlBody: string): Promise<{ success: boolean; error?: string }> {
   try {
     const { error } = await resend.emails.send({

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
-import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail, sendAdminAlertEmail, escapeHtml } from '@/lib/email'
+import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail, sendAdminAlertEmail, sendWaitlistConfirmationEmail, escapeHtml } from '@/lib/email'
 import {
   createIntroRequest,
   approveIntroRequest,
@@ -701,6 +701,10 @@ export async function submitWaitlist(data: {
   )
   if (!alertResult.success) {
     console.error('[submitWaitlist] admin alert failed:', alertResult.error)
+  }
+  const confirmResult = await sendWaitlistConfirmationEmail(data.email, data.fullName)
+  if (!confirmResult.success) {
+    console.error('[waitlist-confirmation] email failed:', confirmResult.error)
   }
   return { success: true }
 }
