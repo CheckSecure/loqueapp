@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
+import { isSameCompany } from '@/lib/matching/same-company'
 
 export const dynamic = 'force-dynamic'
 
@@ -303,7 +304,7 @@ export async function POST(req: NextRequest) {
 
     const { data: profiles, error: profilesError } = await adminClient
       .from('profiles')
-      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score, current_status, purposes, city, state, geographic_scope, meeting_format_preference, open_to_business_solutions')
+      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score, current_status, purposes, city, state, geographic_scope, meeting_format_preference, open_to_business_solutions, company')
       .eq('profile_complete', true)
       .eq('is_active', true)
       .neq('email', 'bizdev91@gmail.com')
@@ -431,8 +432,8 @@ export async function POST(req: NextRequest) {
         const aShownB = recentlyShownMap[userA.id]?.has(userB.id)
         const bShownA = recentlyShownMap[userB.id]?.has(userA.id)
         
-        // Exclude if: hidden, passed, matched, or recently shown
-        if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA) continue
+        // Exclude if: hidden, passed, matched, recently shown, or same company
+        if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA || isSameCompany(userA, userB)) continue
         
         const scoreAtoB = scoreMatch(userA, userB)
         const scoreBtoA = scoreMatch(userB, userA)

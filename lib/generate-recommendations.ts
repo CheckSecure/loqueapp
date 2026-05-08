@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
+import { isSameCompany } from '@/lib/matching/same-company'
 
 const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
   free: 3,
@@ -870,6 +871,8 @@ export async function generateOnboardingRecommendations(userId: string, maxCount
       if (blockedUserIds.has(u.id)) return false
       // Exclude referral pairs (bidirectional)
       if (referralExcludedIds.has(u.id)) return false
+      // Exclude same-company candidates
+      if (isSameCompany(newUserProfile, u)) return false
       // Continue with existing data validation
       return true
     })

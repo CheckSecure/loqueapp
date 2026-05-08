@@ -26,6 +26,7 @@ import { rateLimitedUserIds } from './rateLimits';
 import { logMatcherRun, logEvent } from './events';
 import { acceptedRoleTypesForNeed } from './relevance';
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions';
+import { isSameCompany } from '@/lib/matching/same-company';
 
 // ------------------------------------------------------------
 // Threshold configuration — Prompt #15
@@ -402,11 +403,11 @@ function applyThresholdAndFallback(
 // ------------------------------------------------------------
 
 const PROFILE_SELECT =
-  'id, seniority, role_type, expertise, trust_score, ' +
+  'id, seniority, role_type, expertise, trust_score, company, ' +
   '"networkValueScore", "responsivenessScore", ' +
   'opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate, subscription_tier';
 
-export async function selectCandidates(opportunity: OpportunityRow): Promise<SelectResult> {
+export async function selectCandidates(opportunity: OpportunityRow, creatorCompany: string | null): Promise<SelectResult> {
   const admin = createAdminClient();
 
   const [excluded, alreadyDelivered, rateLimited] = await Promise.all([
@@ -428,6 +429,7 @@ export async function selectCandidates(opportunity: OpportunityRow): Promise<Sel
     .filter((p) => !excluded.has(p.id))
     .filter((p) => !alreadyDelivered.has(p.id))
     .filter((p) => !rateLimited.has(p.id))
+    .filter((p) => !isSameCompany(p as { company?: string | null }, { company: creatorCompany }))
     // Option C: role_type is a scoring boost for hiring, not a hard filter.
     // (See scoreHiring roleTypePts.) Business KEEPS the hard filter.
     // Min-tag rule for hiring: >=1 overlap
@@ -459,7 +461,7 @@ export async function selectCandidates(opportunity: OpportunityRow): Promise<Sel
   };
 }
 
-export async function selectProviders(opportunity: OpportunityRow): Promise<SelectResult> {
+export async function selectProviders(opportunity: OpportunityRow, creatorCompany: string | null): Promise<SelectResult> {
   const admin = createAdminClient();
 
   const [excluded, alreadyDelivered, rateLimited] = await Promise.all([
@@ -481,6 +483,7 @@ export async function selectProviders(opportunity: OpportunityRow): Promise<Sele
     .filter((p) => !excluded.has(p.id))
     .filter((p) => !alreadyDelivered.has(p.id))
     .filter((p) => !rateLimited.has(p.id))
+    .filter((p) => !isSameCompany(p as { company?: string | null }, { company: creatorCompany }))
     .filter((p) => acceptedRoles.includes(p.role_type ?? ''))
     // Min-tag rule for business: >=2 overlap (strict)
     .filter(
@@ -511,7 +514,7 @@ export async function selectProviders(opportunity: OpportunityRow): Promise<Sele
   };
 }
 
-export async function selectRecruiters(opportunity: OpportunityRow): Promise<SelectResult> {
+export async function selectRecruiters(opportunity: OpportunityRow, creatorCompany: string | null): Promise<SelectResult> {
   const admin = createAdminClient();
 
   if (!opportunity.include_recruiters || opportunity.type !== 'hiring') {
@@ -563,7 +566,7 @@ export async function selectRecruiters(opportunity: OpportunityRow): Promise<Sel
 
   const { data: pool } = await admin
     .from('profiles')
-    .select('id, seniority, role_type, expertise, trust_score, subscription_tier, ' +
+    .select('id, seniority, role_type, expertise, trust_score, subscription_tier, company, ' +
         '"networkValueScore", "responsivenessScore", ' +
         'opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate'
     )
@@ -577,6 +580,7 @@ export async function selectRecruiters(opportunity: OpportunityRow): Promise<Sel
     .filter((p) => !alreadyDelivered.has(p.id))
     .filter((p) => !rateLimited.has(p.id))
     .filter((p) => !overCap.has(p.id))
+    .filter((p) => !isSameCompany(p as { company?: string | null }, { company: creatorCompany }))
     // Min-tag rule for recruiter: >=2 overlap
     .filter(
       (p) =>
@@ -630,12 +634,20 @@ export async function deliverOpportunity(
   const tranche = options.tranche ?? 1;
   const admin = createAdminClient();
 
+  // Fetch creator's company once for same-company filtering across all selection functions
+  const { data: creatorProfile } = await admin
+    .from('profiles')
+    .select('company')
+    .eq('id', opportunity.creator_id)
+    .maybeSingle();
+  const creatorCompany = creatorProfile?.company ?? null;
+
   const candidateResult =
     opportunity.type === 'hiring'
-      ? await selectCandidates(opportunity)
-      : await selectProviders(opportunity);
+      ? await selectCandidates(opportunity, creatorCompany)
+      : await selectProviders(opportunity, creatorCompany);
 
-  const recruiterResult = await selectRecruiters(opportunity);
+  const recruiterResult = await selectRecruiters(opportunity, creatorCompany);
 
   const candidateRole = opportunity.type === 'hiring' ? 'candidate' : 'provider';
 
