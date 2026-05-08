@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Stripe from 'stripe'
-import { getMonthlyCredits } from '@/lib/tier-override'
+import { getMonthlyCredits, getEffectiveTier, getCreditCap } from '@/lib/tier-override'
 
 export async function POST(req: NextRequest) {
   const body = await req.text()
@@ -145,6 +145,82 @@ export async function POST(req: NextRequest) {
           subscription_status: 'past_due',
         }).eq('stripe_customer_id', customerId)
         console.log(`[webhook] payment failed for ${customerId}`)
+        break
+      }
+
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session
+
+        if (session.mode !== 'payment' || session.metadata?.type !== 'credit_purchase') break
+
+        const customerId = session.customer as string // assumes non-expanded customer
+
+        // Strict parse: only accept pure integer strings from metadata
+        const creditsRaw = session.metadata?.credits ?? ''
+        const creditsPurchased = /^\d+$/.test(creditsRaw) ? parseInt(creditsRaw, 10) : 0
+
+        if (!creditsPurchased) {
+          console.error(
+            `[webhook] CRITICAL: credit purchase has zero/missing credits in metadata ` +
+            `for event ${event.id} customer ${customerId} — checkout metadata may be malformed`
+          )
+          break
+        }
+
+        const { data: profile } = await adminClient
+          .from('profiles')
+          .select('id, subscription_tier')
+          .eq('stripe_customer_id', customerId)
+          .maybeSingle()
+
+        if (!profile) {
+          console.error(`[webhook] checkout.session.completed: no profile for customer ${customerId}`)
+          break
+        }
+
+        // Note: getEffectiveTier does not receive founding-member fields in this
+        // commit — fix(webhook-founding) adds them. Cap is conservatively correct
+        // for non-founding users.
+        const effectiveTier = getEffectiveTier(profile)
+        const cap = getCreditCap(effectiveTier)
+
+        const { data: currentCredits } = await adminClient
+          .from('meeting_credits')
+          .select('free_credits, premium_credits')
+          .eq('user_id', profile.id)
+          .maybeSingle()
+
+        const currentFree = currentCredits?.free_credits ?? 0
+        const currentPremium = currentCredits?.premium_credits ?? 0
+
+        // Headroom: how many more credits fit before the cap, zero-floored to
+        // guard against currentFree > cap (possible if tier resolves lower than
+        // when credits were last granted, e.g. founding-member limitation here).
+        const headroom = Math.max(0, cap - currentFree - currentPremium)
+        const grantedCredits = Math.min(creditsPurchased, headroom)
+        const newPremium = currentPremium + grantedCredits
+        const newBalance = currentFree + newPremium
+        const clamped = grantedCredits < creditsPurchased
+
+        await adminClient.from('meeting_credits')
+          .upsert({
+            user_id: profile.id,
+            free_credits: currentFree,
+            premium_credits: newPremium,
+            balance: newBalance,
+          }, { onConflict: 'user_id' })
+
+        if (clamped) {
+          console.error(
+            `[webhook] CRITICAL: credit purchase clamped for user ${profile.id}: ` +
+            `paid ${creditsPurchased}, granted ${grantedCredits}, ` +
+            `tier=${effectiveTier} cap=${cap} prior_free=${currentFree} prior_premium=${currentPremium}`
+          )
+        } else {
+          console.log(
+            `[webhook] credit purchase for ${profile.id}: +${grantedCredits}, balance: ${newBalance} (tier: ${effectiveTier})`
+          )
+        }
         break
       }
     }
