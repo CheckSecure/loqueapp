@@ -33,7 +33,7 @@ export default function UpgradeModal({ onClose }: UpgradeModalProps) {
           {[
             'More frequent curated introductions',
             'Priority matching with high-value members',
-            '15 credits per month',
+            '10 credits per month',
             'Increased visibility in the network',
           ].map(f => (
             <div key={f} className="flex items-center gap-2.5">

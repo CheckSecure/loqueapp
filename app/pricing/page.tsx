@@ -31,7 +31,7 @@ const PLANS = [
     description: 'Priority access and the ability to signal your needs.',
     features: [
       'More frequent curated introductions',
-      '15 credits per month',
+      '10 credits per month',
       'Priority matching',
       'Up to 5 active opportunities in your For You feed',
       'Signal hiring or business needs — 1 active at a time',
@@ -48,7 +48,7 @@ const PLANS = [
     description: 'Concierge-level curation for senior leaders and executives.',
     features: [
       'Most frequent curated introductions',
-      '30 credits per month',
+      '20 credits per month',
       'Highest matching priority',
       'Up to 5 active opportunities in your For You feed',
       'Signal hiring or business needs — 2 active at a time',

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Stripe from 'stripe'
+import { getMonthlyCredits } from '@/lib/tier-override'
 
 export async function POST(req: NextRequest) {
   const body = await req.text()
@@ -19,6 +20,18 @@ export async function POST(req: NextRequest) {
   const adminClient = createAdminClient()
 
   try {
+    // Idempotency check: early-exit if this event was already processed
+    const { data: existingEvent } = await adminClient
+      .from('stripe_events')
+      .select('event_id')
+      .eq('event_id', event.id)
+      .maybeSingle()
+
+    if (existingEvent) {
+      console.log(`[webhook] duplicate event ${event.id}, skipping`)
+      return NextResponse.json({ received: true })
+    }
+
     switch (event.type) {
       case 'customer.subscription.created':
       case 'customer.subscription.updated': {
@@ -44,9 +57,9 @@ export async function POST(req: NextRequest) {
 
         const { data: profile } = await adminClient
           .from('profiles')
-          .select('id, subscription_tier, meeting_credits(balance)')
+          .select('id, subscription_tier')
           .eq('stripe_customer_id', customerId)
-          .single()
+          .maybeSingle()
 
         if (profile) {
           await adminClient.from('profiles').update({
@@ -56,11 +69,25 @@ export async function POST(req: NextRequest) {
             current_period_end: periodEnd,
           }).eq('stripe_customer_id', customerId)
 
-          // Top up credits if upgrading
-          const creditMap: Record<string, number> = { free: 3, professional: 15, executive: 30 }
-          const newCredits = creditMap[activeTier] ?? 3
+          const newFloor = getMonthlyCredits(activeTier)
+
+          const { data: currentCredits } = await adminClient
+            .from('meeting_credits')
+            .select('free_credits, premium_credits')
+            .eq('user_id', profile.id)
+            .maybeSingle()
+
+          const currentFree = currentCredits?.free_credits ?? 0
+          const currentPremium = currentCredits?.premium_credits ?? 0
+          const newFree = Math.max(currentFree, newFloor)
+
           await adminClient.from('meeting_credits')
-            .upsert({ user_id: profile.id, balance: newCredits }, { onConflict: 'user_id' })
+            .upsert({
+              user_id: profile.id,
+              free_credits: newFree,
+              premium_credits: currentPremium,
+              balance: newFree + currentPremium,
+            }, { onConflict: 'user_id' })
 
           console.log(`[webhook] updated ${customerId} to tier: ${activeTier}`)
         }
@@ -83,11 +110,24 @@ export async function POST(req: NextRequest) {
           .from('profiles')
           .select('id')
           .eq('stripe_customer_id', customerId)
-          .single()
+          .maybeSingle()
 
         if (profile) {
+          const { data: currentCredits } = await adminClient
+            .from('meeting_credits')
+            .select('premium_credits')
+            .eq('user_id', profile.id)
+            .maybeSingle()
+
+          const currentPremium = currentCredits?.premium_credits ?? 0
+
           await adminClient.from('meeting_credits')
-            .upsert({ user_id: profile.id, balance: 3 }, { onConflict: 'user_id' })
+            .upsert({
+              user_id: profile.id,
+              free_credits: 3,
+              premium_credits: currentPremium,
+              balance: 3 + currentPremium,
+            }, { onConflict: 'user_id' })
         }
 
         console.log(`[webhook] subscription deleted for ${customerId}, downgraded to free`)
@@ -104,6 +144,22 @@ export async function POST(req: NextRequest) {
         break
       }
     }
+
+    // Idempotency record: insert only after successful processing.
+    // A mid-handler crash leaves this unwritten so Stripe's retry reprocesses
+    // cleanly. Upsert logic above is floor-based (idempotent), so a retry
+    // produces the same DB state.
+    const { error: idempotencyError } = await adminClient
+      .from('stripe_events')
+      .insert({ event_id: event.id })
+
+    if (idempotencyError) {
+      // CRITICAL: event processed but not recorded — next Stripe retry will
+      // reprocess. Floor logic makes that safe here; note for credit-pack
+      // commit where this must be verified again.
+      console.error(`[webhook] CRITICAL: idempotency insert failed for event ${event.id} (type: ${event.type}):`, idempotencyError.message)
+    }
+
   } catch (err: any) {
     console.error('[webhook] handler error:', err.message)
     return NextResponse.json({ error: 'Handler error' }, { status: 500 })
