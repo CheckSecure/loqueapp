@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, GitBranch, UserPlus, Inbox, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, Briefcase } from 'lucide-react'
+import { Users, GitBranch, UserPlus, Inbox, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, Briefcase, Clock, Star, Zap, ThumbsUp } from 'lucide-react'
 
 export const metadata = { title: 'Admin Dashboard | Andrel' }
 
@@ -46,20 +46,81 @@ export default async function AdminDashboard() {
     .select('id', { count: 'exact', head: true })
     .eq('status', 'new')
 
+  // Shared time windows — declared once, used by both existing metrics and Launch Metrics
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+
   // Opportunities activity (last 7 days) — read-only metrics, no navigation
-  const opportunityWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const { count: opportunitiesCreated7d } = await adminClient
     .from('opportunities')
     .select('id', { count: 'exact', head: true })
-    .gte('created_at', opportunityWindowStart)
+    .gte('created_at', sevenDaysAgo)
   const { count: opportunityResponses7d } = await adminClient
     .from('opportunity_responses')
     .select('id', { count: 'exact', head: true })
-    .gte('created_at', opportunityWindowStart)
+    .gte('created_at', sevenDaysAgo)
+
+  // Launch Metrics — all using adminClient to avoid RLS silent-zero failures
+
+  // Card 1: Total Registered (all profiles, any status)
+  const { count: totalRegistered } = await adminClient
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+
+  // Card 2: Dormant Members — active but last_active_at is null or > 14 days ago
+  const { count: dormantMembers } = await adminClient
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_status', 'active')
+    .or(`last_active_at.is.null,last_active_at.lt.${fourteenDaysAgo}`)
+
+  // Card 3: Opted In to Opportunities
+  const { count: optedInOpportunities } = await adminClient
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_status', 'active')
+    .or('open_to_roles.eq.true,open_to_business_solutions.eq.true')
+
+  // Card 4: Waitlist Pipeline — all statuses with breakdown
+  const { data: allWaitlistEntries } = await adminClient
+    .from('waitlist')
+    .select('status')
+  const waitlistTotal = allWaitlistEntries?.length || 0
+  const waitlistByStatus = {
+    pending:  allWaitlistEntries?.filter(w => w.status === 'pending').length  || 0,
+    approved: allWaitlistEntries?.filter(w => w.status === 'approved').length || 0,
+    invited:  allWaitlistEntries?.filter(w => w.status === 'invited').length  || 0,
+    declined: allWaitlistEntries?.filter(w => w.status === 'declined').length || 0,
+  }
+
+  // Card 5: Intros Suggested (7d)
+  const { count: introsSuggested7d } = await adminClient
+    .from('batch_suggestions')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', sevenDaysAgo)
+
+  // Card 6: Interest Expressed (7d) — user-initiated only
+  const { count: interestExpressed7d } = await adminClient
+    .from('intro_requests')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', sevenDaysAgo)
+    .eq('is_admin_initiated', false)
+
+  // Card 7: Messages Sent (7d, non-system)
+  const { count: messagesSent7d } = await adminClient
+    .from('messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('is_system', false)
+    .gte('created_at', sevenDaysAgo)
+
+  // Card 8: Meetings Scheduled (7d, all statuses)
+  const { count: meetingsScheduled7d } = await adminClient
+    .from('meetings')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', sevenDaysAgo)
 
   // Count distinct users who sent a real message in the last 7 days.
   // This replaces profiles.updated_at which measured profile mutations, not activity.
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
   const { data: recentSenders } = await supabase
     .from('messages')
     .select('sender_id')
@@ -129,6 +190,100 @@ export default async function AdminDashboard() {
             </div>
             <p className="text-3xl font-bold text-slate-900">{activeWeekCount || 0}</p>
             <p className="text-xs text-slate-500 mt-1">Active This Week</p>
+          </div>
+        </div>
+
+        {/* Launch Metrics */}
+        <div>
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Launch Metrics</h2>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+            {/* Card 1: Total Registered */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <Users className="w-5 h-5 text-slate-400" />
+                <span className="text-xs text-slate-500">All time</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-900">{totalRegistered || 0}</p>
+              <p className="text-xs text-slate-500 mt-1">Total Registered</p>
+            </div>
+
+            {/* Card 2: Dormant Members */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <Clock className="w-5 h-5 text-orange-400" />
+                <span className="text-xs text-slate-500">&gt;14 days</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-900">{dormantMembers || 0}</p>
+              <p className="text-xs text-slate-500 mt-1">Dormant Members</p>
+            </div>
+
+            {/* Card 3: Opted In to Opportunities */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <Star className="w-5 h-5 text-violet-500" />
+                <span className="text-xs text-slate-500">Active</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-900">{optedInOpportunities || 0}</p>
+              <p className="text-xs text-slate-500 mt-1">Opted In to Opportunities</p>
+            </div>
+
+            {/* Card 4: Waitlist Pipeline */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <UserPlus className="w-5 h-5 text-sky-500" />
+                <span className="text-xs text-slate-500">All time</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-900">{waitlistTotal}</p>
+              <p className="text-xs text-slate-500 mt-1">Waitlist Pipeline</p>
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
+                <span>{waitlistByStatus.pending} pending</span>
+                <span>{waitlistByStatus.approved} approved</span>
+                <span>{waitlistByStatus.invited} invited</span>
+                <span>{waitlistByStatus.declined} declined</span>
+              </div>
+            </div>
+
+            {/* Card 5: Intros Suggested (7d) */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <Zap className="w-5 h-5 text-amber-500" />
+                <span className="text-xs text-slate-500">Last 7 days</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-900">{introsSuggested7d || 0}</p>
+              <p className="text-xs text-slate-500 mt-1">Intros Suggested</p>
+            </div>
+
+            {/* Card 6: Interest Expressed (7d) */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <ThumbsUp className="w-5 h-5 text-green-500" />
+                <span className="text-xs text-slate-500">Last 7 days</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-900">{interestExpressed7d || 0}</p>
+              <p className="text-xs text-slate-500 mt-1">Interest Expressed</p>
+            </div>
+
+            {/* Card 7: Messages Sent (7d) */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <MessageSquare className="w-5 h-5 text-blue-500" />
+                <span className="text-xs text-slate-500">Last 7 days</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-900">{messagesSent7d || 0}</p>
+              <p className="text-xs text-slate-500 mt-1">Messages Sent</p>
+            </div>
+
+            {/* Card 8: Meetings Scheduled (7d) */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <Calendar className="w-5 h-5 text-indigo-500" />
+                <span className="text-xs text-slate-500">Last 7 days</span>
+              </div>
+              <p className="text-3xl font-bold text-slate-900">{meetingsScheduled7d || 0}</p>
+              <p className="text-xs text-slate-500 mt-1">Meetings Scheduled</p>
+            </div>
+
           </div>
         </div>
 
