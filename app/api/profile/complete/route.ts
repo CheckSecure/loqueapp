@@ -41,7 +41,7 @@ export async function POST() {
     if (!existingCredits) {
       const { error: creditsError } = await adminClient
         .from('meeting_credits')
-        .insert({ user_id: user.id, balance: 3, lifetime_earned: 3 })
+        .insert({ user_id: user.id, free_credits: 3, premium_credits: 0, balance: 3, lifetime_earned: 3 })
       if (creditsError) {
         console.error('[profile/complete] Credits insert error:', creditsError.message)
       } else {
