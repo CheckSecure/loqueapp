@@ -130,7 +130,7 @@ export default async function AdminDashboard() {
               <Users className="w-5 h-5 text-[#1B2850]" />
             </div>
             <p className="text-3xl font-bold text-slate-900">{totalRegistered || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Total Registered</p>
+            <p className="text-xs text-slate-500 mt-1">Total Members</p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5">
