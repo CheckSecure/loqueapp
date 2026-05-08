@@ -14,7 +14,7 @@ const TIERS = [
     name: 'Free',
     tagline: 'Begin your Andrel journey with curated introductions.',
     bullets: [
-      'Curated introductions each week',
+      'Curated introductions delivered regularly',
       '3 credits per month',
       'Standard matching priority',
       'Up to 2 active opportunities in your For You feed',

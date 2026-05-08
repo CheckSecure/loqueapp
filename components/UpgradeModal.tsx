@@ -26,12 +26,12 @@ export default function UpgradeModal({ onClose }: UpgradeModalProps) {
 
         <h2 className="text-lg font-bold text-slate-900 mb-2">Unlock more with Professional</h2>
         <p className="text-sm text-slate-500 leading-relaxed mb-6">
-          Professional members receive priority matching, more curated introductions each week, and increased visibility in the network — giving you access to higher-quality connections faster.
+          Professional members receive priority matching, more frequent curated introductions, and increased visibility in the network — giving you access to higher-quality connections faster.
         </p>
 
         <div className="space-y-2 mb-6">
           {[
-            'More curated introductions each week',
+            'More frequent curated introductions',
             'Priority matching with high-value members',
             '15 credits per month',
             'Increased visibility in the network',

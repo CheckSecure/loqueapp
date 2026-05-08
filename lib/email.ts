@@ -99,12 +99,12 @@ export async function sendNewBatchEmail(
     subject: 'New introductions waiting for you',
     html: `
       <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #1B2850; margin-bottom: 24px;">Your weekly introductions are here</h2>
+        <h2 style="color: #1B2850; margin-bottom: 24px;">New introductions on Andrel</h2>
         <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
           Hi ${toName},
         </p>
         <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-          We've curated ${introCount} new ${introCount === 1 ? 'introduction' : 'introductions'} for you this week.
+          We've curated ${introCount} new ${introCount === 1 ? 'introduction' : 'introductions'} for you.
         </p>
         <a href="https://andrel.app/dashboard/introductions" 
            style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">

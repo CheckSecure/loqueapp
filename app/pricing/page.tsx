@@ -13,7 +13,7 @@ const PLANS = [
     annualPrice: 0,
     description: 'Begin your Andrel journey with curated introductions.',
     features: [
-      'Curated introductions each week',
+      'Curated introductions delivered regularly',
       '3 credits per month',
       'Standard matching priority',
       'Up to 2 active opportunities in your For You feed',

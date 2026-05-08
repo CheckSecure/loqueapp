@@ -28,11 +28,11 @@ const FAQ = [
     items: [
       {
         q: 'How does the introduction system work?',
-        a: 'Each week, Andrel surfaces a curated set of members aligned with your goals and background. You can express interest in anyone in your batch. When there is strong mutual alignment, we facilitate the introduction — connecting you through a shared conversation thread.',
+        a: 'Andrel surfaces curated introductions on a rolling basis — members aligned with your goals and background. You can express interest in anyone in your batch. When there is strong mutual alignment, we facilitate the introduction — connecting you through a shared conversation thread.',
       },
       {
         q: 'How are matches chosen?',
-        a: 'Matches are based on your role, industry, stated goals, and who you\'re looking to meet. The number of introductions you receive each week is based on your membership level. We prioritize quality over volume — every introduction is intentional.',
+        a: 'Matches are based on your role, industry, stated goals, and who you\'re looking to meet. Your membership level determines the frequency and priority of your introductions. We prioritize quality over volume — every introduction is intentional.',
       },
       {
         q: 'Can I request a specific introduction?',
