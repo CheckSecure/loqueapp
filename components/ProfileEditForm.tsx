@@ -337,8 +337,8 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
                 <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
               </div>
               <div className="flex-1">
-                <span className="text-xs font-semibold text-slate-700">Open to business solutions</span>
-                <p className="text-xs text-slate-500 mt-0.5">Occasionally see relevant solution providers and service partners</p>
+                <span className="text-xs font-semibold text-slate-700">Open to business connections</span>
+                <p className="text-xs text-slate-500 mt-0.5">Receive introductions to consultants, service providers, and strategic partners — and be considered when members need help that matches your expertise.</p>
               </div>
             </label>
           </div>

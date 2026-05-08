@@ -60,8 +60,8 @@ export function OpportunityPreferences({
           disabled={saving}
         />
         <PreferenceRow
-          label="Open to business opportunities"
-          description="Be considered when members need help with work that matches your expertise."
+          label="Open to business connections"
+          description="Receive introductions to consultants, service providers, and strategic partners — and be considered when members need help that matches your expertise."
           checked={prefs.open_to_business_solutions}
           onToggle={() => toggle('open_to_business_solutions')}
           disabled={saving}
