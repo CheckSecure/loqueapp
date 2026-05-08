@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
+import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
 
 const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
   free: 3,
@@ -90,23 +91,8 @@ function calculateAlignmentScore(userProfile: any, candidate: any): number {
 // ==========================================
 // CONSULTANT/LAW FIRM THROTTLING CONFIG
 // ==========================================
-
-interface ThrottlingConfig {
-  baseCapPercentage: number      // Base max % of business solutions per batch
-  tierMultipliers: Record<string, number>  // Tier-based adjustment
-  preferenceAdjustment: number   // Reduction when user is NOT open to solutions
-}
-
-const THROTTLING_CONFIG: ThrottlingConfig = {
-  baseCapPercentage: 0.30,  // 30% max business solutions by default
-  tierMultipliers: {
-    free: 1.0,          // Free: full 30%
-    professional: 0.7,  // Professional: 21% (30% * 0.7)
-    executive: 0.5,     // Executive: 15% (30% * 0.5)
-    founding: 0.7       // Founding: same as professional
-  },
-  preferenceAdjustment: 0.5  // If NOT open: cut cap in half
-}
+// Cap math lives in lib/matching/business-solutions.ts (maxBusinessSolutionCount).
+// isBusinessSolutionProvider is imported from the same module.
 
 
 // ==========================================
@@ -353,21 +339,9 @@ function applyThrottling(
   const businessSolutions = candidates.filter(c => isBusinessSolutionProvider(c))
   const peers = candidates.filter(c => !isBusinessSolutionProvider(c))
   
-  // 2. Calculate max allowed business solutions
-  let maxBusinessSolutions = Math.floor(
-    targetCount * THROTTLING_CONFIG.baseCapPercentage * (THROTTLING_CONFIG.tierMultipliers[userTier] || 1.0)
-  )
-  
-  // 3. Reduce further if user is NOT open to business solutions
+  // 2. Calculate max allowed business solutions (shared helper — see lib/matching/business-solutions.ts)
   const userOpenToSolutions = userProfile.open_to_business_solutions || false
-  if (!userOpenToSolutions) {
-    maxBusinessSolutions = Math.floor(maxBusinessSolutions * THROTTLING_CONFIG.preferenceAdjustment)
-  }
-  
-  // Ensure at least 1 business solution can appear ONLY if user is open to solutions
-  if (maxBusinessSolutions === 0 && targetCount >= 3 && businessSolutions.length > 0 && userOpenToSolutions) {
-    maxBusinessSolutions = 1
-  }
+  const maxBusinessSolutions = maxBusinessSolutionCount(userOpenToSolutions, userTier, targetCount)
   
   // 4. Select business solutions up to cap
   const selectedBusinessSolutions = businessSolutions.slice(0, maxBusinessSolutions)
@@ -428,16 +402,6 @@ function interleaveBusinessSolutions(peers: any[], businessSolutions: any[]): an
 }
 
 
-// Helper: Identify if candidate is a business solution provider
-function isBusinessSolutionProvider(candidate: any): boolean {
-  const roleType = (candidate.role_type || '').toLowerCase()
-  
-  // Law firms, consultants, service providers
-  return roleType.includes('law firm') || 
-         roleType.includes('consultant') ||
-         roleType.includes('legal services') ||
-         roleType.includes('legal tech')
-}
 
 function calculateFinalScore(userProfile: any, candidate: any, userTier: string = 'free', targetedRequest: any = null): number {
   // All inputs are now 0-100 normalized

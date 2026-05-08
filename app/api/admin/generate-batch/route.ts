@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
 
 export const dynamic = 'force-dynamic'
 
@@ -302,7 +303,7 @@ export async function POST(req: NextRequest) {
 
     const { data: profiles, error: profilesError } = await adminClient
       .from('profiles')
-      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score, current_status, purposes, city, state, geographic_scope, meeting_format_preference')
+      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score, current_status, purposes, city, state, geographic_scope, meeting_format_preference, open_to_business_solutions')
       .eq('profile_complete', true)
       .eq('is_active', true)
       .neq('email', 'bizdev91@gmail.com')
@@ -510,29 +511,38 @@ export async function POST(req: NextRequest) {
       const tier = profile.subscription_tier || 'free'
       const tierDist = getTierDistribution(tier)
       const pool = userCandidatePools[profile.id]
-      
+
+      // Business-solution cap — mirrors live recommendation path throttle
+      const bsCap = maxBusinessSolutionCount(
+        profile.open_to_business_solutions || false,
+        tier,
+        tierDist.total
+      )
+      let bsCount = 0
+
       // Separate by bucket
       const highCandidates = pool.filter(c => c.bucket === 'high_score').sort((a, b) => b.score - a.score)
       const midCandidates = pool.filter(c => c.bucket === 'mid_score').sort((a, b) => b.score - a.score)
       const lowCandidates = pool.filter(c => c.bucket === 'low_score').sort((a, b) => b.score - a.score)
-      
+
       const selected: any[] = []
-      
+
       // Initialize role counts for this profile
       if (!userRoleCounts[profile.id]) {
         userRoleCounts[profile.id] = {}
       }
-      
+
       // Select high-score candidates first
       for (let i = 0; i < Math.min(tierDist.high, highCandidates.length); i++) {
         const candidate = highCandidates[i]
-        
+
         // Check role diversity
         const roleType = candidate.candidate.role_type || 'unknown'
         const roleCount = userRoleCounts[profile.id][roleType] || 0
         const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
-        
-        if (roleCount < maxPerRole) {
+        const isBS = isBusinessSolutionProvider(candidate.candidate)
+
+        if (roleCount < maxPerRole && (!isBS || bsCount < bsCap)) {
           selected.push({
             suggested: candidate.candidate,
             score: candidate.score,
@@ -540,19 +550,21 @@ export async function POST(req: NextRequest) {
             reason: candidate.reason
           })
           userRoleCounts[profile.id][roleType] = roleCount + 1
+          if (isBS) bsCount++
         }
       }
-      
+
       // Select mid-score candidates to fill remaining slots
       const stillNeed = tierDist.total - selected.length
       for (let i = 0; i < Math.min(stillNeed, midCandidates.length); i++) {
         const candidate = midCandidates[i]
-        
+
         const roleType = candidate.candidate.role_type || 'unknown'
         const roleCount = userRoleCounts[profile.id][roleType] || 0
         const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
-        
-        if (roleCount < maxPerRole) {
+        const isBS = isBusinessSolutionProvider(candidate.candidate)
+
+        if (roleCount < maxPerRole && (!isBS || bsCount < bsCap)) {
           selected.push({
             suggested: candidate.candidate,
             score: candidate.score,
@@ -560,20 +572,22 @@ export async function POST(req: NextRequest) {
             reason: candidate.reason
           })
           userRoleCounts[profile.id][roleType] = roleCount + 1
+          if (isBS) bsCount++
         }
       }
-      
+
       // Fallback: if still need more and have low-score candidates
       const finalNeed = tierDist.total - selected.length
       if (finalNeed > 0 && lowCandidates.length > 0) {
         for (let i = 0; i < Math.min(finalNeed, lowCandidates.length); i++) {
           const candidate = lowCandidates[i]
-          
+
           const roleType = candidate.candidate.role_type || 'unknown'
           const roleCount = userRoleCounts[profile.id][roleType] || 0
           const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
-          
-          if (roleCount < maxPerRole) {
+          const isBS = isBusinessSolutionProvider(candidate.candidate)
+
+          if (roleCount < maxPerRole && (!isBS || bsCount < bsCap)) {
             selected.push({
               suggested: candidate.candidate,
               score: candidate.score,
@@ -581,10 +595,11 @@ export async function POST(req: NextRequest) {
               reason: candidate.reason
             })
             userRoleCounts[profile.id][roleType] = roleCount + 1
+            if (isBS) bsCount++
           }
         }
       }
-      
+
       userBatches[profile.id] = selected
     }
     
