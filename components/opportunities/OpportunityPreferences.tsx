@@ -66,13 +66,7 @@ export function OpportunityPreferences({
           onToggle={() => toggle('open_to_business_solutions')}
           disabled={saving}
         />
-        <PreferenceRow
-          label="Available for recruiting work"
-          description="When network members are hiring, they can tag you to handle the recruiter search. Toggle on if you do legal recruiting professionally."
-          checked={prefs.recruiter}
-          onToggle={() => toggle('recruiter')}
-          disabled={saving}
-        />
+
       </div>
 
       <div className="h-6 flex items-center">

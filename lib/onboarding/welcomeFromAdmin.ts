@@ -19,7 +19,7 @@ When someone is suggested, you can express interest or pass. Andrel uses a simpl
 Once an introduction is active, you can message directly and use the suggested prompts to start the conversation.
 
 4. Check Opportunities.
-Opportunities are private, curated signals for hiring or business needs — whether you're looking for a role or offering help on a specific problem. You can opt in from Settings if you're open to relevant opportunities or recruiter outreach.
+Opportunities are private, curated signals for hiring or business needs — whether you're looking for a role or offering help on a specific problem. You can opt in from Settings if you're open to relevant opportunities.
 
 5. Keep it intentional.
 Andrel works best when users respond thoughtfully, accept introductions they genuinely want, and use the platform to build real professional relationships.
