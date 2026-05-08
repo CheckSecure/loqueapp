@@ -67,8 +67,8 @@ export function OpportunityPreferences({
           disabled={saving}
         />
         <PreferenceRow
-          label="I'm a recruiter"
-          description="Let members in your network include you when they need recruiting help."
+          label="Available for recruiting work"
+          description="When network members are hiring, they can tag you to handle the recruiter search. Toggle on if you do legal recruiting professionally."
           checked={prefs.recruiter}
           onToggle={() => toggle('recruiter')}
           disabled={saving}
