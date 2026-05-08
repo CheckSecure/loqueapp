@@ -6,7 +6,7 @@ import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
 import { Loader2, CheckCircle, User, ChevronDown, ChevronUp } from 'lucide-react'
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite']
-const ROLE_TYPE_OPTIONS = ['In-house Counsel', 'Law Firm Attorney', 'Legal Operations', 'Compliance', 'Government / Public Sector', 'Other']
+const ROLE_TYPE_OPTIONS = ['In-house Counsel', 'Law Firm Attorney', 'Consultant', 'Legal Operations', 'Compliance', 'Government / Public Sector', 'Other']
 
 const PURPOSE_OPTIONS = ['Fundraising', 'Hiring', 'Partnerships', 'Mentorship', 'Business Development', 'Market Insights', 'Career Growth']
 

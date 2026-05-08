@@ -176,6 +176,7 @@ export default function OnboardingStep1({
               <option value="">Select role type</option>
               <option value="In-house Counsel">In-house Counsel</option>
               <option value="Law Firm Attorney">Law Firm Attorney</option>
+              <option value="Consultant">Consultant</option>
               <option value="Legal Operations">Legal Operations</option>
               <option value="Compliance">Compliance</option>
               <option value="Government / Public Sector">Government / Public Sector</option>
