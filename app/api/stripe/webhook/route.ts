@@ -39,7 +39,11 @@ export async function POST(req: NextRequest) {
         const customerId = sub.customer as string
         const priceId = sub.items.data[0].price.id
         const status = sub.status
-        const rawEnd = (sub as any).current_period_end
+        // current_period_end is on the item, not the subscription root, as of
+        // Stripe API 2025-08-27. data[0] is safe — Andrel subscriptions are
+        // single-line-item only. priceId (two lines above) makes the same
+        // assumption; multi-item support would need both paths reviewed.
+        const rawEnd = sub.items.data[0].current_period_end
         const periodEnd = rawEnd ? new Date(rawEnd * 1000).toISOString() : null
 
         // Determine tier from price ID
