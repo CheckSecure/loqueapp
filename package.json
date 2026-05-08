@@ -24,7 +24,6 @@
     "react-dom": "^18.3.1",
     "resend": "^6.9.4",
     "stripe": "^20.4.1",
-    "stripe-replit-sync": "^1.0.0",
     "tailwind-merge": "^2.6.1"
   },
   "devDependencies": {
