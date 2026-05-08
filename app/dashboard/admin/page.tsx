@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, GitBranch, UserPlus, Inbox, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, Briefcase, Clock, Star, Zap, ThumbsUp } from 'lucide-react'
+import { Users, GitBranch, UserPlus, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, Briefcase, Zap, ThumbsUp } from 'lucide-react'
 
 export const metadata = { title: 'Admin Dashboard | Andrel' }
 
@@ -19,25 +19,10 @@ export default async function AdminDashboard() {
     .select('id', { count: 'exact', head: true })
     .eq('account_status', 'active')
 
-  const { count: totalMatches } = await supabase
-    .from('matches')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'active')
-
-  const { count: totalMeetings } = await supabase
-    .from('meetings')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'confirmed')
-
   const { count: pendingIntros } = await supabase
     .from('intro_requests')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'admin_pending')
-
-  const { count: waitlistCount } = await supabase
-    .from('waitlist')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'pending')
 
   // Issue reports — uses admin client so RLS doesn't restrict to admin's own reports
   const adminClient = createAdminClient()
@@ -46,9 +31,8 @@ export default async function AdminDashboard() {
     .select('id', { count: 'exact', head: true })
     .eq('status', 'new')
 
-  // Shared time windows — declared once, used by both existing metrics and Launch Metrics
+  // Shared time windows
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
 
   // Opportunities activity (last 7 days) — read-only metrics, no navigation
   const { count: opportunitiesCreated7d } = await adminClient
@@ -60,28 +44,23 @@ export default async function AdminDashboard() {
     .select('id', { count: 'exact', head: true })
     .gte('created_at', sevenDaysAgo)
 
-  // Launch Metrics — all using adminClient to avoid RLS silent-zero failures
+  // Platform health counts — all adminClient to avoid RLS silent-zero failures
+  const { count: totalMatches } = await adminClient
+    .from('matches')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'active')
+    .is('removed_at', null)
 
-  // Card 1: Total Registered (all profiles, any status)
   const { count: totalRegistered } = await adminClient
     .from('profiles')
     .select('id', { count: 'exact', head: true })
 
-  // Card 2: Dormant Members — active but last_active_at is null or > 14 days ago
-  const { count: dormantMembers } = await adminClient
+  const { count: activeUsers7d } = await adminClient
     .from('profiles')
     .select('id', { count: 'exact', head: true })
-    .eq('account_status', 'active')
-    .or(`last_active_at.is.null,last_active_at.lt.${fourteenDaysAgo}`)
+    .gte('last_active_at', sevenDaysAgo)
 
-  // Card 3: Opted In to Opportunities
-  const { count: optedInOpportunities } = await adminClient
-    .from('profiles')
-    .select('id', { count: 'exact', head: true })
-    .eq('account_status', 'active')
-    .or('open_to_roles.eq.true,open_to_business_solutions.eq.true')
-
-  // Card 4: Waitlist Pipeline — all statuses with breakdown
+  // Waitlist Pipeline — all statuses with breakdown
   const { data: allWaitlistEntries } = await adminClient
     .from('waitlist')
     .select('status')
@@ -119,16 +98,6 @@ export default async function AdminDashboard() {
     .select('id', { count: 'exact', head: true })
     .gte('created_at', sevenDaysAgo)
 
-  // Count distinct users who sent a real message in the last 7 days.
-  // This replaces profiles.updated_at which measured profile mutations, not activity.
-  const { data: recentSenders } = await supabase
-    .from('messages')
-    .select('sender_id')
-    .gte('created_at', sevenDaysAgo)
-    .eq('is_system', false)
-    .not('sender_id', 'is', null)
-  const activeWeekCount = new Set((recentSenders || []).map(m => m.sender_id)).size
-
   // Get current batch info. Approval state is tracked via status:
   // generated -> active (approved) -> completed. No approved_at column exists.
   const { data: currentBatch } = await supabase
@@ -154,33 +123,14 @@ export default async function AdminDashboard() {
           <p className="text-sm text-slate-500 mt-1">Platform control center</p>
         </div>
 
-        {/* Key Metrics */}
+        {/* Platform Health */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <div className="flex items-center justify-between mb-2">
               <Users className="w-5 h-5 text-[#1B2850]" />
-              <span className="text-xs text-slate-500">Active</span>
             </div>
-            <p className="text-3xl font-bold text-slate-900">{totalMembers || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Active Members</p>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-2">
-              <Network className="w-5 h-5 text-green-600" />
-              <span className="text-xs text-slate-500">All time</span>
-            </div>
-            <p className="text-3xl font-bold text-slate-900">{totalMatches || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Active Connections</p>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-2">
-              <Calendar className="w-5 h-5 text-blue-600" />
-              <span className="text-xs text-slate-500">All time</span>
-            </div>
-            <p className="text-3xl font-bold text-slate-900">{totalMeetings || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Meetings Confirmed</p>
+            <p className="text-3xl font-bold text-slate-900">{totalRegistered || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">Total Registered</p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -188,97 +138,65 @@ export default async function AdminDashboard() {
               <TrendingUp className="w-5 h-5 text-amber-600" />
               <span className="text-xs text-slate-500">Last 7 days</span>
             </div>
-            <p className="text-3xl font-bold text-slate-900">{activeWeekCount || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Active This Week</p>
+            <p className="text-3xl font-bold text-slate-900">{activeUsers7d || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">Active Last 7 Days</p>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-2">
+              <Network className="w-5 h-5 text-green-600" />
+            </div>
+            <p className="text-3xl font-bold text-slate-900">{totalMatches || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">Active Matches</p>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-2">
+              <UserPlus className="w-5 h-5 text-sky-500" />
+            </div>
+            <p className="text-3xl font-bold text-slate-900">{waitlistTotal}</p>
+            <p className="text-xs text-slate-500 mt-1">Waitlist Pipeline</p>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
+              <span>{waitlistByStatus.pending} pending</span>
+              <span>{waitlistByStatus.approved} approved</span>
+              <span>{waitlistByStatus.invited} invited</span>
+              <span>{waitlistByStatus.declined} declined</span>
+            </div>
           </div>
         </div>
 
-        {/* Launch Metrics */}
+        {/* Engagement — Last 7 Days */}
         <div>
-          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Launch Metrics</h2>
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Last 7 Days</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
 
-            {/* Card 1: Total Registered */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center justify-between mb-2">
-                <Users className="w-5 h-5 text-slate-400" />
-                <span className="text-xs text-slate-500">All time</span>
-              </div>
-              <p className="text-3xl font-bold text-slate-900">{totalRegistered || 0}</p>
-              <p className="text-xs text-slate-500 mt-1">Total Registered</p>
-            </div>
-
-            {/* Card 2: Dormant Members */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center justify-between mb-2">
-                <Clock className="w-5 h-5 text-orange-400" />
-                <span className="text-xs text-slate-500">&gt;14 days</span>
-              </div>
-              <p className="text-3xl font-bold text-slate-900">{dormantMembers || 0}</p>
-              <p className="text-xs text-slate-500 mt-1">Dormant Members</p>
-            </div>
-
-            {/* Card 3: Opted In to Opportunities */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center justify-between mb-2">
-                <Star className="w-5 h-5 text-violet-500" />
-                <span className="text-xs text-slate-500">Active</span>
-              </div>
-              <p className="text-3xl font-bold text-slate-900">{optedInOpportunities || 0}</p>
-              <p className="text-xs text-slate-500 mt-1">Opted In to Opportunities</p>
-            </div>
-
-            {/* Card 4: Waitlist Pipeline */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center justify-between mb-2">
-                <UserPlus className="w-5 h-5 text-sky-500" />
-                <span className="text-xs text-slate-500">All time</span>
-              </div>
-              <p className="text-3xl font-bold text-slate-900">{waitlistTotal}</p>
-              <p className="text-xs text-slate-500 mt-1">Waitlist Pipeline</p>
-              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
-                <span>{waitlistByStatus.pending} pending</span>
-                <span>{waitlistByStatus.approved} approved</span>
-                <span>{waitlistByStatus.invited} invited</span>
-                <span>{waitlistByStatus.declined} declined</span>
-              </div>
-            </div>
-
-            {/* Card 5: Intros Suggested (7d) */}
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center justify-between mb-2">
                 <Zap className="w-5 h-5 text-amber-500" />
-                <span className="text-xs text-slate-500">Last 7 days</span>
               </div>
               <p className="text-3xl font-bold text-slate-900">{introsSuggested7d || 0}</p>
               <p className="text-xs text-slate-500 mt-1">Intros Suggested</p>
             </div>
 
-            {/* Card 6: Interest Expressed (7d) */}
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center justify-between mb-2">
                 <ThumbsUp className="w-5 h-5 text-green-500" />
-                <span className="text-xs text-slate-500">Last 7 days</span>
               </div>
               <p className="text-3xl font-bold text-slate-900">{interestExpressed7d || 0}</p>
               <p className="text-xs text-slate-500 mt-1">Interest Expressed</p>
             </div>
 
-            {/* Card 7: Messages Sent (7d) */}
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center justify-between mb-2">
                 <MessageSquare className="w-5 h-5 text-blue-500" />
-                <span className="text-xs text-slate-500">Last 7 days</span>
               </div>
               <p className="text-3xl font-bold text-slate-900">{messagesSent7d || 0}</p>
               <p className="text-xs text-slate-500 mt-1">Messages Sent</p>
             </div>
 
-            {/* Card 8: Meetings Scheduled (7d) */}
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center justify-between mb-2">
                 <Calendar className="w-5 h-5 text-indigo-500" />
-                <span className="text-xs text-slate-500">Last 7 days</span>
               </div>
               <p className="text-3xl font-bold text-slate-900">{meetingsScheduled7d || 0}</p>
               <p className="text-xs text-slate-500 mt-1">Meetings Scheduled</p>
@@ -343,9 +261,9 @@ export default async function AdminDashboard() {
               <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
                 <UserPlus className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
               </div>
-              {(waitlistCount || 0) > 0 && (
+              {(waitlistByStatus.pending || 0) > 0 && (
                 <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
-                  {(waitlistCount || 0) > 9 ? '9+' : waitlistCount}
+                  {(waitlistByStatus.pending || 0) > 9 ? '9+' : waitlistByStatus.pending}
                 </span>
               )}
             </div>
@@ -354,7 +272,7 @@ export default async function AdminDashboard() {
               Approve new members, send invites, manage access
             </p>
             <div className="flex items-center gap-4 text-xs text-slate-600">
-              <span>{waitlistCount || 0} pending approval</span>
+              <span>{waitlistByStatus.pending || 0} pending approval</span>
             </div>
           </Link>
 
