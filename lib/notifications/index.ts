@@ -17,6 +17,11 @@ export type NotificationType =
   | 'opportunity_nudge_creator'
   | 'opportunity_nudge_receiver'
   | 'opportunity_closed'
+  | 'meeting_request'
+  | 'meeting_accepted'
+  | 'meeting_declined'
+  | 'new_connection'
+  | 'intro_accepted'
 
 export interface NotificationData {
   matchId?: string
@@ -36,7 +41,7 @@ export interface CreateNotificationParams {
   data?: NotificationData
 }
 
-const NOTIFICATION_COPY = {
+const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; message: string }>> = {
   new_batch: {
     title: 'New curated introductions',
     message: 'Your latest set of curated connections is ready to review.'
