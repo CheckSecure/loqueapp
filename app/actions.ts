@@ -910,7 +910,8 @@ export async function scheduleMeeting(formData: FormData) {
   
   const requesterName = requesterProfile?.full_name || user.email
   
-  const notifInsert = await supabase.from('notifications').insert({
+  const adminClient = createAdminClient()
+  const notifInsert = await adminClient.from('notifications').insert({
     user_id: recipientId,
     type: 'meeting_request',
     title: 'New meeting request',
@@ -1021,7 +1022,8 @@ export async function acceptMeeting(meetingId: string) {
   // Send notification and email
   if (meeting) {
     const otherUserId = meeting.requester_id === user.id ? meeting.recipient_id : meeting.requester_id
-    await supabase.from('notifications').insert({
+    const adminClient = createAdminClient()
+    await adminClient.from('notifications').insert({
       user_id: otherUserId,
       type: 'meeting_accepted',
       title: 'Meeting confirmed',
@@ -1115,7 +1117,8 @@ export async function declineMeeting(meetingId: string) {
   
   if (meeting) {
     const otherUserId = meeting.requester_id === user.id ? meeting.recipient_id : meeting.requester_id
-    await supabase.from('notifications').insert({
+    const adminClient = createAdminClient()
+    await adminClient.from('notifications').insert({
       user_id: otherUserId,
       type: 'meeting_declined',
       title: 'Meeting declined',
@@ -1224,7 +1227,8 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
 
   // Notify the other party
   const otherUserId = meeting.requester_id === user.id ? meeting.recipient_id : meeting.requester_id
-  await supabase.from('notifications').insert({
+  const adminClient = createAdminClient()
+  await adminClient.from('notifications').insert({
     user_id: otherUserId,
     type: 'meeting_request',
     title: 'Meeting rescheduled',
@@ -1312,7 +1316,8 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
 
   // Create notifications for both users
   if (profileA && profileB) {
-    await supabase.from('notifications').insert([
+    const adminClient = createAdminClient()
+    await adminClient.from('notifications').insert([
       {
         user_id: userAId,
         type: 'new_connection',
