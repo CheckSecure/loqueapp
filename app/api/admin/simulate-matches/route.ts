@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
@@ -61,16 +62,20 @@ function calculateMatchScore(userA: any, userB: any): number {
 
 export async function POST(request: Request) {
   const supabase = createClient()
-  
+
   // Auth check
   const { data: { user } } = await supabase.auth.getUser()
   if (!user || user.email !== ADMIN_EMAIL) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // All data operations use admin client — this is an admin-only route and
+  // the admin user is not a participant of the simulated matches/conversations.
+  const adminClient = createAdminClient()
+
   try {
     // PART 1: Identify stuck users
-    const { data: profiles } = await supabase
+    const { data: profiles } = await adminClient
       .from('profiles')
       .select('id, full_name, email, subscription_tier, role_type, seniority, expertise, intro_preferences, location, company')
       .eq('account_status', 'active')
@@ -78,7 +83,7 @@ export async function POST(request: Request) {
     if (!profiles) throw new Error('Failed to fetch profiles')
 
     // Get existing matches
-    const { data: existingMatches } = await supabase
+    const { data: existingMatches } = await adminClient
       .from('matches')
       .select('user_a_id, user_b_id, status')
 
@@ -91,7 +96,7 @@ export async function POST(request: Request) {
     })
 
     // Get intro request counts
-    const { data: intros } = await supabase
+    const { data: intros } = await adminClient
       .from('intro_requests')
       .select('requester_id, target_user_id, status')
 
@@ -143,7 +148,7 @@ export async function POST(request: Request) {
         if (exists) continue
 
         // Create match
-        const { data: match, error: matchError } = await supabase
+        const { data: match, error: matchError } = await adminClient
           .from('matches')
           .insert({
             user_a_id: user.id,
@@ -161,13 +166,13 @@ export async function POST(request: Request) {
         }
 
         // Create conversation
-        await supabase.from('conversations').insert({
+        await adminClient.from('conversations').insert({
           match_id: match.id
         })
 
         // PART 4: Optionally add a simulated message (50% chance)
         if (Math.random() > 0.5) {
-          const { data: conversation } = await supabase
+          const { data: conversation } = await adminClient
             .from('conversations')
             .select('id')
             .eq('match_id', match.id)
@@ -183,7 +188,7 @@ export async function POST(request: Request) {
             ]
             const randomMessage = messages[getRandomInt(0, messages.length - 1)]
 
-            await supabase.from('messages').insert({
+            await adminClient.from('messages').insert({
               conversation_id: conversation.id,
               sender_id: Math.random() > 0.5 ? user.id : candidate.profile.id,
               content: randomMessage,
@@ -211,7 +216,7 @@ export async function POST(request: Request) {
     })
 
     // Recount stuck users
-    const { data: updatedMatches } = await supabase
+    const { data: updatedMatches } = await adminClient
       .from('matches')
       .select('user_a_id, user_b_id, status')
 
