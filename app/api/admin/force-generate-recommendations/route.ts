@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
+import { requireAdmin } from '@/lib/admin/requireAdmin'
 
 export async function GET(req: NextRequest) {
-  // Check for secret key in URL to prevent abuse
-  const secret = req.nextUrl.searchParams.get('secret')
-  if (secret !== 'generate-recs-2026') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const { error } = await requireAdmin()
+  if (error) return error
 
   const userId = req.nextUrl.searchParams.get('userId')
   if (!userId) {
