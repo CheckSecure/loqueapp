@@ -5,6 +5,7 @@ import { sendMatchCreatedEmail } from '@/lib/email'
 import { createNotificationSafe } from '@/lib/notifications'
 import { generateIcebreakers, generateSystemIntroMessage } from '@/lib/messaging/icebreakers'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
+import { isSameCompany } from '@/lib/matching/same-company'
 
 export async function POST(request: Request) {
   const supabase = createClient()
@@ -190,6 +191,23 @@ export async function POST(request: Request) {
 
     // If mutual interest exists (per the correct filter above), create ACTIVE match immediately
     if (reverseRequest) {
+      // Defense-in-depth: same-company gate (primary gate is createIntroRequest; this catches
+      // any pairs that entered the intro_requests table before the gate was added)
+      const { data: companyPair } = await adminClient
+        .from('profiles')
+        .select('id, company')
+        .in('id', [expresserId, otherUserId])
+
+      const expresserCompany = companyPair?.find(p => p.id === expresserId)
+      const otherCompany = companyPair?.find(p => p.id === otherUserId)
+
+      if (isSameCompany(
+        { company: expresserCompany?.company },
+        { company: otherCompany?.company }
+      )) {
+        return NextResponse.json({ error: 'Introductions between colleagues at the same company are not available.' }, { status: 409 })
+      }
+
       console.log('[Mutual Interest] Detected, creating active match...')
 
       // Check if match already exists

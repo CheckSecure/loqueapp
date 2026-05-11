@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from '@/lib/supabase/server'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
+import { isSameCompany } from '@/lib/matching/same-company'
 
 async function resolveProfileId(supabase: ReturnType<typeof createClient>, authUserId: string, authUserEmail?: string) {
   const orClause = authUserEmail
@@ -39,6 +40,22 @@ export async function createIntroRequest(
 
   if (existing && existing.length > 0) {
     return { error: 'You already have a pending request for this person.' }
+  }
+
+  // Same-company gate (V1: unconditional suppression)
+  const { data: companyProfiles } = await supabase
+    .from('profiles')
+    .select('id, company')
+    .in('id', [authUserId, targetUserId])
+
+  const requesterCompany = companyProfiles?.find(p => p.id === authUserId)
+  const targetCompany = companyProfiles?.find(p => p.id === targetUserId)
+
+  if (isSameCompany(
+    { company: requesterCompany?.company },
+    { company: targetCompany?.company }
+  )) {
+    return { error: 'Introductions between colleagues at the same company are not available.', code: 'SAME_COMPANY_BLOCKED' }
   }
 
   // Check active interest limit (max 5 concurrent)

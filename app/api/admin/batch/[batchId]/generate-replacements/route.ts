@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
+import { isSameCompany } from '@/lib/matching/same-company'
 
 export const dynamic = 'force-dynamic'
 
@@ -298,6 +299,7 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
         if (shownExclude.has(candidate.id)) continue
         if (dismissedExclude.has(candidate.id)) continue
         if (referralExclude.has(candidate.id)) continue
+        if (isSameCompany(recipient, candidate)) continue
         if (!isCompatiblePair(recipient, candidate)) continue
         const score = scoreMatch(recipient, candidate)
         if (score < MIN_RELEVANCE_SCORE) continue

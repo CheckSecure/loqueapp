@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/admin/requireAdmin'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createNotificationSafe } from '@/lib/notifications'
 import { buildBidirectionalBlockFilter, buildBidirectionalMatchFilter, buildBidirectionalIntroRequestFilter } from '@/lib/db/filters'
+import { isSameCompany } from '@/lib/matching/same-company'
 
 export async function POST(req: Request) {
   const { error, user } = await requireAdmin()
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
   // Block if either user is deactivated
   const { data: deactProfiles } = await admin
     .from('profiles')
-    .select('id, full_name, account_status')
+    .select('id, full_name, account_status, company')
     .in('id', [userIdA, userIdB])
 
   const deactA = (deactProfiles || []).find(p => p.id === userIdA)
@@ -33,6 +34,11 @@ export async function POST(req: Request) {
   if (!deactB || deactB.account_status !== 'active') {
     const name = deactB?.full_name
     return NextResponse.json({ error: `User B is no longer active${name ? ` (${name})` : ''}` }, { status: 409 })
+  }
+
+  // Safety check: same company
+  if (isSameCompany(deactA, deactB)) {
+    return NextResponse.json({ error: 'Users are at the same company. Same-company introductions are not permitted.' }, { status: 409 })
   }
 
   // Safety check: no active block

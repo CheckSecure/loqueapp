@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateMatchInsights, type MatchInsight } from '@/lib/matching/matchInsights'
 import { buildBidirectionalMatchFilter, buildBidirectionalIntroRequestFilter } from '@/lib/db/filters'
+import { isSameCompany } from '@/lib/matching/same-company'
 
 export interface IdentityCard {
   id: string
@@ -277,6 +278,14 @@ export async function inspectPair(inputA: string, inputB: string): Promise<Inspe
     eligibility.push({ name: 'Pending intro requests', pass: true, explanation: 'PASS — no pending intro requests' })
   }
 
+  // 7. Same company (V1: unconditional suppression)
+  if (isSameCompany(userA, userB)) {
+    const company = userA.company || userB.company || 'the same company'
+    eligibility.push({ name: 'Same company', pass: false, explanation: 'FAIL — both users are at ' + company + '; same-company introductions are not permitted' })
+  } else {
+    eligibility.push({ name: 'Same company', pass: true, explanation: 'PASS — users are at different companies' })
+  }
+
   // Compute can-be-recommended (AND of all pass flags except the directional ones)
   const allPass = eligibility.every(e => e.pass)
   const canAtoB = allPass
@@ -298,7 +307,8 @@ export async function inspectPair(inputA: string, inputB: string): Promise<Inspe
       { name: 'Removal cooldown', label: () => 'Removal cooldown is still active' },
       { name: 'Same user check', label: () => 'Both inputs are the same user' },
       { name: 'Profile completeness', label: () => 'One or both profiles have not completed onboarding' },
-      { name: 'Pending intro requests', label: () => 'Pending intro requests exist between them' }
+      { name: 'Pending intro requests', label: () => 'Pending intro requests exist between them' },
+      { name: 'Same company', label: () => 'Users are at the same company; same-company introductions are not permitted' }
     ]
     for (const p of priorities) {
       const check = eligibility.find(e => e.name === p.name && !e.pass)
