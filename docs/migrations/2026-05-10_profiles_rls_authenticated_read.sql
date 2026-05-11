@@ -75,11 +75,14 @@ FROM pg_policy
 WHERE polrelid = 'public.profiles'::regclass
 ORDER BY polcmd, polname;
 
--- ── Step 4: Create policy (already applied 2026-05-10 — idempotent) ───────────
-CREATE POLICY IF NOT EXISTS "profiles_authenticated_read"
-  ON public.profiles
-  FOR SELECT
-  USING (auth.uid() IS NOT NULL);
+-- ── Step 4: profiles_authenticated_read policy ────────────────────────────────
+-- This policy was applied separately in commit 2235ce8 (2026-05-10) before the
+-- DROP statements above. Documented here for completeness — do not re-execute.
+--
+--   CREATE POLICY "profiles_authenticated_read"
+--     ON public.profiles
+--     FOR SELECT
+--     USING (auth.uid() IS NOT NULL);
 
 -- POST-DROP STATE:
 -- Only profiles_authenticated_read remains as a SELECT policy. Any authenticated
