@@ -250,50 +250,6 @@ export async function createNotification({
   }
 }
 
-export async function markNotificationRead(notificationId: string, userId: string) {
-  const adminClient = createAdminClient()
-
-  try {
-    const { error } = await adminClient
-      .from('notifications')
-      .update({ read: true })
-      .eq('id', notificationId)
-      .eq('user_id', userId)
-
-    if (error) {
-      console.error('[Notifications] Failed to mark read:', error)
-      return false
-    }
-
-    return true
-  } catch (error) {
-    console.error('[Notifications] Mark read error:', error)
-    return false
-  }
-}
-
-export async function markAllNotificationsRead(userId: string) {
-  const adminClient = createAdminClient()
-
-  try {
-    const { error } = await adminClient
-      .from('notifications')
-      .update({ read: true })
-      .eq('user_id', userId)
-      .eq('read', false)
-
-    if (error) {
-      console.error('[Notifications] Failed to mark all read:', error)
-      return false
-    }
-
-    return true
-  } catch (error) {
-    console.error('[Notifications] Mark all read error:', error)
-    return false
-  }
-}
-
 export function getNotificationRoute(type: NotificationType, data?: NotificationData): string {
   switch (type) {
     case 'new_batch':
