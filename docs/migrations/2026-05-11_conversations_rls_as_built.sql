@@ -1,0 +1,44 @@
+-- 2026-05-11: Conversations RLS — AS-BUILT documentation (no apply)
+--
+-- STATE FOUND ON 2026-05-11:
+--   relrowsecurity = true on public.conversations
+--   convos_select_participant (SELECT) — EXISTS join through matches by auth.uid()
+--   conversations_insert_authenticated (INSERT) — with_check = true
+--   No UPDATE or DELETE policies
+--
+-- ANON-KEY PROBE (2026-05-11, before any action):
+--   GET /rest/v1/conversations?select=id,match_id,created_at&limit=3 → []
+--   Count with anon key → content-range: */0
+--   Conclusion: table is correctly closed to unauthenticated reads.
+--
+-- HOW IT GOT THERE:
+--   No git commit, no prior migration file, and no supabase/migrations/ entry
+--   documents the ALTER TABLE that enabled RLS on this table. Most likely
+--   path: the statement was run directly in the Supabase dashboard SQL editor
+--   during earlier development, outside the git-tracked migration workflow.
+--   This is a known operational gap — schema state has drifted from git
+--   history. The same pattern surfaced during the profiles RLS investigation
+--   (Wave 1) where policies existed without git provenance.
+--
+-- WAVE 1 / OPTION 2 DECISION:
+--   The current as-built state matches the Option 2 decision documented for
+--   the planned rollout:
+--     - RLS enabled
+--     - convos_select_participant as the sole SELECT gate (participant-scoped)
+--     - No broad authenticated-read policy added
+--   No additional SQL is needed. This file exists as a record of the state
+--   as found, so future readers do not assume the table was unprotected.
+--
+-- VERIFICATION SQL (read-only — safe to re-run):
+--   SELECT relname, relrowsecurity FROM pg_class
+--   WHERE relname = 'conversations' AND relnamespace = 'public'::regnamespace;
+--   -- Expected: true
+--
+--   SELECT polname, polcmd, pg_get_expr(polqual, polrelid) AS using_expr,
+--          pg_get_expr(polwithcheck, polrelid) AS with_check_expr
+--   FROM pg_policy WHERE polrelid = 'public.conversations'::regclass
+--   ORDER BY polcmd, polname;
+--   -- Expected: 2 rows — conversations_insert_authenticated (a) and
+--   --                   convos_select_participant (r)
+--
+-- NO DDL STATEMENTS BELOW. THIS FILE IS DOCUMENTATION.
