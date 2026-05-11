@@ -107,7 +107,7 @@ export default async function AdminDashboard() {
     .limit(1)
     .maybeSingle()
 
-  const { count: batchSuggestions } = currentBatch ? await supabase
+  const { count: batchSuggestions } = currentBatch ? await adminClient
     .from('batch_suggestions')
     .select('id', { count: 'exact', head: true })
     .eq('batch_id', currentBatch.id)

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import AdminBatchesClient from '@/components/AdminBatchesClient'
 
@@ -11,19 +12,21 @@ export default async function AdminBatchesPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user || user.email !== ADMIN_EMAIL) redirect('/dashboard')
 
-  const { data: batches } = await supabase
+  const adminClient = createAdminClient()
+
+  const { data: batches } = await adminClient
     .from('introduction_batches')
     .select('*')
     .order('created_at', { ascending: false })
 
   const batchesWithCounts = await Promise.all(
     (batches || []).map(async (batch) => {
-      const { count } = await supabase
+      const { count } = await adminClient
         .from('batch_suggestions')
         .select('id', { count: 'exact', head: true })
         .eq('batch_id', batch.id)
 
-      const { count: memberCount } = await supabase
+      const { count: memberCount } = await adminClient
         .from('batch_suggestions')
         .select('recipient_id', { count: 'exact', head: true })
         .eq('batch_id', batch.id)

@@ -528,7 +528,8 @@ export async function adminGenerateBatch() {
   }
 
   if (suggestions.length > 0) {
-    await supabase.from('batch_suggestions').insert(suggestions)
+    const adminClient = createAdminClient()
+    await adminClient.from('batch_suggestions').insert(suggestions)
   }
 
   revalidatePath('/dashboard/introductions')
@@ -974,6 +975,7 @@ export async function passOnSuggestion(rowId: string, permanent: boolean) {
     .from('batch_suggestions')
     .update({ status: permanent ? 'hidden_permanent' : 'passed' })
     .eq('id', rowId)
+    .eq('recipient_id', user.id)
 
   return { success: true }
 }
