@@ -84,10 +84,18 @@ ORDER BY polcmd, polname;
 --     FOR SELECT
 --     USING (auth.uid() IS NOT NULL);
 
--- POST-DROP STATE:
--- Only profiles_authenticated_read remains as a SELECT policy. Any authenticated
--- user can SELECT any profile row. This matches existing app behavior via
--- createAdminClient() in server routes and is a strict improvement over the
--- pre-drop anonymous exposure. A relationship-scoped policy (self + connections
--- + suggested + conversation participants) is the C8 Step 2 follow-up and is
--- out of scope for this fix.
+-- ── Step 5: Enable RLS on profiles ───────────────────────────────────────────
+-- Applied 2026-05-10 in Supabase dashboard SQL editor.
+-- Without this, all policies are inert (Postgres does not enforce RLS unless
+-- explicitly enabled per-table).
+--
+--   ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- POST-FIX STATE:
+-- RLS enabled. Only profiles_authenticated_read remains as a SELECT policy.
+-- Anon-key test confirmed: content-range */0, row fetch [].
+-- Any authenticated user can SELECT any profile row. This matches existing app
+-- behavior via createAdminClient() in server routes and is a strict improvement
+-- over the pre-fix anonymous exposure.
+-- A relationship-scoped policy (self + connections + suggested + conversation
+-- participants) is the C8 Step 2 follow-up and is out of scope for this fix.
