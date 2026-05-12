@@ -419,6 +419,10 @@ export async function sendDigestEmail(
   }
 }
 
+// NOTE: sendWaitlistConfirmationEmail is currently NOT called by the waitlist
+// signup path — disabled for V1 to mitigate SA2 (outbound-spam via the
+// public waitlist form). The function is retained for future re-enable
+// after verified-email or rate-limiting exists.
 export async function sendWaitlistConfirmationEmail(
   toEmail: string,
   toName: string,

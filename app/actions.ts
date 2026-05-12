@@ -703,10 +703,15 @@ export async function submitWaitlist(data: {
   if (!alertResult.success) {
     console.error('[submitWaitlist] admin alert failed:', alertResult.error)
   }
-  const confirmResult = await sendWaitlistConfirmationEmail(data.email, data.fullName)
-  if (!confirmResult.success) {
-    console.error('[waitlist-confirmation] email failed:', confirmResult.error)
-  }
+  // SA2 mitigation: disabled public-facing waitlist confirmation email for V1.
+  // The submitter's email is not verified at submit time, so sending confirmation
+  // mail to a caller-controlled address is an outbound-spam / sender-reputation
+  // attack vector. Re-enable when verified-email or rate-limiting exists.
+  // See product doc §15 / §19 item 10.
+  // const confirmResult = await sendWaitlistConfirmationEmail(data.email, data.fullName)
+  // if (!confirmResult.success) {
+  //   console.error('[waitlist-confirmation] email failed:', confirmResult.error)
+  // }
   return { success: true }
 }
 export async function adminSendWaitlistInvite(id: string) {
