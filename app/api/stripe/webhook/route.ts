@@ -20,16 +20,28 @@ export async function POST(req: NextRequest) {
   const adminClient = createAdminClient()
 
   try {
-    // Idempotency check: early-exit if this event was already processed
-    const { data: existingEvent } = await adminClient
+    // Idempotency: atomic INSERT — only one delivery of a given event ID can
+    // proceed. A 23505 unique-violation means a prior or concurrent delivery
+    // already claimed this slot; return 200 immediately without processing.
+    //
+    // INSERT-first (rather than SELECT-then-INSERT) eliminates the race window
+    // where two concurrent deliveries both pass a SELECT check and both proceed
+    // to process. The trade-off: if the handler crashes after claiming the slot
+    // but before completing a credit grant, the next Stripe retry will see the
+    // existing row and skip — credits would not be granted. At pre-launch volume
+    // this can be resolved manually via the Stripe Dashboard events list.
+    const { error: idempotencyError } = await adminClient
       .from('stripe_events')
-      .select('event_id')
-      .eq('event_id', event.id)
-      .maybeSingle()
+      .insert({ event_id: event.id })
 
-    if (existingEvent) {
-      console.log(`[webhook] duplicate event ${event.id}, skipping`)
-      return NextResponse.json({ received: true })
+    if (idempotencyError) {
+      if (idempotencyError.code === '23505') {
+        console.log(`[webhook] duplicate event ${event.id}, skipping`)
+        return NextResponse.json({ received: true })
+      }
+      // Unknown DB error claiming idempotency slot — return 500 so Stripe retries.
+      console.error(`[webhook] idempotency insert failed for ${event.id}:`, idempotencyError.message)
+      return NextResponse.json({ error: 'DB error' }, { status: 500 })
     }
 
     switch (event.type) {
@@ -83,6 +95,12 @@ export async function POST(req: NextRequest) {
 
           const currentFree = currentCredits?.free_credits ?? 0
           const currentPremium = currentCredits?.premium_credits ?? 0
+          // TOP-UP-ONLY renewal model (intentional): credits only increase to the
+          // tier floor on subscription creation, upgrade, or renewal. Unused credits
+          // above the floor carry forward indefinitely. There is no monthly hard-reset.
+          // invoice.payment_succeeded is intentionally NOT handled — subscription
+          // renewal fires customer.subscription.updated (current_period_end advances)
+          // which lands here and applies the same top-up logic.
           const newFree = Math.max(currentFree, newFloor)
 
           await adminClient.from('meeting_credits')
@@ -223,21 +241,6 @@ export async function POST(req: NextRequest) {
         }
         break
       }
-    }
-
-    // Idempotency record: insert only after successful processing.
-    // A mid-handler crash leaves this unwritten so Stripe's retry reprocesses
-    // cleanly. Upsert logic above is floor-based (idempotent), so a retry
-    // produces the same DB state.
-    const { error: idempotencyError } = await adminClient
-      .from('stripe_events')
-      .insert({ event_id: event.id })
-
-    if (idempotencyError) {
-      // CRITICAL: event processed but not recorded — next Stripe retry will
-      // reprocess. Floor logic makes that safe here; note for credit-pack
-      // commit where this must be verified again.
-      console.error(`[webhook] CRITICAL: idempotency insert failed for event ${event.id} (type: ${event.type}):`, idempotencyError.message)
     }
 
   } catch (err: any) {

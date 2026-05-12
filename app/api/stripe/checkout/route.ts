@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { stripe } from '@/lib/stripe'
+import { stripe, CREDIT_PACKS } from '@/lib/stripe'
 import { createClient } from '@/lib/supabase/server'
 
 export async function POST(req: NextRequest) {
@@ -31,6 +31,19 @@ export async function POST(req: NextRequest) {
       await supabase.from('profiles').update({ stripe_customer_id: customerId }).eq('id', user.id)
     }
 
+    // For credit-pack purchases (mode=payment), resolve the credit count from the
+    // server-side CREDIT_PACKS mapping and attach it to the session metadata.
+    // The webhook handler gates credit grants on metadata.type === 'credit_purchase'
+    // and metadata.credits — without these, a completed checkout would charge the
+    // customer but grant no credits. Resolved server-side (not from client) so the
+    // credit count cannot be spoofed.
+    const creditPack = mode === 'payment' ? CREDIT_PACKS.find(p => p.priceId === priceId) : null
+    const sessionMetadata: Record<string, string> = { supabase_user_id: user.id }
+    if (creditPack) {
+      sessionMetadata.type = 'credit_purchase'
+      sessionMetadata.credits = String(creditPack.credits)
+    }
+
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       payment_method_types: ['card'],
@@ -38,7 +51,7 @@ export async function POST(req: NextRequest) {
       mode: mode === 'payment' ? 'payment' : 'subscription',
       success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/dashboard/billing?success=true`,
       cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/dashboard/billing?cancelled=true`,
-      metadata: { supabase_user_id: user.id },
+      metadata: sessionMetadata,
     })
 
     return NextResponse.json({ url: session.url })
