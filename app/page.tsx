@@ -45,6 +45,9 @@ export default async function Home() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <span className="text-xl font-bold text-brand-navy tracking-tight">Andrel</span>
           <div className="flex items-center gap-3">
+            <Link href="/about" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
+              About
+            </Link>
             <Link href="/pricing" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
               Pricing
             </Link>
@@ -160,6 +163,11 @@ export default async function Home() {
       </main>
 
       <footer className="border-t border-slate-100 py-8 text-center text-sm text-slate-400">
+        <div className="flex items-center justify-center gap-6 mb-3">
+          <Link href="/about" className="hover:text-slate-600 transition-colors">About</Link>
+          <Link href="/pricing" className="hover:text-slate-600 transition-colors">Pricing</Link>
+          <Link href="/login" className="hover:text-slate-600 transition-colors">Sign in</Link>
+        </div>
         © {new Date().getFullYear()} Andrel. All rights reserved.
       </footer>
     </div>
