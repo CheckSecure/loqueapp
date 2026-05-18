@@ -7,10 +7,13 @@ import { createClient } from '@/lib/supabase/client'
 import { Loader2, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-// Recovery token lives in the URL fragment (#access_token=...&type=recovery).
-// Fragments are invisible to server components — this MUST be a client component.
-// We detect the token by listening for the PASSWORD_RECOVERY auth state event;
-// the Supabase JS client parses the fragment and fires the event automatically.
+// Supabase uses PKCE flow by default (v2 client). The recovery code is
+// delivered as a query parameter: /auth/reset-password?code=pkce_<token>
+// We call exchangeCodeForSession(code) to establish the recovery session,
+// then updateUser({ password }) to set the new password.
+//
+// onAuthStateChange (PASSWORD_RECOVERY) is retained as a fallback for
+// implicit-flow environments or edge cases.
 
 type Phase = 'waiting' | 'ready' | 'submitting' | 'success' | 'invalid'
 
@@ -24,22 +27,38 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     const supabase = createClient()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
+    // Primary path: PKCE flow — exchange the ?code= query param for a session.
+    // Read via window.location.search (safe in useEffect; avoids Suspense
+    // boundary requirement of useSearchParams in App Router pages).
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+
+    if (!code) {
+      // Direct visit with no code — show invalid state immediately.
+      setPhase('invalid')
+      return
+    }
+
+    // Never log the code value — it is a sensitive single-use token.
+    supabase.auth.exchangeCodeForSession(code).then(({ error: exchangeError }) => {
+      if (exchangeError) {
+        console.error('[reset-password] code exchange failed:', exchangeError.message)
+        setPhase('invalid')
+      } else {
         setPhase('ready')
       }
     })
 
-    // If no PASSWORD_RECOVERY event fires within 3 seconds the link is
-    // invalid or expired. Guard with a functional update so a late-firing
-    // event (race) won't be overwritten.
-    const timeout = setTimeout(() => {
-      setPhase(prev => prev === 'waiting' ? 'invalid' : prev)
-    }, 3000)
+    // Fallback: implicit flow — retained in case the project switches flow type
+    // or the recovery token arrives via URL fragment instead of query param.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setPhase(prev => prev === 'waiting' ? 'ready' : prev)
+      }
+    })
 
     return () => {
       subscription.unsubscribe()
-      clearTimeout(timeout)
     }
   }, [])
 
