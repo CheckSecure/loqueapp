@@ -7,13 +7,14 @@ import { createClient } from '@/lib/supabase/client'
 import { Loader2, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-// Supabase uses PKCE flow by default (v2 client). The recovery code is
-// delivered as a query parameter: /auth/reset-password?code=pkce_<token>
-// We call exchangeCodeForSession(code) to establish the recovery session,
-// then updateUser({ password }) to set the new password.
+// Implicit flow: Supabase /auth/v1/verify consumes the one-time token when
+// the user clicks the email link, then redirects here with the session in the
+// URL fragment: #access_token=...&type=recovery&...
 //
-// onAuthStateChange (PASSWORD_RECOVERY) is retained as a fallback for
-// implicit-flow environments or edge cases.
+// The Supabase JS client detects the fragment automatically and fires
+// onAuthStateChange with event === 'PASSWORD_RECOVERY'. This page is purely
+// passive on mount — no token exchange, no query-param reading, no /verify
+// calls. The Supabase client handles all of that; we just listen.
 
 type Phase = 'waiting' | 'ready' | 'submitting' | 'success' | 'invalid'
 
@@ -25,40 +26,37 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const supabase = createClient()
+    // Early detection via URL hash — avoids unnecessary wait time.
+    // hash=recovery context → wait for PASSWORD_RECOVERY event (don't timeout early)
+    // hash=error          → token expired/denied, show invalid immediately
+    // no recovery context → direct visit, show invalid immediately
+    const hash = window.location.hash
+    const hasRecoveryContext = hash.includes('type=recovery') && hash.includes('access_token')
+    const hasHashError = hash.includes('error=')
 
-    // Primary path: PKCE flow — exchange the ?code= query param for a session.
-    // Read via window.location.search (safe in useEffect; avoids Suspense
-    // boundary requirement of useSearchParams in App Router pages).
-    const params = new URLSearchParams(window.location.search)
-    const code = params.get('code')
-
-    if (!code) {
-      // Direct visit with no code — show invalid state immediately.
+    if (hasHashError || (!hasRecoveryContext && !hash)) {
       setPhase('invalid')
       return
     }
 
-    // Never log the code value — it is a sensitive single-use token.
-    supabase.auth.exchangeCodeForSession(code).then(({ error: exchangeError }) => {
-      if (exchangeError) {
-        console.error('[reset-password] code exchange failed:', exchangeError.message)
-        setPhase('invalid')
-      } else {
+    const supabase = createClient()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
         setPhase('ready')
       }
     })
 
-    // Fallback: implicit flow — retained in case the project switches flow type
-    // or the recovery token arrives via URL fragment instead of query param.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setPhase(prev => prev === 'waiting' ? 'ready' : prev)
-      }
-    })
+    // Fallback timeout: if the Supabase client parses the fragment but the
+    // PASSWORD_RECOVERY event doesn't fire within 5 seconds, something is wrong.
+    // Functional update ensures a late-firing event won't be overwritten.
+    const timeout = setTimeout(() => {
+      setPhase(prev => prev === 'waiting' ? 'invalid' : prev)
+    }, 5000)
 
     return () => {
       subscription.unsubscribe()
+      clearTimeout(timeout)
     }
   }, [])
 
@@ -122,7 +120,7 @@ export default function ResetPasswordPage() {
             <h2 className="text-2xl font-bold text-slate-900">Set new password</h2>
           </div>
 
-          {/* Waiting for recovery token */}
+          {/* Waiting for recovery session */}
           {phase === 'waiting' && (
             <div className="flex items-center gap-3 text-sm text-slate-500">
               <Loader2 className="w-4 h-4 animate-spin shrink-0" />
