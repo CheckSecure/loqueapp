@@ -23,12 +23,20 @@ export default function ForgotPasswordPage() {
       : `${window.location.origin}/auth/reset-password`
 
     const supabase = createClient()
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+    // Magic-link sign-in: bypasses the broken Supabase password-recovery flow.
+    // shouldCreateUser: false prevents new-account creation via this path.
+    // The user receives a sign-in link, clicks it, lands on /auth/reset-password
+    // already authenticated, and is prompted to set a new password.
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false, emailRedirectTo: redirectTo },
+    })
 
-    if (resetError) {
-      // Surface unexpected errors (e.g. rate limit), but not "email not found"
-      // which Supabase doesn't distinguish anyway. Generic message prevents enumeration.
-      console.error('[forgot-password] reset request error:', resetError.message)
+    if (otpError) {
+      // Surface unexpected errors (e.g. rate limit). Generic message prevents
+      // email enumeration — Supabase returns the same response for unknown emails
+      // when shouldCreateUser: false, so we never reveal whether the account exists.
+      console.error('[forgot-password] otp request error:', otpError.message)
       setError('Something went wrong. Please try again.')
       setPhase('compose')
       return
@@ -72,7 +80,7 @@ export default function ForgotPasswordPage() {
 
           {phase === 'sent' ? (
             <div className="bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-4 rounded-lg leading-relaxed">
-              If an account exists for that email, you'll receive password reset instructions shortly.
+              If an account exists for that email, you'll receive a sign-in link shortly.
               Check your spam folder if it doesn't arrive within a few minutes.
               <div className="mt-4">
                 <Link href="/login" className="text-brand-navy font-semibold hover:underline text-sm">

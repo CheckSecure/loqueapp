@@ -7,14 +7,11 @@ import { createClient } from '@/lib/supabase/client'
 import { Loader2, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-// Implicit flow: Supabase /auth/v1/verify consumes the one-time token when
-// the user clicks the email link, then redirects here with the session in the
-// URL fragment: #access_token=...&type=recovery&...
-//
-// The Supabase JS client detects the fragment automatically and fires
-// onAuthStateChange with event === 'PASSWORD_RECOVERY'. This page is purely
-// passive on mount — no token exchange, no query-param reading, no /verify
-// calls. The Supabase client handles all of that; we just listen.
+// Magic-link flow: the user clicked a sign-in link from the forgot-password
+// email. Supabase signed them in and redirected here with an active session.
+// This page checks for that session on mount and immediately shows the
+// "set new password" form. No token exchange, no auth-event listening,
+// no recovery-specific URL parsing — just getUser() then updateUser().
 
 type Phase = 'waiting' | 'ready' | 'submitting' | 'success' | 'invalid'
 
@@ -26,38 +23,25 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Early detection via URL hash — avoids unnecessary wait time.
-    // hash=recovery context → wait for PASSWORD_RECOVERY event (don't timeout early)
-    // hash=error          → token expired/denied, show invalid immediately
-    // no recovery context → direct visit, show invalid immediately
-    const hash = window.location.hash
-    const hasRecoveryContext = hash.includes('type=recovery') && hash.includes('access_token')
-    const hasHashError = hash.includes('error=')
-
-    if (hasHashError || (!hasRecoveryContext && !hash)) {
-      setPhase('invalid')
-      return
-    }
-
     const supabase = createClient()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
+    // The Supabase client processes the URL fragment on initialisation and
+    // establishes the session. Give it a tick to complete before calling
+    // getUser(), then check whether we're authenticated.
+    const check = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
         setPhase('ready')
+      } else {
+        // Not authenticated — either a direct visit or the link has expired.
+        setPhase('invalid')
       }
-    })
-
-    // Fallback timeout: if the Supabase client parses the fragment but the
-    // PASSWORD_RECOVERY event doesn't fire within 5 seconds, something is wrong.
-    // Functional update ensures a late-firing event won't be overwritten.
-    const timeout = setTimeout(() => {
-      setPhase(prev => prev === 'waiting' ? 'invalid' : prev)
-    }, 5000)
-
-    return () => {
-      subscription.unsubscribe()
-      clearTimeout(timeout)
     }
+
+    // Small delay lets the Supabase client finish hydrating the session from
+    // the URL fragment before we query it.
+    const timer = setTimeout(check, 500)
+    return () => clearTimeout(timer)
   }, [])
 
   async function handleReset(e: React.FormEvent) {
@@ -81,7 +65,7 @@ export default function ResetPasswordPage() {
       console.error('[reset-password] updateUser error:', updateError.message)
       setError(
         updateError.message.includes('expired') || updateError.message.includes('invalid')
-          ? 'This reset link has expired. Please request a new one.'
+          ? 'This link has expired. Please request a new one.'
           : updateError.message
       )
       setPhase('ready')
@@ -120,25 +104,25 @@ export default function ResetPasswordPage() {
             <h2 className="text-2xl font-bold text-slate-900">Set new password</h2>
           </div>
 
-          {/* Waiting for recovery session */}
+          {/* Checking session */}
           {phase === 'waiting' && (
             <div className="flex items-center gap-3 text-sm text-slate-500">
               <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-              Verifying reset link…
+              Verifying…
             </div>
           )}
 
-          {/* Invalid / expired link */}
+          {/* Invalid / expired / direct visit */}
           {phase === 'invalid' && (
             <div className="space-y-4">
               <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-4 rounded-lg leading-relaxed">
-                This password reset link is invalid or has expired. Reset links are single-use and expire after one hour.
+                This link is invalid or has expired. Links are single-use and expire after one hour.
               </div>
               <Link
                 href="/auth/forgot-password"
                 className="inline-block text-sm font-semibold text-brand-navy hover:underline"
               >
-                Request a new reset link
+                Request a new link
               </Link>
             </div>
           )}
