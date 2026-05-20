@@ -410,7 +410,7 @@ export default function MeetingDetailModal({
                   disabled={deleting}
                   className="flex-1"
                 >
-                  Decline
+                  {showRescheduleResponse ? 'Decline Reschedule' : 'Decline'}
                 </Button>
               )}
               {canReschedule && (
@@ -419,7 +419,7 @@ export default function MeetingDetailModal({
                   onClick={() => setShowReschedule(true)}
                   className={showAcceptDecline ? 'flex-1' : 'w-full'}
                 >
-                  Reschedule
+                  {showRescheduleResponse ? 'Propose Another Time' : 'Reschedule'}
                 </Button>
               )}
             </div>
