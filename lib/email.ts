@@ -1,6 +1,46 @@
 import { Resend } from 'resend'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
+
+type NotifCategory =
+  | 'email_new_introductions'
+  | 'email_messages'
+  | 'email_meeting_updates'
+  | 'email_opportunities'
+  | 'email_product_updates'
+
+type NotifCategoryWithDigest = NotifCategory | 'email_daily_digest'
+
+async function isPrefEnabled(toEmail: string, category: NotifCategoryWithDigest): Promise<boolean> {
+  try {
+    const admin = createAdminClient()
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('email', toEmail)
+      .maybeSingle()
+    if (!profile) return true
+    const { data: prefs } = await admin
+      .from('notification_preferences')
+      .select(category)
+      .eq('user_id', profile.id)
+      .maybeSingle()
+    if (!prefs) return true
+    const enabled = (prefs as Record<string, boolean>)[category] !== false
+    if (!enabled) {
+      console.log(JSON.stringify({
+        event: 'email_suppressed',
+        category,
+        recipient_id: profile.id,
+        reason: 'user_preference',
+      }))
+    }
+    return enabled
+  } catch {
+    return true
+  }
+}
 
 export function escapeHtml(s: string | null | undefined): string {
   if (!s) return '—'
@@ -25,6 +65,7 @@ export async function sendMatchCreatedEmail(
   matchRole?: string,
   matchCompany?: string
 ) {
+  if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
   const roleCompany = [matchRole, matchCompany].filter(Boolean).join(' at ')
   
   await resend.emails.send({
@@ -61,6 +102,7 @@ export async function sendNewMessageEmail(
   fromName: string,
   messagePreview: string
 ) {
+  if (!await isPrefEnabled(toEmail, 'email_messages')) return
   await resend.emails.send({
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
@@ -93,6 +135,7 @@ export async function sendNewBatchEmail(
   toName: string,
   introCount: number
 ) {
+  if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
   await resend.emails.send({
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
@@ -235,6 +278,7 @@ export async function sendMeetingRequestEmail(
   meetingTime: string,
   meetingPurpose?: string
 ) {
+  if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
   await resend.emails.send({
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
@@ -271,6 +315,7 @@ export async function sendMeetingAcceptedEmail(
   meetingDate: string,
   meetingTime: string
 ) {
+  if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
   await resend.emails.send({
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
@@ -304,6 +349,7 @@ export async function sendMeetingDeclinedEmail(
   toName: string,
   declinedByName: string
 ) {
+  if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
   await resend.emails.send({
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
@@ -337,6 +383,7 @@ export async function sendMeetingRescheduledEmail(
   newTime: string,
   meetingPurpose?: string
 ) {
+  if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
   await resend.emails.send({
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
@@ -372,6 +419,7 @@ export async function sendDigestEmail(
   unreadMessages: number,
   pendingMeetings: number
 ): Promise<{ success: boolean; error?: string }> {
+  if (!await isPrefEnabled(toEmail, 'email_daily_digest')) return { success: true }
   const items: string[] = []
   if (unreadMessages > 0) {
     items.push(

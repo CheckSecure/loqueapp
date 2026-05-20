@@ -7,7 +7,7 @@ import PasswordChangeForm from '@/components/PasswordChangeForm'
 import AccountDeletion from '@/components/AccountDeletion'
 import { OpportunityPreferences } from '@/components/opportunities/OpportunityPreferences'
 import ReportIssueButton from '@/components/ReportIssueButton'
-import EmailNotificationToggle from '@/components/EmailNotificationToggle'
+import EmailPreferencesForm from '@/components/EmailPreferencesForm'
 import { Mail, FileText, AlertCircle, UserPlus } from 'lucide-react'
 
 export const metadata = { title: 'Settings | Andrel' }
@@ -24,6 +24,21 @@ export default async function SettingsPage() {
     .single()
 
   if (!profile) redirect('/login')
+
+  const { data: notifPrefs } = await supabase
+    .from('notification_preferences')
+    .select('*')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  const initialNotifPrefs = {
+    email_new_introductions: notifPrefs?.email_new_introductions ?? true,
+    email_messages: notifPrefs?.email_messages ?? true,
+    email_meeting_updates: notifPrefs?.email_meeting_updates ?? true,
+    email_opportunities: notifPrefs?.email_opportunities ?? true,
+    email_product_updates: notifPrefs?.email_product_updates ?? true,
+    email_daily_digest: notifPrefs?.email_daily_digest ?? true,
+  }
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 sm:py-12 space-y-6 sm:space-y-8">
@@ -77,10 +92,13 @@ export default async function SettingsPage() {
       {/* Notifications */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Email notifications</h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Control which non-essential email alerts you receive. Important account, security, and billing emails will always be sent.
+          </p>
         </div>
         <div className="px-6 py-5">
-          <EmailNotificationToggle enabled={profile.email_notifications_enabled ?? true} />
+          <EmailPreferencesForm initial={initialNotifPrefs} />
         </div>
       </div>
 

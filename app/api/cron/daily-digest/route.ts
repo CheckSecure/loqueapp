@@ -11,11 +11,11 @@ export async function GET(req: Request) {
   const admin = createAdminClient()
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-  // Users who want digests and haven't been active in the last 24 hours
+  // Candidate recipients: anyone with an email who hasn't been active in 24h.
+  // Per-user opt-out is enforced inside sendDigestEmail via email_daily_digest.
   const { data: profiles } = await admin
     .from('profiles')
     .select('id, full_name, email, last_active_at')
-    .eq('email_notifications_enabled', true)
     .not('email', 'is', null)
     .or(`last_active_at.is.null,last_active_at.lt.${cutoff}`)
 
