@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
-import NetworkCard from '@/components/NetworkCard'
+import NetworkList from '@/components/NetworkList'
 import MarkNetworkNotificationsRead from '@/components/MarkNetworkNotificationsRead'
 import { generateMatchInsights } from '@/lib/matching/matchInsights'
 
@@ -136,19 +136,7 @@ export default async function NetworkPage() {
             <p className="text-xs text-slate-400 max-w-xs mx-auto">Once Andrel facilitates an introduction, your connections will appear here.</p>
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 gap-4">
-            {connections.map(({ matchId, profile, connectedAt, isNew, matchInsights, conversationId }: any) => (
-              <NetworkCard
-                key={matchId}
-                matchId={matchId}
-                profile={profile}
-                connectedAt={connectedAt}
-                isNew={isNew}
-                matchInsights={matchInsights}
-                conversationId={conversationId}
-              />
-            ))}
-          </div>
+          <NetworkList connections={connections} />
         )}
       </div>
     </div>

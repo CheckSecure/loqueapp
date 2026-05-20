@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Briefcase, MapPin, MessageSquare, Calendar, Eye } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { formatDistanceToNow } from 'date-fns'
 import ConnectionDetailModal from '@/components/network/ConnectionDetailModal'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
 
@@ -37,9 +38,12 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
   const isDeactivated = profile.account_status === 'deactivated'
   const avatarColor = pickColor(profile.id)
   const initials = getInitials(profile.full_name)
-  const connectedDate = connectedAt
-    ? new Date(connectedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : null
+  const connectedRelative = (() => {
+    if (!connectedAt) return null
+    const d = new Date(connectedAt)
+    if (Number.isNaN(d.getTime()) || d.getTime() === 0) return null
+    return formatDistanceToNow(d, { addSuffix: true })
+  })()
 
   function handleOpenDetails(e: React.MouseEvent) {
     e.preventDefault()
@@ -132,8 +136,8 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
           <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{profile.bio}</p>
         )}
 
-        {connectedAt && connectedDate && connectedDate !== 'Jan 1, 1970' && (
-          <div className="text-xs text-slate-400">Connected {connectedDate}</div>
+        {connectedRelative && (
+          <div className="text-xs text-slate-400">Connected through Andrel · {connectedRelative}</div>
         )}
 
         <div className="flex gap-2 pt-1 border-t border-slate-50">
