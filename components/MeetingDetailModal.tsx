@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink, Trash2, CheckCircle, XCircle } from 'lucide-react'
+import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { deleteMeeting, acceptMeeting, declineMeeting } from '@/app/actions'
 import RescheduleMeetingModal from './RescheduleMeetingModal'
+import { Button } from '@/components/ui/Button'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]', 'bg-[#2E4080]', 'bg-amber-500', 'bg-rose-500',
@@ -161,6 +162,11 @@ export default function MeetingDetailModal({
     }
   }
 
+  const showAcceptDecline =
+    ((meeting.status === 'requested' && !meeting.isOrganizer) || meeting.status === 'reschedule_requested') &&
+    !meeting.isPast
+  const showJoinMeeting = Boolean(meeting.zoom_link) && !meeting.isPast
+
   return (
     <>
     <div className="fixed inset-0 z-50 flex items-end md:items-stretch">
@@ -195,15 +201,16 @@ export default function MeetingDetailModal({
           <h2 className="text-sm font-semibold text-slate-900">Meeting details</h2>
           <button
             onClick={handleClose}
+            aria-label="Close"
             className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors"
           >
             <X className="w-4 h-4 text-slate-500" />
           </button>
         </div>
 
-        {/* Scrollable body */}
+        {/* Scrollable body — content only */}
         <div className="flex-1 overflow-y-auto">
-          <div className="px-5 py-5 space-y-6">
+          <div className="px-5 py-6 space-y-6">
 
             {/* Person profile card */}
             {meeting.other && (
@@ -240,7 +247,7 @@ export default function MeetingDetailModal({
               )}
             </div>
 
-            {/* Date & time */}
+            {/* Date & time — Add to Calendar sits directly below */}
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
                 <Calendar className="w-4 h-4 text-[#1B2850]" />
@@ -269,6 +276,12 @@ export default function MeetingDetailModal({
                     </p>
                   </>
                 )}
+                <button
+                  onClick={() => downloadICS(meeting)}
+                  className="mt-2 text-xs text-[#C4922A] font-medium hover:underline"
+                >
+                  Add to Calendar
+                </button>
               </div>
             </div>
 
@@ -329,64 +342,79 @@ export default function MeetingDetailModal({
                 </div>
               </div>
             )}
+
           </div>
-        
-          {((meeting.status === 'requested' && !meeting.isOrganizer) || meeting.status === 'reschedule_requested') && !meeting.isPast && (
-            <div className="flex gap-2 mb-3">
-              <button
-                onClick={handleAccept}
-                disabled={deleting}
-                className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
-              >
-                <CheckCircle className="w-4 h-4" />
-                Accept
-              </button>
-              <button
-                onClick={handleDecline}
-                disabled={deleting}
-                className="flex-1 flex items-center justify-center gap-2 text-sm font-semibold bg-red-600 text-white px-4 py-2.5 rounded-xl hover:bg-red-700 transition-colors disabled:opacity-50"
-              >
-                <XCircle className="w-4 h-4" />
-                Decline
-              </button>
-            </div>
+        </div>
+
+        {/* Fixed bottom actions */}
+        <div className="flex-shrink-0 px-5 pt-5 pb-safe-or-6 pb-6 border-t border-slate-100 space-y-3">
+
+          {/* Primary: Accept Meeting — shown when a response is needed */}
+          {showAcceptDecline && (
+            <Button
+              variant="primary"
+              onClick={handleAccept}
+              disabled={deleting}
+              className="w-full"
+            >
+              Accept Meeting
+            </Button>
           )}
 
-          <button
-            onClick={() => setShowReschedule(true)}
-            className="w-full text-sm font-semibold border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl hover:border-slate-300 hover:text-slate-800 transition-colors flex items-center justify-center gap-2 mb-3"
-          >
-            Reschedule
-          </button>
+          {/* Primary (when no pending response): Join Meeting */}
+          {!showAcceptDecline && showJoinMeeting && (
+            <a
+              href={meeting.zoom_link!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex w-full items-center justify-center rounded-xl font-medium transition-colors px-4 py-2.5 text-sm bg-brand-navy text-white hover:bg-brand-navy-dark"
+            >
+              Join Meeting
+            </a>
+          )}
 
+          {/* Join Meeting as secondary — when pending response and zoom link present */}
+          {showAcceptDecline && showJoinMeeting && (
+            <a
+              href={meeting.zoom_link!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex w-full items-center justify-center rounded-xl font-medium transition-colors px-4 py-2.5 text-sm bg-white border border-brand-navy text-brand-navy hover:bg-brand-navy hover:text-white"
+            >
+              Join Meeting
+            </a>
+          )}
+
+          {/* Secondary: Decline (conditional) + Reschedule */}
+          <div className="flex gap-2">
+            {showAcceptDecline && (
+              <Button
+                variant="ghost"
+                onClick={handleDecline}
+                disabled={deleting}
+                className="flex-1"
+              >
+                Decline
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              onClick={() => setShowReschedule(true)}
+              className={showAcceptDecline ? 'flex-1' : 'w-full'}
+            >
+              Reschedule
+            </Button>
+          </div>
+
+          {/* Destructive: Delete Meeting — lowest visual emphasis */}
           <button
             onClick={handleDelete}
             disabled={deleting}
-            className="w-full text-sm font-semibold border border-red-200 text-red-600 px-4 py-2.5 rounded-xl hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mt-3"
+            className="w-full text-sm font-medium text-red-600 hover:text-red-700 transition-colors disabled:opacity-50 py-1"
           >
-            <Trash2 className="w-4 h-4" />
-            {deleting ? 'Deleting...' : 'Delete Meeting'}
+            {deleting ? 'Deleting…' : 'Delete Meeting'}
           </button>
-        </div>
 
-        {/* Footer actions */}
-        <div className="flex-shrink-0 px-5 pb-safe-or-6 pb-6 pt-4 border-t border-slate-100 flex gap-3">
-          <button
-            onClick={() => downloadICS(meeting)}
-            className="flex-1 text-sm font-semibold border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl hover:border-slate-300 hover:text-slate-800 transition-colors"
-          >
-            + Calendar
-          </button>
-          {meeting.zoom_link && !meeting.isPast && (
-            <a
-              href={meeting.zoom_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 text-sm font-semibold bg-[#1B2850] text-white px-4 py-2.5 rounded-xl hover:bg-[#2E4080] transition-colors text-center"
-            >
-              Join meeting
-            </a>
-          )}
         </div>
       </div>
     </div>
