@@ -162,9 +162,25 @@ export default function MeetingDetailModal({
     }
   }
 
-  const showAcceptDecline =
-    ((meeting.status === 'requested' && !meeting.isOrganizer) || meeting.status === 'reschedule_requested') &&
+  // Invite response: the recipient of the original meeting request needs to respond.
+  const showInviteResponse =
+    meeting.status === 'requested' &&
+    !meeting.isOrganizer &&
     !meeting.isPast
+
+  // Reschedule response: the other party proposed a new time and the current user needs to respond.
+  // Gate on the proposed time being in the future (not the original scheduled_at, which may be past).
+  // isNew is the best available proxy for "recipient of the reschedule proposal" given the current
+  // schema (no reschedule_proposer_id column). It equals !isOrganizer, which is correct when the
+  // organizer proposes; the edge case where the recipient proposes requires a schema change.
+  const showRescheduleResponse =
+    meeting.status === 'reschedule_requested' &&
+    Boolean(meeting.isNew) &&
+    Boolean(meeting.proposed_scheduled_at) &&
+    new Date(meeting.proposed_scheduled_at!) > new Date()
+
+  const showAcceptDecline = showInviteResponse || showRescheduleResponse
+  const canReschedule = !meeting.isPast
   const showJoinMeeting = Boolean(meeting.zoom_link) && !meeting.isPast
 
   return (
@@ -349,7 +365,7 @@ export default function MeetingDetailModal({
         {/* Fixed bottom actions */}
         <div className="flex-shrink-0 px-5 pt-5 pb-safe-or-6 pb-6 border-t border-slate-100 space-y-3">
 
-          {/* Primary: Accept Meeting — shown when a response is needed */}
+          {/* Primary: Accept — label differs between initial invite and reschedule proposal */}
           {showAcceptDecline && (
             <Button
               variant="primary"
@@ -357,7 +373,7 @@ export default function MeetingDetailModal({
               disabled={deleting}
               className="w-full"
             >
-              Accept Meeting
+              {showRescheduleResponse ? 'Accept New Time' : 'Accept Meeting'}
             </Button>
           )}
 
@@ -385,26 +401,30 @@ export default function MeetingDetailModal({
             </a>
           )}
 
-          {/* Secondary: Decline (conditional) + Reschedule */}
-          <div className="flex gap-2">
-            {showAcceptDecline && (
-              <Button
-                variant="ghost"
-                onClick={handleDecline}
-                disabled={deleting}
-                className="flex-1"
-              >
-                Decline
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              onClick={() => setShowReschedule(true)}
-              className={showAcceptDecline ? 'flex-1' : 'w-full'}
-            >
-              Reschedule
-            </Button>
-          </div>
+          {/* Secondary: Decline (when response needed) + Reschedule (when not past) */}
+          {(showAcceptDecline || canReschedule) && (
+            <div className="flex gap-2">
+              {showAcceptDecline && (
+                <Button
+                  variant="ghost"
+                  onClick={handleDecline}
+                  disabled={deleting}
+                  className="flex-1"
+                >
+                  Decline
+                </Button>
+              )}
+              {canReschedule && (
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowReschedule(true)}
+                  className={showAcceptDecline ? 'flex-1' : 'w-full'}
+                >
+                  Reschedule
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Destructive: Delete Meeting — lowest visual emphasis */}
           <button
