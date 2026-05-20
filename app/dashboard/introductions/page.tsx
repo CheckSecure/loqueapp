@@ -1,17 +1,22 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { Briefcase, MapPin, Inbox, Star, Sparkles, Clock } from 'lucide-react'
+import { Briefcase, MapPin, Inbox, Star, Sparkles, Clock, ChevronDown } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
 import AdminIntroCard from '@/components/AdminIntroCard'
 import WithdrawInterestButton from '@/components/WithdrawInterestButton'
 import IntroductionCard from '@/components/IntroductionCard'
 import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
+import EarlierIntroductionsBanner from '@/components/EarlierIntroductionsBanner'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 export const metadata = { title: 'Introductions | Andrel' }
+
+// Days after which a quiet in-app banner surfaces for untouched earlier introductions.
+// Tune here without grep-and-replace.
+const STALE_INTRODUCTION_THRESHOLD_DAYS = 14
 
 // Avatar helpers moved to components/ui/Avatar (Phase 0 primitive).
 
@@ -81,7 +86,7 @@ export default async function IntroductionsPage() {
     { data: existingMatches },
     { data: suggestedIntros },
     { data: adminIntrosRaw },
-    { data: activeBatchRows },
+    { data: userBatchRows },
     { data: existingRequests },
   ] = await Promise.all([
     supabase
@@ -101,17 +106,54 @@ export default async function IntroductionsPage() {
       .eq('is_admin_initiated', true)
       .in('status', ['admin_pending', 'approved'])
       .order('created_at', { ascending: false }),
+    // Per-user batch ordering: find the user's two most recent batches by their
+    // own batch_suggestions rows (not the global active batch).
     supabase
-      .from('introduction_batches')
-      .select('id, batch_number')
-      .eq('status', 'active')
-      .limit(1),
+      .from('batch_suggestions')
+      .select('batch_id, created_at')
+      .eq('recipient_id', profileId)
+      .order('created_at', { ascending: false })
+      .limit(50),
     supabase
       .from('intro_requests')
       .select('target_user_id, created_at')
       .eq('requester_id', user.id)
       .order('created_at', { ascending: false }),
   ])
+
+  // Distinct batch_ids in DESC order — current is [0], prior is [1].
+  const orderedBatchIds: string[] = []
+  for (const row of userBatchRows || []) {
+    if (row.batch_id && !orderedBatchIds.includes(row.batch_id)) {
+      orderedBatchIds.push(row.batch_id)
+      if (orderedBatchIds.length === 2) break
+    }
+  }
+  const currentBatchId = orderedBatchIds[0] ?? null
+  const priorBatchId = orderedBatchIds[1] ?? null
+
+  // Untouched suggestions from the current + prior batch only.
+  const visibleBatchIds = orderedBatchIds.filter(Boolean)
+  const { data: visibleBatchRows } = visibleBatchIds.length > 0
+    ? await supabase
+        .from('batch_suggestions')
+        .select('id, suggested_id, reason, batch_id, created_at')
+        .in('batch_id', visibleBatchIds)
+        .eq('recipient_id', profileId)
+        .not('status', 'in', '(passed,hidden_permanent)')
+    : { data: [] as any[] }
+
+  // Has the user dismissed the earlier-introductions banner for their current batch?
+  let bannerDismissed = false
+  if (currentBatchId) {
+    const { data: dismissalRow } = await supabase
+      .from('introduction_banner_dismissals')
+      .select('batch_id')
+      .eq('user_id', profileId)
+      .eq('batch_id', currentBatchId)
+      .maybeSingle()
+    bannerDismissed = !!dismissalRow
+  }
 
   const matchedUserIds = new Set(
     (existingMatches || []).flatMap((m: any) =>
@@ -144,30 +186,25 @@ export default async function IntroductionsPage() {
 
   const adminIntrosFiltered = adminIntros.filter(Boolean)
 
-  const activeBatch = activeBatchRows?.[0] ?? null
-
-  // This week's suggestions (not yet acted on)
-  const { data: newRows, error: batchError } = activeBatch
-    ? await supabase
-        .from('batch_suggestions')
-        .select('id, suggested_id, reason')
-        .eq('batch_id', activeBatch.id)
-        .eq('recipient_id', profileId)
-        .not('status', 'in', '(passed,hidden_permanent)')
-    : { data: [], error: null }
-
   const requestedIds = new Set((existingRequests || []).map((r: any) => r.target_user_id))
 
-  // All batch suggestions with their interest status - EXCLUDE MATCHED USERS
-  const allSuggestionIds = (newRows || [])
-    .map((r: any) => r.suggested_id)
-    .filter((id: string) => id && !matchedUserIds.has(id))
+  // Split visible batch suggestions into current vs prior, excluding matched users.
+  const currentBatchRows = (visibleBatchRows || []).filter(
+    (r: any) => r.batch_id === currentBatchId && r.suggested_id && !matchedUserIds.has(r.suggested_id)
+  )
+  const priorBatchRows = (visibleBatchRows || []).filter(
+    (r: any) => r.batch_id === priorBatchId && r.suggested_id && !matchedUserIds.has(r.suggested_id)
+  )
+
+  const currentSuggestionIds = currentBatchRows.map((r: any) => r.suggested_id)
+  const priorSuggestionIds = priorBatchRows.map((r: any) => r.suggested_id)
 
   // Sidecar: collect all other-party IDs and find which are not active (catches deactivated + flagged)
   const allOtherPartyIds = Array.from(new Set([
     ...(adminIntrosRaw || []).map((i: any) => i.requester_id),
     ...(suggestedIntros || []).map((i: any) => i.target_user_id),
-    ...allSuggestionIds,
+    ...currentSuggestionIds,
+    ...priorSuggestionIds,
   ]))
   const deactivatedIds = new Set<string>()
   if (allOtherPartyIds.length > 0) {
@@ -183,19 +220,22 @@ export default async function IntroductionsPage() {
     (intro: any) => !deactivatedIds.has(intro.requester_id)
   )
 
-  // Fetch all profiles needed
+  // Fetch all profiles needed (current + prior batch).
+  const allBatchProfileIds = Array.from(new Set([...currentSuggestionIds, ...priorSuggestionIds]))
+    .filter((id: string) => !deactivatedIds.has(id))
   let profileMap: Record<string, any> = {}
-  if (allSuggestionIds.length > 0) {
+  if (allBatchProfileIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
       .select('id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url')
-      .in('id', allSuggestionIds)
+      .in('id', allBatchProfileIds)
     for (const p of profiles || []) profileMap[p.id] = p
   }
 
-  const rowMap: Record<string, any> = {}
-  for (const r of newRows || []) rowMap[r.suggested_id] = r
-
+  const currentRowMap: Record<string, any> = {}
+  for (const r of currentBatchRows) currentRowMap[r.suggested_id] = r
+  const priorRowMap: Record<string, any> = {}
+  for (const r of priorBatchRows) priorRowMap[r.suggested_id] = r
 
   const suggestedProfiles = (suggestedIntros || [])
     .filter((intro: any) => intro.target && !matchedUserIds.has(intro.target.id) && !deactivatedIds.has(intro.target.id))
@@ -207,13 +247,13 @@ export default async function IntroductionsPage() {
       fromOnboarding: true
     }))
 
-  // All suggestions with their state (batch + onboarding)
-  const batchSuggestions = allSuggestionIds
+  // "New This Week" — onboarding + current batch, deduped, capped at tier cap.
+  const currentBatchEntries = currentSuggestionIds
     .filter((id: string) => !deactivatedIds.has(id))
     .map((id: string) => ({
-      rowId: rowMap[id]?.id,
+      rowId: currentRowMap[id]?.id,
       profile: profileMap[id],
-      reason: rowMap[id]?.reason,
+      reason: currentRowMap[id]?.reason,
       alreadyRequested: requestedIds.has(id),
       fromOnboarding: false
     }))
@@ -221,12 +261,101 @@ export default async function IntroductionsPage() {
 
   const allSuggestions = Array.from(
     new Map(
-      [...suggestedProfiles, ...batchSuggestions]
+      [...suggestedProfiles, ...currentBatchEntries]
         .filter((item: any) => item?.profile?.id)
         .map((item: any) => [item.profile.id, item])
     ).values()
   ).slice(0, tierCap)
 
+  // "Earlier Introductions" — prior batch untouched, minus anyone surfaced in the new section.
+  const currentIds = new Set(allSuggestions.map((s: any) => s.profile.id))
+  const earlierSuggestions = priorSuggestionIds
+    .filter((id: string) => !deactivatedIds.has(id) && !currentIds.has(id))
+    .map((id: string) => ({
+      rowId: priorRowMap[id]?.id,
+      profile: profileMap[id],
+      reason: priorRowMap[id]?.reason,
+      alreadyRequested: requestedIds.has(id),
+      fromOnboarding: false,
+      createdAt: priorRowMap[id]?.created_at,
+    }))
+    .filter((r: any) => r.profile)
+
+  // Quiet banner: shown only when earlier intros exist, the oldest is past the threshold,
+  // the user hasn't already dismissed it for their current batch, and we know that batch.
+  const staleThresholdMs = STALE_INTRODUCTION_THRESHOLD_DAYS * 24 * 60 * 60 * 1000
+  const oldestEarlierMs = earlierSuggestions.length > 0
+    ? Math.min(...earlierSuggestions.map((s: any) => new Date(s.createdAt).getTime()))
+    : Infinity
+  const showBanner = Boolean(
+    currentBatchId
+    && !bannerDismissed
+    && earlierSuggestions.length > 0
+    && Date.now() - oldestEarlierMs > staleThresholdMs
+  )
+
+  const renderSuggestionCard = (row: any) => {
+    const s = row.profile
+    const interests = Array.isArray(s.interests)
+      ? s.interests
+      : typeof s.interests === 'string' && s.interests
+        ? s.interests.split(',').map((i: string) => i.trim()).filter(Boolean)
+        : []
+    return (
+      <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
+        <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-slate-200 transition-all flex flex-col gap-4">
+          <div className="flex items-start gap-3">
+            <Avatar profile={s} />
+            <div className="flex-1 min-w-0">
+              <p className="text-base font-semibold text-slate-900 truncate leading-tight">{s.full_name || 'New member'}</p>
+              {(s.title || s.company) && (
+                <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
+                  <Briefcase className="w-3 h-3 flex-shrink-0" />
+                  <span className="truncate">{[s.title, s.company].filter(Boolean).join(' at ')}</span>
+                </div>
+              )}
+              {s.location && (
+                <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
+                  <MapPin className="w-3 h-3 flex-shrink-0" />
+                  <span className="truncate">{s.location}</span>
+                </div>
+              )}
+            </div>
+          </div>
+          {s.bio && <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">{s.bio}</p>}
+          <div className="flex flex-wrap gap-1.5">
+            {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
+            {s.role_type && <Tag color="violet">{s.role_type}</Tag>}
+            {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
+          </div>
+          {interests.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {interests.slice(0, 5).map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
+            </div>
+          )}
+          {row.reason && (
+            <div className="flex items-start gap-2 bg-brand-gold-soft border border-brand-gold/20 rounded-lg px-3 py-2.5">
+              <Sparkles className="w-3.5 h-3.5 text-brand-gold flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-slate-600 italic leading-relaxed">{row.reason}</p>
+            </div>
+          )}
+          {row.alreadyRequested ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
+                <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                </svg>
+                <span className="text-xs font-medium text-emerald-700">Interest expressed</span>
+              </div>
+              <WithdrawInterestButton targetId={s.id} />
+            </div>
+          ) : (
+            <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={userTier} />
+          )}
+        </div>
+      </IntroductionCard>
+    )
+  }
 
   return (
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
@@ -253,6 +382,13 @@ export default async function IntroductionsPage() {
           </div>
         )}
 
+
+        {showBanner && currentBatchId && (
+          <EarlierIntroductionsBanner
+            count={earlierSuggestions.length}
+            batchId={currentBatchId}
+          />
+        )}
 
         {/* SECTION: Introduced by Andrel (admin-curated) — top priority */}
         {adminIntrosVisible.length > 0 && (
@@ -294,71 +430,28 @@ export default async function IntroductionsPage() {
             />
           ) : (
             <div className="grid sm:grid-cols-2 gap-4">
-              {allSuggestions.map((row: any) => {
-                const s = row.profile
-                const interests = Array.isArray(s.interests)
-                  ? s.interests
-                  : typeof s.interests === 'string' && s.interests
-                    ? s.interests.split(',').map((i: string) => i.trim()).filter(Boolean)
-                    : []
-                return (
-                  <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
-                    <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-slate-200 transition-all flex flex-col gap-4">
-                      <div className="flex items-start gap-3">
-                        <Avatar profile={s} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-base font-semibold text-slate-900 truncate leading-tight">{s.full_name || 'New member'}</p>
-                          {(s.title || s.company) && (
-                            <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
-                              <Briefcase className="w-3 h-3 flex-shrink-0" />
-                              <span className="truncate">{[s.title, s.company].filter(Boolean).join(' at ')}</span>
-                            </div>
-                          )}
-                          {s.location && (
-                            <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
-                              <MapPin className="w-3 h-3 flex-shrink-0" />
-                              <span className="truncate">{s.location}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      {s.bio && <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">{s.bio}</p>}
-                      <div className="flex flex-wrap gap-1.5">
-                        {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
-                        {s.role_type && <Tag color="violet">{s.role_type}</Tag>}
-                        {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
-                      </div>
-                      {interests.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {interests.slice(0, 5).map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
-                        </div>
-                      )}
-                      {row.reason && (
-                        <div className="flex items-start gap-2 bg-brand-gold-soft border border-brand-gold/20 rounded-lg px-3 py-2.5">
-                          <Sparkles className="w-3.5 h-3.5 text-brand-gold flex-shrink-0 mt-0.5" />
-                          <p className="text-xs text-slate-600 italic leading-relaxed">{row.reason}</p>
-                        </div>
-                      )}
-                      {row.alreadyRequested ? (
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
-                            <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
-                            </svg>
-                            <span className="text-xs font-medium text-emerald-700">Interest expressed</span>
-                          </div>
-                          <WithdrawInterestButton targetId={s.id} />
-                        </div>
-                      ) : (
-                        <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={userTier} />
-                      )}
-                    </div>
-                  </IntroductionCard>
-                )
-              })}
+              {allSuggestions.map(renderSuggestionCard)}
             </div>
           )}
         </div>
+
+        {/* SECTION 2 — Earlier introductions (collapsible, only when present) */}
+        {earlierSuggestions.length > 0 && (
+          <details id="earlier-introductions" className="group mb-10 border-t border-slate-100 pt-6">
+            <summary className="cursor-pointer flex items-center justify-between gap-4 list-none [&::-webkit-details-marker]:hidden">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">
+                  Earlier introductions ({earlierSuggestions.length})
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">Still waiting for a response. Review when you have a moment.</p>
+              </div>
+              <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="grid sm:grid-cols-2 gap-4 mt-5">
+              {earlierSuggestions.map(renderSuggestionCard)}
+            </div>
+          </details>
+        )}
 
       </div>
     </div>

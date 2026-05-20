@@ -149,9 +149,9 @@ export async function sendNewBatchEmail(
         <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
           We've curated ${introCount} new ${introCount === 1 ? 'introduction' : 'introductions'} for you.
         </p>
-        <a href="https://andrel.app/dashboard/introductions" 
+        <a href="https://andrel.app/dashboard/introductions"
            style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
-          View Introductions
+          Review introductions
         </a>
         <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
           — The Andrel Team
