@@ -168,14 +168,13 @@ export default function MeetingDetailModal({
     !meeting.isOrganizer &&
     !meeting.isPast
 
-  // Reschedule response: the other party proposed a new time and the current user needs to respond.
-  // Gate on the proposed time being in the future (not the original scheduled_at, which may be past).
-  // isNew is the best available proxy for "recipient of the reschedule proposal" given the current
-  // schema (no reschedule_proposer_id column). It equals !isOrganizer, which is correct when the
-  // organizer proposes; the edge case where the recipient proposes requires a schema change.
+  // Reschedule response: a proposed time exists and is in the future.
+  // Gate on proposed_scheduled_at being future — NOT on isPast (which reflects the original time
+  // and would hide these buttons even when the proposed slot is upcoming).
+  // Both parties can see Accept/Decline; without a reschedule_proposer_id column there is no
+  // data-model way to gate out the proposer, so we match the original pre-refactor behaviour.
   const showRescheduleResponse =
     meeting.status === 'reschedule_requested' &&
-    Boolean(meeting.isNew) &&
     Boolean(meeting.proposed_scheduled_at) &&
     new Date(meeting.proposed_scheduled_at!) > new Date()
 
