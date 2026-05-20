@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertCircle, MessageSquare, X, Loader2 } from 'lucide-react'
+import { AlertCircle, MessageSquare, X, Loader2, ChevronRight } from 'lucide-react'
 import { Button } from './ui/Button'
 
 /**
@@ -34,7 +34,13 @@ const COPY: Record<Variant, { triggerLabel: string; icon: typeof AlertCircle; mo
   },
 }
 
-export default function ReportIssueButton({ variant = 'report' }: { variant?: Variant } = {}) {
+type Props = {
+  variant?: Variant
+  triggerVariant?: 'button' | 'row'
+  description?: string
+}
+
+export default function ReportIssueButton({ variant = 'report', triggerVariant = 'button', description }: Props = {}) {
   const copy = COPY[variant]
   const TriggerIcon = copy.icon
   const [open, setOpen] = useState(false)
@@ -90,10 +96,25 @@ export default function ReportIssueButton({ variant = 'report' }: { variant?: Va
 
   return (
     <>
-      <Button variant="secondary" size="md" onClick={() => setOpen(true)}>
-        <TriggerIcon className="w-4 h-4 mr-2" />
-        {copy.triggerLabel}
-      </Button>
+      {triggerVariant === 'row' ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="w-full flex items-center gap-4 px-2 py-3 -mx-2 rounded-lg hover:bg-slate-50 transition-colors text-left"
+        >
+          <TriggerIcon className="w-4 h-4 text-slate-600 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-slate-900">{copy.triggerLabel}</p>
+            {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+        </button>
+      ) : (
+        <Button variant="secondary" size="md" onClick={() => setOpen(true)}>
+          <TriggerIcon className="w-4 h-4 mr-2" />
+          {copy.triggerLabel}
+        </Button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-900/40">
