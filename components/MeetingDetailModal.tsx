@@ -413,7 +413,7 @@ export default function MeetingDetailModal({
                   {showRescheduleResponse ? 'Decline Reschedule' : 'Decline'}
                 </Button>
               )}
-              {canReschedule && (
+              {(canReschedule || showRescheduleResponse) && (
                 <Button
                   variant="ghost"
                   onClick={() => setShowReschedule(true)}
