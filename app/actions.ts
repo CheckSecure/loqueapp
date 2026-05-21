@@ -1414,7 +1414,7 @@ export async function adminUpdateUser(userId: string, updates: {
       .upsert({
         user_id: userId,
         balance: updates.credits
-      })
+      }, { onConflict: 'user_id' })
 
     if (error) return { error: error.message }
   }
