@@ -1423,3 +1423,71 @@ export async function adminUpdateUser(userId: string, updates: {
   return { success: true }
 }
 
+// Idempotent grant flow for Founding Member status. Email fires exactly once
+// per user (the first time is_founding_member is true and the sent_at column
+// is null). Removing the status preserves sent_at so the audit trail survives.
+// Manual resend path: nullify profiles.founding_member_email_sent_at via
+// Supabase Dashboard, then re-grant from the admin UI.
+export async function adminSetFoundingMember(userId: string, isFoundingMember: boolean) {
+  const { supabase, user } = await getSupabaseAndUser()
+  if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
+
+  const { data: current, error: readError } = await supabase
+    .from('profiles')
+    .select('id, full_name, email, is_founding_member, founding_member_email_sent_at')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (readError) return { error: readError.message }
+  if (!current) return { error: 'Profile not found' }
+
+  if (!isFoundingMember) {
+    // Removal: drop the flag, preserve sent_at as audit trail.
+    const { error } = await supabase
+      .from('profiles')
+      .update({ is_founding_member: false })
+      .eq('id', userId)
+    if (error) return { error: error.message }
+    revalidatePath('/dashboard/admin')
+    return { success: true, emailSent: false }
+  }
+
+  // Grant. Send the email only on the first grant (sent_at IS NULL).
+  if (current.founding_member_email_sent_at) {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ is_founding_member: true })
+      .eq('id', userId)
+    if (error) return { error: error.message }
+    revalidatePath('/dashboard/admin')
+    return { success: true, emailSent: false }
+  }
+
+  let emailSent = false
+  if (current.email) {
+    const { sendFoundingMemberEmail } = await import('@/lib/email')
+    const result = await sendFoundingMemberEmail(current.email, current.full_name || 'there')
+    if (!result.success) {
+      // Don't write the timestamp if the email failed — the next save will retry.
+      console.error('[adminSetFoundingMember] email failed for', userId, result.error)
+      return { error: `Email failed: ${result.error || 'unknown error'}` }
+    }
+    emailSent = true
+  } else {
+    // No email on file. Still grant the status; admin can manually resend later.
+    console.warn('[adminSetFoundingMember] granting without email — no profile.email for', userId)
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      is_founding_member: true,
+      founding_member_email_sent_at: emailSent ? new Date().toISOString() : null,
+    })
+    .eq('id', userId)
+  if (error) return { error: error.message }
+
+  revalidatePath('/dashboard/admin')
+  return { success: true, emailSent }
+}
+

@@ -3,7 +3,7 @@
 
 import { useState, useMemo } from 'react'
 import { Search, Filter, UserPlus, Zap, Edit, CheckCircle, AlertTriangle, Users, TrendingUp } from 'lucide-react'
-import { adminForceMatch, adminUpdateUser } from '@/app/actions'
+import { adminForceMatch, adminUpdateUser, adminSetFoundingMember } from '@/app/actions'
 import { useRouter } from 'next/navigation'
 
 interface Profile {
@@ -21,6 +21,9 @@ interface Profile {
   current_status: string
   profile_complete: boolean
   created_at: string
+  is_founding_member: boolean
+  founding_member_email_sent_at: string | null
+  founding_member_expires_at: string | null
   credits: number
   matches: number
   pending_intros: number
@@ -118,6 +121,18 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
     } else {
       alert(result.error)
     }
+  }
+
+  const handleFoundingToggle = async (userId: string, next: boolean) => {
+    const result = await adminSetFoundingMember(userId, next)
+    if ('error' in result && result.error) {
+      alert(result.error)
+      return
+    }
+    if (result.emailSent) {
+      alert('Founding Member status granted and notification email sent.')
+    }
+    router.refresh()
   }
 
   const handleDeactivate = async () => {
@@ -649,6 +664,30 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                     className="rounded border-slate-300"
                   />
                   <label className="text-sm text-slate-700">Priority User</label>
+                </div>
+
+                <div className="space-y-1 pt-2 border-t border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedUser.is_founding_member}
+                      onChange={e => handleFoundingToggle(selectedUser.id, e.target.checked)}
+                      className="rounded border-slate-300"
+                    />
+                    <label className="text-sm text-slate-700">Founding Member</label>
+                  </div>
+                  <div className="pl-6 text-xs text-slate-500 space-y-0.5">
+                    <p>
+                      {selectedUser.founding_member_email_sent_at
+                        ? `Notification email sent ${new Date(selectedUser.founding_member_email_sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                        : 'Notification email not yet sent. Will fire on next grant.'}
+                    </p>
+                    {selectedUser.founding_member_expires_at && (
+                      <p>
+                        Founding access expires {new Date(selectedUser.founding_member_expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-4">

@@ -15,7 +15,7 @@ export default async function AdminMembersPage() {
   console.log('[AdminMembers] Starting query...')
   const profileQuery = await supabase
     .from('profiles')
-    .select('id, full_name, email, company, title, subscription_tier, location, boost_score, is_priority, account_status, verification_status, current_status, profile_complete, created_at')
+    .select('id, full_name, email, company, title, subscription_tier, location, boost_score, is_priority, account_status, verification_status, current_status, profile_complete, created_at, is_founding_member, founding_member_email_sent_at, founding_member_expires_at')
     .order('created_at', { ascending: false })
   
   console.log('[AdminMembers] Query result:', { 

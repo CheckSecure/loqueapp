@@ -348,6 +348,59 @@ export async function sendInviteReminder2(toEmail: string, toName: string): Prom
   }
 }
 
+// Founding Member notification — one-time status email. Bypasses preferences
+// (same class as invite/reminder emails: account-status, not configurable).
+// The audit confirmed real benefits exist today (lib/tier-override.ts: 30
+// credits/month, 5 active intros, premium-opportunity access, priority
+// curation), so the body can mention them honestly.
+export async function sendFoundingMemberEmail(toEmail: string, toName: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: toEmail,
+      subject: "You've been selected as an Andrel Founding Member",
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Hi ${escapeHtml(toName)},
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            I wanted to reach out personally to let you know that you've been selected as an Andrel Founding Member.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            We're opening Andrel carefully, and Founding Members are the small group helping us shape the early network. As a Founding Member, you'll receive additional intro credits each month, priority consideration in our curated introductions, and access to premium opportunities ahead of the broader rollout.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+            Andrel exists for meaningful, relationship-driven networking — not transactional outreach. Founding Members help us keep that culture intact as the network grows.
+          </p>
+          <a href="https://www.andrel.app/dashboard"
+             style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+            Sign in to Andrel
+          </a>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-top: 32px; margin-bottom: 16px;">
+            Welcome to the founding group.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 4px;">
+            — Daniel
+          </p>
+          <p style="color: #64748b; font-size: 14px;">
+            Founder, Andrel
+          </p>
+        </div>
+      `,
+    })
+    if (error) {
+      console.error('[sendFoundingMemberEmail] Resend API error:', error.message)
+      return { success: false, error: error.message }
+    }
+    console.log('[sendFoundingMemberEmail] sent, message ID:', data?.id)
+    return { success: true }
+  } catch (err: any) {
+    console.error('[sendFoundingMemberEmail] exception:', err?.message)
+    return { success: false, error: err?.message }
+  }
+}
+
 export async function sendMeetingRequestEmail(
   toEmail: string,
   toName: string,
