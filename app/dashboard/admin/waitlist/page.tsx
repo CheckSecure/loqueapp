@@ -20,6 +20,7 @@ export default async function AdminWaitlistPage() {
     .select(`
       id, full_name, email, company, title, role_type,
       linkedin_url, referral_source, status, created_at, invited_at,
+      invite_reminder_1_sent_at, invite_reminder_2_sent_at,
       referrals!waitlist_id(
         referral_note, status,
         referrer:profiles!referrer_user_id(id, full_name, account_status)

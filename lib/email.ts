@@ -270,6 +270,84 @@ export async function sendReferralInviteEmail(
   }
 }
 
+// Activation reminders bypass notification preferences — invited users haven't
+// logged in yet, so they have no preference row, and these are bootstrap/access
+// emails (same class as sendInviteEmail above). Reminders stop on first login.
+export async function sendInviteReminder1(toEmail: string, toName: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: toEmail,
+      subject: 'Your Andrel access is waiting',
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Hi ${escapeHtml(toName)},
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+            You've been invited into Andrel's early network. Your access is ready when you are.
+          </p>
+          <a href="https://www.andrel.app/login"
+             style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+            Sign in
+          </a>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-top: 24px;">
+            Once you sign in, we'll begin curating relevant introductions for you.
+          </p>
+          <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+            — The Andrel team
+          </p>
+        </div>
+      `,
+    })
+    if (error) {
+      console.error('[sendInviteReminder1] Resend API error:', error.message)
+      return { success: false, error: error.message }
+    }
+    console.log('[sendInviteReminder1] sent, message ID:', data?.id)
+    return { success: true }
+  } catch (err: any) {
+    console.error('[sendInviteReminder1] exception:', err?.message)
+    return { success: false, error: err?.message }
+  }
+}
+
+export async function sendInviteReminder2(toEmail: string, toName: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: toEmail,
+      subject: 'Reminder: your Andrel invitation',
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Hi ${escapeHtml(toName)},
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+            A brief reminder that your Andrel access is still available. We're opening the founding group in stages and would be glad to include you when you're ready.
+          </p>
+          <a href="https://www.andrel.app/login"
+             style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+            Sign in
+          </a>
+          <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+            — The Andrel team
+          </p>
+        </div>
+      `,
+    })
+    if (error) {
+      console.error('[sendInviteReminder2] Resend API error:', error.message)
+      return { success: false, error: error.message }
+    }
+    console.log('[sendInviteReminder2] sent, message ID:', data?.id)
+    return { success: true }
+  } catch (err: any) {
+    console.error('[sendInviteReminder2] exception:', err?.message)
+    return { success: false, error: err?.message }
+  }
+}
+
 export async function sendMeetingRequestEmail(
   toEmail: string,
   toName: string,

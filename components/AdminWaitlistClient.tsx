@@ -19,6 +19,8 @@ interface WaitlistEntry {
   status: string
   created_at: string
   invited_at: string | null
+  invite_reminder_1_sent_at: string | null
+  invite_reminder_2_sent_at: string | null
   referrals?: {
     referral_note: string
     status: string
@@ -236,6 +238,14 @@ export default function AdminWaitlistClient({
                             year: 'numeric'
                           })}
                           {entry.invited_at && ` • Invited ${new Date(entry.invited_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric'
+                          })}`}
+                          {entry.invite_reminder_1_sent_at && ` • R1 ${new Date(entry.invite_reminder_1_sent_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric'
+                          })}`}
+                          {entry.invite_reminder_2_sent_at && ` • R2 ${new Date(entry.invite_reminder_2_sent_at).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric'
                           })}`}
