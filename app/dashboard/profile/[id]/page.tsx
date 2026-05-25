@@ -2,7 +2,30 @@ import { createClient } from '@/lib/supabase/server'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles } from 'lucide-react'
+import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles, Calendar } from 'lucide-react'
+
+// Humanizes raw networking-goal values into calmer, reader-facing phrasing.
+// Keys cover the values actually present in profiles.purposes; anything not
+// listed falls through to the raw value rather than being dropped.
+const PURPOSE_LABELS: Record<string, string> = {
+  'Find customers': 'Open to business relationships',
+  'Business Development': 'Open to business relationships',
+  'Hire talent': 'Open to meeting strong talent',
+  'Hiring': 'Open to meeting strong talent',
+  'Expand network': 'Looking to meet peers',
+  'Give back / mentor': 'Interested in mentoring',
+  'Mentorship': 'Interested in mentoring',
+  'Partnerships': 'Open to partnerships',
+  'Learn & grow': 'Looking to learn from experienced professionals',
+  'Advice / Expertise': 'Looking for advice and expertise',
+  'Raise capital': 'Open to strategic introductions',
+  'Fundraising': 'Open to strategic introductions',
+  'Explore opportunities': 'Exploring new opportunities',
+}
+
+function humanizePurpose(raw: string): string {
+  return PURPOSE_LABELS[raw] || raw
+}
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]', 'bg-[#2E4080]', 'bg-amber-500', 'bg-rose-500',
@@ -79,7 +102,8 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
   // Viewer's profile (for computed shared signals) + any active connection
   // between viewer and viewed (for the connection date line).
-  const [{ data: viewerProfile }, { data: matchRows }] = await Promise.all([
+  const nowIso = new Date().toISOString()
+  const [{ data: viewerProfile }, { data: matchRows }, { data: meetingRows }] = await Promise.all([
     supabase
       .from('profiles')
       .select('role_type, seniority, interests, mentorship_role, location')
@@ -92,6 +116,15 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
       .neq('status', 'removed')
       .order('matched_at', { ascending: false })
       .limit(1),
+    // Past meetings between the two users (agreed and already in the past).
+    supabase
+      .from('meetings')
+      .select('id, purpose, scheduled_at, status')
+      .or(`and(requester_id.eq.${user.id},recipient_id.eq.${params.id}),and(requester_id.eq.${params.id},recipient_id.eq.${user.id})`)
+      .in('status', ['completed', 'confirmed', 'scheduled'])
+      .lt('scheduled_at', nowIso)
+      .order('scheduled_at', { ascending: false })
+      .limit(5),
   ])
 
   // "Why connect" — the viewed person's own openness/interests (not computed).
@@ -145,6 +178,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
   const connectedLabel = connection?.matched_at
     ? new Date(connection.matched_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     : null
+  const pastMeetings = connection ? (meetingRows ?? []) : []
 
   const avatarColor = pickColor(profile.id)
   const name = profile.full_name || 'Member'
@@ -234,20 +268,16 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
           </div>
         </div>
 
-        {connectedLabel && (
-          <p className="text-xs text-slate-400 -mt-2 mb-6">Connected through Andrel · {connectedLabel}</p>
-        )}
-
         <div className="space-y-5">
 
-          {/* Why connect — the viewed person's own openness/interests */}
+          {/* What they're looking for (connected) / Why connect (not yet connected) */}
           {hasWhyConnect && (
             <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
-              <Section icon={Users} title="Why connect">
+              <Section icon={Users} title={connection ? "What they're looking for" : 'Why connect'}>
                 <div className="space-y-3">
                   {whyConnectPurposes.length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {whyConnectPurposes.map(p => <Badge key={`p-${p}`} label={p} />)}
+                      {whyConnectPurposes.map(p => <Badge key={`p-${p}`} label={humanizePurpose(p)} />)}
                     </div>
                   )}
                   {whyConnectInterests.length > 0 && (
@@ -260,6 +290,31 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                       {openToMentorship && <Badge label="Open to mentorship" />}
                       {openToBusiness && <Badge label="Open to business opportunities" />}
                     </div>
+                  )}
+                </div>
+              </Section>
+            </div>
+          )}
+
+          {/* Relationship history — connected profiles only */}
+          {connection && (
+            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+              <Section icon={Calendar} title="Relationship history">
+                <div className="space-y-2 text-sm text-slate-600">
+                  {connectedLabel && <p>Connected through Andrel · {connectedLabel}</p>}
+                  {pastMeetings.length > 0 && (
+                    <>
+                      <p className="text-slate-500">
+                        {pastMeetings.length} past {pastMeetings.length === 1 ? 'meeting' : 'meetings'}
+                      </p>
+                      <ul className="space-y-1">
+                        {pastMeetings.map((m: any) => (
+                          <li key={m.id}>
+                            {m.purpose || 'Meeting'} · {new Date(m.scheduled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
                   )}
                 </div>
               </Section>
