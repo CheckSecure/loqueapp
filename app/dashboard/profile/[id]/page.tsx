@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare } from 'lucide-react'
+import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles } from 'lucide-react'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]', 'bg-[#2E4080]', 'bg-amber-500', 'bg-rose-500',
@@ -15,6 +15,26 @@ function pickColor(id?: string) {
 }
 function initials(name?: string) {
   return name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?'
+}
+
+// Normalizes the varied shapes interests/purposes can take (native array,
+// JSON-string array, or comma-separated string) into a clean string list.
+function toList(value: any): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+  }
+  if (typeof value === 'string') {
+    const t = value.trim()
+    if (!t) return []
+    if (t.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(t)
+        if (Array.isArray(parsed)) return parsed.filter((x: any) => typeof x === 'string' && x.trim().length > 0)
+      } catch {}
+    }
+    return t.split(',').map(s => s.trim()).filter(Boolean)
+  }
+  return []
 }
 
 function Badge({ label }: { label: string }) {
@@ -56,6 +76,75 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
   if (error) console.error('[Profile/[id]] query error:', error.message)
   if (!profile) notFound()
+
+  // Viewer's profile (for computed shared signals) + any active connection
+  // between viewer and viewed (for the connection date line).
+  const [{ data: viewerProfile }, { data: matchRows }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('role_type, seniority, interests, mentorship_role, location')
+      .eq('id', user.id)
+      .maybeSingle(),
+    supabase
+      .from('matches')
+      .select('matched_at, status')
+      .or(`and(user_a_id.eq.${user.id},user_b_id.eq.${params.id}),and(user_a_id.eq.${params.id},user_b_id.eq.${user.id})`)
+      .neq('status', 'removed')
+      .order('matched_at', { ascending: false })
+      .limit(1),
+  ])
+
+  // "Why connect" — the viewed person's own openness/interests (not computed).
+  const whyConnectInterests = toList(profile.interests).slice(0, 8)
+  const whyConnectPurposes = toList(profile.purposes)
+  const openToMentorship = profile.open_to_mentorship === true
+  const openToBusiness = profile.open_to_business_solutions === true
+  const hasWhyConnect =
+    whyConnectInterests.length > 0 || whyConnectPurposes.length > 0 || openToMentorship || openToBusiness
+
+  // "Why Andrel introduced you" — true shared signals vs the viewer only.
+  const matchSignals: string[] = []
+  if (viewerProfile) {
+    if (
+      profile.role_type && viewerProfile.role_type &&
+      String(profile.role_type).toLowerCase() === String(viewerProfile.role_type).toLowerCase()
+    ) {
+      matchSignals.push('Same role type')
+    }
+
+    const viewerInterests = toList(viewerProfile.interests).map(s => s.toLowerCase())
+    const sharedInterests = toList(profile.interests)
+      .filter(i => viewerInterests.includes(i.toLowerCase()))
+      .slice(0, 3)
+    if (sharedInterests.length > 0) matchSignals.push(`Shared interests: ${sharedInterests.join(', ')}`)
+
+    if (
+      profile.seniority && viewerProfile.seniority &&
+      String(profile.seniority).toLowerCase() === String(viewerProfile.seniority).toLowerCase()
+    ) {
+      matchSignals.push('Similar seniority')
+    }
+
+    const vmr = String(viewerProfile.mentorship_role || '').toLowerCase()
+    const pmr = String(profile.mentorship_role || '').toLowerCase()
+    if ((vmr === 'mentor' && pmr === 'mentee') || (vmr === 'mentee' && pmr === 'mentor')) {
+      matchSignals.push('Mentorship match')
+    }
+
+    if (
+      profile.location && viewerProfile.location &&
+      String(profile.location).toLowerCase() === String(viewerProfile.location).toLowerCase()
+    ) {
+      matchSignals.push('Same location')
+    }
+  }
+  const visibleSignals = matchSignals.slice(0, 5)
+
+  // Connection date — only when an active match exists between the two users.
+  const connection = matchRows && matchRows.length > 0 ? matchRows[0] : null
+  const connectedLabel = connection?.matched_at
+    ? new Date(connection.matched_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : null
 
   const avatarColor = pickColor(profile.id)
   const name = profile.full_name || 'Member'
@@ -145,7 +234,48 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
           </div>
         </div>
 
+        {connectedLabel && (
+          <p className="text-xs text-slate-400 -mt-2 mb-6">Connected through Andrel · {connectedLabel}</p>
+        )}
+
         <div className="space-y-5">
+
+          {/* Why connect — the viewed person's own openness/interests */}
+          {hasWhyConnect && (
+            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+              <Section icon={Users} title="Why connect">
+                <div className="space-y-3">
+                  {whyConnectPurposes.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {whyConnectPurposes.map(p => <Badge key={`p-${p}`} label={p} />)}
+                    </div>
+                  )}
+                  {whyConnectInterests.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {whyConnectInterests.map(i => <Badge key={`i-${i}`} label={i} />)}
+                    </div>
+                  )}
+                  {(openToMentorship || openToBusiness) && (
+                    <div className="flex flex-wrap gap-2">
+                      {openToMentorship && <Badge label="Open to mentorship" />}
+                      {openToBusiness && <Badge label="Open to business opportunities" />}
+                    </div>
+                  )}
+                </div>
+              </Section>
+            </div>
+          )}
+
+          {/* Why Andrel introduced you — true shared signals only */}
+          {visibleSignals.length > 0 && (
+            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+              <Section icon={Sparkles} title="Why Andrel introduced you">
+                <div className="flex flex-wrap gap-2">
+                  {visibleSignals.map(s => <Badge key={s} label={s} />)}
+                </div>
+              </Section>
+            </div>
+          )}
 
           {/* Bio */}
           {profile.bio && (
