@@ -105,7 +105,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
           className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-[#1B2850] transition-colors mb-6"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to meetings
+          Back
         </Link>
 
         {/* Hero card */}

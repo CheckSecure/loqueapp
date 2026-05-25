@@ -396,13 +396,14 @@ export default async function IntroductionsPage() {
             <h3 className="text-sm font-semibold text-brand-navy mb-3">Introduced by Andrel</h3>
             <div className="grid sm:grid-cols-2 gap-4">
               {adminIntrosVisible.map((intro: any) => (
-                <AdminIntroCard
-                  key={intro.id}
-                  introRequestId={intro.id}
-                  otherUser={intro.other}
-                  otherAlreadyApproved={intro.otherAlreadyApproved}
-                  userAlreadyAccepted={intro.userAlreadyAccepted}
-                />
+                <IntroductionCard key={intro.id} targetId={intro.other.id}>
+                  <AdminIntroCard
+                    introRequestId={intro.id}
+                    otherUser={intro.other}
+                    otherAlreadyApproved={intro.otherAlreadyApproved}
+                    userAlreadyAccepted={intro.userAlreadyAccepted}
+                  />
+                </IntroductionCard>
               ))}
             </div>
           </div>
