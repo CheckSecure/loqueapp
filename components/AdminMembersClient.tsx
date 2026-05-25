@@ -3,7 +3,7 @@
 
 import { useState, useMemo } from 'react'
 import { Search, Filter, UserPlus, Zap, Edit, CheckCircle, AlertTriangle, Users, TrendingUp } from 'lucide-react'
-import { adminForceMatch, adminUpdateUser, adminSetFoundingMember } from '@/app/actions'
+import { adminForceMatch, adminUpdateUser, adminSetFoundingMember, adminAdjustCredits } from '@/app/actions'
 import { useRouter } from 'next/navigation'
 
 interface Profile {
@@ -135,6 +135,15 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
     router.refresh()
   }
 
+  const handleAdjustCredits = async (userId: string, delta: number) => {
+    const result = await adminAdjustCredits(userId, delta, 'Admin quick adjustment')
+    if ('error' in result && result.error) {
+      alert(result.error)
+      return
+    }
+    router.refresh()
+  }
+
   const handleDeactivate = async () => {
     if (!deactivatingUser || !deactivateReason.trim()) return
     if (deactivatingUser.account_status === 'flagged') return
@@ -256,10 +265,9 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
               className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20"
             >
               <option value="">All Tiers</option>
-              <option value="platinum">Platinum</option>
-              <option value="gold">Gold</option>
-              <option value="silver">Silver</option>
-              <option value="bronze">Bronze</option>
+              <option value="free">Free</option>
+              <option value="professional">Professional</option>
+              <option value="executive">Executive</option>
             </select>
             <select
               value={filterStatus}
@@ -293,10 +301,11 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">User</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Tier</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Status</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600">Credits</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600" title="Increases recommendation visibility">Match Priority</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600">Founding</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600">Matches</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600">Intros</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600">Credits</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600">Boost</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600">Actions</th>
                 </tr>
               </thead>
@@ -324,14 +333,13 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                     </td>
                     <td className="px-4 py-3">
                       <select
-                        value={user.tier || 'bronze'}
+                        value={user.tier || 'free'}
                         onChange={e => handleQuickEdit(user.id, 'tier', e.target.value)}
                         className="px-2 py-1 text-xs border border-slate-200 rounded"
                       >
-                        <option value="platinum">Platinum</option>
-                        <option value="gold">Gold</option>
-                        <option value="silver">Silver</option>
-                        <option value="bronze">Bronze</option>
+                        <option value="free">Free</option>
+                        <option value="professional">Professional</option>
+                        <option value="executive">Executive</option>
                       </select>
                     </td>
                     <td className="px-4 py-3">
@@ -344,21 +352,24 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                         {user.account_status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center text-sm font-medium text-slate-900">
-                      {user.matches}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="text-xs text-slate-600">
-                        {user.active_intros} active / {user.pending_intros} pending
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => handleAdjustCredits(user.id, -1)}
+                          aria-label="Remove a credit"
+                          className="w-6 h-6 rounded border border-slate-200 text-slate-600 hover:bg-slate-100 leading-none"
+                        >
+                          &minus;
+                        </button>
+                        <span className="w-6 text-center text-sm font-medium text-slate-900">{user.credits}</span>
+                        <button
+                          onClick={() => handleAdjustCredits(user.id, 1)}
+                          aria-label="Add a credit"
+                          className="w-6 h-6 rounded border border-slate-200 text-slate-600 hover:bg-slate-100 leading-none"
+                        >
+                          +
+                        </button>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <input
-                        type="number"
-                        value={user.credits}
-                        onChange={e => handleQuickEdit(user.id, 'credits', parseInt(e.target.value))}
-                        className="w-16 px-2 py-1 text-xs text-center border border-slate-200 rounded"
-                      />
                     </td>
                     <td className="px-4 py-3 text-center">
                       <input
@@ -367,6 +378,28 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                         onChange={e => handleQuickEdit(user.id, 'boost_score', parseInt(e.target.value))}
                         className="w-16 px-2 py-1 text-xs text-center border border-slate-200 rounded"
                       />
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {user.is_founding_member ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-brand-gold-soft text-brand-gold border border-brand-gold/20">
+                          Founding
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleFoundingToggle(user.id, true)}
+                          className="text-xs text-slate-400 hover:text-brand-navy hover:underline"
+                        >
+                          Grant
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center text-sm font-medium text-slate-900">
+                      {user.matches}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <div className="text-xs text-slate-600">
+                        {user.active_intros} active / {user.pending_intros} pending
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -586,14 +619,13 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Tier</label>
                   <select
-                    value={selectedUser.tier || 'bronze'}
+                    value={selectedUser.tier || 'free'}
                     onChange={e => handleQuickEdit(selectedUser.id, 'tier', e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
                   >
-                    <option value="platinum">Platinum</option>
-                    <option value="gold">Gold</option>
-                    <option value="silver">Silver</option>
-                    <option value="bronze">Bronze</option>
+                    <option value="free">Free</option>
+                    <option value="professional">Professional</option>
+                    <option value="executive">Executive</option>
                   </select>
                 </div>
 
@@ -647,7 +679,8 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Boost Score</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Match Priority</label>
+                  <p className="text-xs text-slate-400 mb-1">Increases recommendation visibility</p>
                   <input
                     type="number"
                     value={selectedUser.boost_score}

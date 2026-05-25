@@ -6,13 +6,9 @@ const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
 // Tier-based match counts
 const TIER_MATCH_COUNTS: Record<string, [number, number]> = {
-  'platinum': [3, 5],
-  'gold': [3, 4],
-  'silver': [2, 3],
-  'bronze': [1, 2],
+  'free': [1, 2],
   'professional': [2, 3],
-  'executive': [3, 4],
-  'free': [1, 2]
+  'executive': [3, 4]
 }
 
 function getRandomInt(min: number, max: number): number {
