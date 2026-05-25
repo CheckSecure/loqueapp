@@ -115,9 +115,17 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
           <div className="px-6 pb-6">
             {/* Avatar — overlaps banner */}
-            <div className={`w-20 h-20 rounded-2xl ${avatarColor} flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-sm -mt-10 mb-4`}>
-              {initials(name)}
-            </div>
+            {profile.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt={name}
+                className="w-20 h-20 rounded-2xl object-cover border-4 border-white shadow-sm -mt-10 mb-4"
+              />
+            ) : (
+              <div className={`w-20 h-20 rounded-2xl ${avatarColor} flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-sm -mt-10 mb-4`}>
+                {initials(name)}
+              </div>
+            )}
 
             <h1 className="text-xl font-bold text-slate-900">{name}</h1>
 
