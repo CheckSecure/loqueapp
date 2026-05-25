@@ -30,8 +30,8 @@ export default async function MeetingsPage() {
       .from('meetings')
       .select(`
       id,
-      requester:profiles!requester_id(id, full_name),
-      recipient:profiles!recipient_id(id, full_name)
+      requester:profiles!requester_id(id, full_name, avatar_url),
+      recipient:profiles!recipient_id(id, full_name, avatar_url)
     `)
       .or(`requester_id.eq.${user.id},recipient_id.eq.${user.id}`),
     supabase
@@ -53,7 +53,7 @@ export default async function MeetingsPage() {
   if (matchedUserIds.length > 0) {
     const { data: matchedProfiles } = await supabase
       .from('profiles')
-      .select('id, full_name, title, company')
+      .select('id, full_name, title, company, avatar_url')
       .in('id', matchedUserIds)
     for (const p of matchedProfiles || []) profileById[p.id] = p
     matchedUsers = matchedProfiles || []

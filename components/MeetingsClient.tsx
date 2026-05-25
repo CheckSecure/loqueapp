@@ -212,9 +212,13 @@ export default function MeetingsClient({
           </div>
         </div>
         {m.other && (
-          <div className={`w-7 h-7 rounded-full ${pickColor(m.other.id)} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
-            {initials(m.other.full_name)}
-          </div>
+          m.other.avatar_url ? (
+            <img src={m.other.avatar_url} alt={m.other.full_name || ''} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+          ) : (
+            <div className={`w-7 h-7 rounded-full ${pickColor(m.other.id)} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
+              {initials(m.other.full_name)}
+            </div>
+          )
         )}
       </div>
 

@@ -58,7 +58,7 @@ export interface MeetingDetail {
   proposed_location?: string | null
   proposed_zoom_link?: string | null
   proposed_notes?: string | null
-  other?: { id: string; full_name: string; title?: string; company?: string } | null
+  other?: { id: string; full_name: string; title?: string; company?: string; avatar_url?: string | null } | null
   isOrganizer: boolean
   isPast: boolean
   isNew?: boolean
@@ -233,12 +233,20 @@ export default function MeetingDetailModal({
                 onClick={goToProfile}
                 className="w-full flex items-center gap-4 p-4 bg-[#F5F6FB] rounded-2xl hover:bg-slate-100 transition-colors text-left group"
               >
-                <div className={cn(
-                  'w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-base flex-shrink-0',
-                  pickColor(meeting.other.id)
-                )}>
-                  {initials(meeting.other.full_name)}
-                </div>
+                {meeting.other.avatar_url ? (
+                  <img
+                    src={meeting.other.avatar_url}
+                    alt={meeting.other.full_name}
+                    className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                  />
+                ) : (
+                  <div className={cn(
+                    'w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-base flex-shrink-0',
+                    pickColor(meeting.other.id)
+                  )}>
+                    {initials(meeting.other.full_name)}
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-[#1B2850] transition-colors">
                     {meeting.other.full_name}
