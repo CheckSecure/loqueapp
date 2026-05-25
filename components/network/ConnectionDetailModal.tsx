@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Briefcase, MapPin, X, UserMinus, Ban, MessageSquare, Calendar, ExternalLink } from 'lucide-react'
+import { Briefcase, MapPin, X, UserMinus, Ban, MessageSquare, Calendar, ExternalLink, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -90,7 +90,8 @@ export default function ConnectionDetailModal({ matchId, profile, connectedAt, m
   const [actionMode, setActionMode] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
-  const [meetingCount, setMeetingCount] = useState(null)
+  const [meetings, setMeetings] = useState(null)
+  const [isExpanded, setIsExpanded] = useState(false)
   const router = useRouter()
   const dialogRef = useRef(null)
 
@@ -102,33 +103,36 @@ export default function ConnectionDetailModal({ matchId, profile, connectedAt, m
     return function() { document.removeEventListener('keydown', handleKey) }
   }, [onClose])
 
-  // Count past meetings between the viewer and this connection (agreed and
-  // already in the past). RLS scopes the query to the viewer's own meetings.
+  // Past meetings between the viewer and this connection (agreed and already
+  // in the past). RLS scopes the query to the viewer's own meetings. One query
+  // powers both the collapsed count and the expanded list.
   useEffect(function() {
     let cancelled = false
-    async function loadMeetingCount() {
+    async function loadMeetings() {
       try {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
-        if (!user) { if (!cancelled) setMeetingCount(0); return }
+        if (!user) { if (!cancelled) setMeetings([]); return }
         const { data } = await supabase
           .from('meetings')
-          .select('id')
+          .select('id, purpose, scheduled_at, status, duration_minutes, format')
           .or('and(requester_id.eq.' + user.id + ',recipient_id.eq.' + profile.id + '),and(requester_id.eq.' + profile.id + ',recipient_id.eq.' + user.id + ')')
           .in('status', ['completed', 'confirmed', 'scheduled'])
           .lt('scheduled_at', new Date().toISOString())
-        if (!cancelled) setMeetingCount((data || []).length)
+          .order('scheduled_at', { ascending: false })
+        if (!cancelled) setMeetings(data || [])
       } catch {
-        if (!cancelled) setMeetingCount(0)
+        if (!cancelled) setMeetings([])
       }
     }
-    loadMeetingCount()
+    loadMeetings()
     return function() { cancelled = true }
   }, [profile.id])
 
   const avatarColor = pickColor(profile.id)
   const initials = getInitials(profile.full_name)
   const connectedDate = connectedAt ? new Date(connectedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : null
+  const meetingCount = meetings === null ? null : meetings.length
 
   const location = normalizeLocation(profile)
   const purposes = asStringArray(profile.purposes)
@@ -192,7 +196,39 @@ export default function ConnectionDetailModal({ matchId, profile, connectedAt, m
             <h2 className="text-xl font-semibold text-slate-900">{profile.full_name || 'Connection'}</h2>
             {(profile.title || profile.company) && (<div className="flex items-center gap-1 text-sm text-slate-600 mt-1.5"><Briefcase className="w-3.5 h-3.5 flex-shrink-0" /><span>{[profile.title, profile.company].filter(Boolean).join(' at ')}</span></div>)}
             {location && (<div className="flex items-center gap-1 text-sm text-slate-500 mt-1"><MapPin className="w-3.5 h-3.5 flex-shrink-0" /><span>{location}</span></div>)}
-            {connectedDate && (<p className="text-xs text-slate-400 mt-3">Connected {connectedDate}{meetingCount !== null && (meetingCount > 0 ? ` · ${meetingCount} past ${meetingCount === 1 ? 'meeting' : 'meetings'}` : ' · No meetings yet')}</p>)}
+            {connectedDate && (meetingCount !== null && meetingCount > 0 ? (
+              <button type="button" onClick={function(){ setIsExpanded(function(v){ return !v }) }} className="mt-3 inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors">
+                <span>Connected {connectedDate} · {meetingCount} past {meetingCount === 1 ? 'meeting' : 'meetings'}</span>
+                <ChevronDown className={'w-3 h-3 transition-transform ' + (isExpanded ? 'rotate-180' : '')} />
+              </button>
+            ) : (
+              <p className="text-xs text-slate-400 mt-3">Connected {connectedDate}{meetingCount === 0 ? ' · No meetings yet' : ''}</p>
+            ))}
+            {isExpanded && meetingCount !== null && meetingCount > 0 && (
+              <div className="w-full text-left mt-4 pt-4 border-t border-slate-100 space-y-3">
+                <div>
+                  <h3 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Connected through Andrel</h3>
+                  <p className="text-sm text-slate-600">{connectedDate}</p>
+                </div>
+                <div>
+                  <h3 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Past meetings</h3>
+                  <ul className="space-y-1">
+                    {meetings.map(function(m){
+                      const when = new Date(m.scheduled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      const parts = [m.purpose || 'Meeting', when]
+                      if (m.duration_minutes) parts.push(m.duration_minutes + 'm')
+                      if (m.format) parts.push(m.format)
+                      return (
+                        <li key={m.id} className="flex items-start gap-2 text-sm text-slate-600">
+                          <span className="text-slate-300 mt-0.5">&bull;</span>
+                          <span>{parts.join(' · ')}</span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-8 py-5 space-y-6">
