@@ -6,7 +6,7 @@ import { TIER_OPPORTUNITY_LIMIT, type Tier } from '@/lib/opportunities/caps';
 import { ReceiverCard } from '@/components/opportunities/ReceiverCard';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { Inbox } from 'lucide-react';
+import { Inbox, Zap, Users, Lock } from 'lucide-react';
 import PageHint from '@/components/PageHint';
 
 export const dynamic = 'force-dynamic';
@@ -154,6 +154,24 @@ export default async function OpportunitiesPage() {
             countLabel={responses === 1 ? 'response' : 'responses'}
             emptyHint="You haven't responded yet."
           />
+        </div>
+      </section>
+
+      <section className="mt-14">
+        <h2 className="text-base font-semibold text-slate-900 mb-5">How Opportunities Work</h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+            <Zap className="w-5 h-5 text-brand-navy flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-slate-700">Signal a hiring or business need</p>
+          </div>
+          <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+            <Users className="w-5 h-5 text-brand-navy flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-slate-700">Andrel identifies relevant members</p>
+          </div>
+          <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+            <Lock className="w-5 h-5 text-brand-navy flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-slate-700">Shared privately</p>
+          </div>
         </div>
       </section>
     </div>

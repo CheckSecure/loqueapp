@@ -3,6 +3,7 @@ import { parseExpertise } from '@/lib/parseExpertise'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles, Calendar } from 'lucide-react'
+import { computeMatchSignals, toList } from '@/lib/match-signals'
 
 // Humanizes raw networking-goal values into calmer, reader-facing phrasing.
 // Keys cover the values actually present in profiles.purposes; anything not
@@ -40,25 +41,6 @@ function initials(name?: string) {
   return name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() || '?'
 }
 
-// Normalizes the varied shapes interests/purposes can take (native array,
-// JSON-string array, or comma-separated string) into a clean string list.
-function toList(value: any): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
-  }
-  if (typeof value === 'string') {
-    const t = value.trim()
-    if (!t) return []
-    if (t.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(t)
-        if (Array.isArray(parsed)) return parsed.filter((x: any) => typeof x === 'string' && x.trim().length > 0)
-      } catch {}
-    }
-    return t.split(',').map(s => s.trim()).filter(Boolean)
-  }
-  return []
-}
 
 function Badge({ label }: { label: string }) {
   return (
@@ -136,42 +118,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
     whyConnectInterests.length > 0 || whyConnectPurposes.length > 0 || openToMentorship || openToBusiness
 
   // "Why Andrel introduced you" — true shared signals vs the viewer only.
-  const matchSignals: string[] = []
-  if (viewerProfile) {
-    if (
-      profile.role_type && viewerProfile.role_type &&
-      String(profile.role_type).toLowerCase() === String(viewerProfile.role_type).toLowerCase()
-    ) {
-      matchSignals.push('Same role type')
-    }
-
-    const viewerInterests = toList(viewerProfile.interests).map(s => s.toLowerCase())
-    const sharedInterests = toList(profile.interests)
-      .filter(i => viewerInterests.includes(i.toLowerCase()))
-      .slice(0, 3)
-    if (sharedInterests.length > 0) matchSignals.push(`Shared interests: ${sharedInterests.join(', ')}`)
-
-    if (
-      profile.seniority && viewerProfile.seniority &&
-      String(profile.seniority).toLowerCase() === String(viewerProfile.seniority).toLowerCase()
-    ) {
-      matchSignals.push('Similar seniority')
-    }
-
-    const vmr = String(viewerProfile.mentorship_role || '').toLowerCase()
-    const pmr = String(profile.mentorship_role || '').toLowerCase()
-    if ((vmr === 'mentor' && pmr === 'mentee') || (vmr === 'mentee' && pmr === 'mentor')) {
-      matchSignals.push('Mentorship match')
-    }
-
-    if (
-      profile.location && viewerProfile.location &&
-      String(profile.location).toLowerCase() === String(viewerProfile.location).toLowerCase()
-    ) {
-      matchSignals.push('Same location')
-    }
-  }
-  const visibleSignals = matchSignals.slice(0, 5)
+  const visibleSignals = computeMatchSignals(viewerProfile, profile)
 
   // Connection date — only when an active match exists between the two users.
   const connection = matchRows && matchRows.length > 0 ? matchRows[0] : null

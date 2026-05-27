@@ -137,7 +137,7 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
         )}
 
         {connectedRelative && (
-          <div className="text-xs text-slate-400">Connected through Andrel · {connectedRelative}</div>
+          <div className="text-xs text-slate-400">Introduced through Andrel · Connected {connectedRelative}</div>
         )}
 
         <div className="flex gap-2 pt-1 border-t border-slate-50">
