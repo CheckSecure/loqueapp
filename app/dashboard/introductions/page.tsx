@@ -12,6 +12,7 @@ import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { getEffectiveTier } from '@/lib/tier-override'
 
 export const metadata = { title: 'Introductions | Andrel' }
 
@@ -67,7 +68,7 @@ export default async function IntroductionsPage() {
 
   const { data: profileRows } = await supabase
     .from('profiles')
-    .select('id, full_name, email, subscription_tier, is_founding_member')
+    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at')
     .or(`id.eq.${user.id},email.eq.${user.email}`)
     .limit(1)
 
@@ -76,6 +77,10 @@ export default async function IntroductionsPage() {
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
   const userTier = (profileRow as any)?.subscription_tier ?? 'free'
   const isPaid = userTier !== 'free'
+  // Active founding members get premium-equivalent benefits via the override,
+  // so they should not see upgrade prompts (matches billing page, commit 1568bc5).
+  // getEffectiveTier handles expiry: an expired founder falls through to their tier.
+  const isFoundingMember = Boolean(profileRow && getEffectiveTier(profileRow) === 'founding')
   const tierCap = (profileRow as any)?.is_founding_member ? 3
     : userTier === 'executive' ? 8
     : userTier === 'professional' ? 5
@@ -351,7 +356,7 @@ export default async function IntroductionsPage() {
               <WithdrawInterestButton targetId={s.id} />
             </div>
           ) : (
-            <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={userTier} />
+            <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={isFoundingMember ? 'founding' : userTier} />
           )}
         </div>
       </IntroductionCard>
@@ -371,7 +376,7 @@ export default async function IntroductionsPage() {
         </PageHint>
 
         {/* Tier banner */}
-        {!isPaid && (
+        {!isPaid && !isFoundingMember && (
           <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 bg-brand-gold-soft border border-brand-gold/20 rounded-xl px-4 py-3">
             <div className="flex items-center gap-3 min-w-0">
               <Pill variant="gold" dot>Free</Pill>
