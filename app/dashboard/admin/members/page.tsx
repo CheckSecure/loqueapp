@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import AdminMembersClient from '@/components/AdminMembersClient'
 
@@ -15,7 +16,7 @@ export default async function AdminMembersPage() {
   console.log('[AdminMembers] Starting query...')
   const profileQuery = await supabase
     .from('profiles')
-    .select('id, full_name, email, company, title, subscription_tier, location, boost_score, is_priority, account_status, verification_status, current_status, profile_complete, created_at, is_founding_member, founding_member_email_sent_at, founding_member_expires_at')
+    .select('id, full_name, email, company, title, subscription_tier, location, boost_score, is_priority, account_status, verification_status, current_status, profile_complete, created_at, is_founding_member, founding_member_email_sent_at, founding_member_expires_at, launch_cohort')
     .order('created_at', { ascending: false })
   
   console.log('[AdminMembers] Query result:', { 
@@ -69,18 +70,53 @@ export default async function AdminMembersPage() {
     }
   })
 
+  // Activation markers (derived, not stored). Admin client + listUsers for
+  // last_sign_in_at (the established activation marker), waitlist for invited_at.
+  const admin = createAdminClient()
+
+  const signedInIds = new Set<string>()
+  let authPage = 1
+  while (true) {
+    const { data, error } = await admin.auth.admin.listUsers({ page: authPage, perPage: 1000 })
+    if (error) break
+    for (const u of data.users) if (u.last_sign_in_at) signedInIds.add(u.id)
+    if (data.users.length < 1000) break
+    authPage++
+  }
+
+  const { data: invitedRows } = await admin
+    .from('waitlist')
+    .select('email')
+    .not('invited_at', 'is', null)
+  const invitedEmails = new Set(
+    (invitedRows || []).map((w: any) => (w.email || '').toLowerCase()).filter(Boolean)
+  )
+
   console.log('[AdminMembers] Credits:', credits?.length || 0)
   console.log('[AdminMembers] Matches:', matches?.length || 0)
   console.log('[AdminMembers] Intros:', intros?.length || 0)
-  
-  const enrichedProfiles = (profiles || []).map((p: any) => ({
-    ...p,
-    tier: p.subscription_tier,
-    credits: creditsMap[p.id] || 0,
-    matches: matchCounts[p.id] || 0,
-    pending_intros: pendingIntros[p.id] || 0,
-    active_intros: activeIntros[p.id] || 0,
-  }))
+
+  const enrichedProfiles = (profiles || []).map((p: any) => {
+    const signedIn = signedInIds.has(p.id)
+    const wasInvited = p.email ? invitedEmails.has(p.email.toLowerCase()) : false
+    // Highest applicable activation state.
+    const activation_state =
+      signedIn && p.profile_complete ? 'onboarded'
+      : signedIn ? 'activated'
+      : wasInvited ? 'invited'
+      : 'none'
+    return {
+      ...p,
+      tier: p.subscription_tier,
+      launch_cohort: p.launch_cohort ?? null,
+      was_invited: wasInvited,
+      activation_state,
+      credits: creditsMap[p.id] || 0,
+      matches: matchCounts[p.id] || 0,
+      pending_intros: pendingIntros[p.id] || 0,
+      active_intros: activeIntros[p.id] || 0,
+    }
+  })
 
   console.log('[AdminMembers] Enriched profiles:', enrichedProfiles.length)
   

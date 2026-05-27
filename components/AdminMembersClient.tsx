@@ -6,6 +6,20 @@ import { Search, Filter, UserPlus, Zap, Edit, CheckCircle, AlertTriangle, Users,
 import { adminForceMatch, adminUpdateUser, adminSetFoundingMember, adminAdjustCredits } from '@/app/actions'
 import { useRouter } from 'next/navigation'
 
+const COHORT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'wave_1', label: 'Wave 1' },
+  { value: 'wave_2', label: 'Wave 2' },
+  { value: 'wave_3', label: 'Wave 3' },
+  { value: 'general', label: 'General Access' },
+]
+const COHORT_LABELS: Record<string, string> = Object.fromEntries(COHORT_OPTIONS.map(o => [o.value, o.label]))
+
+const ACTIVATION_BADGE: Record<string, { label: string; cls: string }> = {
+  onboarded: { label: 'Onboarded', cls: 'bg-green-100 text-green-700' },
+  activated: { label: 'Activated', cls: 'bg-blue-100 text-blue-700' },
+  invited: { label: 'Invited', cls: 'bg-slate-100 text-slate-600' },
+}
+
 interface Profile {
   id: string
   full_name: string | null
@@ -24,6 +38,9 @@ interface Profile {
   is_founding_member: boolean
   founding_member_email_sent_at: string | null
   founding_member_expires_at: string | null
+  launch_cohort: string | null
+  was_invited: boolean
+  activation_state: string
   credits: number
   matches: number
   pending_intros: number
@@ -36,6 +53,8 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
   const [filterTier, setFilterTier] = useState<string>('')
   const [filterStatus, setFilterStatus] = useState<string>('')
   const [filterVerification, setFilterVerification] = useState<string>('')
+  const [filterCohort, setFilterCohort] = useState<string>('')
+  const [filterActivation, setFilterActivation] = useState<string>('')
   const [showStuckOnly, setShowStuckOnly] = useState(false)
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null)
   const [showForceMatch, setShowForceMatch] = useState(false)
@@ -68,6 +87,13 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
     if (filterStatus) result = result.filter(p => p.account_status === filterStatus)
     if (filterVerification) result = result.filter(p => p.verification_status === filterVerification)
 
+    if (filterCohort === 'unassigned') result = result.filter(p => !p.launch_cohort)
+    else if (filterCohort) result = result.filter(p => p.launch_cohort === filterCohort)
+
+    if (filterActivation === 'invited') result = result.filter(p => p.activation_state === 'invited')
+    else if (filterActivation === 'activated') result = result.filter(p => p.activation_state === 'activated' || p.activation_state === 'onboarded')
+    else if (filterActivation === 'onboarded') result = result.filter(p => p.activation_state === 'onboarded')
+
     // Stuck user filter: no matches AND no active intros
     if (showStuckOnly) {
       result = result.filter(p =>
@@ -78,7 +104,25 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
 
     console.log("[AdminMembers] Final count:", result.length)
     return result
-  }, [profiles, search, filterTier, filterStatus, filterVerification, showStuckOnly])
+  }, [profiles, search, filterTier, filterStatus, filterVerification, filterCohort, filterActivation, showStuckOnly])
+
+  // Cohort-scoped activation funnel for the quick-stats card. Responds to the
+  // cohort filter only (not search/activation/tier/status). Conditioned on
+  // was_invited so the funnel stays coherent (invited >= activated >= onboarded).
+  const cohortStats = useMemo(() => {
+    const scope = filterCohort === 'unassigned'
+      ? profiles.filter(p => !p.launch_cohort)
+      : filterCohort
+        ? profiles.filter(p => p.launch_cohort === filterCohort)
+        : profiles
+    const invited = scope.filter(p => p.was_invited).length
+    const activated = scope.filter(p => p.was_invited && (p.activation_state === 'activated' || p.activation_state === 'onboarded')).length
+    const onboarded = scope.filter(p => p.was_invited && p.activation_state === 'onboarded').length
+    const label = filterCohort === 'unassigned' ? 'Unassigned'
+      : filterCohort ? (COHORT_LABELS[filterCohort] ?? filterCohort)
+      : 'All cohorts'
+    return { invited, activated, onboarded, label }
+  }, [profiles, filterCohort])
 
   const handleSimulateMatches = async () => {
     setSimulating(true)
@@ -248,7 +292,7 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
 
         {/* Filters */}
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -259,6 +303,25 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                 className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20"
               />
             </div>
+            <select
+              value={filterCohort}
+              onChange={e => setFilterCohort(e.target.value)}
+              className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20"
+            >
+              <option value="">All Cohorts</option>
+              {COHORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              <option value="unassigned">Unassigned</option>
+            </select>
+            <select
+              value={filterActivation}
+              onChange={e => setFilterActivation(e.target.value)}
+              className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20"
+            >
+              <option value="">All Activation</option>
+              <option value="invited">Invited</option>
+              <option value="activated">Activated</option>
+              <option value="onboarded">Onboarded</option>
+            </select>
             <select
               value={filterTier}
               onChange={e => setFilterTier(e.target.value)}
@@ -292,6 +355,29 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
           </div>
         </div>
 
+        {/* Cohort activation funnel */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+            <p className="text-sm font-semibold text-slate-900">{cohortStats.label}</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-slate-900">{cohortStats.invited}</span>
+              <span className="text-xs text-slate-500">invited</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-slate-900">{cohortStats.activated}</span>
+              <span className="text-xs text-slate-500">
+                activated {cohortStats.invited > 0 ? `(${Math.round((cohortStats.activated / cohortStats.invited) * 100)}%)` : '(—)'}
+              </span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-slate-900">{cohortStats.onboarded}</span>
+              <span className="text-xs text-slate-500">
+                onboarded {cohortStats.activated > 0 ? `(${Math.round((cohortStats.onboarded / cohortStats.activated) * 100)}%)` : '(—)'}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* User List */}
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
@@ -301,6 +387,7 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">User</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Tier</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600">Cohort</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600">Credits</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600" title="Increases recommendation visibility">Match Priority</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-600">Founding</th>
@@ -343,14 +430,31 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                       </select>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                        user.account_status === 'active' ? 'bg-green-100 text-green-700' :
-                        user.account_status === 'flagged' ? 'bg-red-100 text-red-700' :
-                        user.account_status === 'deactivated' ? 'bg-amber-100 text-amber-700' :
-                        'bg-slate-100 text-slate-700'
-                      }`}>
-                        {user.account_status}
-                      </span>
+                      <div className="flex flex-col items-start gap-1">
+                        <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                          user.account_status === 'active' ? 'bg-green-100 text-green-700' :
+                          user.account_status === 'flagged' ? 'bg-red-100 text-red-700' :
+                          user.account_status === 'deactivated' ? 'bg-amber-100 text-amber-700' :
+                          'bg-slate-100 text-slate-700'
+                        }`}>
+                          {user.account_status}
+                        </span>
+                        {ACTIVATION_BADGE[user.activation_state] && (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${ACTIVATION_BADGE[user.activation_state].cls}`}>
+                            {ACTIVATION_BADGE[user.activation_state].label}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={user.launch_cohort || ''}
+                        onChange={e => handleQuickEdit(user.id, 'launch_cohort', e.target.value || null)}
+                        className="px-2 py-1 text-xs border border-slate-200 rounded"
+                      >
+                        <option value="">(Unassigned)</option>
+                        {COHORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1.5">
