@@ -37,6 +37,13 @@ export async function updateProfile(formData: FormData) {
   const introPref = (formData.get('intro_preferences') as string || '')
     .split(',').map(s => s.trim()).filter(Boolean)
 
+  // open_to_mentorship is derived from mentorship_role. mentorship_role is the
+  // user-facing/editable field; open_to_mentorship is what the matching engine
+  // reads (lib/generate-recommendations.ts). Keeping them in sync on write is
+  // what makes mentorship matching actually function.
+  const mentorshipRole = (formData.get('mentorship_role') as string) || null
+  const openToMentorship = mentorshipRole === 'Mentor' || mentorshipRole === 'Mentee'
+
   console.log('[completeOnboarding] About to upsert profile data')
   
   // Use admin client to bypass RLS
@@ -59,7 +66,8 @@ export async function updateProfile(formData: FormData) {
     website_url: formData.get('website_url') as string || null,
     seniority: formData.get('seniority') as string || null,
     role_type: formData.get('role_type') as string || null,
-    mentorship_role: formData.get('mentorship_role') as string || null,
+    mentorship_role: mentorshipRole,
+    open_to_mentorship: openToMentorship,
     updated_at: new Date().toISOString(),
   })
 
