@@ -32,21 +32,35 @@ function overlap(viewerVal: any, viewedVal: any, max: number): string[] {
   return toList(viewedVal).filter(x => viewerSet.has(x.toLowerCase())).slice(0, max)
 }
 
+export interface MatchSignals {
+  // Ordered signal strings (professional → intent → interest), capped at 5.
+  signals: string[]
+  // True if any professional (P1) or relationship-intent (P2) signal applies.
+  // When false but signals is non-empty, the only overlap is personal interest.
+  hasStrongSignals: boolean
+  // Raw overlapping interests, for rendering the weak-only supporting line.
+  sharedInterests: string[]
+}
+
 // Computes true shared signals between the viewer and a viewed/suggested
 // profile. Returns only signals that genuinely apply (no invented reasons),
 // capped at 5. Order is by priority so the most professionally meaningful
 // signals lead: professional alignment, then relationship intent, then
-// personal interest last (a consumer slicing to N keeps the strongest).
-export function computeMatchSignals(viewer: any, viewed: any): string[] {
+// personal interest last. `hasStrongSignals` lets callers detect the
+// interest-only case and avoid letting "Shared interests" read as the headline.
+export function computeMatchSignals(viewer: any, viewed: any): MatchSignals {
   const signals: string[] = []
-  if (!viewer || !viewed) return signals
+  let hasStrongSignals = false
+  const pushStrong = (s: string) => { signals.push(s); hasStrongSignals = true }
+
+  if (!viewer || !viewed) return { signals, hasStrongSignals, sharedInterests: [] }
 
   // --- Priority 1: professional alignment ---
-  if (eqField(viewed.role_type, viewer.role_type)) signals.push('Same role type')
-  if (eqField(viewed.seniority, viewer.seniority)) signals.push('Similar seniority')
-  if (eqField(viewed.location, viewer.location)) signals.push('Same location')
+  if (eqField(viewed.role_type, viewer.role_type)) pushStrong('Same role type')
+  if (eqField(viewed.seniority, viewer.seniority)) pushStrong('Similar seniority')
+  if (eqField(viewed.location, viewer.location)) pushStrong('Same location')
   const sharedExpertise = overlap(viewer.expertise, viewed.expertise, 3)
-  if (sharedExpertise.length > 0) signals.push(`Shared expertise: ${sharedExpertise.join(', ')}`)
+  if (sharedExpertise.length > 0) pushStrong(`Shared expertise: ${sharedExpertise.join(', ')}`)
 
   // --- Priority 2: relationship intent ---
   const vmr = String(viewer.mentorship_role || '').toLowerCase()
@@ -54,14 +68,14 @@ export function computeMatchSignals(viewer: any, viewed: any): string[] {
   const complementary =
     (['mentor', 'both'].includes(vmr) && ['mentee', 'both'].includes(pmr)) ||
     (['mentee', 'both'].includes(vmr) && ['mentor', 'both'].includes(pmr))
-  if (complementary) signals.push('Mentorship match')
-  else if (vmr && pmr) signals.push('Both open to mentorship')
+  if (complementary) pushStrong('Mentorship match')
+  else if (vmr && pmr) pushStrong('Both open to mentorship')
   const sharedPurposes = overlap(viewer.purposes, viewed.purposes, 2)
-  if (sharedPurposes.length > 0) signals.push(`Shared focus: ${sharedPurposes.join(', ')}`)
+  if (sharedPurposes.length > 0) pushStrong(`Shared focus: ${sharedPurposes.join(', ')}`)
 
   // --- Priority 3: personal interest (last) ---
   const sharedInterests = overlap(viewer.interests, viewed.interests, 3)
   if (sharedInterests.length > 0) signals.push(`Shared interests: ${sharedInterests.join(', ')}`)
 
-  return signals.slice(0, 5)
+  return { signals: signals.slice(0, 5), hasStrongSignals, sharedInterests }
 }

@@ -308,7 +308,7 @@ export default async function IntroductionsPage() {
       : typeof s.interests === 'string' && s.interests
         ? s.interests.split(',').map((i: string) => i.trim()).filter(Boolean)
         : []
-    const signals = computeMatchSignals(profileRow, s).slice(0, 3)
+    const match = computeMatchSignals(profileRow, s)
     return (
       <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
         <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md hover:border-slate-200 transition-all flex flex-col gap-4">
@@ -344,13 +344,18 @@ export default async function IntroductionsPage() {
           {(
             <div className="flex items-start gap-2 bg-brand-gold-soft border border-brand-gold/20 rounded-lg px-3 py-2.5">
               <Sparkles className="w-3.5 h-3.5 text-brand-gold flex-shrink-0 mt-0.5" />
-              {signals.length > 0 ? (
+              {match.hasStrongSignals ? (
                 <div className="text-xs text-slate-600 leading-relaxed">
                   <p className="font-medium text-slate-700 mb-0.5">Why this introduction</p>
                   <ul className="list-disc list-inside space-y-0.5">
-                    {signals.map((sig: string) => <li key={sig}>{sig}</li>)}
+                    {match.signals.slice(0, 3).map((sig: string) => <li key={sig}>{sig}</li>)}
                   </ul>
                 </div>
+              ) : match.sharedInterests.length > 0 ? (
+                <ul className="text-xs text-slate-600 leading-relaxed list-disc list-inside space-y-0.5">
+                  <li>Curated based on your profile and preferences</li>
+                  <li>Shared interests considered: {match.sharedInterests.join(', ')}</li>
+                </ul>
               ) : (
                 <p className="text-xs text-slate-600 italic leading-relaxed">Curated based on your profile and preferences.</p>
               )}

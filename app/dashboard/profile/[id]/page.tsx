@@ -118,7 +118,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
     whyConnectInterests.length > 0 || whyConnectPurposes.length > 0 || openToMentorship || openToBusiness
 
   // "Why Andrel introduced you" — true shared signals vs the viewer only.
-  const visibleSignals = computeMatchSignals(viewerProfile, profile)
+  const match = computeMatchSignals(viewerProfile, profile)
 
   // Connection date — only when an active match exists between the two users.
   const connection = matchRows && matchRows.length > 0 ? matchRows[0] : null
@@ -269,12 +269,19 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
           )}
 
           {/* Why Andrel introduced you — true shared signals only */}
-          {visibleSignals.length > 0 && (
+          {match.signals.length > 0 && (
             <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
               <Section icon={Sparkles} title="Why Andrel introduced you">
-                <div className="flex flex-wrap gap-2">
-                  {visibleSignals.map(s => <Badge key={s} label={s} />)}
-                </div>
+                {match.hasStrongSignals ? (
+                  <div className="flex flex-wrap gap-2">
+                    {match.signals.map(s => <Badge key={s} label={s} />)}
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-600 space-y-1">
+                    <p>Curated based on your profile and preferences</p>
+                    <p>Shared interests considered: {match.sharedInterests.join(', ')}</p>
+                  </div>
+                )}
               </Section>
             </div>
           )}
