@@ -8,7 +8,7 @@ const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
   free: 3,
   professional: 5,
   executive: 8,
-  founding: 5,  // Same as professional
+  founding: 3,  // Aligned with free — founding does not get a higher intro cadence
 }
 
 // Unified scoring model for all tiers

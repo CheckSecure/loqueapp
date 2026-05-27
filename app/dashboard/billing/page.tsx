@@ -73,15 +73,14 @@ const TIER_VALUE: Record<string, string> = {
   free: 'Curated introductions to start building your network, with 3 credits per month.',
   professional: 'Priority matching, more frequent introductions, and the ability to signal hiring or business needs.',
   executive: 'Concierge-level curation, highest matching priority, and up to 2 active opportunity signals at a time.',
-  founding: 'Early access with expanded benefits and priority placement.',
+  founding: 'Enhanced credits and early-access benefits, with the same curated introduction cadence as every member.',
 }
 
 const FOUNDING_BENEFITS = [
   '30 credits per month',
-  'Priority matching in introductions',
-  'Up to 5 active introductions at a time',
+  'Higher credit balance (up to 60)',
   'Access to premium opportunities',
-  'Higher daily usage limits',
+  'Early access to new features and benefits',
 ]
 
 function BillingInner() {
@@ -188,7 +187,7 @@ function BillingInner() {
               </div>
               {isFoundingMember && (
                 <p className="text-xs text-brand-gold mt-1 mb-1">
-                  You're an early member with expanded access and priority placement.
+                  You're an early member with enhanced credits and early-access benefits.
                 </p>
               )}
               <p className="text-sm text-slate-500 leading-relaxed">

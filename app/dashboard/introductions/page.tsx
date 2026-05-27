@@ -76,7 +76,7 @@ export default async function IntroductionsPage() {
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
   const userTier = (profileRow as any)?.subscription_tier ?? 'free'
   const isPaid = userTier !== 'free'
-  const tierCap = (profileRow as any)?.is_founding_member ? 5
+  const tierCap = (profileRow as any)?.is_founding_member ? 3
     : userTier === 'executive' ? 8
     : userTier === 'professional' ? 5
     : userTier === 'free' ? 3

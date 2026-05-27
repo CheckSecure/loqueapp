@@ -351,8 +351,9 @@ export async function sendInviteReminder2(toEmail: string, toName: string): Prom
 // Founding Member notification — one-time status email. Bypasses preferences
 // (same class as invite/reminder emails: account-status, not configurable).
 // The audit confirmed real benefits exist today (lib/tier-override.ts: 30
-// credits/month, 5 active intros, premium-opportunity access, priority
-// curation), so the body can mention them honestly.
+// credits/month, 60 credit cap, premium-opportunity access), so the body can
+// mention them honestly. Founding intro cadence matches free (3), so the copy
+// must not imply more or faster introductions.
 export async function sendFoundingMemberEmail(toEmail: string, toName: string): Promise<{ success: boolean; error?: string }> {
   try {
     const { data, error } = await resend.emails.send({
@@ -368,7 +369,7 @@ export async function sendFoundingMemberEmail(toEmail: string, toName: string): 
             I wanted to reach out personally to let you know that you've been selected as an Andrel Founding Member.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            We're opening Andrel carefully, and Founding Members are the small group helping us shape the early network. As a Founding Member, you'll receive additional intro credits each month, priority consideration in our curated introductions, and access to premium opportunities ahead of the broader rollout.
+            We're opening Andrel carefully, and Founding Members are the small group helping us shape the early network. As a Founding Member, you'll receive additional intro credits each month and access to premium opportunities ahead of the broader rollout.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
             Andrel exists for meaningful, relationship-driven networking — not transactional outreach. Founding Members help us keep that culture intact as the network grows.
