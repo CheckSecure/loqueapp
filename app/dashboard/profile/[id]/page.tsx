@@ -279,7 +279,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                 ) : (
                   <div className="text-sm text-slate-600 space-y-1">
                     <p>Curated based on your profile and preferences</p>
-                    <p>Shared interests considered: {match.sharedInterests.join(', ')}</p>
+                    <p>Additional overlap: {match.sharedInterests.join(', ')}</p>
                   </div>
                 )}
               </Section>
