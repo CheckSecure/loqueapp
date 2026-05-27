@@ -39,7 +39,7 @@ export default function PageHint({ hintKey, children }: { hintKey: string; child
         onClick={dismiss}
         className="flex-shrink-0 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
       >
-        Got it &#10003;
+        Dismiss
       </button>
     </div>
   )
