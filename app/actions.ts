@@ -42,7 +42,7 @@ export async function updateProfile(formData: FormData) {
   // reads (lib/generate-recommendations.ts). Keeping them in sync on write is
   // what makes mentorship matching actually function.
   const mentorshipRole = (formData.get('mentorship_role') as string) || null
-  const openToMentorship = mentorshipRole === 'Mentor' || mentorshipRole === 'Mentee'
+  const openToMentorship = mentorshipRole != null && ['Mentor', 'Mentee', 'Both'].includes(mentorshipRole)
 
   console.log('[completeOnboarding] About to upsert profile data')
   
