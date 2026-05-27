@@ -3,8 +3,12 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { sendMatchCreatedEmail } from '@/lib/email'
 import { deductCredits, hasEnoughCredits } from '@/lib/credits'
+import { requireAdmin } from '@/lib/admin/requireAdmin'
 
 export async function POST(request: Request) {
+  const { error: authError } = await requireAdmin()
+  if (authError) return authError
+
   const supabase = createClient()
   const adminSupabase = createAdminClient()
   const { requestId } = await request.json()
