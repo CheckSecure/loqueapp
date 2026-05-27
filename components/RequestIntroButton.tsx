@@ -5,18 +5,15 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { submitIntroRequest, passOnSuggestion } from '@/app/actions'
 import { CheckCircle, Loader2, X, EyeOff, Sparkles } from 'lucide-react'
-import UpgradeModal from './UpgradeModal'
 
 export default function RequestIntroButton({
   targetId,
   alreadyRequested = false,
   rowId,
-  userTier = 'free',
 }: {
   targetId: string
   alreadyRequested?: boolean
   rowId?: string
-  userTier?: string
 }) {
   const [state, setState] = useState<'idle' | 'loading' | 'signaling' | 'facilitating' | 'done' | 'error' | 'passed' | 'hidden'>(
     alreadyRequested ? 'done' : 'idle'
@@ -24,7 +21,6 @@ export default function RequestIntroButton({
   const [errorMsg, setErrorMsg] = useState('')
   const [outOfCredits, setOutOfCredits] = useState(false)
   const [showPassMenu, setShowPassMenu] = useState(false)
-  const [showUpgrade, setShowUpgrade] = useState(false)
   const [passing, setPassing] = useState(false)
 
   const handleRequest = async () => {
@@ -167,7 +163,6 @@ export default function RequestIntroButton({
 
   return (
     <>
-      {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
       <div className="mt-1 flex gap-2 relative">
         <button
           onClick={handleRequest}
@@ -211,15 +206,6 @@ export default function RequestIntroButton({
 
       {state === 'error' && errorMsg && (
         <p className="text-xs text-red-500 text-center mt-1">{errorMsg}</p>
-      )}
-
-      {userTier === 'free' && (
-        <button
-          onClick={() => setShowUpgrade(true)}
-          className="w-full mt-2 text-xs text-[#C4922A] font-medium hover:underline text-center"
-        >
-          ✦ Upgrade for priority matching →
-        </button>
       )}
     </>
   )

@@ -69,7 +69,7 @@ export default async function IntroductionsPage() {
 
   const { data: profileRows } = await supabase
     .from('profiles')
-    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, role_type, seniority, interests, mentorship_role, location')
+    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, role_type, seniority, interests, mentorship_role, location, expertise, purposes')
     .or(`id.eq.${user.id},email.eq.${user.email}`)
     .limit(1)
 
@@ -102,7 +102,7 @@ export default async function IntroductionsPage() {
       .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`),
     supabase
       .from('intro_requests')
-      .select('id, target_user_id, created_at, match_reason, target:profiles!target_user_id(id, full_name, title, company, location, bio, interests, seniority, role_type, avatar_url)')
+      .select('id, target_user_id, created_at, match_reason, target:profiles!target_user_id(id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes)')
       .eq('requester_id', profileId)
       .eq('status', 'suggested')
       .order('created_at', { ascending: false }),
@@ -234,7 +234,7 @@ export default async function IntroductionsPage() {
   if (allBatchProfileIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url')
+      .select('id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes')
       .in('id', allBatchProfileIds)
     for (const p of profiles || []) profileMap[p.id] = p
   }
@@ -367,7 +367,7 @@ export default async function IntroductionsPage() {
               <WithdrawInterestButton targetId={s.id} />
             </div>
           ) : (
-            <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} userTier={isFoundingMember ? 'founding' : userTier} />
+            <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} />
           )}
         </div>
       </IntroductionCard>
@@ -437,7 +437,7 @@ export default async function IntroductionsPage() {
               <h2 className="text-base font-semibold text-slate-900">
                 This week's introductions
               </h2>
-              <p className="text-sm text-slate-500 mt-1">Review and express interest &mdash; Andrel facilitates when there's strong mutual alignment.</p>
+              <p className="text-sm text-slate-500 mt-1">Review introductions and express interest when there's a fit.</p>
             </div>
             {allSuggestions.length > 0 && (
               <Pill variant="gold">{allSuggestions.length} new</Pill>

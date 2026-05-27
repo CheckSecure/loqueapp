@@ -88,7 +88,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
   const [{ data: viewerProfile }, { data: matchRows }, { data: meetingRows }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('role_type, seniority, interests, mentorship_role, location')
+      .select('role_type, seniority, interests, mentorship_role, location, expertise, purposes')
       .eq('id', user.id)
       .maybeSingle(),
     supabase
