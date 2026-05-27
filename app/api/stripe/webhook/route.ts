@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
 
         const { data: profile } = await adminClient
           .from('profiles')
-          .select('id, subscription_tier')
+          .select('id, subscription_tier, is_founding_member, founding_member_expires_at')
           .eq('stripe_customer_id', customerId)
           .maybeSingle()
 
@@ -196,9 +196,8 @@ export async function POST(req: NextRequest) {
           break
         }
 
-        // Note: getEffectiveTier does not receive founding-member fields in this
-        // commit — fix(webhook-founding) adds them. Cap is conservatively correct
-        // for non-founding users.
+        // Profile now includes is_founding_member + founding_member_expires_at, so
+        // getEffectiveTier resolves founding members to the founding cap (60).
         const effectiveTier = getEffectiveTier(profile)
         const cap = getCreditCap(effectiveTier)
 
@@ -212,8 +211,7 @@ export async function POST(req: NextRequest) {
         const currentPremium = currentCredits?.premium_credits ?? 0
 
         // Headroom: how many more credits fit before the cap, zero-floored to
-        // guard against currentFree > cap (possible if tier resolves lower than
-        // when credits were last granted, e.g. founding-member limitation here).
+        // guard against currentFree + currentPremium already exceeding the cap.
         const headroom = Math.max(0, cap - currentFree - currentPremium)
         const grantedCredits = Math.min(creditsPurchased, headroom)
         const newPremium = currentPremium + grantedCredits

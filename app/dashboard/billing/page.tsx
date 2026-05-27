@@ -209,7 +209,9 @@ function BillingInner() {
         </div>
       </div>
 
-      {/* Tier selector */}
+      {/* Tier selector — hidden for founding members, who already have
+          premium-equivalent benefits via the founding override. */}
+      {!isFoundingMember && (
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-slate-900">Upgrade Membership</h2>
@@ -278,6 +280,7 @@ function BillingInner() {
           })}
         </div>
       </div>
+      )}
 
       {/* Credits */}
       <div>

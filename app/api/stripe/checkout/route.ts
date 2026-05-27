@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { stripe, CREDIT_PACKS } from '@/lib/stripe'
 import { createClient } from '@/lib/supabase/server'
+import { getEffectiveTier } from '@/lib/tier-override'
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,9 +16,16 @@ export async function POST(req: NextRequest) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('stripe_customer_id, full_name')
+      .select('stripe_customer_id, full_name, is_founding_member, founding_member_expires_at, subscription_tier')
       .eq('id', user.id)
       .single()
+
+    // Founding members already have premium-equivalent benefits via the override
+    // (lib/tier-override.ts), so block subscription checkout for them. Credit-pack
+    // purchases (mode === 'payment') remain available to everyone.
+    if (mode !== 'payment' && profile && getEffectiveTier(profile) === 'founding') {
+      return NextResponse.json({ error: 'Founding members already have equivalent benefits.' }, { status: 400 })
+    }
 
     let customerId = profile?.stripe_customer_id
 
