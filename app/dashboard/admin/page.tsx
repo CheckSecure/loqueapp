@@ -207,7 +207,23 @@ export default async function AdminDashboard() {
 
         {/* Main Navigation Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          
+
+          {/* Launch Metrics */}
+          <Link
+            href="/dashboard/admin/metrics"
+            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
+                <TrendingUp className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Launch Metrics</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Founding member activation, intros, matches, meetings, and opportunities
+            </p>
+          </Link>
+
           {/* Members */}
           <Link
             href="/dashboard/admin/members"
