@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
+import PageHint from '@/components/PageHint'
 
 interface Conversation {
   id: string
@@ -70,6 +71,10 @@ export default function MessagesPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Messages</h1>
         <p className="text-slate-500 text-sm mt-2">Your active conversations.</p>
       </div>
+
+      <PageHint hintKey="messages">
+        Conversations open here once you and another member are connected — there&apos;s no cold outreach on Andrel.
+      </PageHint>
 
       {conversations.length === 0 ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center shadow-sm">

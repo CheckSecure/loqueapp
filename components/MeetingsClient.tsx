@@ -7,6 +7,7 @@ import { Calendar, Clock, Video, Plus, MapPin, ChevronLeft, ChevronRight } from 
 import { cn } from '@/lib/utils'
 import ScheduleMeetingModal from './ScheduleMeetingModal'
 import MeetingDetailModal, { MeetingDetail } from './MeetingDetailModal'
+import PageHint from './PageHint'
 
 interface Meeting extends MeetingDetail {
   purpose_category?: string | null
@@ -279,6 +280,10 @@ export default function MeetingsClient({
             </button>
           </div>
         </div>
+
+        <PageHint hintKey="meetings">
+          Schedule and manage calls with your connections here. Propose a time and they&apos;ll confirm — no back-and-forth.
+        </PageHint>
 
         {view === 'calendar' && (
           <div className="bg-white border border-slate-100 rounded-xl shadow-sm mb-8 overflow-hidden">

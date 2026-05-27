@@ -7,6 +7,7 @@ import { ReceiverCard } from '@/components/opportunities/ReceiverCard';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Inbox } from 'lucide-react';
+import PageHint from '@/components/PageHint';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,6 +89,12 @@ export default async function OpportunitiesPage() {
             <Button variant="primary" size="md" className="w-full sm:w-auto">Signal a need</Button>
           </Link>
         )}
+      </div>
+
+      <div className="mt-6">
+        <PageHint hintKey="opportunities">
+          Opportunities are private, curated signals — hiring or business needs shared quietly with relevant members. No public posts, no browsing.
+        </PageHint>
       </div>
 
       {canCreate ? (

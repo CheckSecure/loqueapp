@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { MessageSquare } from 'lucide-react'
 import NetworkList from '@/components/NetworkList'
+import PageHint from '@/components/PageHint'
 import MarkNetworkNotificationsRead from '@/components/MarkNetworkNotificationsRead'
 import { generateMatchInsights } from '@/lib/matching/matchInsights'
 
@@ -126,6 +127,10 @@ export default async function NetworkPage() {
           <h1 className="text-2xl font-bold text-slate-900">Network</h1>
           <p className="text-slate-500 text-sm mt-0.5">Your confirmed introductions — people you've been connected with through Andrel.</p>
         </div>
+
+        <PageHint hintKey="network">
+          Your network is everyone you&apos;ve been connected with through Andrel. Message them or schedule time whenever you like.
+        </PageHint>
 
         {connections.length === 0 ? (
           <div className="bg-white border border-slate-100 rounded-xl p-12 text-center shadow-sm">

@@ -8,6 +8,7 @@ import IntroductionCard from '@/components/IntroductionCard'
 import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
 import EarlierIntroductionsBanner from '@/components/EarlierIntroductionsBanner'
+import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -364,6 +365,10 @@ export default async function IntroductionsPage() {
           <h1 className="text-2xl font-bold text-slate-900">Introductions</h1>
           <p className="text-slate-500 text-sm mt-0.5">Your curated introductions, {firstName}.</p>
         </div>
+
+        <PageHint hintKey="introductions">
+          These are your curated introductions. Review each one and express interest — when it&apos;s mutual, Andrel facilitates the connection.
+        </PageHint>
 
         {/* Tier banner */}
         {!isPaid && (
