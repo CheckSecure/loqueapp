@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { Briefcase, MapPin, Inbox, Star, Sparkles, Clock, ChevronDown } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
 import AdminIntroCard from '@/components/AdminIntroCard'
@@ -454,9 +455,16 @@ export default async function IntroductionsPage() {
           {allSuggestions.length === 0 ? (
             <EmptyState
               icon={<Inbox className="w-6 h-6 text-slate-400" />}
-              title="Your next introduction is being curated"
-              description="We'll notify you when there's a strong match worth your time."
-            />
+              title="We're identifying relevant introductions for you."
+              description="As the network grows and member activity increases, additional introductions may become available."
+            >
+              <Link
+                href="/dashboard/profile"
+                className="inline-flex items-center gap-2 rounded-xl font-medium transition-colors px-4 py-2.5 text-sm bg-white border border-brand-navy text-brand-navy hover:bg-brand-navy hover:text-white"
+              >
+                Update Preferences
+              </Link>
+            </EmptyState>
           ) : (
             <div className="grid sm:grid-cols-2 gap-4">
               {allSuggestions.map(renderSuggestionCard)}
