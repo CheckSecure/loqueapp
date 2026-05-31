@@ -24,20 +24,26 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
 
   if (confirming) {
     return (
-      <div className="flex items-center gap-1.5">
-        <button
-          onClick={handleWithdraw}
-          disabled={loading}
-          className="text-xs font-semibold text-slate-600 border border-slate-200 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-60"
-        >
-          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Yes, withdraw'}
-        </button>
-        <button
-          onClick={() => setConfirming(false)}
-          className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5"
-        >
-          Cancel
-        </button>
+      <div className="flex flex-col items-end gap-2 max-w-xs">
+        <div className="text-right">
+          <p className="text-xs font-semibold text-slate-700">Withdraw this introduction request?</p>
+          <p className="text-xs text-slate-500">Credits used to express interest are not refunded.</p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setConfirming(false)}
+            className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleWithdraw}
+            disabled={loading}
+            className="text-xs font-semibold text-slate-600 border border-slate-200 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-60"
+          >
+            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Withdraw Request'}
+          </button>
+        </div>
       </div>
     )
   }

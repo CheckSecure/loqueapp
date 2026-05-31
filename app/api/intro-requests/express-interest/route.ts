@@ -46,11 +46,11 @@ export async function POST(request: Request) {
       )
     }
 
-    // STEP 1: Validate and deduct credit FIRST (before any DB writes)
-    
+    // STEP 1: Atomically validate and deduct credit (race-safe against double-spend)
+
     const { data: credits } = await adminClient
       .from('meeting_credits')
-      .select('free_credits, premium_credits, balance')
+      .select('free_credits, premium_credits')
       .eq('user_id', user.id)
       .single()
 
@@ -63,28 +63,23 @@ export async function POST(request: Request) {
 
     const currentFree = credits.free_credits || 0
     const currentPremium = credits.premium_credits || 0
-    
-    // Express Interest requires FREE credits (no premium fallback)
-    if (currentFree < 1) {
-      return NextResponse.json({
-        error: 'Insufficient free credits',
-        message: 'No free credits remaining. Upgrade your plan or wait for your monthly refill to continue connecting.',
-        free_credits: currentFree,
-        premium_credits: currentPremium
-      }, { status: 403 })
-    }
-
-    // Deduct 1 free credit from the person clicking Express Interest
     const newFree = currentFree - 1
-    
-    const { error: creditError } = await adminClient
+
+    // Atomic conditional UPDATE. .gte('free_credits', 1) is enforced at the DB
+    // under row lock, so two concurrent attempts to consume the last credit
+    // cannot both succeed — the second sees free_credits=0, matches zero rows,
+    // and returns empty. Express Interest requires FREE credits (no premium
+    // fallback). Same atomic write of all three fields per the canonical model.
+    const { data: updated, error: creditError } = await adminClient
       .from('meeting_credits')
       .update({
         free_credits: newFree,
         premium_credits: currentPremium,
-        balance: newFree + currentPremium
+        balance: newFree + currentPremium,
       })
       .eq('user_id', user.id)
+      .gte('free_credits', 1)
+      .select()
 
     if (creditError) {
       console.error('[Credit Deduction] Failed to deduct credit:', creditError)
@@ -92,6 +87,17 @@ export async function POST(request: Request) {
         error: 'Credit deduction failed',
         message: 'Unable to process request. Please try again.'
       }, { status: 500 })
+    }
+
+    if (!updated || updated.length === 0) {
+      // Either the user never had a free credit, or a concurrent deduction just
+      // consumed the last one. Either way: nothing was decremented here; 403.
+      return NextResponse.json({
+        error: 'Insufficient free credits',
+        message: 'No free credits remaining. Upgrade your plan or wait for your monthly refill to continue connecting.',
+        free_credits: currentFree,
+        premium_credits: currentPremium,
+      }, { status: 403 })
     }
     
     console.log('[Express Interest] Credit deducted:', {
