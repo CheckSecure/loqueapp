@@ -162,7 +162,28 @@ function shouldFilterByMentorship(
       return true  // Filter out seniors who are NOT open to mentorship
     }
   }
-  
+
+  // Rule 3: Senior users default to peer matches. Mid-Level candidates surface
+  // only when (a) the viewer has mentorship enabled, OR (b) the viewer's
+  // intro_preferences explicitly include the candidate's role_type. Otherwise
+  // filter. Unlike juniors (handled by scoring penalty + distribution cap),
+  // Mid-Level candidates had no suppression of any kind — they freely flowed
+  // to seniors with no opt-in signal. This rule closes that gap.
+  if (userSeniorityLevel === 'senior' && candidateSeniorityLevel === 'mid') {
+    if (userOpenToMentorship) return false
+    const userPrefs: string[] = Array.isArray(userProfile.intro_preferences)
+      ? userProfile.intro_preferences
+      : []
+    const candidateRole = String(candidate.role_type ?? '').toLowerCase()
+    // Exact match (case-insensitive). Both fields store canonical role_type
+    // strings; substring matching would create false positives if a non-role_type
+    // value ever lands in intro_preferences.
+    const explicitlyWanted = candidateRole !== '' && userPrefs.some((pref: string) =>
+      pref.toLowerCase() === candidateRole
+    )
+    if (!explicitlyWanted) return true
+  }
+
   return false
 }
 
@@ -227,32 +248,19 @@ function applyJuniorDistributionControl(
 }
 
 /**
- * Interleave juniors among non-juniors to prevent clustering
+ * Place juniors after non-juniors (function name retained for caller compat).
+ *
+ * Previously this function interleaved juniors throughout the batch using
+ * spacing = totalSlots / juniors.length. That had a bug: with juniors.length === 1,
+ * juniorIndex=0 → position 0, so the lone junior was promoted ahead of every
+ * higher-scoring non-junior. Since the distribution cap upstream allows at most
+ * 0 (free/founding tier) or 1 (professional/executive tier) juniors today,
+ * appending preserves junior representation without top-of-batch promotion.
  */
 function interleaveJuniors(nonJuniors: any[], juniors: any[]): any[] {
   if (juniors.length === 0) return nonJuniors
   if (nonJuniors.length === 0) return juniors
-  
-  const result: any[] = []
-  const totalSlots = nonJuniors.length + juniors.length
-  const spacing = totalSlots / juniors.length
-  
-  let nonJuniorIndex = 0
-  let juniorIndex = 0
-  
-  for (let i = 0; i < totalSlots; i++) {
-    const juniorSlotPosition = Math.floor(juniorIndex * spacing)
-    
-    if (i === juniorSlotPosition && juniorIndex < juniors.length) {
-      result.push(juniors[juniorIndex])
-      juniorIndex++
-    } else if (nonJuniorIndex < nonJuniors.length) {
-      result.push(nonJuniors[nonJuniorIndex])
-      nonJuniorIndex++
-    }
-  }
-  
-  return result
+  return [...nonJuniors, ...juniors]
 }
 
 
