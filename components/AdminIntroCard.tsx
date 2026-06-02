@@ -133,7 +133,7 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
 
       {state === 'no_credits' && (
         <div className="space-y-2">
-          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">You need at least 1 credit to accept this introduction.</p>
+          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">You'll use 1 credit only if both members accept.</p>
           <a href="/dashboard/billing" className="block text-center text-xs font-semibold text-white bg-[#1B2850] py-2 rounded-lg hover:bg-[#162040]">Get credits</a>
         </div>
       )}

@@ -27,7 +27,7 @@ export default function WithdrawInterestButton({ targetId }: { targetId: string 
       <div className="flex flex-col items-end gap-2 max-w-xs">
         <div className="text-right">
           <p className="text-xs font-semibold text-slate-700">Withdraw this introduction request?</p>
-          <p className="text-xs text-slate-500">Credits used to express interest are not refunded.</p>
+          <p className="text-xs text-slate-500">This will remove your interest before a connection is created.</p>
         </div>
         <div className="flex items-center gap-1.5">
           <button

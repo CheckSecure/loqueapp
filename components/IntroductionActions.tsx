@@ -2,12 +2,11 @@
 
 import { useState } from 'react'
 import { updateIntroStatus } from '@/app/actions'
-import { CreditCard, CheckCircle } from 'lucide-react'
-import Link from 'next/link'
+import { CheckCircle } from 'lucide-react'
 
 export default function IntroductionActions({ introId }: { introId: string }) {
   const [loading, setLoading] = useState<'accepted' | 'declined' | null>(null)
-  const [result, setResult] = useState<'accepted' | 'declined' | 'accepted_pending_payment' | null>(null)
+  const [result, setResult] = useState<'accepted' | 'declined' | null>(null)
 
   if (result === 'accepted') {
     return (
@@ -20,19 +19,6 @@ export default function IntroductionActions({ introId }: { introId: string }) {
 
   if (result === 'declined') {
     return <span className="text-xs text-slate-400 font-medium">Declined</span>
-  }
-
-  if (result === 'accepted_pending_payment') {
-    return (
-      <div className="w-full space-y-2">
-        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-          <CreditCard className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-800 leading-relaxed">
-            You accepted this request, but the other member has no credits. Their connection is on hold — they have 7 days to add credits.
-          </p>
-        </div>
-      </div>
-    )
   }
 
   const handle = async (status: 'accepted' | 'declined') => {

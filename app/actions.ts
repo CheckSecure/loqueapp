@@ -281,56 +281,49 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
   // Accepting — fetch the request to find the requester
   const { data: intro, error: fetchErr } = await supabase
     .from('intro_requests')
-    .select('id, requester_id, target_user_id')
+    .select('id, requester_id, target_user_id, is_admin_initiated')
     .eq('id', id)
     .eq('target_user_id', user.id)
     .single()
 
   if (fetchErr || !intro) return { error: 'Introduction not found.' }
 
-  // Check requester's credit balance
-  const { data: creditRow } = await supabase
-    .from('meeting_credits')
-    .select('balance')
-    .eq('user_id', intro.requester_id)
-    .single()
+  // Charge both users + create match + create conversation atomically via the
+  // RPC. Same path as express-interest mutual completion (commit 663265f).
+  // p_user_a = accepter (current user); p_user_b = requester.
+  const adminClient = createAdminClient()
+  const { data: rpcRows, error: rpcError } = await adminClient.rpc(
+    'consume_credits_and_create_match',
+    {
+      p_user_a: user.id,
+      p_user_b: intro.requester_id,
+      p_admin_facilitated: Boolean(intro.is_admin_initiated),
+    }
+  )
 
-  const balance = creditRow?.balance ?? 0
-
-  if (balance < 1) {
-    // No credits — mark as accepted_pending_payment; hold open for 7 days
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-    const { error: holdErr } = await supabase
-      .from('intro_requests')
-      .update({
-        status: 'accepted_pending_payment',
-        accepted_at: new Date().toISOString(),
-        expires_at: expiresAt,
-        credit_hold: true,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-    if (holdErr) return { error: holdErr.message }
-    revalidatePath('/dashboard/introductions')
-    return { success: true, status: 'accepted_pending_payment' }
+  if (rpcError) {
+    console.error('[updateIntroStatus] RPC error:', rpcError)
+    return { error: 'Could not complete connection. Please try again.' }
   }
 
-  // Deduct 1 credit from the requester
-  const { error: deductErr } = await supabase
-    .from('meeting_credits')
-    .update({ balance: balance - 1 })
-    .eq('user_id', intro.requester_id)
+  const rpcResult = rpcRows?.[0]
+  if (!rpcResult) {
+    return { error: 'Could not complete connection. Please try again.' }
+  }
 
-  if (deductErr) return { error: `Could not charge credit: ${deductErr.message}` }
+  if (rpcResult.error_code === 'insufficient_credits_a') {
+    return { error: 'You need 1 free credit to connect.' }
+  }
 
-  // Log the credit transaction
-  await supabase.from('credit_transactions').insert({
-    user_id: intro.requester_id,
-    amount: -1,
-    description: 'Connection accepted — introduction made',
-  })
+  if (rpcResult.error_code === 'insufficient_credits_b') {
+    return { error: "Connection can't complete right now. We'll let you know when it can." }
+  }
 
-  // Mark intro_request as accepted + flag credit as charged
+  // duplicate_match falls through — match already exists from a prior flow.
+  // RPC rolled back its own no-op deducts. Mark the intro accepted anyway —
+  // the user-visible outcome is they're connected.
+
+  // Mark intro_request as accepted
   const { error: updateErr } = await supabase
     .from('intro_requests')
     .update({
@@ -342,39 +335,6 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
     .eq('id', id)
 
   if (updateErr) return { error: updateErr.message }
-
-  // Create match
-  let matchId: string | null = null
-  const { data: newMatch } = await supabase
-    .from('matches')
-    .insert({ user_a_id: intro.requester_id, user_b_id: intro.target_user_id })
-    .select('id')
-    .single()
-
-  if (newMatch) {
-    matchId = newMatch.id
-  } else {
-    const { data: existing } = await supabase
-      .from('matches')
-      .select('id')
-      .or(buildBidirectionalMatchFilter(intro.requester_id, intro.target_user_id))
-      .limit(1)
-      .single()
-    if (existing) matchId = existing.id
-  }
-
-  // Create conversation if match was made
-  if (matchId) {
-    const { data: existingConv } = await supabase
-      .from('conversations')
-      .select('id')
-      .eq('match_id', matchId)
-      .limit(1)
-      .single()
-    if (!existingConv) {
-      await supabase.from('conversations').insert({ match_id: matchId })
-    }
-  }
 
   revalidatePath('/dashboard/introductions')
   revalidatePath('/dashboard/messages')

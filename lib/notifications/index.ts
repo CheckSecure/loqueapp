@@ -64,7 +64,7 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
   },
   no_credits: {
     title: 'No credits remaining',
-    message: 'You have used all available credits. Refill soon or upgrade to continue.'
+    message: 'You have no credits. Add credits to make new connections.'
   },
   nudge_interest: {
     title: 'Connections waiting',
