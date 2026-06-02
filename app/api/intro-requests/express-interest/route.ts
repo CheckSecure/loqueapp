@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   try {
     const adminClient = createAdminClient()
 
-    // STEP 0: Block if the other user is deactivated, before any credit deduction
+    // STEP 0: Block if the other user is deactivated
     const { data: introReqCheck } = await adminClient
       .from('intro_requests')
       .select('requester_id, target_user_id')
@@ -46,86 +46,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // STEP 1: Atomically validate and deduct credit (race-safe against double-spend)
-
-    const { data: credits } = await adminClient
-      .from('meeting_credits')
-      .select('free_credits, premium_credits')
-      .eq('user_id', user.id)
-      .single()
-
-    if (!credits) {
-      return NextResponse.json({
-        error: 'Credit information not found',
-        message: 'Unable to process request. Please contact support.'
-      }, { status: 500 })
-    }
-
-    const currentFree = credits.free_credits || 0
-    const currentPremium = credits.premium_credits || 0
-    const newFree = currentFree - 1
-
-    // Atomic conditional UPDATE. .gte('free_credits', 1) is enforced at the DB
-    // under row lock, so two concurrent attempts to consume the last credit
-    // cannot both succeed — the second sees free_credits=0, matches zero rows,
-    // and returns empty. Express Interest requires FREE credits (no premium
-    // fallback). Same atomic write of all three fields per the canonical model.
-    const { data: updated, error: creditError } = await adminClient
-      .from('meeting_credits')
-      .update({
-        free_credits: newFree,
-        premium_credits: currentPremium,
-        balance: newFree + currentPremium,
-      })
-      .eq('user_id', user.id)
-      .gte('free_credits', 1)
-      .select()
-
-    if (creditError) {
-      console.error('[Credit Deduction] Failed to deduct credit:', creditError)
-      return NextResponse.json({
-        error: 'Credit deduction failed',
-        message: 'Unable to process request. Please try again.'
-      }, { status: 500 })
-    }
-
-    if (!updated || updated.length === 0) {
-      // Either the user never had a free credit, or a concurrent deduction just
-      // consumed the last one. Either way: nothing was decremented here; 403.
-      return NextResponse.json({
-        error: 'Insufficient free credits',
-        message: 'No free credits remaining. Upgrade your plan or wait for your monthly refill to continue connecting.',
-        free_credits: currentFree,
-        premium_credits: currentPremium,
-      }, { status: 403 })
-    }
-    
-    console.log('[Express Interest] Credit deducted:', {
-      user: user.id,
-      free_before: currentFree,
-      free_after: newFree
-    })
-
-    // Send credit notifications if running low
-    if (newFree === 0) {
-      await createNotificationSafe({
-        userId: user.id,
-        type: 'no_credits',
-        data: {
-          creditsRemaining: 0
-        }
-      })
-    } else if (newFree === 1) {
-      await createNotificationSafe({
-        userId: user.id,
-        type: 'low_credits',
-        data: {
-          creditsRemaining: 1
-        }
-      })
-    }
-
-    // STEP 2: Get the intro request
+    // STEP 1: Get the intro request
     const { data: introRequest } = await supabase
       .from('intro_requests')
       .select('*, requester:profiles!requester_id(*), target:profiles!target_user_id(*)')
@@ -139,7 +60,7 @@ export async function POST(request: Request) {
     const expresserId = user.id
     const otherUserId = isRequester ? introRequest.target_user_id : introRequest.requester_id
 
-    // STEP 3: Update intro request status to 'approved'
+    // STEP 2: Update intro request status to 'approved'
     await supabase
       .from('intro_requests')
       .update({ status: 'approved' })
@@ -174,7 +95,7 @@ export async function POST(request: Request) {
       })
     }
 
-    // STEP 4: Check for mutual interest (reverse intro request)
+    // STEP 3: Check for mutual interest (reverse intro request)
     // For admin-initiated intros, the reverse row must be 'approved' (the other user
     // has clicked Accept), NOT just 'admin_pending' (pending their acceptance).
     // For user-initiated intros, the reverse can be 'pending' or 'approved' per existing flow.
@@ -232,41 +153,86 @@ export async function POST(request: Request) {
         })
       }
 
-      // Create ACTIVE match (both users already paid at Express Interest)
-      const { data: match, error: matchError } = await adminClient
-        .from('matches')
-        .insert({
-          user_a_id: expresserId,
-          user_b_id: otherUserId,
-          status: 'active',
-          admin_facilitated: Boolean(introRequest.is_admin_initiated),
-          admin_notes: introRequest.is_admin_initiated ? 'manual_create' : null,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single()
+      // Charge both users + create match + create conversation atomically via the
+      // RPC. Postgres transaction handles rollback if either credit deduct fails
+      // or the matches unique index fires on a TOCTOU race.
+      const { data: rpcRows, error: rpcError } = await adminClient.rpc(
+        'consume_credits_and_create_match',
+        {
+          p_user_a: expresserId,
+          p_user_b: otherUserId,
+          p_admin_facilitated: Boolean(introRequest.is_admin_initiated),
+        }
+      )
 
-      if (matchError) {
-        console.error('[Match Creation] Error:', matchError)
-        throw matchError
+      if (rpcError) {
+        console.error('[Mutual Interest] RPC error:', rpcError)
+        return NextResponse.json({ error: 'Could not create match' }, { status: 500 })
       }
 
-      console.log('[Match Created] Active match, both users already paid:', {
-        matchId: match.id,
+      const rpcResult = rpcRows?.[0]
+      if (!rpcResult) {
+        console.error('[Mutual Interest] RPC returned no row')
+        return NextResponse.json({ error: 'Could not create match' }, { status: 500 })
+      }
+
+      if (rpcResult.error_code === 'insufficient_credits_a') {
+        return NextResponse.json({
+          error: 'Insufficient credits',
+          message: 'You need 1 free credit to connect.',
+        }, { status: 403 })
+      }
+
+      if (rpcResult.error_code === 'insufficient_credits_b') {
+        return NextResponse.json({
+          error: 'Connection unavailable',
+          message: "Connection can't complete right now. We'll let you know when it can.",
+        }, { status: 403 })
+      }
+
+      if (rpcResult.error_code === 'duplicate_match') {
+        // Defense-in-depth backstop for the same TOCTOU race the application-level
+        // dedupe above catches. Treat as success — no double-charge, no dup row.
+        return NextResponse.json({
+          success: true,
+          mutualInterest: true,
+          matchAlreadyExists: true,
+        })
+      }
+
+      const matchId = rpcResult.match_id as string
+      const conversationId = rpcResult.conversation_id as string
+
+      console.log('[Match Created via RPC] Both users charged 1 credit:', {
+        matchId,
         userA: expresserId,
-        userB: otherUserId
+        userB: otherUserId,
       })
 
-      // Create conversation immediately
-      const { data: conversation } = await adminClient
-        .from('conversations')
-        .insert({
-          match_id: match.id
+      // Post-RPC: low/no-credits notification for the expresser based on their new
+      // balance. Notifying the other user about their own balance is intentionally
+      // deferred — they'll see it in their own session and via the monthly cron.
+      const { data: postCredits } = await adminClient
+        .from('meeting_credits')
+        .select('free_credits')
+        .eq('user_id', expresserId)
+        .maybeSingle()
+      const remainingFree = postCredits?.free_credits ?? 0
+      if (remainingFree === 0) {
+        await createNotificationSafe({
+          userId: expresserId,
+          type: 'no_credits',
+          data: { creditsRemaining: 0 },
         })
-        .select()
-        .single()
+      } else if (remainingFree === 1) {
+        await createNotificationSafe({
+          userId: expresserId,
+          type: 'low_credits',
+          data: { creditsRemaining: 1 },
+        })
+      }
 
-      if (conversation) {
+      if (conversationId) {
         // Fetch full profiles for icebreaker generation
         const { data: expresserProfileFull } = await supabase
           .from('profiles')
@@ -292,7 +258,7 @@ export async function POST(request: Request) {
           .update({
             suggested_prompts: icebreakers
           })
-          .eq('id', conversation.id)
+          .eq('id', conversationId)
 
         // Insert system intro message
         const systemMessage = generateSystemIntroMessage({
@@ -302,7 +268,7 @@ export async function POST(request: Request) {
         })
 
         await adminClient.from('messages').insert({
-          conversation_id: conversation.id,
+          conversation_id: conversationId,
           sender_id: null,
           is_system: true,
           content: systemMessage,
@@ -329,8 +295,8 @@ export async function POST(request: Request) {
         userId: expresserId,
         type: 'mutual_match',
         data: {
-          conversationId: conversation?.id,
-          matchId: match.id,
+          conversationId: conversationId,
+          matchId: matchId,
           otherUserId: otherUserId,
           otherUserName: otherProfile?.full_name
         }
@@ -340,8 +306,8 @@ export async function POST(request: Request) {
         userId: otherUserId,
         type: 'mutual_match',
         data: {
-          conversationId: conversation?.id,
-          matchId: match.id,
+          conversationId: conversationId,
+          matchId: matchId,
           otherUserId: expresserId,
           otherUserName: expresserProfile?.full_name
         }
@@ -372,7 +338,7 @@ export async function POST(request: Request) {
         success: true,
         mutualInterest: true,
         matchCreated: true,
-        matchId: match.id,
+        matchId: matchId,
         matchStatus: 'active'
       })
     }
