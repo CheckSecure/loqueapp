@@ -10,7 +10,6 @@ const STORAGE_KEY = 'andrel-demo-unlocked'
 const CTA_BASE =
   'inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2 px-6 py-3 text-base'
 const CTA_PRIMARY = `${CTA_BASE} bg-brand-navy text-white hover:bg-brand-navy-dark`
-const CTA_SECONDARY = `${CTA_BASE} bg-white border border-brand-navy text-brand-navy hover:bg-brand-navy hover:text-white`
 
 export default function DemoGate({ videoUrl }: { videoUrl: string | null }) {
   const [mounted, setMounted] = useState(false)
@@ -108,7 +107,7 @@ export default function DemoGate({ videoUrl }: { videoUrl: string | null }) {
         Andrel is an invite-only professional network built around thoughtful introductions, mutual interest, and meaningful professional relationships.
       </p>
 
-      <div className="mb-10">
+      <div>
         {videoUrl ? (
           <video
             controls
@@ -123,14 +122,14 @@ export default function DemoGate({ videoUrl }: { videoUrl: string | null }) {
         )}
       </div>
 
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
+      <div className="mt-10 flex justify-center">
         <Link href="/" className={CTA_PRIMARY}>
-          Join the Waitlist
-        </Link>
-        <Link href="/" className={CTA_SECONDARY}>
           Request Access
         </Link>
       </div>
+      <p className="mt-4 text-sm text-slate-500 text-center max-w-md mx-auto leading-relaxed">
+        Andrel is currently invite-only. Request access to be considered for the founding member rollout.
+      </p>
     </div>
   )
 }
