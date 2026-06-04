@@ -6,12 +6,46 @@ import { Loader2, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 
 const STORAGE_KEY = 'andrel-demo-unlocked'
+const SESSION_ID_KEY = 'andrel-demo-session-id'
+const EVENT_FLAG_PREFIX = 'andrel-demo-event-'
+
+type EventType = 'page_view' | 'video_start' | 'video_complete'
 
 const CTA_BASE =
   'inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2 px-6 py-3 text-base'
 const CTA_PRIMARY = `${CTA_BASE} bg-brand-navy text-white hover:bg-brand-navy-dark`
 
-export default function DemoGate({ videoUrl }: { videoUrl: string | null }) {
+function safeGetItem(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeSetItem(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value)
+  } catch {
+    // sessionStorage can throw in private-mode quirks; analytics is best-effort.
+  }
+}
+
+function getOrCreateSessionId(): string {
+  const existing = safeGetItem(SESSION_ID_KEY)
+  if (existing) return existing
+  const fresh = crypto.randomUUID()
+  safeSetItem(SESSION_ID_KEY, fresh)
+  return fresh
+}
+
+export default function DemoGate({
+  videoUrl,
+  refCode,
+}: {
+  videoUrl: string | null
+  refCode: string | null
+}) {
   const [mounted, setMounted] = useState(false)
   const [unlocked, setUnlocked] = useState(false)
   const [password, setPassword] = useState('')
@@ -24,6 +58,39 @@ export default function DemoGate({ videoUrl }: { videoUrl: string | null }) {
       setUnlocked(true)
     }
   }, [])
+
+  const fireEvent = (eventType: EventType): void => {
+    const flagKey = `${EVENT_FLAG_PREFIX}${eventType}`
+    if (safeGetItem(flagKey) === 'true') return
+    safeSetItem(flagKey, 'true')
+    const sessionId = getOrCreateSessionId()
+    // Fire-and-forget; analytics failures must never affect the demo UX.
+    fetch('/api/demo/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_type: eventType, session_id: sessionId, ref_code: refCode }),
+      keepalive: true,
+    }).catch(() => {})
+  }
+
+  useEffect(() => {
+    if (!unlocked) return
+    fireEvent('page_view')
+    // refCode is fixed for the lifetime of the page; closing over it is safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlocked])
+
+  const handleVideoPlay = (): void => {
+    fireEvent('video_start')
+  }
+
+  const handleVideoTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>): void => {
+    if (safeGetItem(`${EVENT_FLAG_PREFIX}video_complete`) === 'true') return
+    const { currentTime, duration } = e.currentTarget
+    if (duration > 0 && currentTime / duration >= 0.9) {
+      fireEvent('video_complete')
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -113,6 +180,8 @@ export default function DemoGate({ videoUrl }: { videoUrl: string | null }) {
             controls
             preload="metadata"
             src={videoUrl}
+            onPlay={handleVideoPlay}
+            onTimeUpdate={handleVideoTimeUpdate}
             className="w-full rounded-lg shadow-lg"
           />
         ) : (
