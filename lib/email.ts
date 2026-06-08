@@ -652,6 +652,76 @@ export async function sendWaitlistConfirmationEmail(
   }
 }
 
+// Bootstrap-class email to waitlist members announcing the platform is open.
+// Bypasses isPrefEnabled (recipients have no profile / no preference row yet).
+// Deliberately contains NO login link or CTA — recipients are told a separate
+// credentials email will follow, which is the existing sendInviteEmail flow.
+export async function sendLaunchAnnouncementEmail(
+  toEmail: string,
+  toName: string,
+): Promise<{ success: boolean; error?: string }> {
+  const firstName = (toName?.split(' ')[0] || 'there')
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: toEmail,
+      subject: 'Andrel Is Officially Open',
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Hi ${escapeHtml(firstName)},
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Thank you for joining the Andrel waitlist.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Today, we're excited to officially open Andrel and begin welcoming our founding members.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Andrel was built around a simple idea: the most valuable opportunities rarely come from cold outreach. They come from trusted introductions to the right people at the right time.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 8px;">
+            As a founding member, you'll gain access to:
+          </p>
+          <ul style="color: #334155; font-size: 16px; line-height: 1.7; margin: 0 0 16px 0; padding-left: 20px;">
+            <li>Curated professional introductions</li>
+            <li>Business development opportunities</li>
+            <li>Hiring and career opportunities</li>
+            <li>Strategic partnerships and collaborations</li>
+            <li>A private network built on trust, not mass networking</li>
+          </ul>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Over the coming days, you'll receive a separate email with your login credentials and instructions for accessing the platform.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            We're intentionally opening access in stages to ensure a high-quality experience for every member who joins.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Thank you for being part of the founding community. We're looking forward to introducing you to exceptional people and opportunities.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
+            Welcome to Andrel.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6;">
+            Best,<br>
+            Daniel Abramoff<br>
+            <span style="color: #64748b; font-size: 14px;">Founder, Andrel</span>
+          </p>
+        </div>
+      `,
+    })
+    if (error) {
+      console.error('[launch-announcement] Resend API error:', error.message)
+      return { success: false, error: error.message }
+    }
+    console.log('[launch-announcement] sent, message ID:', data?.id)
+    return { success: true }
+  } catch (err: any) {
+    console.error('[launch-announcement] exception:', err?.message)
+    return { success: false, error: err?.message }
+  }
+}
+
 export async function sendAdminAlertEmail(subject: string, htmlBody: string): Promise<{ success: boolean; error?: string }> {
   try {
     const { error } = await resend.emails.send({
