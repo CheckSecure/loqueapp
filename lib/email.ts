@@ -686,12 +686,12 @@ export async function sendLaunchAnnouncementEmail(
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 8px;">
             Through Andrel, you'll have the opportunity to:
           </p>
-          <ul style="color: #334155; font-size: 16px; line-height: 1.7; margin: 0 0 16px 0; padding-left: 20px;">
-            <li>Receive curated introductions to relevant professionals</li>
-            <li>Discover business development opportunities</li>
-            <li>Explore hiring and career opportunities</li>
-            <li>Build strategic partnerships and collaborations</li>
-            <li>Join a private network built on trust rather than cold outreach</li>
+          <ul style="color: #334155; font-size: 16px; line-height: 1.7; margin: 0 0 24px 0; padding-left: 24px; list-style-type: disc;">
+            <li style="margin-bottom: 8px;">Receive curated introductions to relevant professionals</li>
+            <li style="margin-bottom: 8px;">Discover business development opportunities</li>
+            <li style="margin-bottom: 8px;">Explore hiring and career opportunities</li>
+            <li style="margin-bottom: 8px;">Build strategic partnerships and collaborations</li>
+            <li style="margin-bottom: 8px;">Join a private network built on trust rather than cold outreach</li>
           </ul>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
             Over the next few days, you'll receive a separate email with your login credentials and instructions for accessing the platform.
