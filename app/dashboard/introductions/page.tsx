@@ -9,6 +9,7 @@ import IntroductionCard from '@/components/IntroductionCard'
 import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
 import EarlierIntroductionsBanner from '@/components/EarlierIntroductionsBanner'
+import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
 import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
@@ -70,7 +71,7 @@ export default async function IntroductionsPage() {
 
   const { data: profileRows } = await supabase
     .from('profiles')
-    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, role_type, seniority, interests, mentorship_role, location, expertise, purposes')
+    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, created_at, role_type, seniority, interests, mentorship_role, location, expertise, purposes')
     .or(`id.eq.${user.id},email.eq.${user.email}`)
     .limit(1)
 
@@ -83,6 +84,14 @@ export default async function IntroductionsPage() {
   // so they should not see upgrade prompts (matches billing page, commit 1568bc5).
   // getEffectiveTier handles expiry: an expired founder falls through to their tier.
   const isFoundingMember = Boolean(profileRow && getEffectiveTier(profileRow) === 'founding')
+  // Welcome banner: active founding members in their first 30 days. Client-side
+  // dismissal via localStorage (see FoundingMemberWelcomeBanner).
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+  const profileCreatedAt = (profileRow as any)?.created_at
+  const accountAgeMs = profileCreatedAt ? Date.now() - new Date(profileCreatedAt).getTime() : null
+  const showFoundingWelcome = Boolean(
+    isFoundingMember && accountAgeMs !== null && accountAgeMs < THIRTY_DAYS_MS
+  )
   const tierCap = (profileRow as any)?.is_founding_member ? 3
     : userTier === 'executive' ? 8
     : userTier === 'professional' ? 5
@@ -390,6 +399,8 @@ export default async function IntroductionsPage() {
           <p className="text-slate-500 text-sm mt-0.5">Your curated introductions, {firstName}.</p>
         </div>
 
+        <FoundingMemberWelcomeBanner show={showFoundingWelcome} />
+
         <PageHint hintKey="introductions">
           These are your curated introductions. Review each one and express interest — when it&apos;s mutual, Andrel facilitates the connection.
         </PageHint>
@@ -455,8 +466,16 @@ export default async function IntroductionsPage() {
           {allSuggestions.length === 0 ? (
             <EmptyState
               icon={<Inbox className="w-6 h-6 text-slate-400" />}
-              title="We're identifying relevant introductions for you."
-              description="As the network grows and member activity increases, additional introductions may become available."
+              title={
+                earlierSuggestions.length === 0
+                  ? 'Your introductions appear here as the matching engine finds strong fits within the network.'
+                  : "We're identifying relevant introductions for you."
+              }
+              description={
+                earlierSuggestions.length === 0
+                  ? 'As more founding members complete onboarding, your matches will surface automatically.'
+                  : 'As the network grows and member activity increases, additional introductions may become available.'
+              }
             >
               <Link
                 href="/dashboard/profile"
