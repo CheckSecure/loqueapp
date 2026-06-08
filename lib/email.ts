@@ -680,21 +680,24 @@ export async function sendLaunchAnnouncementEmail(
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
             Andrel was built around a simple idea: the most valuable opportunities rarely come from cold outreach. They come from trusted introductions to the right people at the right time.
           </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            As a founding member, you'll be among the first professionals invited into the network.
+          </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 8px;">
-            As a founding member, you'll gain access to:
+            Through Andrel, you'll have the opportunity to:
           </p>
           <ul style="color: #334155; font-size: 16px; line-height: 1.7; margin: 0 0 16px 0; padding-left: 20px;">
-            <li>Curated professional introductions</li>
-            <li>Business development opportunities</li>
-            <li>Hiring and career opportunities</li>
-            <li>Strategic partnerships and collaborations</li>
-            <li>A private network built on trust, not mass networking</li>
+            <li>Receive curated introductions to relevant professionals</li>
+            <li>Discover business development opportunities</li>
+            <li>Explore hiring and career opportunities</li>
+            <li>Build strategic partnerships and collaborations</li>
+            <li>Join a private network built on trust rather than cold outreach</li>
           </ul>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            Over the coming days, you'll receive a separate email with your login credentials and instructions for accessing the platform.
+            Over the next few days, you'll receive a separate email with your login credentials and instructions for accessing the platform.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            We're intentionally opening access in stages to ensure a high-quality experience for every member who joins.
+            We are onboarding members in phases to ensure every introduction remains thoughtful, relevant, and high quality.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
             Thank you for being part of the founding community. We're looking forward to introducing you to exceptional people and opportunities.
