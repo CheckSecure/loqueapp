@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
-const BATCH_SIZE = 50
+const BATCH_SIZE = 10
 const BATCH_PAUSE_MS = 1000
 const DEFAULT_LIMIT = 1000
 
