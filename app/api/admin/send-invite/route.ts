@@ -11,7 +11,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { entryId } = await req.json()
+  const body = await req.json()
+  const entryId = body.entryId
+  // markAsFounding travels via auth user_metadata until the onboarding handler
+  // (completeOnboarding) reads it and stamps profiles.is_founding_member.
+  // Default false; only honors explicit boolean true.
+  const markAsFounding = body.markAsFounding === true
 
   const { data: entry } = await supabase
     .from('waitlist')
@@ -29,11 +34,12 @@ export async function POST(req: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
-  
+
   const { error: authError } = await adminClient.auth.admin.createUser({
     email: entry.email,
     password: tempPassword,
     email_confirm: true,
+    user_metadata: markAsFounding ? { markAsFounding: true } : undefined,
   })
 
   if (authError) {

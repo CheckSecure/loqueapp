@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
+import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 
 export async function POST() {
   const supabase = createClient()
@@ -29,26 +30,79 @@ export async function POST() {
     console.error('[profile/complete] Recommendations error:', err?.message || err)
   }
 
-  // Assign initial credits if the user does not have a credits row yet
+  // Tier-aware credit assignment + safety-net floor correction.
+  //   - Insert path (no row): seed with getMonthlyCredits(effectiveTier).
+  //   - Safety-net path (row exists, free_credits < floor): top up to floor
+  //     and log a tier_credit_floor_correction audit row. Handles users whose
+  //     tier was set post-invite via Stripe or admin action.
+  //   - If existing free_credits >= floor: do nothing (preserves spent state).
   try {
     const adminClient = createAdminClient()
+
+    const { data: profileForTier } = await adminClient
+      .from('profiles')
+      .select('subscription_tier, is_founding_member, founding_member_expires_at')
+      .eq('id', user.id)
+      .single()
+
+    const effectiveTier = getEffectiveTier(profileForTier || {})
+    const creditFloor = getMonthlyCredits(effectiveTier)
+
     const { data: existingCredits } = await adminClient
       .from('meeting_credits')
-      .select('user_id')
+      .select('free_credits, premium_credits, balance, lifetime_earned')
       .eq('user_id', user.id)
       .maybeSingle()
 
     if (!existingCredits) {
       const { error: creditsError } = await adminClient
         .from('meeting_credits')
-        .insert({ user_id: user.id, free_credits: 3, premium_credits: 0, balance: 3, lifetime_earned: 3 })
+        .insert({
+          user_id: user.id,
+          free_credits: creditFloor,
+          premium_credits: 0,
+          balance: creditFloor,
+          lifetime_earned: creditFloor,
+        })
       if (creditsError) {
         console.error('[profile/complete] Credits insert error:', creditsError.message)
       } else {
-        console.log('[profile/complete] Assigned 3 credits to new user')
+        await adminClient.from('credit_transactions').insert({
+          user_id: user.id,
+          amount: creditFloor,
+          type: 'credit',
+          note: effectiveTier === 'founding' ? 'founding_signup_bonus' : 'signup_bonus',
+        })
+        console.log('[profile/complete] Assigned credits to new user', { tier: effectiveTier, amount: creditFloor })
       }
     } else {
-      console.log('[profile/complete] Credits already present, skipping assignment')
+      const currentFree = existingCredits.free_credits ?? 0
+      const currentPremium = existingCredits.premium_credits ?? 0
+      const currentLifetime = existingCredits.lifetime_earned ?? 0
+      if (currentFree < creditFloor) {
+        const delta = creditFloor - currentFree
+        const { error: updateError } = await adminClient
+          .from('meeting_credits')
+          .update({
+            free_credits: creditFloor,
+            balance: creditFloor + currentPremium,
+            lifetime_earned: currentLifetime + delta,
+          })
+          .eq('user_id', user.id)
+        if (updateError) {
+          console.error('[profile/complete] Floor correction update error:', updateError.message)
+        } else {
+          await adminClient.from('credit_transactions').insert({
+            user_id: user.id,
+            amount: delta,
+            type: 'credit',
+            note: 'tier_credit_floor_correction',
+          })
+          console.log('[profile/complete] Floor correction applied', { tier: effectiveTier, from: currentFree, to: creditFloor })
+        }
+      } else {
+        console.log('[profile/complete] Credits already at or above floor, skipping')
+      }
     }
   } catch (err: any) {
     console.error('[profile/complete] Credits assignment error:', err?.message || err)

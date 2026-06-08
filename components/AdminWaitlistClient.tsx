@@ -38,6 +38,13 @@ export default function AdminWaitlistClient({
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'invited' | 'declined'>('pending')
   const [processing, setProcessing] = useState<string | null>(null)
+  // Per-row "Mark as founding member" toggle. Lives client-side only; the value
+  // is read at send-invite time and posted to the API. Resets on page refresh.
+  const [markFounding, setMarkFounding] = useState<Record<string, boolean>>({})
+
+  const toggleMarkFounding = (entryId: string) => {
+    setMarkFounding(prev => ({ ...prev, [entryId]: !prev[entryId] }))
+  }
 
   const handleApprove = async (entryId: string) => {
     setProcessing(entryId)
@@ -67,7 +74,7 @@ export default function AdminWaitlistClient({
       const res = await fetch('/api/admin/send-invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entryId })
+        body: JSON.stringify({ entryId, markAsFounding: !!markFounding[entryId] })
       })
       const data = await res.json()
       if (data.success) {
@@ -160,8 +167,17 @@ export default function AdminWaitlistClient({
               </div>
             ) : (
               <div className="space-y-4">
-                {filtered.map(entry => (
-                  <div key={entry.id} className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                {filtered.map(entry => {
+                  const isMarkedFounding = activeTab === 'approved' && !!markFounding[entry.id]
+                  return (
+                  <div
+                    key={entry.id}
+                    className={
+                      isMarkedFounding
+                        ? 'bg-brand-gold-soft rounded-lg p-4 border border-brand-gold/40'
+                        : 'bg-slate-50 rounded-lg p-4 border border-slate-200'
+                    }
+                  >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
@@ -273,14 +289,25 @@ export default function AdminWaitlistClient({
                         )}
 
                         {activeTab === 'approved' && (
-                          <button
-                            onClick={() => handleSendInvite(entry.id, entry.email)}
-                            disabled={processing === entry.id}
-                            className="flex items-center gap-2 px-4 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040] disabled:opacity-50"
-                          >
-                            <Send className="w-4 h-4" />
-                            {processing === entry.id ? 'Sending...' : 'Send Invite'}
-                          </button>
+                          <div className="flex flex-col items-end gap-2">
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900 select-none">
+                              <input
+                                type="checkbox"
+                                checked={!!markFounding[entry.id]}
+                                onChange={() => toggleMarkFounding(entry.id)}
+                                className="w-4 h-4 rounded border-slate-400 accent-brand-navy focus:ring-2 focus:ring-brand-gold"
+                              />
+                              Mark as founding member
+                            </label>
+                            <button
+                              onClick={() => handleSendInvite(entry.id, entry.email)}
+                              disabled={processing === entry.id}
+                              className="flex items-center gap-2 px-4 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040] disabled:opacity-50"
+                            >
+                              <Send className="w-4 h-4" />
+                              {processing === entry.id ? 'Sending...' : 'Send Invite'}
+                            </button>
+                          </div>
                         )}
 
                         {activeTab === 'invited' && (
@@ -295,7 +322,8 @@ export default function AdminWaitlistClient({
                       </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

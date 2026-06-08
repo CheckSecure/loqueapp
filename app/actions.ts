@@ -12,6 +12,7 @@ import {
 import { sendNewMessageEmail } from '@/lib/email'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
+import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 
 async function getSupabaseAndUser() {
@@ -156,10 +157,18 @@ export async function completeOnboarding(formData: FormData) {
   const location = city && state ? `${city}, ${state}` : city || state || null
 
   console.log('[completeOnboarding] About to upsert profile data')
-  
+
   // Use admin client to bypass RLS
   const adminClient = createAdminClient()
-  
+
+  // Asymmetric founding flag: only stamp profiles.is_founding_member=true when
+  // the invite was sent with markAsFounding. If false/undefined we omit the
+  // field from the upsert so an existing true value is preserved on re-onboard.
+  const markAsFounding = (user as any).user_metadata?.markAsFounding === true
+  const foundingFields = markAsFounding
+    ? { is_founding_member: true, founding_member_expires_at: null as string | null }
+    : {}
+
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
     email: user.email,
@@ -183,6 +192,7 @@ export async function completeOnboarding(formData: FormData) {
     geographic_scope: (formData.get('geographic_scope') as string) || 'us-wide',
     profile_complete: true,
     updated_at: new Date().toISOString(),
+    ...foundingFields,
   }, { onConflict: 'email' })
 
   if (error) {
@@ -198,8 +208,19 @@ export async function completeOnboarding(formData: FormData) {
     console.error('[completeOnboarding] Error generating recommendations:', err)
   }
 
-  // Assign initial credits (3 for free tier) — idempotent
+  // Assign initial credits — tier-aware. Read the just-upserted profile to
+  // determine effective tier (honors any pre-existing founding flag, plus the
+  // one we may have just set above).
   try {
+    const { data: profileForTier } = await adminClient
+      .from('profiles')
+      .select('subscription_tier, is_founding_member, founding_member_expires_at')
+      .eq('id', user.id)
+      .single()
+
+    const effectiveTier = getEffectiveTier(profileForTier || {})
+    const creditFloor = getMonthlyCredits(effectiveTier)
+
     const { data: existingCredits } = await adminClient
       .from('meeting_credits')
       .select('user_id')
@@ -211,13 +232,21 @@ export async function completeOnboarding(formData: FormData) {
         .from('meeting_credits')
         .insert({
           user_id: user.id,
-          balance: 3,
-          lifetime_earned: 3
+          free_credits: creditFloor,
+          premium_credits: 0,
+          balance: creditFloor,
+          lifetime_earned: creditFloor,
         })
       if (creditsError) {
         console.error('[completeOnboarding] Error assigning credits:', creditsError)
       } else {
-        console.log('[completeOnboarding] Assigned 3 credits to new user')
+        await adminClient.from('credit_transactions').insert({
+          user_id: user.id,
+          amount: creditFloor,
+          type: 'credit',
+          note: markAsFounding ? 'founding_signup_bonus' : 'signup_bonus',
+        })
+        console.log('[completeOnboarding] Assigned credits to new user', { tier: effectiveTier, amount: creditFloor })
       }
     } else {
       console.log('[completeOnboarding] Credits already present, skipping assignment')
@@ -682,7 +711,10 @@ export async function submitWaitlist(data: {
   // }
   return { success: true }
 }
-export async function adminSendWaitlistInvite(id: string) {
+// NOTE: this server action is currently NOT wired to the AdminWaitlistClient UI;
+// the live invite flow is POST /api/admin/send-invite. Kept here with the same
+// tier-aware credit logic so a re-enable doesn't regress to the hardcoded 3.
+export async function adminSendWaitlistInvite(id: string, markAsFounding = false) {
   try {
     console.log('[invite] function called, id:', id)
     const { supabase, user } = await getSupabaseAndUser()
@@ -761,11 +793,10 @@ export async function adminSendWaitlistInvite(id: string) {
       } else {
         console.log('[invite] new user created:', entry.email)
 
-        // Seed 3 free credits for new user
         const newUserId = createdUser?.user?.id
 
-        // Create profile for new user
-        await adminClient.from('profiles').insert({
+        // Tier-aware: if invited as founding, stamp the flag + seed founding floor.
+        const profileSeed: Record<string, unknown> = {
           id: newUserId,
           password_reset_required: true,
           email: entry.email,
@@ -773,13 +804,32 @@ export async function adminSendWaitlistInvite(id: string) {
           email_verified: true,
           email_verified_at: new Date().toISOString(),
           verification_status: 'pending',
-          trust_score: 50
-        })
-        console.log('[invite] created profile for:', entry.email)
+          trust_score: 50,
+        }
+        if (markAsFounding) {
+          profileSeed.is_founding_member = true
+          profileSeed.founding_member_expires_at = null
+        }
+        await adminClient.from('profiles').insert(profileSeed)
+        console.log('[invite] created profile for:', entry.email, { markAsFounding })
+
         if (newUserId) {
-          await adminClient.from('meeting_credits').upsert({ user_id: newUserId, balance: 3 })
-          await adminClient.from('credit_transactions').insert({ user_id: newUserId, amount: 3, type: 'credit', note: 'signup_bonus' })
-          console.log('[invite] seeded 3 credits for:', entry.email)
+          const tier = markAsFounding ? 'founding' : 'free'
+          const creditFloor = getMonthlyCredits(tier)
+          await adminClient.from('meeting_credits').upsert({
+            user_id: newUserId,
+            free_credits: creditFloor,
+            premium_credits: 0,
+            balance: creditFloor,
+            lifetime_earned: creditFloor,
+          })
+          await adminClient.from('credit_transactions').insert({
+            user_id: newUserId,
+            amount: creditFloor,
+            type: 'credit',
+            note: markAsFounding ? 'founding_signup_bonus' : 'signup_bonus',
+          })
+          console.log('[invite] seeded credits for:', entry.email, { tier, amount: creditFloor })
         }
       }
     } catch (err: any) {
