@@ -77,10 +77,12 @@ const TIER_VALUE: Record<string, string> = {
 }
 
 const FOUNDING_BENEFITS = [
+  'Founding Member status',
   '30 credits per month',
   'Higher credit balance (up to 60)',
-  'Access to premium opportunities',
-  'Early access to new features and benefits',
+  'Priority matching',
+  'Create hiring and business development opportunities',
+  'Early access to founding community benefits',
 ]
 
 function BillingInner() {
