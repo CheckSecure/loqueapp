@@ -73,7 +73,7 @@ const TIER_VALUE: Record<string, string> = {
   free: 'Curated introductions to start building your network, with 3 credits per month.',
   professional: 'Priority matching, more frequent introductions, and the ability to signal hiring or business needs.',
   executive: 'Concierge-level curation, highest matching priority, and up to 2 active opportunity signals at a time.',
-  founding: 'Enhanced credits and early-access benefits, with the same curated introduction cadence as every member.',
+  founding: 'As a Founding Member, you receive enhanced credits, priority matching, opportunity creation access, and early access to new platform features as the network grows.',
 }
 
 const FOUNDING_BENEFITS = [
