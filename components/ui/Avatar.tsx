@@ -1,3 +1,8 @@
+'use client';
+
+import { useState } from 'react';
+import { ProfilePhotoLightbox } from '@/components/ProfilePhotoLightbox';
+
 /**
  * Avatar — photo or deterministic gradient fallback.
  *
@@ -11,6 +16,10 @@
  *   - md (48px):  standard card headers
  *   - lg (64px):  featured card headers (introductions, detail surfaces)
  *   - xl (96px):  profile pages
+ *
+ * Opt-in `enlargeable`: when true AND an image src is provided, clicking the
+ * avatar opens a centered ProfilePhotoLightbox. Initials-only avatars are
+ * never clickable, regardless of the flag.
  */
 
 type Size = 'sm' | 'md' | 'lg' | 'xl';
@@ -21,6 +30,7 @@ interface AvatarProps {
   src?: string | null;
   size?: Size;
   className?: string;
+  enlargeable?: boolean;
 }
 
 const SIZE_CONFIG: Record<Size, { box: string; text: string }> = {
@@ -54,18 +64,43 @@ function gradientFromId(id: string): string {
   return `linear-gradient(135deg, hsl(${h}, 55%, 55%), hsl(${h2}, 45%, 42%))`;
 }
 
-export function Avatar({ id, name, src, size = 'md', className = '' }: AvatarProps) {
+export function Avatar({ id, name, src, size = 'md', className = '', enlargeable = false }: AvatarProps) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const { box, text } = SIZE_CONFIG[size];
   const base = `${box} rounded-full flex-shrink-0 overflow-hidden ${className}`;
 
   if (src) {
-    return (
+    const img = (
       <img
         src={src}
         alt={name ?? 'User'}
         className={`${base} object-cover`}
       />
     );
+    if (enlargeable) {
+      return (
+        <>
+          <button
+            type="button"
+            // stopPropagation so parent cards with onClick (e.g., IntroductionCard
+            // row navigation) don't fire alongside the lightbox open.
+            onClick={(e) => { e.stopPropagation(); setLightboxOpen(true); }}
+            aria-label={name ? `View ${name}'s profile photo` : 'View profile photo'}
+            className="rounded-full cursor-pointer transition hover:ring-2 hover:ring-brand-navy/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy/30"
+          >
+            {img}
+          </button>
+          {lightboxOpen && (
+            <ProfilePhotoLightbox
+              src={src}
+              name={name}
+              onClose={() => setLightboxOpen(false)}
+            />
+          )}
+        </>
+      );
+    }
+    return img;
   }
 
   const initials = initialsFrom(name);

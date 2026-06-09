@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Sparkles, Briefcase, MapPin, CheckCircle, Loader2, X } from 'lucide-react'
+import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 
 interface AdminIntroCardProps {
   introRequestId: string
@@ -84,11 +85,13 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
     <div className="bg-white border border-[#C4922A]/20 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3">
       <p className="text-xs text-slate-500">Curated based on strong professional alignment</p>
       <div className="flex items-start gap-3">
-        {otherUser.avatar_url ? (
-          <img src={otherUser.avatar_url} alt={otherUser.full_name || ''} className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
-        ) : (
-          <div className={'w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ' + avatarColor}>{initials(otherUser.full_name)}</div>
-        )}
+        <EnlargeableAvatar src={otherUser.avatar_url} name={otherUser.full_name} className="flex-shrink-0">
+          {otherUser.avatar_url ? (
+            <img src={otherUser.avatar_url} alt={otherUser.full_name || ''} className="w-11 h-11 rounded-full object-cover" />
+          ) : (
+            <div className={'w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-sm ' + avatarColor}>{initials(otherUser.full_name)}</div>
+          )}
+        </EnlargeableAvatar>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-slate-900 truncate">{otherUser.full_name || 'New member'}</p>
           {(otherUser.title || otherUser.company) && (

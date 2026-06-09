@@ -4,6 +4,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles, Calendar } from 'lucide-react'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
+import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 
 // Humanizes raw networking-goal values into calmer, reader-facing phrasing.
 // Keys cover the values actually present in profiles.purposes; anything not
@@ -185,17 +186,19 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
           <div className="px-6 pb-6">
             {/* Avatar — overlaps banner */}
-            {profile.avatar_url ? (
-              <img
-                src={profile.avatar_url}
-                alt={name}
-                className="w-20 h-20 rounded-2xl object-cover border-4 border-white shadow-sm -mt-10 mb-4"
-              />
-            ) : (
-              <div className={`w-20 h-20 rounded-2xl ${avatarColor} flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-sm -mt-10 mb-4`}>
-                {initials(name)}
-              </div>
-            )}
+            <EnlargeableAvatar src={profile.avatar_url} name={name} className="!rounded-2xl -mt-10 mb-4">
+              {profile.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt={name}
+                  className="w-20 h-20 rounded-2xl object-cover border-4 border-white shadow-sm"
+                />
+              ) : (
+                <div className={`w-20 h-20 rounded-2xl ${avatarColor} flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-sm`}>
+                  {initials(name)}
+                </div>
+              )}
+            </EnlargeableAvatar>
 
             <h1 className="text-xl font-bold text-slate-900">{name}</h1>
 

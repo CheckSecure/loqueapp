@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { formatDistanceToNow } from 'date-fns'
 import ConnectionDetailModal from '@/components/network/ConnectionDetailModal'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
+import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -100,13 +101,15 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
         }`}
       >
         <div className="flex items-start gap-3">
-          {profile.avatar_url ? (
-            <img src={profile.avatar_url} alt={profile.full_name} className={`w-11 h-11 rounded-full object-cover flex-shrink-0 ${isDeactivated ? 'grayscale opacity-60' : ''}`} />
-          ) : (
-            <div className={`w-11 h-11 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}>
-              {initials}
-            </div>
-          )}
+          <EnlargeableAvatar src={profile.avatar_url} name={profile.full_name} className="flex-shrink-0">
+            {profile.avatar_url ? (
+              <img src={profile.avatar_url} alt={profile.full_name} className={`w-11 h-11 rounded-full object-cover ${isDeactivated ? 'grayscale opacity-60' : ''}`} />
+            ) : (
+              <div className={`w-11 h-11 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold`}>
+                {initials}
+              </div>
+            )}
+          </EnlargeableAvatar>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold text-slate-900 truncate">

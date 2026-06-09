@@ -113,6 +113,7 @@ export function ReceiverCard({
             name={creatorName}
             src={creatorAvatar}
             size="md"
+            enlargeable
           />
           <div className="min-w-0">
             {creatorName && (

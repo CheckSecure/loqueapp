@@ -42,6 +42,8 @@ function Tag({ children, color = 'slate' }: { children: React.ReactNode; color?:
 
 function Avatar({ profile, size = 'md' }: { profile: any; size?: 'sm' | 'md' }) {
   // On mobile use md (48px); on sm+ jump to lg (64px) for more presence.
+  // enlargeable: clicking opens a centered lightbox when the member has a
+  // real avatar_url; initials-fallback avatars are not clickable.
   return (
     <>
       <span className="sm:hidden">
@@ -50,6 +52,7 @@ function Avatar({ profile, size = 'md' }: { profile: any; size?: 'sm' | 'md' }) 
           name={profile.full_name}
           src={profile.avatar_url}
           size={size === 'sm' ? 'sm' : 'md'}
+          enlargeable
         />
       </span>
       <span className="hidden sm:inline-block">
@@ -58,6 +61,7 @@ function Avatar({ profile, size = 'md' }: { profile: any; size?: 'sm' | 'md' }) 
           name={profile.full_name}
           src={profile.avatar_url}
           size={size === 'sm' ? 'sm' : 'lg'}
+          enlargeable
         />
       </span>
     </>

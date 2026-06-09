@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { EnlargeableAvatar } from '@/components/EnlargeableAvatar';
 
 function parseExpertise(raw) {
   if (!raw) return [];
@@ -128,12 +129,14 @@ export function ResponderRow({
   return (
     <div className={borderClass}>
       <div className="flex items-start gap-4">
-        {p?.avatar_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.avatar_url} alt="" className="h-12 w-12 flex-shrink-0 rounded-full object-cover" />
-        ) : (
-          <div className="h-12 w-12 flex-shrink-0 rounded-full bg-slate-200" />
-        )}
+        <EnlargeableAvatar src={p?.avatar_url} name={displayName} className="flex-shrink-0">
+          {p?.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={p.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover" />
+          ) : (
+            <div className="h-12 w-12 rounded-full bg-slate-200" />
+          )}
+        </EnlargeableAvatar>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
