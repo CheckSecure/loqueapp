@@ -747,7 +747,7 @@ export async function adminSendWaitlistInvite(id: string, markAsFounding = false
     ).join('')
 
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-    console.log('[invite] SUPABASE_SERVICE_ROLE_KEY set:', !!serviceKey, '| prefix:', serviceKey.slice(0, 12))
+    console.log('[invite] SUPABASE_SERVICE_ROLE_KEY set:', !!serviceKey)
 
     try {
       const adminClient = createAdminClient()
