@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { TIER_OPPORTUNITY_LIMIT, type Tier } from '@/lib/opportunities/caps';
+import { getEffectiveTier } from '@/lib/tier-override';
 import { YoursRow } from '@/components/opportunities/YoursRow';
 
 export const dynamic = 'force-dynamic';
@@ -16,11 +17,13 @@ export default async function YourSignalsPage() {
 
   const { data: profile } = await admin
     .from('profiles')
-    .select('subscription_tier')
+    .select('subscription_tier, is_founding_member, founding_member_expires_at')
     .eq('id', user.id)
     .maybeSingle();
-  const tier = (profile?.subscription_tier as Tier) ?? 'free';
-  const canCreate = (TIER_OPPORTUNITY_LIMIT[tier] ?? 0) > 0;
+  // Use getEffectiveTier so active founding members get founding-tier
+  // creation rights regardless of Stripe subscription_tier.
+  const effectiveTier = getEffectiveTier(profile || {}) as Tier;
+  const canCreate = (TIER_OPPORTUNITY_LIMIT[effectiveTier] ?? 0) > 0;
 
   const { data } = await admin
     .from('opportunities')

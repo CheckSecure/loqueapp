@@ -53,7 +53,13 @@ export async function checkCreatorEligibility(userId: string): Promise<Eligibili
     return { ok: false, code: 'account_inactive', message: 'Your account is not active.' };
   }
 
-  const tier = (profile.subscription_tier as Tier) ?? 'free';
+  // Founding members get founding-tier creation rights regardless of what
+  // Stripe says their subscription_tier is. Mirrors the existing
+  // is_founding_member shortcut further down (trust-threshold rescue) —
+  // both share the same expiry-blindness (treated as raw boolean), tracked
+  // separately in docs/OPPORTUNITIES_TARGETING_PHASE_2.md item #6.
+  const stripeTier = (profile.subscription_tier as Tier) ?? 'free';
+  const tier: Tier = profile.is_founding_member ? 'founding' : stripeTier;
   const cap = TIER_OPPORTUNITY_LIMIT[tier] ?? 0;
 
   if (cap === 0) {
