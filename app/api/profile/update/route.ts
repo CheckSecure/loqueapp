@@ -13,13 +13,39 @@ export async function POST(req: NextRequest) {
     }
 
     const formData = await req.formData()
-    
-    const expertise = (formData.get('expertise') as string || '')
-      .split(',').map(s => s.trim()).filter(Boolean)
+
     const purposes = (formData.get('purposes') as string || '')
       .split(',').map(s => s.trim()).filter(Boolean)
     const introPref = (formData.get('intro_preferences') as string || '')
       .split(',').map(s => s.trim()).filter(Boolean)
+
+    // Present-only validation for the matcher's three strict candidate-filter
+    // fields (lib/generate-recommendations.ts:889-894). Partial updates that
+    // don't submit these fields (e.g., the preferences-step or a bio-only
+    // edit) leave the existing DB value untouched. Updates that DO submit
+    // these fields must keep them non-empty — preventing accidental clearing.
+    let roleTypeToWrite: string | undefined
+    if (formData.has('role_type')) {
+      roleTypeToWrite = (formData.get('role_type') as string || '').trim()
+      if (!roleTypeToWrite) {
+        return NextResponse.json({ error: 'Please select your professional role' }, { status: 400 })
+      }
+    }
+    let seniorityToWrite: string | undefined
+    if (formData.has('seniority')) {
+      seniorityToWrite = (formData.get('seniority') as string || '').trim()
+      if (!seniorityToWrite) {
+        return NextResponse.json({ error: 'Please select your seniority level' }, { status: 400 })
+      }
+    }
+    let expertiseToWrite: string[] | undefined
+    if (formData.has('expertise')) {
+      expertiseToWrite = (formData.get('expertise') as string || '')
+        .split(',').map(s => s.trim()).filter(Boolean)
+      if (expertiseToWrite.length === 0) {
+        return NextResponse.json({ error: 'Please select at least one area of expertise' }, { status: 400 })
+      }
+    }
 
     const currentStatusRaw = (formData.get('current_status') as string || '').trim()
     const currentStatus = currentStatusRaw || null
@@ -56,9 +82,9 @@ export async function POST(req: NextRequest) {
         city: city || null,
         state: state || null,
         location: location,
-        role_type: formData.get('role_type'),
-        seniority: formData.get('seniority'),
-        expertise: expertise,
+        ...(roleTypeToWrite !== undefined && { role_type: roleTypeToWrite }),
+        ...(seniorityToWrite !== undefined && { seniority: seniorityToWrite }),
+        ...(expertiseToWrite !== undefined && { expertise: expertiseToWrite }),
         intro_preferences: introPref,
         purposes: purposes,
         meeting_format_preference: formData.get('meeting_format_preference'),

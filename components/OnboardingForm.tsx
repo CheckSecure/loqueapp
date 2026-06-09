@@ -109,6 +109,9 @@ export default function OnboardingForm() {
   const handleProfileNext = (e: React.FormEvent) => {
     e.preventDefault()
     if (!fullName.trim()) { setError('Full name is required'); return }
+    if (!roleType.trim()) { setError('Please select your professional role'); return }
+    if (!seniority.trim()) { setError('Please select your seniority level'); return }
+    if (expertise.filter(Boolean).length === 0) { setError('Please select at least one area of expertise'); return }
     setError(null)
     setStep('preferences')
   }
@@ -116,6 +119,11 @@ export default function OnboardingForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     console.log('[OnboardingForm] handleSubmit called!')
+    // Defense-in-depth: handleProfileNext should have gated these, but state
+    // could be cleared between steps. Catch here before sending to the server.
+    if (!roleType.trim()) { setError('Please select your professional role'); return }
+    if (!seniority.trim()) { setError('Please select your seniority level'); return }
+    if (expertise.filter(Boolean).length === 0) { setError('Please select at least one area of expertise'); return }
     setSaving(true)
     setError(null)
 
