@@ -14,12 +14,20 @@ interface ProfilePhotoLightboxProps {
 // existing z-50 form modals so it can't get clipped.
 export function ProfilePhotoLightbox({ src, name, onClose }: ProfilePhotoLightboxProps) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
+    // capture: true + stopPropagation so an underlying modal's keydown handler
+    // (e.g., ConnectionDetailModal's Escape→onClose) doesn't also fire when the
+    // lightbox is open. User dismisses lightbox; underlying modal stays open.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey, true)
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
-      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('keydown', onKey, true)
       document.body.style.overflow = prevOverflow
     }
   }, [onClose])

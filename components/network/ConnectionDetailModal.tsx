@@ -5,6 +5,7 @@ import { Briefcase, MapPin, X, UserMinus, Ban, MessageSquare, Calendar, External
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]', 'bg-[#2E4080]', 'bg-amber-500', 'bg-rose-500',
@@ -192,7 +193,9 @@ export default function ConnectionDetailModal({ matchId, profile, connectedAt, m
         <div className="relative px-8 pt-8 pb-4 border-b border-slate-100">
           <button onClick={onClose} aria-label="Close" className="absolute right-4 top-4 w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"><X className="w-4 h-4" /></button>
           <div className="flex flex-col items-center text-center">
-            {profile.avatar_url ? (<img src={profile.avatar_url} alt={profile.full_name} className="w-28 h-28 rounded-full object-cover mb-4 shadow-sm" />) : (<div className={'w-28 h-28 rounded-full ' + avatarColor + ' flex items-center justify-center text-white text-3xl font-bold mb-4 shadow-sm'}>{initials}</div>)}
+            <EnlargeableAvatar src={profile.avatar_url} name={profile.full_name} className="mb-4">
+              {profile.avatar_url ? (<img src={profile.avatar_url} alt={profile.full_name} className="w-28 h-28 rounded-full object-cover shadow-sm" />) : (<div className={'w-28 h-28 rounded-full ' + avatarColor + ' flex items-center justify-center text-white text-3xl font-bold shadow-sm'}>{initials}</div>)}
+            </EnlargeableAvatar>
             <h2 className="text-xl font-semibold text-slate-900">{profile.full_name || 'Connection'}</h2>
             {(profile.title || profile.company) && (<div className="flex items-center gap-1 text-sm text-slate-600 mt-1.5"><Briefcase className="w-3.5 h-3.5 flex-shrink-0" /><span>{[profile.title, profile.company].filter(Boolean).join(' at ')}</span></div>)}
             {location && (<div className="flex items-center gap-1 text-sm text-slate-500 mt-1"><MapPin className="w-3.5 h-3.5 flex-shrink-0" /><span>{location}</span></div>)}
