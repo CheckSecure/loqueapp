@@ -670,9 +670,26 @@ export async function submitWaitlist(data: {
   linkedinUrl?: string
   meetingInterests?: string
   referral: string
+  // Honeypot field — invisible to humans, often filled by bots. If non-empty
+  // we silently return success without inserting or sending mail.
+  ch_hp_field?: string
 }) {
+  // Honeypot: bot filled the hidden field — silently succeed so the bot can't
+  // distinguish honeypot from a real submit.
+  if (data.ch_hp_field && data.ch_hp_field.trim().length > 0) {
+    return { success: true }
+  }
+
+  // Server-side email format check. The form has type="email" but a direct
+  // server-action call can bypass that, and Resend will reject malformed
+  // addresses anyway — fail fast with a clean error before the DB insert.
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!data.email || !EMAIL_RE.test(data.email.trim())) {
+    return { error: 'Please enter a valid email address.' }
+  }
+
   const supabase = createClient()
-  
+
   const hasLinkedIn = data.linkedinUrl && data.linkedinUrl.trim().length > 0
   const verification_status = 'pending_review'
   const verification_method = hasLinkedIn ? 'linkedin' : 'none'
@@ -709,15 +726,14 @@ export async function submitWaitlist(data: {
   if (!alertResult.success) {
     console.error('[submitWaitlist] admin alert failed:', alertResult.error)
   }
-  // SA2 mitigation: disabled public-facing waitlist confirmation email for V1.
-  // The submitter's email is not verified at submit time, so sending confirmation
-  // mail to a caller-controlled address is an outbound-spam / sender-reputation
-  // attack vector. Re-enable when verified-email or rate-limiting exists.
-  // See product doc §15 / §19 item 10.
-  // const confirmResult = await sendWaitlistConfirmationEmail(data.email, data.fullName)
-  // if (!confirmResult.success) {
-  //   console.error('[waitlist-confirmation] email failed:', confirmResult.error)
-  // }
+  // Submitter confirmation. Fire-and-forget shape mirrors the admin alert
+  // above: a Resend failure is logged but does not fail the user's submit —
+  // they're already on the waitlist (DB insert succeeded) and the operator
+  // has been notified.
+  const confirmResult = await sendWaitlistConfirmationEmail(data.email, data.fullName)
+  if (!confirmResult.success) {
+    console.error('[submitWaitlist] confirmation email failed:', confirmResult.error)
+  }
   return { success: true }
 }
 // NOTE: this server action is currently NOT wired to the AdminWaitlistClient UI;

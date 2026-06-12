@@ -33,6 +33,9 @@ export default function WaitlistForm() {
   const [linkedinUrl, setLinkedinUrl] = useState('')
   const [meetingInterests, setMeetingInterests] = useState('')
   const [referral, setReferral] = useState('')
+  // Honeypot — invisible to humans, frequently filled by bots.
+  // Server action treats a non-empty value as a silent no-op.
+  const [ch_hp_field, setCh_hp_field] = useState('')
   const [showMore, setShowMore] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,15 +45,16 @@ export default function WaitlistForm() {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const result = await submitWaitlist({ 
-      fullName, 
-      email, 
+    const result = await submitWaitlist({
+      fullName,
+      email,
       title,
-      company, 
-      roleType, 
+      company,
+      roleType,
       linkedinUrl,
       meetingInterests,
-      referral 
+      referral,
+      ch_hp_field,
     })
     setLoading(false)
     if (result.error) {
@@ -76,6 +80,20 @@ export default function WaitlistForm() {
 
   return (
     <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur border border-white/20 rounded-2xl p-5 sm:p-6 space-y-3.5">
+      {/* Honeypot — visually hidden, not focusable, ignored by screen readers.
+          Bots that scrape the DOM and fill every input will fill this; humans
+          never see it. Position kept in the document flow off-screen so naive
+          bots see it like any other input. */}
+      <input
+        type="text"
+        name="ch_hp_field"
+        value={ch_hp_field}
+        onChange={e => setCh_hp_field(e.target.value)}
+        autoComplete="off"
+        tabIndex={-1}
+        aria-hidden="true"
+        style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px', opacity: 0 }}
+      />
       <div className="flex items-center gap-2 mb-1">
         <Lock className="w-3.5 h-3.5 text-[#C4922A]" />
         <span className="text-xs font-semibold text-[#C4922A] uppercase tracking-wide">Request Access</span>
