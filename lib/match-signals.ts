@@ -2,6 +2,8 @@
 // introduced you") and the introductions cards ("Why this introduction").
 // Keeping a single implementation prevents the two surfaces from drifting.
 
+import { verticalBoostReason } from '@/lib/matching/vertical-boost'
+
 // Normalizes the varied shapes interests/purposes/expertise can take (native
 // array, JSON-string array, or comma-separated string) into a clean string list.
 export function toList(value: any): string[] {
@@ -54,6 +56,15 @@ export function computeMatchSignals(viewer: any, viewed: any): MatchSignals {
   const pushStrong = (s: string) => { signals.push(s); hasStrongSignals = true }
 
   if (!viewer || !viewed) return { signals, hasStrongSignals, sharedInterests: [] }
+
+  // --- Priority 0 (Matching V2): explicit desired-connections ask ---
+  // Only fires when MATCHING_V2_VERTICAL_BOOST is on AND the (viewer, viewed)
+  // pair would receive a real boost in the scoring path. Stays in lockstep with
+  // applyVerticalBoost so the reason can never appear without the boost.
+  if (process.env.MATCHING_V2_VERTICAL_BOOST === '1') {
+    const askReason = verticalBoostReason(viewer, viewed)
+    if (askReason) pushStrong(askReason)
+  }
 
   // --- Priority 1: professional alignment ---
   if (eqField(viewed.role_type, viewer.role_type)) pushStrong('Same role type')

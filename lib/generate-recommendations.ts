@@ -3,6 +3,7 @@ import { getEffectiveTier } from '@/lib/tier-override'
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
 import { isSameCompany } from '@/lib/matching/same-company'
+import { applyVerticalBoost } from '@/lib/matching/vertical-boost'
 
 const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
   free: 3,
@@ -908,9 +909,14 @@ export async function generateOnboardingRecommendations(userId: string, maxCount
   console.log('[generate-recommendations] After mentorship filter:', mentorshipFiltered.length)
   
   const rankedCandidates = applyTierRankingAdjustment(mentorshipFiltered, userTier)
+  // Matching V2 — rank-only desired-connections boost. Applied AFTER the >=10
+  // eligibility gate (line 902) and after tier-ranking, BEFORE truncation, so
+  // it cannot pull ineligible candidates into the batch. Flag-gated; no-op
+  // when MATCHING_V2_VERTICAL_BOOST !== '1' or the viewer has no preference.
+  const boostedCandidates = applyVerticalBoost(rankedCandidates, newUserProfile)
   // Apply throttling to prevent consultant/law firm clustering
   const throttled = applyThrottling(
-    rankedCandidates,
+    boostedCandidates,
     newUserProfile,
     userTier,
     recommendationCount
