@@ -45,6 +45,17 @@ export async function updateProfile(formData: FormData) {
   const mentorshipRole = (formData.get('mentorship_role') as string) || null
   const openToMentorship = mentorshipRole != null && ['Mentor', 'Mentee', 'Both'].includes(mentorshipRole)
 
+  // D2 safety: mirror completeOnboarding's required-field gate. Before this,
+  // updateProfile had no validation, so /dashboard/profile could clear
+  // role_type/seniority/expertise to empty — making the user invisible to the
+  // matcher's candidate filter (lib/generate-recommendations.ts:889-894).
+  // Messages and field semantics are identical to completeOnboarding.
+  const roleType = (formData.get('role_type') as string || '').trim()
+  const seniority = (formData.get('seniority') as string || '').trim()
+  if (!roleType) return { error: 'Please select your professional role' }
+  if (!seniority) return { error: 'Please select your seniority level' }
+  if (expertise.length === 0) return { error: 'Please select at least one area of expertise' }
+
   console.log('[completeOnboarding] About to upsert profile data')
   
   // Use admin client to bypass RLS

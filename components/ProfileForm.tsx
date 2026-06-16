@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
+import { ROLE_CATEGORIES, type Category, isStructuredTitle } from '@/lib/role-taxonomy'
 import { Linkedin, Twitter, Link as LinkIcon, Loader2, CheckCircle } from 'lucide-react'
 import { updateProfile } from '@/app/actions'
 import AvatarUpload from '@/components/AvatarUpload'
@@ -181,21 +182,19 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
               className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition bg-white"
             >
               <option value="">Select role type</option>
-              <option value="In-house Counsel">In-house Counsel</option>
-              <option value="Law Firm Attorney">Law Firm Attorney</option>
-              <option value="Legal Operations">Legal Operations</option>
-              <option value="Compliance">Compliance</option>
-              <option value="Risk">Risk</option>
-              <option value="Privacy">Privacy</option>
-              <option value="Regulatory Affairs">Regulatory Affairs</option>
-              <option value="Government Affairs">Government Affairs</option>
-              <option value="Consultant">Consultant</option>
-              <option value="Legal Tech Founder">Legal Tech Founder</option>
-              <option value="Executive / C-Suite">Executive / C-Suite</option>
-              <option value="Investor / VC">Investor / VC</option>
-              <option value="Government / Policy">Government / Policy</option>
-              <option value="Finance Professional">Finance Professional</option>
-              <option value="Healthcare Professional">Healthcare Professional</option>
+              {/* Legacy-value safety: if stored value isn't in the structured
+                  set (and isn't 'Other'), pin it as a "Current:" option so
+                  the user never loses it. New users see only the clean set. */}
+              {profile?.role_type && !isStructuredTitle(profile.role_type) && (
+                <option value={profile.role_type}>Current: {profile.role_type}</option>
+              )}
+              {(Object.keys(ROLE_CATEGORIES) as Category[]).map((category) => (
+                <optgroup key={category} label={category}>
+                  {(ROLE_CATEGORIES[category] as readonly string[]).map((title) => (
+                    <option key={title} value={title}>{title}</option>
+                  ))}
+                </optgroup>
+              ))}
               <option value="Other">Other</option>
             </select>
           </div>

@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
+import { RoleCategoryPicker } from '@/components/RoleCategoryPicker'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { completeOnboarding } from '@/app/actions'
@@ -9,14 +10,10 @@ import { Loader2, User, Camera, Eye, EyeOff } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 
-const ROLE_TYPES = [
-  'Executive / C-Suite',
-  'Investor / VC',
-  'Government / Policy',
-  'Finance',
-  'Healthcare',
-  'Legal',
-]
+// Role-type picker — Phase B replaces the flat A-1 button list with a
+// category → title picker (components/RoleCategoryPicker.tsx) sourced from
+// lib/role-taxonomy.ts ROLE_CATEGORIES. Legacy-value safety is handled
+// inside the picker (pinned "Current:" chip for non-structured stored values).
 
 const SENIORITY_LEVELS = [
   'Junior',
@@ -266,11 +263,7 @@ export default function OnboardingForm() {
 
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-2">Role type</label>
-              <div className="flex flex-wrap gap-2">
-                {ROLE_TYPES.map(rt => (
-                  <button key={rt} type="button" onClick={() => setRoleType(rt === roleType ? '' : rt)} className={cn('px-3.5 py-2 rounded-lg text-sm font-medium border transition-all', roleType === rt ? 'bg-[#1B2850] text-white border-[#1B2850]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/40 hover:text-[#1B2850]')}>{rt}</button>
-                ))}
-              </div>
+              <RoleCategoryPicker value={roleType} onChange={setRoleType} />
             </div>
 
             <div>

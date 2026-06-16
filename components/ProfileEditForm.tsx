@@ -3,10 +3,10 @@
 import { useState } from 'react'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
+import { ROLE_CATEGORIES, type Category, isStructuredTitle } from '@/lib/role-taxonomy'
 import { Loader2, CheckCircle, User, ChevronDown, ChevronUp } from 'lucide-react'
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite']
-const ROLE_TYPE_OPTIONS = ['In-house Counsel', 'Law Firm Attorney', 'Consultant', 'Legal Operations', 'Compliance', 'Government / Public Sector', 'Other']
 
 const PURPOSE_OPTIONS = ['Fundraising', 'Hiring', 'Partnerships', 'Mentorship', 'Business Development', 'Market Insights', 'Career Growth']
 
@@ -212,7 +212,19 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
             >
               <option value="">Select role type</option>
-              {ROLE_TYPE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+              {/* Legacy-value safety: pin non-structured stored values as a
+                  "Current:" option so the user never loses them. */}
+              {initialData.role_type && !isStructuredTitle(initialData.role_type) && (
+                <option value={initialData.role_type}>Current: {initialData.role_type}</option>
+              )}
+              {(Object.keys(ROLE_CATEGORIES) as Category[]).map((category) => (
+                <optgroup key={category} label={category}>
+                  {(ROLE_CATEGORIES[category] as readonly string[]).map((title) => (
+                    <option key={title} value={title}>{title}</option>
+                  ))}
+                </optgroup>
+              ))}
+              <option value="Other">Other</option>
             </select>
           </div>
 

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
+import { ROLE_CATEGORIES, type Category, isStructuredTitle } from '@/lib/role-taxonomy'
 import { Loader2, ArrowRight } from 'lucide-react'
 import { Linkedin, Twitter, Link as LinkIcon } from 'lucide-react'
 import AvatarUpload from '@/components/AvatarUpload'
@@ -174,12 +175,18 @@ export default function OnboardingStep1({
               className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition bg-white"
             >
               <option value="">Select role type</option>
-              <option value="In-house Counsel">In-house Counsel</option>
-              <option value="Law Firm Attorney">Law Firm Attorney</option>
-              <option value="Consultant">Consultant</option>
-              <option value="Legal Operations">Legal Operations</option>
-              <option value="Compliance">Compliance</option>
-              <option value="Government / Public Sector">Government / Public Sector</option>
+              {/* Legacy-value safety: pin non-structured stored values as a
+                  "Current:" option so the user never loses them. */}
+              {profile?.role_type && !isStructuredTitle(profile.role_type) && (
+                <option value={profile.role_type}>Current: {profile.role_type}</option>
+              )}
+              {(Object.keys(ROLE_CATEGORIES) as Category[]).map((category) => (
+                <optgroup key={category} label={category}>
+                  {(ROLE_CATEGORIES[category] as readonly string[]).map((title) => (
+                    <option key={title} value={title}>{title}</option>
+                  ))}
+                </optgroup>
+              ))}
               <option value="Other">Other</option>
             </select>
           </div>
