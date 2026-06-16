@@ -14,6 +14,7 @@ import { generateOnboardingRecommendations } from '@/lib/generate-recommendation
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
+import { validateSelection } from '@/lib/role-taxonomy'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -56,11 +57,21 @@ export async function updateProfile(formData: FormData) {
   if (!seniority) return { error: 'Please select your seniority level' }
   if (expertise.length === 0) return { error: 'Please select at least one area of expertise' }
 
+  // Phase C: desired_connections capture-only (no scoring path reads this).
+  // Parse the JSON-serialized CategoryTitleSelection and strip any unknown
+  // taxonomy entries before persisting.
+  let desiredConnections: ReturnType<typeof validateSelection> = {}
+  const desiredConnectionsRaw = formData.get('desired_connections') as string
+  if (desiredConnectionsRaw) {
+    try { desiredConnections = validateSelection(JSON.parse(desiredConnectionsRaw)) }
+    catch { desiredConnections = {} }
+  }
+
   console.log('[completeOnboarding] About to upsert profile data')
-  
+
   // Use admin client to bypass RLS
   const adminClient = createAdminClient()
-  
+
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
     email: user.email,
@@ -73,6 +84,7 @@ export async function updateProfile(formData: FormData) {
     bio: formData.get('bio') as string || null,
     expertise,
     intro_preferences: introPref,
+    desired_connections: desiredConnections,
     linkedin_url: formData.get('linkedin_url') as string || null,
     twitter_url: formData.get('twitter_url') as string || null,
     website_url: formData.get('website_url') as string || null,
@@ -176,6 +188,14 @@ export async function completeOnboarding(formData: FormData) {
   if (!seniority) return { error: 'Please select your seniority level' }
   if (expertise.length === 0) return { error: 'Please select at least one area of expertise' }
 
+  // Phase C: desired_connections capture-only (no scoring path reads this).
+  let desiredConnections: ReturnType<typeof validateSelection> = {}
+  const desiredConnectionsRaw = formData.get('desired_connections') as string
+  if (desiredConnectionsRaw) {
+    try { desiredConnections = validateSelection(JSON.parse(desiredConnectionsRaw)) }
+    catch { desiredConnections = {} }
+  }
+
   console.log('[completeOnboarding] About to upsert profile data')
 
   // Use admin client to bypass RLS
@@ -208,6 +228,7 @@ export async function completeOnboarding(formData: FormData) {
     looking_for: (formData.get('looking_for') as string) || null,
     intro_preferences: introPref,
     purposes: purposes,
+    desired_connections: desiredConnections,
     meeting_format_preference: (formData.get('meeting_format_preference') as string) || 'both',
     geographic_scope: (formData.get('geographic_scope') as string) || 'us-wide',
     profile_complete: true,

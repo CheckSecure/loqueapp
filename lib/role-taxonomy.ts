@@ -190,6 +190,72 @@ export function isStructuredTitle(title: string): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Phase C — multi-select targeting helpers
+//
+// CategoryTitleSelection is the storage shape for "desired connections"
+// (profiles.desired_connections) and opportunity targeting
+// (opportunities.criteria.target_connections). It is a map from category
+// label to a list of titles.
+//
+//   {}                                  → no preference set
+//   { 'Legal': [] }                     → whole Legal category ("anyone in Legal")
+//   { 'Legal': ['General Counsel'] }    → specific titles
+//
+// Phase C never reads this in any scoring/ranking path — capture-only.
+// ─────────────────────────────────────────────────────────────────────
+
+export type CategoryTitleSelection = Record<string, string[]>
+
+/** Categories present in the selection. */
+export function selectionCategories(sel: CategoryTitleSelection): string[] {
+  return Object.keys(sel)
+}
+
+/**
+ * Flatten to a list of titles. For categories with an empty array (whole-
+ * category sentinel), all titles in that category are expanded.
+ */
+export function selectionTitles(sel: CategoryTitleSelection): string[] {
+  const out: string[] = []
+  for (const cat of Object.keys(sel)) {
+    if (!(cat in ROLE_CATEGORIES)) continue
+    const picked = sel[cat]
+    if (picked.length === 0) {
+      // whole-category sentinel — expand to every title in the category
+      for (const t of ROLE_CATEGORIES[cat as Category] as readonly string[]) out.push(t)
+    } else {
+      for (const t of picked) out.push(t)
+    }
+  }
+  return out
+}
+
+/** True when no categories are present (i.e. the user has set no preference). */
+export function isEmptySelection(sel: CategoryTitleSelection): boolean {
+  return Object.keys(sel).length === 0
+}
+
+/**
+ * Defensive: drop any category not in ROLE_CATEGORIES and any title not in
+ * that category's title list. Never persist unknown taxonomy. Used at every
+ * write site (server actions, API route) before the value lands in the DB.
+ */
+export function validateSelection(sel: unknown): CategoryTitleSelection {
+  if (!sel || typeof sel !== 'object' || Array.isArray(sel)) return {}
+  const out: CategoryTitleSelection = {}
+  for (const [cat, titles] of Object.entries(sel as Record<string, unknown>)) {
+    if (!(cat in ROLE_CATEGORIES)) continue
+    if (!Array.isArray(titles)) continue
+    const known = (ROLE_CATEGORIES[cat as Category] as readonly string[])
+    const kept = (titles as unknown[]).filter(
+      (t): t is string => typeof t === 'string' && known.includes(t)
+    )
+    out[cat] = kept
+  }
+  return out
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // A-1 baseline (preserved verbatim — no renames, no removals).
 //
 // ROLE_TAXONOMY_VALUES is the UNION of (all A-1 values) + (all new Phase B

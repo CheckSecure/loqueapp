@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
 import ExpertisePicker from '@/components/ExpertisePicker';
+import ConnectionTargetPicker from '@/components/ConnectionTargetPicker';
+import type { CategoryTitleSelection } from '@/lib/role-taxonomy';
 
 type Urgency = 'low' | 'medium' | 'urgent';
 
@@ -24,6 +26,7 @@ export default function BusinessForm() {
   const [industry, setIndustry] = useState('');
   const [urgency, setUrgency] = useState<Urgency>('medium');
   const [expertise, setExpertise] = useState<string[]>([]);
+  const [targetConnections, setTargetConnections] = useState<CategoryTitleSelection>({});
   const [description, setDescription] = useState('');
 
   function clearError(key: string) {
@@ -55,6 +58,7 @@ export default function BusinessForm() {
             need: need.trim(),
             industry: industry.trim() || undefined,
             expertise,
+            target_connections: targetConnections,
           },
         }),
       });
@@ -117,6 +121,11 @@ export default function BusinessForm() {
             onChange={(next) => { clearError('expertise'); setExpertise(next); }}
           />
           <p className="mt-1 text-xs text-slate-500">Select at least 2. Must match tags on provider profiles.</p>
+        </Field>
+
+        <Field label="Specific connections (optional)">
+          <p className="mb-2 text-xs text-slate-500">Narrow by category or specific titles. Leave empty to let the matcher pick.</p>
+          <ConnectionTargetPicker value={targetConnections} onChange={setTargetConnections} />
         </Field>
 
         <Field label="Description (optional)" error={fieldErrors.description}>

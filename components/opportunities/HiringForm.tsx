@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
 import ExpertisePicker from '@/components/ExpertisePicker';
+import ConnectionTargetPicker from '@/components/ConnectionTargetPicker';
+import type { CategoryTitleSelection } from '@/lib/role-taxonomy';
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite'];
 const ROLE_TYPE_OPTIONS = ['In-house Counsel', 'Law firm attorney', 'Consultant', 'Compliance', 'Legal Operations'];
@@ -18,6 +20,7 @@ export default function HiringForm() {
   const [industry, setIndustry] = useState('');
   const [expertise, setExpertise] = useState<string[]>([]);
   const [roleTypes, setRoleTypes] = useState<string[]>([]);
+  const [targetConnections, setTargetConnections] = useState<CategoryTitleSelection>({});
   const [description, setDescription] = useState('');
   const [includeRecruiters, setIncludeRecruiters] = useState(false);
 
@@ -56,6 +59,7 @@ export default function HiringForm() {
             industry: industry.trim() || undefined,
             expertise,
             role_types: roleTypes,
+            target_connections: targetConnections,
           },
           include_recruiters: includeRecruiters,
         }),
@@ -117,6 +121,11 @@ export default function HiringForm() {
               </button>
             ))}
           </div>
+        </Field>
+
+        <Field label="Specific connections (optional)">
+          <p className="mb-2 text-xs text-slate-500">Narrow by category or specific titles. Leave empty to use just the role types above.</p>
+          <ConnectionTargetPicker value={targetConnections} onChange={setTargetConnections} />
         </Field>
 
         <Field label="Expertise tags" error={fieldErrors.expertise}>

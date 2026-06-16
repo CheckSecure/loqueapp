@@ -3,6 +3,8 @@
 import { useState, useRef } from 'react'
 import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
 import { RoleCategoryPicker } from '@/components/RoleCategoryPicker'
+import ConnectionTargetPicker from '@/components/ConnectionTargetPicker'
+import type { CategoryTitleSelection } from '@/lib/role-taxonomy'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { completeOnboarding } from '@/app/actions'
@@ -73,6 +75,7 @@ export default function OnboardingForm() {
   // Preferences step
   const [meetRoles, setMeetRoles] = useState<string[]>([])
   const [purposes, setPurposes] = useState<string[]>([])
+  const [desiredConnections, setDesiredConnections] = useState<CategoryTitleSelection>({})
   const [meetingFormat, setMeetingFormat] = useState('both')
   const [geographicScope, setGeographicScope] = useState('us-wide')
   const [lookingFor, setLookingFor] = useState('')
@@ -156,6 +159,7 @@ export default function OnboardingForm() {
     fd.append('looking_for', lookingFor.trim())
     fd.append('intro_preferences', meetRoles.join(','))
     fd.append('purposes', purposes.join(','))
+    fd.append('desired_connections', JSON.stringify(desiredConnections))
     fd.append('meeting_format_preference', meetingFormat)
     fd.append('geographic_scope', geographicScope)
     if (avatarUrl) fd.append('avatar_url', avatarUrl)
@@ -305,6 +309,12 @@ export default function OnboardingForm() {
                   <button key={rt} type="button" onClick={() => toggleItem(meetRoles, setMeetRoles, rt)} className={cn('px-3.5 py-2 rounded-lg text-sm font-medium border transition-all', meetRoles.includes(rt) ? 'bg-[#1B2850] text-white border-[#1B2850]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/40 hover:text-[#1B2850]')}>{rt}</button>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">Specific connections <span className="text-slate-400 font-normal text-xs">optional</span></label>
+              <p className="text-xs text-slate-500 mb-2">Pick categories or specific titles. Tap a category to choose &ldquo;Anyone&rdquo; or specific titles.</p>
+              <ConnectionTargetPicker value={desiredConnections} onChange={setDesiredConnections} />
             </div>
 
             <div>

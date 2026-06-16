@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
-import { ROLE_CATEGORIES, type Category, isStructuredTitle } from '@/lib/role-taxonomy'
+import { ROLE_CATEGORIES, type Category, isStructuredTitle, type CategoryTitleSelection } from '@/lib/role-taxonomy'
+import ConnectionTargetPicker from '@/components/ConnectionTargetPicker'
 import { Linkedin, Twitter, Link as LinkIcon, Loader2, CheckCircle } from 'lucide-react'
 import { updateProfile } from '@/app/actions'
 import AvatarUpload from '@/components/AvatarUpload'
@@ -19,6 +20,7 @@ interface Profile {
   intro_preferences?: string[]
   purposes?: string[]
   interests?: string[]
+  desired_connections?: CategoryTitleSelection
   open_to_intros?: boolean
   linkedin_url?: string
   twitter_url?: string
@@ -40,6 +42,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
   const [introPref, setIntroPref] = useState<string[]>(profile?.intro_preferences || [])
   const [purposes, setPurposes] = useState<string[]>(profile?.purposes || [])
   const [interests, setInterests] = useState<string[]>(profile?.interests || [])
+  const [desiredConnections, setDesiredConnections] = useState<CategoryTitleSelection>(profile?.desired_connections || {})
   const initialExpertiseAll = parseExpertise(profile?.expertise)
   const [expertise, setExpertise] = useState<string[]>(initialExpertiseAll.filter(e => EXPERTISE_OPTIONS.includes(e)))
   const [additionalExpertise, setAdditionalExpertise] = useState<string[]>(initialExpertiseAll.filter(e => !EXPERTISE_OPTIONS.includes(e)))
@@ -60,6 +63,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
     formData.set('purposes', purposes.join(','))
     formData.set('interests', interests.join(','))
     formData.set('expertise', [...expertise, ...additionalExpertise].join(','))
+    formData.set('desired_connections', JSON.stringify(desiredConnections))
     const result = await updateProfile(formData)
     setLoading(false)
     if (result.error) {
@@ -274,6 +278,13 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
             />
           </div>
         ))}
+      </div>
+
+      {/* Specific connections to meet */}
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6">
+        <h3 className="text-sm font-semibold text-slate-900 mb-1">Who do you want to meet?</h3>
+        <p className="text-xs text-slate-400 mb-3">Pick categories or specific titles. Tap a category to choose &ldquo;Anyone&rdquo; or specific titles.</p>
+        <ConnectionTargetPicker value={desiredConnections} onChange={setDesiredConnections} />
       </div>
 
       {/* Introduction preferences */}

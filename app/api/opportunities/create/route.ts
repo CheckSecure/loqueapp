@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { checkCreatorEligibility } from '@/lib/opportunities/eligibility';
 import { deliverOpportunity } from '@/lib/opportunities/matching';
 import { computeExpiryDays, type OpportunityType, type Urgency } from '@/lib/opportunities/caps';
+import { validateSelection, type CategoryTitleSelection } from '@/lib/role-taxonomy';
 
 function stripContactInfo(text: string | null | undefined): string | null {
   if (!text) return null;
@@ -27,6 +28,7 @@ type CreatePayload = {
     expertise?: string[];
     role_types?: string[];
     need?: string;
+    target_connections?: CategoryTitleSelection;
   };
   include_recruiters?: boolean;
   urgency?: Urgency;
@@ -191,6 +193,15 @@ export async function POST(request: Request) {
     Date.now() + computeExpiryDays(payload.type, payload.urgency) * 86400_000
   ).toISOString();
 
+  // Phase C: sanitize target_connections through the taxonomy validator before
+  // storing — drops unknown categories/titles. Other criteria fields (role_types,
+  // expertise, seniority, need) are untouched here so existing matcher reads
+  // continue to work byte-identically.
+  const sanitizedCriteria = {
+    ...payload.criteria,
+    target_connections: validateSelection(payload.criteria.target_connections),
+  };
+
   const { data: opportunity, error: insertErr } = await admin
     .from('opportunities')
     .insert({
@@ -198,7 +209,7 @@ export async function POST(request: Request) {
       type: payload.type,
       title: payload.title.trim(),
       description: stripContactInfo(payload.description?.trim() ?? null),
-      criteria: payload.criteria,
+      criteria: sanitizedCriteria,
       include_recruiters: payload.type === 'hiring' && !!payload.include_recruiters,
       urgency: payload.type === 'business' ? payload.urgency : null,
       expires_at: expiresAt,
