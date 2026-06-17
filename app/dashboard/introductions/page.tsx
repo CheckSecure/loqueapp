@@ -370,24 +370,30 @@ export default async function IntroductionsPage() {
         : []
     return (
       <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
-        <div className="relative bg-white border border-slate-100 rounded-2xl pl-8 pr-7 py-7 sm:pl-10 sm:pr-10 sm:py-10 shadow-lg hover:shadow-xl transition-all overflow-hidden">
-          {/* Gold left-edge accent */}
-          <div className="absolute left-0 top-8 bottom-8 w-[3px] bg-gradient-to-b from-brand-gold via-brand-gold/70 to-brand-gold/30 rounded-r-full pointer-events-none" />
+        <div className="relative bg-white border border-slate-100 rounded-2xl pl-10 pr-9 py-9 sm:pl-14 sm:pr-12 sm:py-12 shadow-[0_8px_30px_rgba(15,28,58,0.08)] hover:shadow-[0_12px_40px_rgba(15,28,58,0.12)] transition-all overflow-hidden">
+          {/* Gold left-edge accent — thicker, more prominent */}
+          <div className="absolute left-0 top-10 bottom-10 w-1 bg-gradient-to-b from-brand-gold via-brand-gold/70 to-brand-gold/30 rounded-r-full pointer-events-none" />
+          {/* Soft cream radial accent in the top-right for depth */}
+          <div className="absolute -top-16 -right-16 w-48 h-48 bg-brand-cream/40 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
 
-          <div className="flex items-start gap-5">
-            <div className="flex-shrink-0">
-              <Avatar profile={s} size="lg" />
+          <div className="relative flex items-start gap-6 sm:gap-7">
+            <div className="flex-shrink-0 relative">
+              {/* Decorative gold halo behind the avatar */}
+              <div className="absolute -inset-1.5 rounded-full bg-gradient-to-br from-brand-gold/20 via-brand-gold/5 to-transparent blur-sm pointer-events-none" aria-hidden="true" />
+              <div className="relative">
+                <Avatar profile={s} size="lg" />
+              </div>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xl sm:text-2xl font-bold text-brand-navy truncate leading-tight tracking-tight">{s.full_name || 'New member'}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-brand-navy truncate leading-[1.1] tracking-tight">{s.full_name || 'New member'}</p>
               {(headline || s.company) && (
-                <div className="flex items-center gap-1.5 text-sm text-slate-600 mt-2 font-medium">
-                  <Briefcase className="w-3.5 h-3.5 flex-shrink-0 text-slate-400" />
+                <div className="flex items-center gap-2 text-base text-slate-700 mt-2.5 font-medium">
+                  <Briefcase className="w-4 h-4 flex-shrink-0 text-brand-gold/70" />
                   <span className="truncate">{[headline, s.company].filter(Boolean).join(' at ')}</span>
                 </div>
               )}
               {s.location && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-1">
+                <div className="flex items-center gap-2 text-sm text-slate-400 mt-1.5">
                   <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="truncate">{s.location}</span>
                 </div>
@@ -395,30 +401,32 @@ export default async function IntroductionsPage() {
             </div>
           </div>
 
-          {s.bio && <p className="mt-5 text-sm text-slate-600 leading-relaxed line-clamp-4">{s.bio}</p>}
+          {s.bio && <p className="relative mt-6 text-sm text-slate-600 leading-relaxed line-clamp-4">{s.bio}</p>}
 
-          <div className="mt-5 flex flex-wrap gap-1.5">
+          <div className="relative mt-6 flex flex-wrap gap-2">
             {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
             {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
           </div>
 
           {interests.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="relative mt-2 flex flex-wrap gap-1.5">
               {interests.slice(0, 6).map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
             </div>
           )}
 
-          <div className="mt-6 relative bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/25 rounded-xl px-5 py-4">
-            <div className="flex items-start gap-2.5">
-              <Sparkles className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
+          <div className="relative mt-7 bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/30 rounded-xl px-6 py-5 shadow-[0_1px_2px_rgba(196,146,42,0.08)]">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 mt-0.5">
+                <Sparkles className="w-4 h-4 text-brand-gold" />
+              </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] uppercase tracking-[0.12em] font-semibold text-brand-gold mb-1.5">Why this introduction</p>
+                <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-2">Why this introduction</p>
                 {renderReasonBlock(row)}
               </div>
             </div>
           </div>
 
-          <div className="mt-6">
+          <div className="relative mt-7">
             {row.alreadyRequested ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
@@ -444,11 +452,11 @@ export default async function IntroductionsPage() {
     const headline = displayTitle(s)
     return (
       <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
-        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-slate-200 transition-all flex flex-col gap-3">
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-[0_2px_8px_rgba(15,28,58,0.05)] hover:shadow-[0_6px_20px_rgba(15,28,58,0.08)] hover:border-brand-gold/30 transition-all flex flex-col gap-3.5">
           <div className="flex items-start gap-3">
             <Avatar profile={s} size="md" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-900 truncate leading-tight">{s.full_name || 'New member'}</p>
+              <p className="text-sm font-bold text-brand-navy truncate leading-tight tracking-tight">{s.full_name || 'New member'}</p>
               {(headline || s.company) && (
                 <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
                   <Briefcase className="w-3 h-3 flex-shrink-0" />
@@ -508,13 +516,33 @@ export default async function IntroductionsPage() {
         {/* HERO */}
         <div className="mb-10 relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-cream via-white to-white border border-brand-navy/10 px-6 py-10 sm:px-12 sm:py-14 shadow-sm">
           {/* Decorative gold rule */}
-          <div className="absolute top-0 left-6 sm:left-12 w-32 h-px bg-gradient-to-r from-brand-gold via-brand-gold/40 to-transparent" />
-          {/* Understated relationship-mark SVG (3 nodes + connecting paths) */}
-          <svg className="absolute -right-2 top-6 sm:right-10 sm:top-12 w-24 h-24 sm:w-32 sm:h-32 opacity-[0.15] pointer-events-none" viewBox="0 0 80 80" fill="none" aria-hidden="true">
-            <path d="M20 20 L60 40 L20 60" stroke="currentColor" strokeWidth="0.8" className="text-brand-gold" />
-            <circle cx="20" cy="20" r="3.5" fill="currentColor" className="text-brand-gold" />
-            <circle cx="60" cy="40" r="3.5" fill="currentColor" className="text-brand-gold" />
-            <circle cx="20" cy="60" r="3.5" fill="currentColor" className="text-brand-gold" />
+          <div className="absolute top-0 left-6 sm:left-12 w-40 h-px bg-gradient-to-r from-brand-gold via-brand-gold/40 to-transparent" />
+          {/* Network constellation — abstract nodes + thin connecting lines; no faces, no avatars */}
+          <svg className="absolute right-0 top-0 bottom-0 my-auto h-full w-[55%] max-w-md opacity-[0.18] pointer-events-none" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true">
+            {/* Connecting lines — drawn first so they sit behind the nodes */}
+            <g stroke="currentColor" strokeWidth="0.6" className="text-brand-gold">
+              <path d="M 70 60 L 200 120" />
+              <path d="M 200 120 L 320 70" />
+              <path d="M 200 120 L 330 170" />
+              <path d="M 200 120 L 80 200" />
+              <path d="M 200 120 L 180 230" />
+              <path d="M 80 200 L 180 230" />
+              <path d="M 180 230 L 280 220" />
+              <path d="M 280 220 L 330 170" />
+              <path d="M 320 70 L 330 170" />
+              <path d="M 70 60 L 80 200" />
+              <path d="M 280 220 L 200 120" />
+            </g>
+            {/* Nodes — varying sizes to suggest depth + relationship weight */}
+            <g fill="currentColor" className="text-brand-gold">
+              <circle cx="70" cy="60" r="3" />
+              <circle cx="320" cy="70" r="2.5" />
+              <circle cx="80" cy="200" r="2.5" />
+              <circle cx="280" cy="220" r="3" />
+              <circle cx="330" cy="170" r="2" />
+              <circle cx="180" cy="230" r="2" />
+              <circle cx="200" cy="120" r="5" />
+            </g>
           </svg>
           <p className="text-[11px] uppercase tracking-[0.18em] text-brand-gold font-semibold mb-3">Curated for you, {firstName}</p>
           <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-brand-navy tracking-tight leading-[1.05] max-w-2xl">Your next valuable relationship</h1>
@@ -665,10 +693,12 @@ export default async function IntroductionsPage() {
           <aside className="space-y-5 lg:sticky lg:top-8 lg:self-start">
 
             {/* ANDREL CONCIERGE CARD */}
-            <section className="relative overflow-hidden bg-brand-navy text-white rounded-2xl p-6 shadow-xl">
+            <section className="relative overflow-hidden bg-gradient-to-br from-[#162449] via-brand-navy to-[#0A1530] text-white rounded-2xl p-6 shadow-[0_12px_40px_rgba(15,28,58,0.18)] ring-1 ring-brand-gold/10">
               {/* Gold ambient glow */}
-              <div className="absolute -top-12 -right-12 w-44 h-44 bg-brand-gold/20 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-brand-gold/60 to-transparent" />
+              <div className="absolute -top-12 -right-12 w-44 h-44 bg-brand-gold/20 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+              {/* Subtle bottom glow for added depth */}
+              <div className="absolute -bottom-16 -left-12 w-32 h-32 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+              <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-brand-gold/70 to-transparent" />
               <div className="relative">
                 <div className="flex items-start gap-3">
                   <div className="w-11 h-11 rounded-xl bg-brand-gold text-brand-navy flex items-center justify-center flex-shrink-0 shadow-md">
@@ -741,34 +771,40 @@ export default async function IntroductionsPage() {
                   </Link>
                 </div>
               ) : (
-                <div className="relative text-center py-7">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-brand-cream border border-brand-gold/20 mb-4">
-                    <Zap className="w-6 h-6 text-brand-gold" />
-                  </div>
-                  <p className="text-sm font-bold text-brand-navy tracking-tight">Opportunity Concierge</p>
-                  <p className="text-xs text-slate-500 mt-2 max-w-xs mx-auto leading-relaxed">
-                    No hiring or business signals are targeting you yet. {canCreateOpportunity
-                      ? 'Signal a need to source the right people for what you\'re building.'
-                      : 'Upgrade to Professional to signal your own hiring or business needs.'}
-                  </p>
-                  <div className="mt-4">
-                    {canCreateOpportunity ? (
-                      <Link
-                        href="/dashboard/opportunities/new"
-                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-brand-navy text-white hover:bg-brand-navy/90 transition-colors shadow-sm"
-                      >
-                        Submit an opportunity
-                        <ArrowRight className="w-3 h-3" />
-                      </Link>
-                    ) : (
-                      <Link
-                        href="/dashboard/billing"
-                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-white border border-brand-navy text-brand-navy hover:bg-brand-navy hover:text-white transition-colors"
-                      >
-                        Upgrade to signal a need
-                        <ArrowRight className="w-3 h-3" />
-                      </Link>
-                    )}
+                <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-brand-cream/40 via-white to-white border border-brand-gold/15 px-4 py-8 text-center">
+                  {/* Concentric gold ring decoration */}
+                  <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full border border-brand-gold/15 pointer-events-none" aria-hidden="true" />
+                  <div className="absolute -top-6 -right-6 w-16 h-16 rounded-full border border-brand-gold/20 pointer-events-none" aria-hidden="true" />
+                  <div className="relative">
+                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand-navy text-brand-gold border border-brand-gold/30 mb-4 shadow-md">
+                      <Zap className="w-7 h-7" />
+                    </div>
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-1.5">Concierge</p>
+                    <p className="text-sm font-bold text-brand-navy tracking-tight">Opportunity Concierge</p>
+                    <p className="text-xs text-slate-500 mt-2 max-w-xs mx-auto leading-relaxed">
+                      No hiring or business signals are targeting you yet. {canCreateOpportunity
+                        ? 'Signal a need to source the right people for what you\'re building.'
+                        : 'Upgrade to Professional to signal your own hiring or business needs.'}
+                    </p>
+                    <div className="mt-5">
+                      {canCreateOpportunity ? (
+                        <Link
+                          href="/dashboard/opportunities/new"
+                          className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-lg bg-brand-navy text-white hover:bg-brand-navy/90 transition-colors shadow-md"
+                        >
+                          Submit an opportunity
+                          <ArrowRight className="w-3 h-3" />
+                        </Link>
+                      ) : (
+                        <Link
+                          href="/dashboard/billing"
+                          className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-lg bg-white border border-brand-navy text-brand-navy hover:bg-brand-navy hover:text-white transition-colors shadow-sm"
+                        >
+                          Upgrade to signal a need
+                          <ArrowRight className="w-3 h-3" />
+                        </Link>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

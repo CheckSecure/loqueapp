@@ -194,16 +194,20 @@ export default function Sidebar({
       {/* Membership card + identity + sign out */}
       <div className="px-4 pb-5 pt-4 border-t border-white/5 space-y-4">
         {/* Premium membership card */}
-        <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-[#162449] via-[#0F1C3A] to-[#0A1530] border border-white/10 p-4 shadow-inner">
-          <div className="absolute top-0 left-3 right-3 h-px bg-gradient-to-r from-transparent via-brand-gold/80 to-transparent" />
-          <div className="absolute -top-10 -right-10 w-24 h-24 bg-brand-gold/15 rounded-full blur-2xl pointer-events-none" />
+        <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-[#162449] via-[#0F1C3A] to-[#0A1530] border border-brand-gold/15 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/5">
+          <div className="absolute top-0 left-3 right-3 h-px bg-gradient-to-r from-transparent via-brand-gold to-transparent" />
+          <div className="absolute -top-10 -right-10 w-28 h-28 bg-brand-gold/15 rounded-full blur-2xl pointer-events-none" aria-hidden="true" />
+          <div className="absolute -bottom-12 -left-8 w-20 h-20 bg-brand-gold/8 rounded-full blur-2xl pointer-events-none" aria-hidden="true" />
           <div className="relative">
-            <p className="text-[9px] uppercase tracking-[0.2em] text-brand-gold font-bold">Membership</p>
-            <div className="mt-2.5 flex items-baseline justify-between gap-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="block w-1 h-1 rounded-full bg-brand-gold" aria-hidden="true" />
+              <p className="text-[9px] uppercase tracking-[0.22em] text-brand-gold font-bold">Membership</p>
+            </div>
+            <div className="mt-3 flex items-baseline justify-between gap-3">
               <CreditsChip credits={credits} />
               <Link
                 href="/dashboard/billing"
-                className="text-[11px] font-semibold text-brand-gold/80 hover:text-white transition-colors"
+                className="text-[11px] font-semibold text-brand-gold/80 hover:text-brand-gold transition-colors"
               >
                 Upgrade →
               </Link>
