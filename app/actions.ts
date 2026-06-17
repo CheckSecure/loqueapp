@@ -14,7 +14,7 @@ import { generateOnboardingRecommendations } from '@/lib/generate-recommendation
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
-import { validateSelection } from '@/lib/role-taxonomy'
+import { validateSelection, validateSelectionWithCaps } from '@/lib/role-taxonomy'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -57,20 +57,27 @@ export async function updateProfile(formData: FormData) {
   if (!seniority) return { error: 'Please select your seniority level' }
   if (expertise.length === 0) return { error: 'Please select at least one area of expertise' }
 
-  // Phase C: desired_connections capture-only (no scoring path reads this).
-  // Parse the JSON-serialized CategoryTitleSelection and strip any unknown
-  // taxonomy entries before persisting.
+  // Phase D: load prior desired_connections so validateSelectionWithCaps can
+  // never shrink a user's existing selection below current size on save.
+  const adminClient = createAdminClient()
+  const { data: priorRow } = await adminClient
+    .from('profiles')
+    .select('desired_connections')
+    .eq('id', user.id)
+    .maybeSingle()
+  const priorDesired = priorRow?.desired_connections ?? {}
+
+  // Phase C: desired_connections capture-only. Phase D: cap-on-add via
+  // validateSelectionWithCaps (5 categories / 15 titles), preserving any
+  // existing selection that already exceeds those caps.
   let desiredConnections: ReturnType<typeof validateSelection> = {}
   const desiredConnectionsRaw = formData.get('desired_connections') as string
   if (desiredConnectionsRaw) {
-    try { desiredConnections = validateSelection(JSON.parse(desiredConnectionsRaw)) }
-    catch { desiredConnections = {} }
+    try { desiredConnections = validateSelectionWithCaps(JSON.parse(desiredConnectionsRaw), priorDesired) }
+    catch { desiredConnections = validateSelectionWithCaps({}, priorDesired) }
   }
 
   console.log('[completeOnboarding] About to upsert profile data')
-
-  // Use admin client to bypass RLS
-  const adminClient = createAdminClient()
 
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
@@ -79,6 +86,7 @@ export async function updateProfile(formData: FormData) {
     email_verified_at: new Date().toISOString(),
     full_name: formData.get('full_name') as string || null,
     title: formData.get('title') as string || null,
+    exact_job_title: ((formData.get('exact_job_title') as string) || '').trim() || null,
     company: formData.get('company') as string || null,
     location: formData.get('location') as string || null,
     bio: formData.get('bio') as string || null,
@@ -188,18 +196,27 @@ export async function completeOnboarding(formData: FormData) {
   if (!seniority) return { error: 'Please select your seniority level' }
   if (expertise.length === 0) return { error: 'Please select at least one area of expertise' }
 
-  // Phase C: desired_connections capture-only (no scoring path reads this).
+  // Use admin client to bypass RLS
+  const adminClient = createAdminClient()
+
+  // Phase D: load prior desired_connections so validateSelectionWithCaps can
+  // never shrink an existing selection on save.
+  const { data: priorRow } = await adminClient
+    .from('profiles')
+    .select('desired_connections')
+    .eq('id', user.id)
+    .maybeSingle()
+  const priorDesired = priorRow?.desired_connections ?? {}
+
+  // Phase C: desired_connections capture-only. Phase D: cap-on-add at 5 cats / 15 titles.
   let desiredConnections: ReturnType<typeof validateSelection> = {}
   const desiredConnectionsRaw = formData.get('desired_connections') as string
   if (desiredConnectionsRaw) {
-    try { desiredConnections = validateSelection(JSON.parse(desiredConnectionsRaw)) }
-    catch { desiredConnections = {} }
+    try { desiredConnections = validateSelectionWithCaps(JSON.parse(desiredConnectionsRaw), priorDesired) }
+    catch { desiredConnections = validateSelectionWithCaps({}, priorDesired) }
   }
 
   console.log('[completeOnboarding] About to upsert profile data')
-
-  // Use admin client to bypass RLS
-  const adminClient = createAdminClient()
 
   // Asymmetric founding flag: only stamp profiles.is_founding_member=true when
   // the invite was sent with markAsFounding. If false/undefined we omit the
@@ -216,6 +233,7 @@ export async function completeOnboarding(formData: FormData) {
     email_verified_at: new Date().toISOString(),
     full_name: (formData.get('full_name') as string) || null,
     title: (formData.get('title') as string) || null,
+    exact_job_title: ((formData.get('exact_job_title') as string) || '').trim() || null,
     company: (formData.get('company') as string) || null,
     city: city || null,
     state: state || null,

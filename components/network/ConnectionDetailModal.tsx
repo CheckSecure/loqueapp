@@ -197,7 +197,7 @@ export default function ConnectionDetailModal({ matchId, profile, connectedAt, m
               {profile.avatar_url ? (<img src={profile.avatar_url} alt={profile.full_name} className="w-28 h-28 rounded-full object-cover shadow-sm" />) : (<div className={'w-28 h-28 rounded-full ' + avatarColor + ' flex items-center justify-center text-white text-3xl font-bold shadow-sm'}>{initials}</div>)}
             </EnlargeableAvatar>
             <h2 className="text-xl font-semibold text-slate-900">{profile.full_name || 'Connection'}</h2>
-            {(profile.title || profile.company) && (<div className="flex items-center gap-1 text-sm text-slate-600 mt-1.5"><Briefcase className="w-3.5 h-3.5 flex-shrink-0" /><span>{[profile.title, profile.company].filter(Boolean).join(' at ')}</span></div>)}
+            {(profile.exact_job_title || profile.title || profile.company) && (<div className="flex items-center gap-1 text-sm text-slate-600 mt-1.5"><Briefcase className="w-3.5 h-3.5 flex-shrink-0" /><span>{[profile.exact_job_title || profile.title, profile.company].filter(Boolean).join(' at ')}</span></div>)}
             {location && (<div className="flex items-center gap-1 text-sm text-slate-500 mt-1"><MapPin className="w-3.5 h-3.5 flex-shrink-0" /><span>{location}</span></div>)}
             {connectedDate && (meetingCount !== null && meetingCount > 0 ? (
               <button type="button" onClick={function(){ setIsExpanded(function(v){ return !v }) }} className="mt-3 inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors">

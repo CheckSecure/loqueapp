@@ -119,10 +119,10 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
                 <span className="px-1.5 py-0.5 bg-[#C4922A] text-white text-[10px] font-bold rounded uppercase">New</span>
               )}
             </div>
-            {!isDeactivated && (profile.title || profile.company) && (
+            {!isDeactivated && (profile.exact_job_title || profile.title || profile.company) && (
               <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
                 <Briefcase className="w-3 h-3 flex-shrink-0" />
-                <span className="truncate">{[profile.title, profile.company].filter(Boolean).join(' at ')}</span>
+                <span className="truncate">{[profile.exact_job_title || profile.title, profile.company].filter(Boolean).join(' at ')}</span>
               </div>
             )}
             {isDeactivated && <FormerMemberBadge />}

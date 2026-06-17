@@ -311,11 +311,11 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                       </dd>
                     </div>
                   )}
-                  {profile.role_type && (
+                  {(profile.exact_job_title || profile.role_type) && (
                     <div className="flex items-start justify-between gap-4">
-                      <dt className="text-xs text-slate-500 flex-shrink-0 pt-0.5">Role type</dt>
+                      <dt className="text-xs text-slate-500 flex-shrink-0 pt-0.5">Role</dt>
                       <dd className="text-sm font-medium text-slate-800 text-right">
-                        {roleTypeLabel[profile.role_type] ?? profile.role_type}
+                        {profile.exact_job_title || roleTypeLabel[profile.role_type] || profile.role_type}
                       </dd>
                     </div>
                   )}

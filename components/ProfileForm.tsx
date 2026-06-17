@@ -3,8 +3,10 @@
 import { useState } from 'react'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
-import { ROLE_CATEGORIES, type Category, isStructuredTitle, type CategoryTitleSelection } from '@/lib/role-taxonomy'
+import { type CategoryTitleSelection } from '@/lib/role-taxonomy'
 import ConnectionTargetPicker from '@/components/ConnectionTargetPicker'
+import SearchableTitleSelect from '@/components/SearchableTitleSelect'
+import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Linkedin, Twitter, Link as LinkIcon, Loader2, CheckCircle } from 'lucide-react'
 import { updateProfile } from '@/app/actions'
 import AvatarUpload from '@/components/AvatarUpload'
@@ -28,6 +30,7 @@ interface Profile {
   avatar_url?: string | null
   seniority?: string
   role_type?: string
+  exact_job_title?: string | null
   mentorship_role?: string
 }
 
@@ -43,6 +46,8 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
   const [purposes, setPurposes] = useState<string[]>(profile?.purposes || [])
   const [interests, setInterests] = useState<string[]>(profile?.interests || [])
   const [desiredConnections, setDesiredConnections] = useState<CategoryTitleSelection>(profile?.desired_connections || {})
+  const [roleType, setRoleType] = useState<string>(profile?.role_type || '')
+  const [exactJobTitle, setExactJobTitle] = useState<string | null>(profile?.exact_job_title ?? null)
   const initialExpertiseAll = parseExpertise(profile?.expertise)
   const [expertise, setExpertise] = useState<string[]>(initialExpertiseAll.filter(e => EXPERTISE_OPTIONS.includes(e)))
   const [additionalExpertise, setAdditionalExpertise] = useState<string[]>(initialExpertiseAll.filter(e => !EXPERTISE_OPTIONS.includes(e)))
@@ -63,6 +68,9 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
     formData.set('purposes', purposes.join(','))
     formData.set('interests', interests.join(','))
     formData.set('expertise', [...expertise, ...additionalExpertise].join(','))
+    formData.set('role_type', roleType)
+    // Always send exact_job_title (empty string = clear). Server treats "" as null.
+    formData.set('exact_job_title', exactJobTitle ?? '')
     formData.set('desired_connections', JSON.stringify(desiredConnections))
     const result = await updateProfile(formData)
     setLoading(false)
@@ -167,7 +175,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6 space-y-4">
         <h3 className="text-sm font-semibold text-slate-900">Professional details</h3>
         <p className="text-xs text-slate-400 -mt-1">Used to match you with relevant introductions.</p>
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Seniority</label>
             <input
@@ -177,30 +185,6 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
               placeholder="Executive"
               className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
             />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Role type</label>
-            <select
-              name="role_type"
-              defaultValue={profile?.role_type || ''}
-              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition bg-white"
-            >
-              <option value="">Select role type</option>
-              {/* Legacy-value safety: if stored value isn't in the structured
-                  set (and isn't 'Other'), pin it as a "Current:" option so
-                  the user never loses it. New users see only the clean set. */}
-              {profile?.role_type && !isStructuredTitle(profile.role_type) && (
-                <option value={profile.role_type}>Current: {profile.role_type}</option>
-              )}
-              {(Object.keys(ROLE_CATEGORIES) as Category[]).map((category) => (
-                <optgroup key={category} label={category}>
-                  {(ROLE_CATEGORIES[category] as readonly string[]).map((title) => (
-                    <option key={title} value={title}>{title}</option>
-                  ))}
-                </optgroup>
-              ))}
-              <option value="Other">Other</option>
-            </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Mentorship role</label>
@@ -213,48 +197,29 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
             />
           </div>
         </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Role title</label>
+          <SearchableTitleSelect
+            roleType={roleType}
+            exactJobTitle={exactJobTitle}
+            onChange={({ role_type, exact_job_title }) => {
+              setRoleType(role_type)
+              setExactJobTitle(exact_job_title)
+            }}
+          />
+        </div>
       </div>
 
       {/* Expertise */}
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6">
         <h3 className="text-sm font-semibold text-slate-900 mb-1">Expertise</h3>
-        <p className="text-xs text-slate-400 mb-3">Select your areas of expertise.</p>
-        <div className="flex flex-wrap gap-2">
-          {EXPERTISE_OPTIONS.map(item => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => toggleExpertise(item)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                expertise.includes(item)
-                  ? 'bg-[#1B2850] text-white border-[#1B2850]'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/30'
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-        {additionalExpertise.length > 0 && (
-          <div className="mt-4">
-            <p className="text-xs font-semibold text-slate-700 mb-1.5">Additional expertise <span className="text-slate-400 font-normal">(legacy values you've previously saved)</span></p>
-            <div className="flex flex-wrap gap-2">
-              {additionalExpertise.map(item => (
-                <span key={item} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border bg-slate-50 text-slate-600 border-slate-200">
-                  {item}
-                  <button
-                    type="button"
-                    onClick={() => setAdditionalExpertise(prev => prev.filter(x => x !== item))}
-                    className="text-slate-400 hover:text-slate-700 transition-colors"
-                    aria-label={`Remove ${item}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+        <p className="text-xs text-slate-400 mb-3">Type to search; select multiple areas of expertise.</p>
+        <SearchableExpertiseSelect
+          selected={expertise}
+          additional={additionalExpertise}
+          onChange={setExpertise}
+          onRemoveAdditional={(tag) => setAdditionalExpertise(prev => prev.filter(x => x !== tag))}
+        />
       </div>
 
       {/* Links */}

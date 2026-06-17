@@ -12,6 +12,7 @@
  * not selectable for new entries).
  */
 export const EXPERTISE_OPTIONS: string[] = [
+  // ─── Original 33 (preserved verbatim, exact order) ───
   'Legal',
   'Privacy',
   'Data Protection',
@@ -45,4 +46,43 @@ export const EXPERTISE_OPTIONS: string[] = [
   'Energy',
   'Tax',
   'Insurance',
+  // ─── Phase D additions (all genuinely new — no existing equivalent concept) ───
+  // Finance
+  'FP&A',
+  'Treasury',
+  'Capital Markets',
+  'Accounting',
+  'Corporate Development',
+  // Sales / Revenue / GTM
+  'Enterprise Sales',
+  'Revenue Operations',
+  'Customer Success',
+  'GTM Strategy',
+  'Demand Generation',
+  // Marketing
+  'Brand',
+  'Communications',
+  'Product Marketing',
+  // Technology
+  'Cloud',
+  'Data',
+  'Engineering',
+  // Operations
+  'Digital Transformation',
+  'Supply Chain',
+  'Process Improvement',
+  // Government Affairs / Policy
+  'Public Affairs',
+  'Lobbying',
+  // HR / People
+  'Compensation',
+  'Benefits',
+  'Recruiting',
+  'Talent',
+  'People Operations',
+  'Leadership Development',
+  // Healthcare
+  'Life Sciences',
+  'Pharma',
+  'Medical Devices',
 ]

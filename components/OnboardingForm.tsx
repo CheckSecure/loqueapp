@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
-import { RoleCategoryPicker } from '@/components/RoleCategoryPicker'
+import SearchableTitleSelect from '@/components/SearchableTitleSelect'
+import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import ConnectionTargetPicker from '@/components/ConnectionTargetPicker'
 import type { CategoryTitleSelection } from '@/lib/role-taxonomy'
 import { useRouter } from 'next/navigation'
@@ -68,7 +68,15 @@ export default function OnboardingForm() {
   const [city, setCity] = useState('')
   const [state, setState] = useState('')
   const [roleType, setRoleType] = useState('')
+  const [exactJobTitle, setExactJobTitle] = useState<string | null>(null)
   const [seniority, setSeniority] = useState('')
+  // Fresh-onboarding only — this form does not receive a profile prop, so
+  // existing expertise (legacy or canonical) is never loaded. The other three
+  // forms (OnboardingStep1, ProfileForm, ProfileEditForm) split state into
+  // canonical + additional via parseExpertise; here all selections start empty
+  // and the user picks fresh. completeOnboarding's upsert sets profiles.expertise
+  // to whatever is selected — no legacy tags to preserve because none can exist
+  // in component state at submit time.
   const [expertise, setExpertise] = useState<string[]>([])
   const [bio, setBio] = useState('')
 
@@ -153,6 +161,7 @@ export default function OnboardingForm() {
     fd.append('city', city.trim())
     fd.append('state', state.trim())
     fd.append('role_type', roleType)
+    fd.append('exact_job_title', exactJobTitle ?? '')
     fd.append('seniority', seniority)
     fd.append('expertise', expertise.join(','))
     fd.append('bio', bio.trim())
@@ -266,8 +275,15 @@ export default function OnboardingForm() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-2">Role type</label>
-              <RoleCategoryPicker value={roleType} onChange={setRoleType} />
+              <label className="block text-sm font-semibold text-slate-800 mb-2">Role title</label>
+              <SearchableTitleSelect
+                roleType={roleType}
+                exactJobTitle={exactJobTitle}
+                onChange={({ role_type, exact_job_title }) => {
+                  setRoleType(role_type)
+                  setExactJobTitle(exact_job_title)
+                }}
+              />
             </div>
 
             <div>
@@ -280,12 +296,8 @@ export default function OnboardingForm() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-2">Areas of expertise <span className="text-slate-400 font-normal text-xs ml-1">select all that apply</span></label>
-              <div className="flex flex-wrap gap-2">
-                {EXPERTISE_OPTIONS.map(area => (
-                  <button key={area} type="button" onClick={() => toggleItem(expertise, setExpertise, area)} className={cn('px-3.5 py-2 rounded-lg text-sm font-medium border transition-all', expertise.includes(area) ? 'bg-[#1B2850] text-white border-[#1B2850]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/40 hover:text-[#1B2850]')}>{area}</button>
-                ))}
-              </div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">Areas of expertise <span className="text-slate-400 font-normal text-xs ml-1">type to search; select multiple</span></label>
+              <SearchableExpertiseSelect selected={expertise} onChange={setExpertise} />
             </div>
 
             <div>

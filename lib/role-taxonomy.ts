@@ -255,6 +255,82 @@ export function validateSelection(sel: unknown): CategoryTitleSelection {
   return out
 }
 
+interface SelectionCaps {
+  maxCategories: number
+  maxTitles: number
+}
+
+const DEFAULT_CAPS: SelectionCaps = { maxCategories: 5, maxTitles: 15 }
+
+function countTitles(sel: CategoryTitleSelection): number {
+  let n = 0
+  for (const arr of Object.values(sel)) if (Array.isArray(arr)) n += arr.length
+  return n
+}
+
+/**
+ * Cap-on-add wrapper around validateSelection.
+ *
+ *   - Strips unknown taxonomy via validateSelection (same as before)
+ *   - Caps NET-NEW additions: never shrinks below what's already stored
+ *
+ * Semantics:
+ *   - effective category cap = max(prior categories, caps.maxCategories)
+ *   - effective title cap     = max(prior titles, caps.maxTitles)
+ *   - When next > effective cap: trim, preserving prior entries first.
+ *
+ * Called at every desired_connections / target_connections write site. The
+ * picker also enforces caps client-side; this is server-side defense-in-depth.
+ */
+export function validateSelectionWithCaps(
+  sel: unknown,
+  prior: unknown,
+  caps: SelectionCaps = DEFAULT_CAPS
+): CategoryTitleSelection {
+  const next = validateSelection(sel)
+  const cleanPrior = validateSelection(prior)
+
+  // Cap categories
+  const nextCats = Object.keys(next)
+  const priorCats = Object.keys(cleanPrior)
+  const effectiveCatCap = Math.max(priorCats.length, caps.maxCategories)
+  if (nextCats.length > effectiveCatCap) {
+    const priorSet = new Set(priorCats)
+    // Keep prior cats first, then net-new cats in original order, trim to cap.
+    const ordered = [
+      ...nextCats.filter((c) => priorSet.has(c)),
+      ...nextCats.filter((c) => !priorSet.has(c)),
+    ]
+    const keptCats = new Set(ordered.slice(0, effectiveCatCap))
+    for (const c of Object.keys(next)) {
+      if (!keptCats.has(c)) delete next[c]
+    }
+  }
+
+  // Cap total titles
+  const priorTitleCount = countTitles(cleanPrior)
+  const effectiveTitleCap = Math.max(priorTitleCount, caps.maxTitles)
+  let current = countTitles(next)
+  if (current > effectiveTitleCap) {
+    // Trim titles per category, preserving prior titles first.
+    for (const cat of Object.keys(next)) {
+      if (current <= effectiveTitleCap) break
+      const priorTitlesInCat = new Set((cleanPrior[cat] as string[] | undefined) ?? [])
+      const arr = next[cat]
+      const priorKept = arr.filter((t) => priorTitlesInCat.has(t))
+      const newAdds = arr.filter((t) => !priorTitlesInCat.has(t))
+      // Room left in the cap after counting all other cats:
+      const otherCount = current - arr.length
+      const room = Math.max(0, effectiveTitleCap - otherCount - priorKept.length)
+      const newKept = newAdds.slice(0, room)
+      next[cat] = [...priorKept, ...newKept]
+      current = countTitles(next)
+    }
+  }
+
+  return next
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // A-1 baseline (preserved verbatim — no renames, no removals).
 //

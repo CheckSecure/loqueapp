@@ -58,7 +58,7 @@ export interface MeetingDetail {
   proposed_location?: string | null
   proposed_zoom_link?: string | null
   proposed_notes?: string | null
-  other?: { id: string; full_name: string; title?: string; company?: string; avatar_url?: string | null } | null
+  other?: { id: string; full_name: string; title?: string; exact_job_title?: string | null; company?: string; avatar_url?: string | null } | null
   isOrganizer: boolean
   isPast: boolean
   isNew?: boolean
@@ -251,9 +251,9 @@ export default function MeetingDetailModal({
                   <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-[#1B2850] transition-colors">
                     {meeting.other.full_name}
                   </p>
-                  {(meeting.other.title || meeting.other.company) && (
+                  {(meeting.other.exact_job_title || meeting.other.title || meeting.other.company) && (
                     <p className="text-xs text-slate-500 truncate mt-0.5">
-                      {[meeting.other.title, meeting.other.company].filter(Boolean).join(' · ')}
+                      {[meeting.other.exact_job_title || meeting.other.title, meeting.other.company].filter(Boolean).join(' · ')}
                     </p>
                   )}
                   <p className="text-xs text-[#C4922A] font-medium mt-1.5">View profile →</p>

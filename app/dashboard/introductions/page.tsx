@@ -116,7 +116,7 @@ export default async function IntroductionsPage() {
       .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`),
     supabase
       .from('intro_requests')
-      .select('id, target_user_id, created_at, match_reason, target:profiles!target_user_id(id, full_name, title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes)')
+      .select('id, target_user_id, created_at, match_reason, target:profiles!target_user_id(id, full_name, title, exact_job_title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes)')
       .eq('requester_id', profileId)
       .eq('status', 'suggested')
       .order('created_at', { ascending: false }),
@@ -347,7 +347,7 @@ export default async function IntroductionsPage() {
           {s.bio && <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">{s.bio}</p>}
           <div className="flex flex-wrap gap-1.5">
             {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
-            {s.role_type && <Tag color="violet">{s.role_type}</Tag>}
+            {(s.exact_job_title || s.role_type) && <Tag color="violet">{s.exact_job_title || s.role_type}</Tag>}
             {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
           </div>
           {interests.length > 0 && (

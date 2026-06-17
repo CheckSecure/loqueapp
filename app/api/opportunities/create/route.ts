@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { checkCreatorEligibility } from '@/lib/opportunities/eligibility';
 import { deliverOpportunity } from '@/lib/opportunities/matching';
 import { computeExpiryDays, type OpportunityType, type Urgency } from '@/lib/opportunities/caps';
-import { validateSelection, type CategoryTitleSelection } from '@/lib/role-taxonomy';
+import { validateSelectionWithCaps, type CategoryTitleSelection } from '@/lib/role-taxonomy';
 
 function stripContactInfo(text: string | null | undefined): string | null {
   if (!text) return null;
@@ -194,12 +194,14 @@ export async function POST(request: Request) {
   ).toISOString();
 
   // Phase C: sanitize target_connections through the taxonomy validator before
-  // storing — drops unknown categories/titles. Other criteria fields (role_types,
-  // expertise, seniority, need) are untouched here so existing matcher reads
-  // continue to work byte-identically.
+  // storing — drops unknown categories/titles. Phase D: cap-on-add at 5 cats /
+  // 15 titles (opportunities are create-only — no prior to preserve, so cap
+  // strictly applies). Other criteria fields (role_types, expertise,
+  // seniority, need) are untouched so existing matcher reads continue
+  // byte-identically.
   const sanitizedCriteria = {
     ...payload.criteria,
-    target_connections: validateSelection(payload.criteria.target_connections),
+    target_connections: validateSelectionWithCaps(payload.criteria.target_connections, {}),
   };
 
   const { data: opportunity, error: insertErr } = await admin

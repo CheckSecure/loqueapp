@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
-import { ROLE_CATEGORIES, type Category, isStructuredTitle } from '@/lib/role-taxonomy'
+import SearchableTitleSelect from '@/components/SearchableTitleSelect'
+import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Loader2, CheckCircle, User, ChevronDown, ChevronUp } from 'lucide-react'
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite']
@@ -23,6 +24,7 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
   const [state, setState] = useState(initialData.state || '')
   const [seniority, setSeniority] = useState(initialData.seniority || '')
   const [roleType, setRoleType] = useState(initialData.role_type || '')
+  const [exactJobTitle, setExactJobTitle] = useState<string | null>(initialData.exact_job_title ?? null)
   const [currentStatus, setCurrentStatus] = useState(initialData.current_status || '')
   const [previousRoles, setPreviousRoles] = useState<{ company: string; title: string; start_date: string; end_date: string }[]>(
     Array.isArray(initialData.previous_roles) ? initialData.previous_roles : []
@@ -57,6 +59,9 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     formData.append('state', state)
     formData.append('seniority', seniority)
     formData.append('role_type', roleType)
+    // Always send exact_job_title (empty string = clear). Server treats "" as null
+    // so the user can remove a previously-saved exact title.
+    formData.append('exact_job_title', exactJobTitle ?? '')
     formData.append('current_status', currentStatus)
     formData.append('previous_roles', JSON.stringify(previousRoles))
     formData.append('expertise', [...expertise, ...additionalExpertise].join(','))
@@ -205,27 +210,15 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
           </div>
 
           <div className="col-span-2">
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Role Type</label>
-            <select
-              value={roleType}
-              onChange={e => setRoleType(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
-            >
-              <option value="">Select role type</option>
-              {/* Legacy-value safety: pin non-structured stored values as a
-                  "Current:" option so the user never loses them. */}
-              {initialData.role_type && !isStructuredTitle(initialData.role_type) && (
-                <option value={initialData.role_type}>Current: {initialData.role_type}</option>
-              )}
-              {(Object.keys(ROLE_CATEGORIES) as Category[]).map((category) => (
-                <optgroup key={category} label={category}>
-                  {(ROLE_CATEGORIES[category] as readonly string[]).map((title) => (
-                    <option key={title} value={title}>{title}</option>
-                  ))}
-                </optgroup>
-              ))}
-              <option value="Other">Other</option>
-            </select>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Role title</label>
+            <SearchableTitleSelect
+              roleType={roleType}
+              exactJobTitle={exactJobTitle}
+              onChange={({ role_type, exact_job_title }) => {
+                setRoleType(role_type)
+                setExactJobTitle(exact_job_title)
+              }}
+            />
           </div>
 
           <div className="col-span-2">
@@ -249,45 +242,14 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
           )}
 
           <div className="col-span-2">
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Expertise (select all that apply)</label>
-            <div className="flex flex-wrap gap-2">
-              {EXPERTISE_OPTIONS.map(e => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => toggleExpertise(e)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                    expertise.includes(e)
-                      ? 'bg-[#1B2850] text-white border-[#1B2850]'
-                      : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/30'
-                  }`}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Expertise <span className="text-slate-400 font-normal">(type to search; select multiple)</span></label>
+            <SearchableExpertiseSelect
+              selected={expertise}
+              additional={additionalExpertise}
+              onChange={setExpertise}
+              onRemoveAdditional={(tag) => setAdditionalExpertise(prev => prev.filter(x => x !== tag))}
+            />
           </div>
-
-          {additionalExpertise.length > 0 && (
-            <div className="col-span-2">
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Additional expertise <span className="text-slate-400 font-normal">(legacy values you've previously saved)</span></label>
-              <div className="flex flex-wrap gap-2">
-                {additionalExpertise.map(item => (
-                  <span key={item} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border bg-slate-50 text-slate-600 border-slate-200">
-                    {item}
-                    <button
-                      type="button"
-                      onClick={() => setAdditionalExpertise(prev => prev.filter(x => x !== item))}
-                      className="text-slate-400 hover:text-slate-700 transition-colors"
-                      aria-label={`Remove ${item}`}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="col-span-2">
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Current Goals (select all that apply)</label>

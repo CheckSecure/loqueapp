@@ -47,6 +47,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Phase D: exact_job_title is display-only (never read by matching/scoring).
+    // Present-only update — partial updates that don't submit the field leave
+    // the existing value alone. Empty/whitespace value clears it to NULL.
+    let exactJobTitleToWrite: string | null | undefined
+    if (formData.has('exact_job_title')) {
+      const trimmed = ((formData.get('exact_job_title') as string) || '').trim()
+      exactJobTitleToWrite = trimmed.length > 0 ? trimmed : null
+    }
+
     const currentStatusRaw = (formData.get('current_status') as string || '').trim()
     const currentStatus = currentStatusRaw || null
 
@@ -85,6 +94,7 @@ export async function POST(req: NextRequest) {
         ...(roleTypeToWrite !== undefined && { role_type: roleTypeToWrite }),
         ...(seniorityToWrite !== undefined && { seniority: seniorityToWrite }),
         ...(expertiseToWrite !== undefined && { expertise: expertiseToWrite }),
+        ...(exactJobTitleToWrite !== undefined && { exact_job_title: exactJobTitleToWrite }),
         intro_preferences: introPref,
         purposes: purposes,
         meeting_format_preference: formData.get('meeting_format_preference'),
