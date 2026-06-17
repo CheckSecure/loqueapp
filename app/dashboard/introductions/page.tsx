@@ -499,8 +499,11 @@ export default async function IntroductionsPage() {
   const oppCount = (oppCandidateRows ?? []).length
 
   return (
-    <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="relative min-h-screen bg-gradient-to-b from-brand-cream/40 via-white to-white p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
+      {/* Soft ambient gold/cream accents */}
+      <div className="absolute top-0 right-0 w-[36rem] h-[36rem] bg-brand-gold/[0.04] rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+      <div className="absolute top-40 left-0 w-[28rem] h-[28rem] bg-brand-cream/30 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+      <div className="relative max-w-6xl mx-auto">
 
         {/* HERO */}
         <div className="mb-10 relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-cream via-white to-white border border-brand-navy/10 px-6 py-10 sm:px-12 sm:py-14 shadow-sm">
@@ -771,25 +774,9 @@ export default async function IntroductionsPage() {
               )}
             </section>
 
-            {/* CREDITS PANEL — surfaces the real balance from meeting_credits */}
-            <section className="relative overflow-hidden bg-brand-navy text-white rounded-2xl p-6 shadow-md">
-              <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-brand-gold to-transparent" />
-              <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold">Credits</p>
-              <p className="text-xs text-white/60 mt-1">Used by meetings and targeted requests.</p>
-              <div className="mt-5 flex items-baseline justify-between gap-3">
-                <div>
-                  <p className="text-3xl font-bold text-white leading-none tracking-tight">{balance}</p>
-                  <p className="text-[11px] text-white/60 mt-2 uppercase tracking-wider">Total balance</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xl font-bold text-brand-gold leading-none">{premiumCredits}</p>
-                  <p className="text-[11px] text-white/60 mt-2 uppercase tracking-wider">Premium</p>
-                </div>
-              </div>
-              <Link href="/dashboard/billing" className="block text-center text-xs font-semibold text-brand-gold hover:text-white mt-5 pt-4 border-t border-white/10 transition-colors">
-                Manage credits &rarr;
-              </Link>
-            </section>
+            {/* Credits are now rendered exclusively in the shared sidebar membership card; the
+                meeting_credits.balance value lives in `const balance` above via the same query, but
+                is no longer rendered here to avoid duplicate display. */}
 
           </aside>
 
