@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Briefcase, MapPin, Inbox, Star, Sparkles, ChevronDown, ArrowRight, Send, Zap, Users } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
+import FeaturedIntroductionAvatar from '@/components/FeaturedIntroductionAvatar'
 import AdminIntroCard from '@/components/AdminIntroCard'
 import WithdrawInterestButton from '@/components/WithdrawInterestButton'
 import IntroductionCard from '@/components/IntroductionCard'
@@ -359,69 +360,71 @@ export default async function IntroductionsPage() {
     return <p className="text-xs text-slate-600 leading-relaxed">Curated based on your profile and preferences.</p>
   }
 
-  // Featured card — horizontal layout: avatar L / details C / reasons R / actions below.
-  // Reference uses 4 bullets in the reasons panel; real data often = 1 prose sentence.
-  // The reasons panel is set to a stable min/max width so it reads as intentional
-  // whether renderReasonBlock yields 1 sentence or 4 bullets. Stacks on mobile.
+  // Featured card — composition: avatar L / details (name → bio → actions) C / reasons R.
+  // Actions live INSIDE the details column to read as a self-contained dossier.
+  // Tag clutter (seniority/mentorship/interests) intentionally suppressed here for the
+  // premium dossier silhouette; the data still surfaces on the profile page.
   const renderFeatured = (row: any) => {
     const s = row.profile
     const headline = displayTitle(s)
-    const interests = Array.isArray(s.interests)
-      ? s.interests
-      : typeof s.interests === 'string' && s.interests
-        ? s.interests.split(',').map((i: string) => i.trim()).filter(Boolean)
-        : []
     return (
       <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
         <div className="relative bg-white rounded-2xl border-l-[3px] border-brand-gold shadow-[0_12px_40px_rgba(15,28,58,0.08)] hover:shadow-[0_20px_60px_rgba(15,28,58,0.12)] transition-all overflow-hidden">
-          <div className="px-6 pt-6 pb-6 sm:px-9 sm:pt-8 sm:pb-7">
+          <div className="px-6 pt-6 pb-7 sm:px-10 sm:pt-9 sm:pb-9">
             {/* Eyebrow — inside the card, signs the curator */}
-            <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-6">Curated by Andrel Concierge</p>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-7">Curated by Andrel Concierge</p>
 
             {/* Main row: avatar / details / reasons. Stacks below md. */}
-            <div className="flex flex-col md:flex-row md:items-start gap-7 md:gap-8">
-              {/* Avatar column — fixed natural width */}
-              <div className="flex-shrink-0 relative">
-                <div className="absolute -inset-1 rounded-full ring-2 ring-brand-gold/20 pointer-events-none" aria-hidden="true" />
-                <div className="relative">
-                  <Avatar profile={s} size="lg" />
-                </div>
+            <div className="flex flex-col md:flex-row md:items-start gap-7 md:gap-10">
+              {/* Avatar column — large dossier portrait. Scales past UIAvatar's xl (96px)
+                  ceiling via a contained client component that preserves enlargeable /
+                  ProfilePhotoLightbox behavior (same as the prior <UIAvatar enlargeable>
+                  wrapper). UIAvatar itself is untouched — other surfaces unaffected. */}
+              <div className="flex-shrink-0">
+                <FeaturedIntroductionAvatar
+                  id={s.id}
+                  name={s.full_name}
+                  src={s.avatar_url}
+                />
               </div>
 
-              {/* Details column — executive-dossier density */}
+              {/* Details column — name plate → context → bio → integrated decision panel */}
               <div className="flex-1 min-w-0">
-                <p className="text-3xl sm:text-[2.25rem] font-bold text-brand-navy leading-[1.05] tracking-tight">{s.full_name || 'New member'}</p>
+                <p className="text-[2.25rem] sm:text-[2.75rem] font-bold text-brand-navy leading-[1.02] tracking-[-0.02em]">{s.full_name || 'New member'}</p>
                 {(headline || s.company) && (
-                  <div className="mt-3 flex items-baseline gap-2.5 text-base sm:text-[17px] text-slate-700 font-medium">
+                  <div className="mt-3.5 flex items-baseline gap-2.5 text-[17px] sm:text-[18px] text-slate-700 font-medium">
                     {headline && <span className="truncate">{headline}</span>}
                     {headline && s.company && <span className="text-brand-gold/50 flex-shrink-0">|</span>}
                     {s.company && <span className="truncate text-slate-600">{s.company}</span>}
                   </div>
                 )}
                 {s.location && (
-                  <div className="flex items-center gap-1.5 text-sm text-slate-500 mt-2">
+                  <div className="flex items-center gap-1.5 text-sm text-slate-500 mt-2.5">
                     <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-brand-gold/60" />
                     <span className="truncate">{s.location}</span>
                   </div>
                 )}
 
                 {s.bio && (
-                  <>
-                    <div className="mt-5 border-t border-slate-100" />
-                    <p className="mt-4 text-[15px] text-slate-700 leading-relaxed line-clamp-3">{s.bio}</p>
-                  </>
+                  <p className="mt-6 text-[15px] text-slate-700 leading-relaxed line-clamp-3 max-w-prose">{s.bio}</p>
                 )}
 
-                <div className="mt-5 flex flex-wrap gap-1.5">
-                  {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
-                  {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
+                {/* Decision panel — inside the dossier. Same buttons, same handlers. */}
+                <div className="mt-7 max-w-md">
+                  {row.alreadyRequested ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
+                        <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                        </svg>
+                        <span className="text-xs font-medium text-emerald-700">Interest expressed</span>
+                      </div>
+                      <WithdrawInterestButton targetId={s.id} />
+                    </div>
+                  ) : (
+                    <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} />
+                  )}
                 </div>
-
-                {interests.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {interests.slice(0, 5).map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
-                  </div>
-                )}
               </div>
 
               {/* Reasons column — CSS-adaptive width. The panel collapses toward its content
@@ -443,23 +446,6 @@ export default async function IntroductionsPage() {
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Actions row — below the main 3-col, anchored bottom-left */}
-            <div className="mt-7 pt-5 border-t border-slate-100">
-              {row.alreadyRequested ? (
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
-                    <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-xs font-medium text-emerald-700">Interest expressed</span>
-                  </div>
-                  <WithdrawInterestButton targetId={s.id} />
-                </div>
-              ) : (
-                <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} />
-              )}
             </div>
           </div>
         </div>
