@@ -370,30 +370,33 @@ export default async function IntroductionsPage() {
         : []
     return (
       <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
-        <div className="relative bg-white border border-slate-100 rounded-2xl pl-10 pr-9 py-9 sm:pl-14 sm:pr-12 sm:py-12 shadow-[0_8px_30px_rgba(15,28,58,0.08)] hover:shadow-[0_12px_40px_rgba(15,28,58,0.12)] transition-all overflow-hidden">
-          {/* Gold left-edge accent — thicker, more prominent */}
-          <div className="absolute left-0 top-10 bottom-10 w-1 bg-gradient-to-b from-brand-gold via-brand-gold/70 to-brand-gold/30 rounded-r-full pointer-events-none" />
+        <div className="relative bg-white border border-slate-100 rounded-3xl pl-12 pr-10 py-12 sm:pl-20 sm:pr-16 sm:py-16 shadow-[0_20px_60px_rgba(15,28,58,0.12)] hover:shadow-[0_28px_80px_rgba(15,28,58,0.16)] transition-all overflow-hidden">
+          {/* Thicker gold left-edge accent — anchors the card */}
+          <div className="absolute left-0 top-12 bottom-12 w-[5px] bg-gradient-to-b from-brand-gold via-brand-gold/80 to-brand-gold/30 rounded-r-full pointer-events-none" />
           {/* Soft cream radial accent in the top-right for depth */}
-          <div className="absolute -top-16 -right-16 w-48 h-48 bg-brand-cream/40 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+          <div className="absolute -top-20 -right-20 w-64 h-64 bg-brand-cream/50 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+          {/* Subtle gold glow in bottom-left */}
+          <div className="absolute -bottom-24 -left-12 w-48 h-48 bg-brand-gold/[0.06] rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
 
-          <div className="relative flex items-start gap-6 sm:gap-7">
+          <div className="relative flex items-start gap-7 sm:gap-9">
             <div className="flex-shrink-0 relative">
-              {/* Decorative gold halo behind the avatar */}
-              <div className="absolute -inset-1.5 rounded-full bg-gradient-to-br from-brand-gold/20 via-brand-gold/5 to-transparent blur-sm pointer-events-none" aria-hidden="true" />
+              {/* Larger decorative gold halo behind the avatar */}
+              <div className="absolute -inset-3 rounded-full bg-gradient-to-br from-brand-gold/30 via-brand-gold/10 to-transparent blur-md pointer-events-none" aria-hidden="true" />
+              <div className="absolute -inset-1 rounded-full ring-2 ring-brand-gold/20 pointer-events-none" aria-hidden="true" />
               <div className="relative">
                 <Avatar profile={s} size="lg" />
               </div>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-2xl sm:text-3xl font-bold text-brand-navy truncate leading-[1.1] tracking-tight">{s.full_name || 'New member'}</p>
+              <p className="text-3xl sm:text-4xl lg:text-[2.5rem] font-bold text-brand-navy leading-[1.05] tracking-tight">{s.full_name || 'New member'}</p>
               {(headline || s.company) && (
-                <div className="flex items-center gap-2 text-base text-slate-700 mt-2.5 font-medium">
+                <div className="flex items-center gap-2 text-base sm:text-lg text-slate-700 mt-3 font-medium">
                   <Briefcase className="w-4 h-4 flex-shrink-0 text-brand-gold/70" />
                   <span className="truncate">{[headline, s.company].filter(Boolean).join(' at ')}</span>
                 </div>
               )}
               {s.location && (
-                <div className="flex items-center gap-2 text-sm text-slate-400 mt-1.5">
+                <div className="flex items-center gap-2 text-sm text-slate-400 mt-2">
                   <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="truncate">{s.location}</span>
                 </div>
@@ -401,9 +404,9 @@ export default async function IntroductionsPage() {
             </div>
           </div>
 
-          {s.bio && <p className="relative mt-6 text-sm text-slate-600 leading-relaxed line-clamp-4">{s.bio}</p>}
+          {s.bio && <p className="relative mt-8 text-base text-slate-600 leading-relaxed line-clamp-4">{s.bio}</p>}
 
-          <div className="relative mt-6 flex flex-wrap gap-2">
+          <div className="relative mt-7 flex flex-wrap gap-2">
             {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
             {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
           </div>
@@ -414,19 +417,25 @@ export default async function IntroductionsPage() {
             </div>
           )}
 
-          <div className="relative mt-7 bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/30 rounded-xl px-6 py-5 shadow-[0_1px_2px_rgba(196,146,42,0.08)]">
-            <div className="flex items-start gap-3">
+          {/* Why this introduction — promoted to a major callout. The REAL reasons (match_reason or
+              computeMatchSignals via renderReasonBlock) are the trust treatment — no scores, no badges. */}
+          <div className="relative mt-9 bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/70 to-white border border-brand-gold/35 rounded-2xl px-7 py-6 sm:px-8 sm:py-7 shadow-[0_4px_16px_rgba(196,146,42,0.10)]">
+            <div className="flex items-start gap-4">
               <div className="flex-shrink-0 mt-0.5">
-                <Sparkles className="w-4 h-4 text-brand-gold" />
+                <div className="w-9 h-9 rounded-xl bg-brand-gold/15 border border-brand-gold/30 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-brand-gold" />
+                </div>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-2">Why this introduction</p>
-                {renderReasonBlock(row)}
+                <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-brand-gold mb-2">Why Andrel introduces you</p>
+                <div className="text-sm sm:text-[15px] text-slate-700 leading-relaxed">
+                  {renderReasonBlock(row)}
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="relative mt-7">
+          <div className="relative mt-8">
             {row.alreadyRequested ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
@@ -513,63 +522,51 @@ export default async function IntroductionsPage() {
       <div className="absolute top-40 left-0 w-[28rem] h-[28rem] bg-brand-cream/30 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
       <div className="relative max-w-6xl mx-auto">
 
-        {/* HERO */}
-        <div className="mb-10 relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-cream via-white to-white border border-brand-navy/10 px-6 py-10 sm:px-12 sm:py-14 shadow-sm">
-          {/* Decorative gold rule */}
-          <div className="absolute top-0 left-6 sm:left-12 w-40 h-px bg-gradient-to-r from-brand-gold via-brand-gold/40 to-transparent" />
-          {/* Network constellation — abstract nodes + thin connecting lines; no faces, no avatars */}
-          <svg className="absolute right-0 top-0 bottom-0 my-auto h-full w-[55%] max-w-md opacity-[0.18] pointer-events-none" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true">
-            {/* Connecting lines — drawn first so they sit behind the nodes */}
-            <g stroke="currentColor" strokeWidth="0.6" className="text-brand-gold">
-              <path d="M 70 60 L 200 120" />
-              <path d="M 200 120 L 320 70" />
-              <path d="M 200 120 L 330 170" />
-              <path d="M 200 120 L 80 200" />
-              <path d="M 200 120 L 180 230" />
-              <path d="M 80 200 L 180 230" />
-              <path d="M 180 230 L 280 220" />
-              <path d="M 280 220 L 330 170" />
-              <path d="M 320 70 L 330 170" />
-              <path d="M 70 60 L 80 200" />
-              <path d="M 280 220 L 200 120" />
-            </g>
-            {/* Nodes — varying sizes to suggest depth + relationship weight */}
-            <g fill="currentColor" className="text-brand-gold">
-              <circle cx="70" cy="60" r="3" />
-              <circle cx="320" cy="70" r="2.5" />
-              <circle cx="80" cy="200" r="2.5" />
-              <circle cx="280" cy="220" r="3" />
-              <circle cx="330" cy="170" r="2" />
-              <circle cx="180" cy="230" r="2" />
-              <circle cx="200" cy="120" r="5" />
+        {/* HERO — tightened so the featured card carries the visual weight */}
+        <div className="mb-6 relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-cream via-brand-cream/40 to-white border border-brand-navy/10 px-5 py-5 sm:px-7 sm:py-6 shadow-sm">
+          {/* Slim gold rule */}
+          <div className="absolute top-0 left-5 sm:left-7 w-28 h-px bg-gradient-to-r from-brand-gold via-brand-gold/40 to-transparent" />
+          {/* Relationship motif — 3 abstract person silhouettes (head + shoulders) + connection paths.
+              NO real faces, NO stock photos. Pure SVG geometry suggesting an introduction triad. */}
+          <svg className="absolute right-2 top-0 bottom-0 my-auto h-[110%] w-[42%] max-w-sm opacity-[0.13] pointer-events-none hidden sm:block" viewBox="0 0 400 180" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true">
+            <g className="text-brand-gold">
+              {/* Connection arcs — drawn behind silhouettes */}
+              <path d="M 80 60 Q 150 30 195 55" stroke="currentColor" strokeWidth="0.9" fill="none" opacity="0.6" />
+              <path d="M 230 55 Q 290 30 340 60" stroke="currentColor" strokeWidth="0.9" fill="none" opacity="0.6" />
+              <path d="M 80 90 Q 200 130 340 90" stroke="currentColor" strokeWidth="0.7" fill="none" opacity="0.45" />
+              {/* Person 1 (left) — head + shoulders */}
+              <circle cx="80" cy="38" r="14" fill="currentColor" opacity="0.28" />
+              <path d="M 56 92 Q 56 65 80 65 Q 104 65 104 92 L 104 120 L 56 120 Z" fill="currentColor" opacity="0.28" />
+              {/* Person 2 (center) — slightly larger to anchor the triad */}
+              <circle cx="210" cy="46" r="18" fill="currentColor" opacity="0.38" />
+              <path d="M 180 110 Q 180 78 210 78 Q 240 78 240 110 L 240 145 L 180 145 Z" fill="currentColor" opacity="0.38" />
+              {/* Person 3 (right) */}
+              <circle cx="340" cy="38" r="14" fill="currentColor" opacity="0.28" />
+              <path d="M 316 92 Q 316 65 340 65 Q 364 65 364 92 L 364 120 L 316 120 Z" fill="currentColor" opacity="0.28" />
             </g>
           </svg>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-brand-gold font-semibold mb-3">Curated for you, {firstName}</p>
-          <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-brand-navy tracking-tight leading-[1.05] max-w-2xl">Your next valuable relationship</h1>
-          <p className="text-slate-600 text-base sm:text-lg mt-4 max-w-xl leading-relaxed">High-signal introductions across the Andrel network. We facilitate when interest is mutual.</p>
+          <div className="relative max-w-2xl">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-semibold mb-1.5">Curated for you, {firstName}</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-brand-navy tracking-tight leading-[1.15]">Your next valuable relationship</h1>
+            <p className="text-slate-600 text-sm sm:text-[15px] mt-1.5 leading-snug">High-signal introductions across the Andrel network. We facilitate when interest is mutual.</p>
+          </div>
         </div>
 
         <FoundingMemberWelcomeBanner show={showFoundingWelcome} />
 
         {!isPaid && !isFoundingMember && (
-          <div className="mb-8 relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-cream via-brand-cream/70 to-white border border-brand-gold/30 px-5 py-4 sm:px-6 sm:py-5 shadow-sm">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-brand-gold/10 rounded-full blur-3xl -translate-y-12 translate-x-12 pointer-events-none" />
-            <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <Pill variant="gold" dot>Free</Pill>
-                <span className="text-sm text-brand-navy/80 truncate font-medium">Upgrade for priority matching and more introductions.</span>
-              </div>
-              <a href="/dashboard/billing" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-navy hover:text-brand-gold flex-shrink-0 transition-colors">Upgrade <ArrowRight className="w-3.5 h-3.5" /></a>
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-white/40 border border-brand-gold/15 px-4 py-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Pill variant="gold" dot>Free</Pill>
+              <span className="text-xs text-slate-500 truncate">Upgrade for priority matching and more introductions.</span>
             </div>
+            <a href="/dashboard/billing" className="inline-flex items-center gap-0.5 text-xs font-semibold text-brand-navy/70 hover:text-brand-gold flex-shrink-0 transition-colors">Upgrade <ArrowRight className="w-3 h-3" /></a>
           </div>
         )}
         {isPaid && (
-          <div className="mb-8 relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-cream via-brand-cream/70 to-white border border-brand-navy/15 px-5 py-4 sm:px-6 sm:py-5 shadow-sm">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-brand-navy/5 rounded-full blur-3xl -translate-y-12 translate-x-12 pointer-events-none" />
-            <div className="relative flex items-center gap-3">
-              <Pill variant="navy" dot><span className="capitalize">{userTier}</span></Pill>
-              <span className="text-sm text-brand-navy/80 font-medium">Priority matching active.</span>
-            </div>
+          <div className="mb-3 flex items-center gap-2 rounded-xl bg-white/40 border border-brand-navy/10 px-4 py-2">
+            <Pill variant="navy" dot><span className="capitalize">{userTier}</span></Pill>
+            <span className="text-xs text-slate-500">Priority matching active.</span>
           </div>
         )}
 
@@ -607,11 +604,10 @@ export default async function IntroductionsPage() {
             {/* FEATURED + ADDITIONAL */}
             {featuredSuggestion ? (
               <section>
-                <div className="flex items-end justify-between gap-4 mb-5">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Featured introduction</p>
-                    <h2 className="text-xl sm:text-2xl font-bold text-brand-navy tracking-tight">Your most recent curated introduction.</h2>
-                  </div>
+                {/* Tightened section eyebrow — minimal separator so the eye lands on the card */}
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="block w-6 h-px bg-brand-gold" aria-hidden="true" />
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-brand-gold font-bold">The person Andrel wants you to meet</p>
                 </div>
                 {renderFeatured(featuredSuggestion)}
 
@@ -692,33 +688,31 @@ export default async function IntroductionsPage() {
           {/* RIGHT RAIL */}
           <aside className="space-y-5 lg:sticky lg:top-8 lg:self-start">
 
-            {/* ANDREL CONCIERGE CARD */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-[#162449] via-brand-navy to-[#0A1530] text-white rounded-2xl p-6 shadow-[0_12px_40px_rgba(15,28,58,0.18)] ring-1 ring-brand-gold/10">
-              {/* Gold ambient glow */}
-              <div className="absolute -top-12 -right-12 w-44 h-44 bg-brand-gold/20 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
-              {/* Subtle bottom glow for added depth */}
-              <div className="absolute -bottom-16 -left-12 w-32 h-32 bg-brand-gold/10 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
-              <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-brand-gold/70 to-transparent" />
+            {/* ANDREL CONCIERGE CARD — secondary to featured; lighter visual weight */}
+            <section className="relative overflow-hidden bg-gradient-to-br from-[#162449] via-brand-navy to-[#0A1530] text-white rounded-2xl p-5 shadow-[0_8px_24px_rgba(15,28,58,0.12)] ring-1 ring-brand-gold/8">
+              {/* Subtler gold ambient glow */}
+              <div className="absolute -top-10 -right-10 w-32 h-32 bg-brand-gold/12 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+              <div className="absolute top-0 left-5 right-5 h-px bg-gradient-to-r from-transparent via-brand-gold/50 to-transparent" />
               <div className="relative">
-                <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-brand-gold text-brand-navy flex items-center justify-center flex-shrink-0 shadow-md">
-                    <Send className="w-5 h-5" />
+                <div className="flex items-start gap-2.5">
+                  <div className="w-9 h-9 rounded-lg bg-brand-gold text-brand-navy flex items-center justify-center flex-shrink-0">
+                    <Send className="w-4 h-4" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-1">Premium</p>
-                    <h3 className="text-base font-bold text-white tracking-tight">Andrel Concierge</h3>
-                    <p className="text-xs text-white/70 mt-1.5 leading-relaxed">Need a warm introduction to someone specific? Our team can help facilitate targeted introductions.</p>
+                    <p className="text-[9px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-0.5">Premium</p>
+                    <h3 className="text-sm font-bold text-white tracking-tight">Andrel Concierge</h3>
+                    <p className="text-[11px] text-white/65 mt-1 leading-relaxed">Need a warm introduction to someone specific? Our team can help facilitate targeted introductions.</p>
                   </div>
                 </div>
-                <div className="mt-5 text-xs text-white/70 border-t border-white/10 pt-3 flex items-center justify-between gap-3">
+                <div className="mt-4 text-[11px] text-white/65 border-t border-white/10 pt-2.5 flex items-center justify-between gap-3">
                   <span>
                     Premium credits: <span className="font-bold text-brand-gold">{premiumCredits}</span>
                   </span>
                   {hasPendingTargetedRequest && (
-                    <span className="text-brand-gold bg-brand-gold/15 border border-brand-gold/40 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider">pending</span>
+                    <span className="text-brand-gold bg-brand-gold/15 border border-brand-gold/40 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider">pending</span>
                   )}
                 </div>
-                <div className="mt-4">
+                <div className="mt-3">
                   <TargetedRequestModalLauncher
                     premiumCredits={premiumCredits}
                     hasPendingRequest={hasPendingTargetedRequest}
@@ -782,9 +776,9 @@ export default async function IntroductionsPage() {
                     <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-1.5">Concierge</p>
                     <p className="text-sm font-bold text-brand-navy tracking-tight">Opportunity Concierge</p>
                     <p className="text-xs text-slate-500 mt-2 max-w-xs mx-auto leading-relaxed">
-                      No hiring or business signals are targeting you yet. {canCreateOpportunity
-                        ? 'Signal a need to source the right people for what you\'re building.'
-                        : 'Upgrade to Professional to signal your own hiring or business needs.'}
+                      Tell us what you&rsquo;re looking for and we&rsquo;ll help surface opportunities through the Andrel network. {canCreateOpportunity
+                        ? 'You can also signal a need directly to source the right people.'
+                        : 'Upgrade to Professional to signal your own opportunities.'}
                     </p>
                     <div className="mt-5">
                       {canCreateOpportunity ? (
