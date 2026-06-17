@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Briefcase, MapPin, Inbox, Star, Sparkles, ChevronDown, ArrowRight, Send, Zap } from 'lucide-react'
+import { Briefcase, MapPin, Inbox, Star, Sparkles, ChevronDown, ArrowRight, Send, Zap, Users } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
 import AdminIntroCard from '@/components/AdminIntroCard'
 import WithdrawInterestButton from '@/components/WithdrawInterestButton'
@@ -359,7 +359,10 @@ export default async function IntroductionsPage() {
     return <p className="text-xs text-slate-600 leading-relaxed">Curated based on your profile and preferences.</p>
   }
 
-  // Featured card — larger, prominent
+  // Featured card — horizontal layout: avatar L / details C / reasons R / actions below.
+  // Reference uses 4 bullets in the reasons panel; real data often = 1 prose sentence.
+  // The reasons panel is set to a stable min/max width so it reads as intentional
+  // whether renderReasonBlock yields 1 sentence or 4 bullets. Stacks on mobile.
   const renderFeatured = (row: any) => {
     const s = row.profile
     const headline = displayTitle(s)
@@ -370,85 +373,94 @@ export default async function IntroductionsPage() {
         : []
     return (
       <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
-        <div className="relative bg-white border border-slate-100 rounded-3xl pl-12 pr-10 py-12 sm:pl-20 sm:pr-16 sm:py-16 shadow-[0_20px_60px_rgba(15,28,58,0.12)] hover:shadow-[0_28px_80px_rgba(15,28,58,0.16)] transition-all overflow-hidden">
-          {/* Thicker gold left-edge accent — anchors the card */}
-          <div className="absolute left-0 top-12 bottom-12 w-[5px] bg-gradient-to-b from-brand-gold via-brand-gold/80 to-brand-gold/30 rounded-r-full pointer-events-none" />
-          {/* Soft cream radial accent in the top-right for depth */}
-          <div className="absolute -top-20 -right-20 w-64 h-64 bg-brand-cream/50 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
-          {/* Subtle gold glow in bottom-left */}
-          <div className="absolute -bottom-24 -left-12 w-48 h-48 bg-brand-gold/[0.06] rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+        <div className="relative bg-white rounded-2xl border-l-[3px] border-brand-gold shadow-[0_12px_40px_rgba(15,28,58,0.08)] hover:shadow-[0_20px_60px_rgba(15,28,58,0.12)] transition-all overflow-hidden">
+          <div className="px-6 pt-6 pb-6 sm:px-9 sm:pt-8 sm:pb-7">
+            {/* Eyebrow — inside the card, signs the curator */}
+            <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-6">Curated by Andrel Concierge</p>
 
-          <div className="relative flex items-start gap-7 sm:gap-9">
-            <div className="flex-shrink-0 relative">
-              {/* Larger decorative gold halo behind the avatar */}
-              <div className="absolute -inset-3 rounded-full bg-gradient-to-br from-brand-gold/30 via-brand-gold/10 to-transparent blur-md pointer-events-none" aria-hidden="true" />
-              <div className="absolute -inset-1 rounded-full ring-2 ring-brand-gold/20 pointer-events-none" aria-hidden="true" />
-              <div className="relative">
-                <Avatar profile={s} size="lg" />
-              </div>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-3xl sm:text-4xl lg:text-[2.5rem] font-bold text-brand-navy leading-[1.05] tracking-tight">{s.full_name || 'New member'}</p>
-              {(headline || s.company) && (
-                <div className="flex items-center gap-2 text-base sm:text-lg text-slate-700 mt-3 font-medium">
-                  <Briefcase className="w-4 h-4 flex-shrink-0 text-brand-gold/70" />
-                  <span className="truncate">{[headline, s.company].filter(Boolean).join(' at ')}</span>
-                </div>
-              )}
-              {s.location && (
-                <div className="flex items-center gap-2 text-sm text-slate-400 mt-2">
-                  <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span className="truncate">{s.location}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {s.bio && <p className="relative mt-8 text-base text-slate-600 leading-relaxed line-clamp-4">{s.bio}</p>}
-
-          <div className="relative mt-7 flex flex-wrap gap-2">
-            {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
-            {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
-          </div>
-
-          {interests.length > 0 && (
-            <div className="relative mt-2 flex flex-wrap gap-1.5">
-              {interests.slice(0, 6).map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
-            </div>
-          )}
-
-          {/* Why this introduction — promoted to a major callout. The REAL reasons (match_reason or
-              computeMatchSignals via renderReasonBlock) are the trust treatment — no scores, no badges. */}
-          <div className="relative mt-9 bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/70 to-white border border-brand-gold/35 rounded-2xl px-7 py-6 sm:px-8 sm:py-7 shadow-[0_4px_16px_rgba(196,146,42,0.10)]">
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 mt-0.5">
-                <div className="w-9 h-9 rounded-xl bg-brand-gold/15 border border-brand-gold/30 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 text-brand-gold" />
+            {/* Main row: avatar / details / reasons. Stacks below md. */}
+            <div className="flex flex-col md:flex-row md:items-start gap-7 md:gap-8">
+              {/* Avatar column — fixed natural width */}
+              <div className="flex-shrink-0 relative">
+                <div className="absolute -inset-1 rounded-full ring-2 ring-brand-gold/20 pointer-events-none" aria-hidden="true" />
+                <div className="relative">
+                  <Avatar profile={s} size="lg" />
                 </div>
               </div>
+
+              {/* Details column — executive-dossier density */}
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] uppercase tracking-[0.16em] font-bold text-brand-gold mb-2">Why Andrel introduces you</p>
-                <div className="text-sm sm:text-[15px] text-slate-700 leading-relaxed">
-                  {renderReasonBlock(row)}
+                <p className="text-3xl sm:text-[2.25rem] font-bold text-brand-navy leading-[1.05] tracking-tight">{s.full_name || 'New member'}</p>
+                {(headline || s.company) && (
+                  <div className="mt-3 flex items-baseline gap-2.5 text-base sm:text-[17px] text-slate-700 font-medium">
+                    {headline && <span className="truncate">{headline}</span>}
+                    {headline && s.company && <span className="text-brand-gold/50 flex-shrink-0">|</span>}
+                    {s.company && <span className="truncate text-slate-600">{s.company}</span>}
+                  </div>
+                )}
+                {s.location && (
+                  <div className="flex items-center gap-1.5 text-sm text-slate-500 mt-2">
+                    <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-brand-gold/60" />
+                    <span className="truncate">{s.location}</span>
+                  </div>
+                )}
+
+                {s.bio && (
+                  <>
+                    <div className="mt-5 border-t border-slate-100" />
+                    <p className="mt-4 text-[15px] text-slate-700 leading-relaxed line-clamp-3">{s.bio}</p>
+                  </>
+                )}
+
+                <div className="mt-5 flex flex-wrap gap-1.5">
+                  {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
+                  {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
+                </div>
+
+                {interests.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {interests.slice(0, 5).map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
+                  </div>
+                )}
+              </div>
+
+              {/* Reasons column — CSS-adaptive width. The panel collapses toward its content
+                  for short prose (concierge-memo feel) and expands naturally for multi-bullet
+                  computeMatchSignals output (premium-bullet feel) up to a 20rem cap. No JS
+                  branching on content length; renderReasonBlock output is unchanged. */}
+              <div className="flex-shrink-0 w-full md:w-fit md:max-w-[20rem] md:min-w-[15rem]">
+                <div className="rounded-xl bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/70 to-brand-cream/40 border border-brand-gold/30 px-6 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
+                  {/* Memo header — gold-tinted icon tile + uppercase eyebrow + thin gold rule */}
+                  <div className="flex items-center gap-2.5 mb-3 pb-3 border-b border-brand-gold/15">
+                    <div className="w-7 h-7 rounded-full bg-brand-gold/15 border border-brand-gold/35 flex items-center justify-center flex-shrink-0">
+                      <Users className="w-3.5 h-3.5 text-brand-gold" />
+                    </div>
+                    <p className="text-[10px] uppercase tracking-[0.16em] text-brand-navy font-bold leading-tight">Why we&rsquo;re introducing you</p>
+                  </div>
+                  {/* Content — CSS-styles bullets as gold checkmarks; prose paragraphs render naturally */}
+                  <div className="text-[13px] text-slate-700 leading-relaxed [&_ul]:list-none [&_ul]:pl-0 [&_ul]:space-y-2 [&_li]:relative [&_li]:pl-6 [&_li]:before:content-['✓'] [&_li]:before:absolute [&_li]:before:left-0 [&_li]:before:top-[1px] [&_li]:before:text-brand-gold [&_li]:before:font-bold [&_p]:m-0">
+                    {renderReasonBlock(row)}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="relative mt-8">
-            {row.alreadyRequested ? (
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
-                  <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
-                  </svg>
-                  <span className="text-xs font-medium text-emerald-700">Interest expressed</span>
+            {/* Actions row — below the main 3-col, anchored bottom-left */}
+            <div className="mt-7 pt-5 border-t border-slate-100">
+              {row.alreadyRequested ? (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
+                    <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                    </svg>
+                    <span className="text-xs font-medium text-emerald-700">Interest expressed</span>
+                  </div>
+                  <WithdrawInterestButton targetId={s.id} />
                 </div>
-                <WithdrawInterestButton targetId={s.id} />
-              </div>
-            ) : (
-              <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} />
-            )}
+              ) : (
+                <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} />
+              )}
+            </div>
           </div>
         </div>
       </IntroductionCard>
@@ -461,20 +473,21 @@ export default async function IntroductionsPage() {
     const headline = displayTitle(s)
     return (
       <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
-        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-[0_2px_8px_rgba(15,28,58,0.05)] hover:shadow-[0_6px_20px_rgba(15,28,58,0.08)] hover:border-brand-gold/30 transition-all flex flex-col gap-3.5">
-          <div className="flex items-start gap-3">
+        <div className="relative bg-white border border-slate-100 border-l-2 border-l-brand-gold/60 rounded-2xl p-5 shadow-[0_6px_20px_rgba(15,28,58,0.06)] hover:shadow-[0_10px_32px_rgba(15,28,58,0.10)] hover:border-l-brand-gold transition-all flex flex-col gap-3.5">
+          <div className="flex items-start gap-3.5">
             <Avatar profile={s} size="md" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-brand-navy truncate leading-tight tracking-tight">{s.full_name || 'New member'}</p>
+              <p className="text-base font-bold text-brand-navy truncate leading-tight tracking-tight">{s.full_name || 'New member'}</p>
               {(headline || s.company) && (
-                <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
-                  <Briefcase className="w-3 h-3 flex-shrink-0" />
-                  <span className="truncate">{[headline, s.company].filter(Boolean).join(' at ')}</span>
+                <div className="mt-1 flex items-baseline gap-1.5 text-xs text-slate-700 font-medium">
+                  {headline && <span className="truncate">{headline}</span>}
+                  {headline && s.company && <span className="text-brand-gold/40 flex-shrink-0">|</span>}
+                  {s.company && <span className="truncate text-slate-500">{s.company}</span>}
                 </div>
               )}
               {s.location && (
-                <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
-                  <MapPin className="w-3 h-3 flex-shrink-0" />
+                <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1">
+                  <MapPin className="w-3 h-3 flex-shrink-0 text-brand-gold/50" />
                   <span className="truncate">{s.location}</span>
                 </div>
               )}
@@ -485,9 +498,12 @@ export default async function IntroductionsPage() {
             {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
           </div>
 
-          <div className="flex items-start gap-2 bg-brand-gold-soft border border-brand-gold/20 rounded-lg px-3 py-2.5">
-            <Sparkles className="w-3.5 h-3.5 text-brand-gold flex-shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
+          <div className="rounded-lg bg-gradient-to-br from-brand-gold-soft/60 via-brand-gold-soft/40 to-brand-cream/30 border border-brand-gold/25 px-3.5 py-3">
+            <div className="flex items-center gap-2 mb-1.5 pb-1.5 border-b border-brand-gold/15">
+              <Users className="w-3 h-3 text-brand-gold flex-shrink-0" />
+              <p className="text-[9px] uppercase tracking-[0.14em] text-brand-navy font-bold leading-tight">Why we&rsquo;re introducing you</p>
+            </div>
+            <div className="text-[12px] text-slate-700 leading-snug line-clamp-3 [&_ul]:list-none [&_ul]:pl-0 [&_ul]:space-y-1 [&_li]:relative [&_li]:pl-4 [&_li]:before:content-['✓'] [&_li]:before:absolute [&_li]:before:left-0 [&_li]:before:top-0 [&_li]:before:text-brand-gold [&_li]:before:font-bold [&_p]:text-[12px] [&_p]:m-0">
               {renderReasonBlock(row)}
             </div>
           </div>
@@ -516,40 +532,20 @@ export default async function IntroductionsPage() {
   const oppCount = (oppCandidateRows ?? []).length
 
   return (
-    <div className="relative min-h-screen bg-gradient-to-b from-brand-cream/40 via-white to-white p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
-      {/* Soft ambient gold/cream accents */}
-      <div className="absolute top-0 right-0 w-[36rem] h-[36rem] bg-brand-gold/[0.04] rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
-      <div className="absolute top-40 left-0 w-[28rem] h-[28rem] bg-brand-cream/30 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
+    <div className="relative min-h-screen bg-[#FAF6EE] p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
       <div className="relative max-w-6xl mx-auto">
 
-        {/* HERO — tightened so the featured card carries the visual weight */}
-        <div className="mb-6 relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-cream via-brand-cream/40 to-white border border-brand-navy/10 px-5 py-5 sm:px-7 sm:py-6 shadow-sm">
-          {/* Slim gold rule */}
-          <div className="absolute top-0 left-5 sm:left-7 w-28 h-px bg-gradient-to-r from-brand-gold via-brand-gold/40 to-transparent" />
-          {/* Relationship motif — 3 abstract person silhouettes (head + shoulders) + connection paths.
-              NO real faces, NO stock photos. Pure SVG geometry suggesting an introduction triad. */}
-          <svg className="absolute right-2 top-0 bottom-0 my-auto h-[110%] w-[42%] max-w-sm opacity-[0.13] pointer-events-none hidden sm:block" viewBox="0 0 400 180" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true">
-            <g className="text-brand-gold">
-              {/* Connection arcs — drawn behind silhouettes */}
-              <path d="M 80 60 Q 150 30 195 55" stroke="currentColor" strokeWidth="0.9" fill="none" opacity="0.6" />
-              <path d="M 230 55 Q 290 30 340 60" stroke="currentColor" strokeWidth="0.9" fill="none" opacity="0.6" />
-              <path d="M 80 90 Q 200 130 340 90" stroke="currentColor" strokeWidth="0.7" fill="none" opacity="0.45" />
-              {/* Person 1 (left) — head + shoulders */}
-              <circle cx="80" cy="38" r="14" fill="currentColor" opacity="0.28" />
-              <path d="M 56 92 Q 56 65 80 65 Q 104 65 104 92 L 104 120 L 56 120 Z" fill="currentColor" opacity="0.28" />
-              {/* Person 2 (center) — slightly larger to anchor the triad */}
-              <circle cx="210" cy="46" r="18" fill="currentColor" opacity="0.38" />
-              <path d="M 180 110 Q 180 78 210 78 Q 240 78 240 110 L 240 145 L 180 145 Z" fill="currentColor" opacity="0.38" />
-              {/* Person 3 (right) */}
-              <circle cx="340" cy="38" r="14" fill="currentColor" opacity="0.28" />
-              <path d="M 316 92 Q 316 65 340 65 Q 364 65 364 92 L 364 120 L 316 120 Z" fill="currentColor" opacity="0.28" />
-            </g>
-          </svg>
-          <div className="relative max-w-2xl">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-semibold mb-1.5">Curated for you, {firstName}</p>
-            <h1 className="text-xl sm:text-2xl font-bold text-brand-navy tracking-tight leading-[1.15]">Your next valuable relationship</h1>
-            <p className="text-slate-600 text-sm sm:text-[15px] mt-1.5 leading-snug">High-signal introductions across the Andrel network. We facilitate when interest is mutual.</p>
+        {/* HERO — compact context band, supports the featured card */}
+        <div className="mb-6">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-semibold mb-2">Curated for you, {firstName}</p>
+          <div className="flex items-start gap-3">
+            <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight leading-[1.1]">Your next valuable relationship</h1>
+            {/* Small gold sparkle ornament beside the headline */}
+            <Sparkles className="w-5 h-5 text-brand-gold flex-shrink-0 mt-1.5" aria-hidden="true" />
           </div>
+          <p className="text-slate-600 text-sm sm:text-[15px] mt-2 leading-snug max-w-2xl">High-signal introductions across the Andrel network. We facilitate when interest is mutual.</p>
+          {/* Slim gold rule below subhead — matches reference's understated decorator */}
+          <div className="mt-3 w-24 h-px bg-gradient-to-r from-brand-gold via-brand-gold/40 to-transparent" />
         </div>
 
         <FoundingMemberWelcomeBanner show={showFoundingWelcome} />
@@ -604,20 +600,16 @@ export default async function IntroductionsPage() {
             {/* FEATURED + ADDITIONAL */}
             {featuredSuggestion ? (
               <section>
-                {/* Tightened section eyebrow — minimal separator so the eye lands on the card */}
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="block w-6 h-px bg-brand-gold" aria-hidden="true" />
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-brand-gold font-bold">The person Andrel wants you to meet</p>
-                </div>
+                {/* Eyebrow now lives inside the featured card — see renderFeatured */}
                 {renderFeatured(featuredSuggestion)}
 
                 {additionalSuggestions.length > 0 && (
                   <div className="mt-10">
-                    <div className="flex items-end justify-between gap-4 mb-4 pb-3 border-b border-slate-200">
-                      <h3 className="text-base font-semibold text-brand-navy tracking-tight">Additional curated introductions</h3>
+                    <div className="flex items-end justify-between gap-4 mb-4">
+                      <h3 className="text-base font-bold text-brand-navy tracking-tight">Additional curated introductions</h3>
                       <Pill variant="gold">{additionalSuggestions.length}</Pill>
                     </div>
-                    <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       {additionalSuggestions.map(renderAdditional)}
                     </div>
                   </div>
