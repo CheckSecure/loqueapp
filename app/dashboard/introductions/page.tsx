@@ -370,19 +370,24 @@ export default async function IntroductionsPage() {
         : []
     return (
       <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
-        <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-8 shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-start gap-4">
-            <Avatar profile={s} size="lg" />
+        <div className="relative bg-white border border-slate-100 rounded-2xl pl-8 pr-7 py-7 sm:pl-10 sm:pr-10 sm:py-10 shadow-lg hover:shadow-xl transition-all overflow-hidden">
+          {/* Gold left-edge accent */}
+          <div className="absolute left-0 top-8 bottom-8 w-[3px] bg-gradient-to-b from-brand-gold via-brand-gold/70 to-brand-gold/30 rounded-r-full pointer-events-none" />
+
+          <div className="flex items-start gap-5">
+            <div className="flex-shrink-0">
+              <Avatar profile={s} size="lg" />
+            </div>
             <div className="flex-1 min-w-0">
-              <p className="text-lg sm:text-xl font-semibold text-slate-900 truncate leading-tight">{s.full_name || 'New member'}</p>
+              <p className="text-xl sm:text-2xl font-bold text-brand-navy truncate leading-tight tracking-tight">{s.full_name || 'New member'}</p>
               {(headline || s.company) && (
-                <div className="flex items-center gap-1.5 text-sm text-slate-500 mt-1">
-                  <Briefcase className="w-3.5 h-3.5 flex-shrink-0" />
+                <div className="flex items-center gap-1.5 text-sm text-slate-600 mt-2 font-medium">
+                  <Briefcase className="w-3.5 h-3.5 flex-shrink-0 text-slate-400" />
                   <span className="truncate">{[headline, s.company].filter(Boolean).join(' at ')}</span>
                 </div>
               )}
               {s.location && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
+                <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-1">
                   <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="truncate">{s.location}</span>
                 </div>
@@ -390,9 +395,9 @@ export default async function IntroductionsPage() {
             </div>
           </div>
 
-          {s.bio && <p className="mt-4 text-sm text-slate-600 leading-relaxed line-clamp-4">{s.bio}</p>}
+          {s.bio && <p className="mt-5 text-sm text-slate-600 leading-relaxed line-clamp-4">{s.bio}</p>}
 
-          <div className="mt-4 flex flex-wrap gap-1.5">
+          <div className="mt-5 flex flex-wrap gap-1.5">
             {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
             {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
           </div>
@@ -403,15 +408,17 @@ export default async function IntroductionsPage() {
             </div>
           )}
 
-          <div className="mt-5 flex items-start gap-2 bg-brand-gold-soft border border-brand-gold/20 rounded-lg px-4 py-3">
-            <Sparkles className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-slate-700 mb-1">Why this introduction</p>
-              {renderReasonBlock(row)}
+          <div className="mt-6 relative bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/25 rounded-xl px-5 py-4">
+            <div className="flex items-start gap-2.5">
+              <Sparkles className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] uppercase tracking-[0.12em] font-semibold text-brand-gold mb-1.5">Why this introduction</p>
+                {renderReasonBlock(row)}
+              </div>
             </div>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-6">
             {row.alreadyRequested ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
@@ -496,27 +503,42 @@ export default async function IntroductionsPage() {
       <div className="max-w-6xl mx-auto">
 
         {/* HERO */}
-        <div className="mb-8">
-          <p className="text-xs uppercase tracking-wider text-brand-gold font-semibold mb-2">Curated for you, {firstName}</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Your next valuable relationship</h1>
-          <p className="text-slate-500 text-sm mt-1.5">High-signal introductions across the Andrel network. We facilitate when interest is mutual.</p>
+        <div className="mb-10 relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-cream via-white to-white border border-brand-navy/10 px-6 py-10 sm:px-12 sm:py-14 shadow-sm">
+          {/* Decorative gold rule */}
+          <div className="absolute top-0 left-6 sm:left-12 w-32 h-px bg-gradient-to-r from-brand-gold via-brand-gold/40 to-transparent" />
+          {/* Understated relationship-mark SVG (3 nodes + connecting paths) */}
+          <svg className="absolute -right-2 top-6 sm:right-10 sm:top-12 w-24 h-24 sm:w-32 sm:h-32 opacity-[0.15] pointer-events-none" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+            <path d="M20 20 L60 40 L20 60" stroke="currentColor" strokeWidth="0.8" className="text-brand-gold" />
+            <circle cx="20" cy="20" r="3.5" fill="currentColor" className="text-brand-gold" />
+            <circle cx="60" cy="40" r="3.5" fill="currentColor" className="text-brand-gold" />
+            <circle cx="20" cy="60" r="3.5" fill="currentColor" className="text-brand-gold" />
+          </svg>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-brand-gold font-semibold mb-3">Curated for you, {firstName}</p>
+          <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-brand-navy tracking-tight leading-[1.05] max-w-2xl">Your next valuable relationship</h1>
+          <p className="text-slate-600 text-base sm:text-lg mt-4 max-w-xl leading-relaxed">High-signal introductions across the Andrel network. We facilitate when interest is mutual.</p>
         </div>
 
         <FoundingMemberWelcomeBanner show={showFoundingWelcome} />
 
         {!isPaid && !isFoundingMember && (
-          <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 bg-brand-gold-soft border border-brand-gold/20 rounded-xl px-4 py-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <Pill variant="gold" dot>Free</Pill>
-              <span className="text-xs text-slate-600 truncate">Upgrade for priority matching and more introductions.</span>
+          <div className="mb-8 relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-cream via-brand-cream/70 to-white border border-brand-gold/30 px-5 py-4 sm:px-6 sm:py-5 shadow-sm">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-brand-gold/10 rounded-full blur-3xl -translate-y-12 translate-x-12 pointer-events-none" />
+            <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <Pill variant="gold" dot>Free</Pill>
+                <span className="text-sm text-brand-navy/80 truncate font-medium">Upgrade for priority matching and more introductions.</span>
+              </div>
+              <a href="/dashboard/billing" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-navy hover:text-brand-gold flex-shrink-0 transition-colors">Upgrade <ArrowRight className="w-3.5 h-3.5" /></a>
             </div>
-            <a href="/dashboard/billing" className="text-xs font-semibold text-brand-navy hover:underline flex-shrink-0">Upgrade &rarr;</a>
           </div>
         )}
         {isPaid && (
-          <div className="mb-6 flex items-center gap-3 bg-brand-cream border border-brand-navy/10 rounded-xl px-4 py-3">
-            <Pill variant="navy" dot><span className="capitalize">{userTier}</span></Pill>
-            <span className="text-xs text-slate-500">Priority matching active.</span>
+          <div className="mb-8 relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-cream via-brand-cream/70 to-white border border-brand-navy/15 px-5 py-4 sm:px-6 sm:py-5 shadow-sm">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-brand-navy/5 rounded-full blur-3xl -translate-y-12 translate-x-12 pointer-events-none" />
+            <div className="relative flex items-center gap-3">
+              <Pill variant="navy" dot><span className="capitalize">{userTier}</span></Pill>
+              <span className="text-sm text-brand-navy/80 font-medium">Priority matching active.</span>
+            </div>
           </div>
         )}
 
@@ -554,18 +576,18 @@ export default async function IntroductionsPage() {
             {/* FEATURED + ADDITIONAL */}
             {featuredSuggestion ? (
               <section>
-                <div className="flex items-end justify-between gap-4 mb-4">
+                <div className="flex items-end justify-between gap-4 mb-5">
                   <div>
-                    <h2 className="text-lg font-semibold text-slate-900">Featured introduction</h2>
-                    <p className="text-sm text-slate-500 mt-0.5">Your most recent curated introduction.</p>
+                    <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Featured introduction</p>
+                    <h2 className="text-xl sm:text-2xl font-bold text-brand-navy tracking-tight">Your most recent curated introduction.</h2>
                   </div>
                 </div>
                 {renderFeatured(featuredSuggestion)}
 
                 {additionalSuggestions.length > 0 && (
-                  <div className="mt-8">
-                    <div className="flex items-end justify-between gap-4 mb-3">
-                      <h3 className="text-sm font-semibold text-slate-900">Additional curated introductions</h3>
+                  <div className="mt-10">
+                    <div className="flex items-end justify-between gap-4 mb-4 pb-3 border-b border-slate-200">
+                      <h3 className="text-base font-semibold text-brand-navy tracking-tight">Additional curated introductions</h3>
                       <Pill variant="gold">{additionalSuggestions.length}</Pill>
                     </div>
                     <div className="grid sm:grid-cols-2 gap-4">
@@ -575,31 +597,35 @@ export default async function IntroductionsPage() {
                 )}
               </section>
             ) : (
-              <section className="bg-white border border-slate-100 rounded-2xl p-8 shadow-sm">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-brand-gold-soft border border-brand-gold/20 flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-6 h-6 text-brand-gold" />
+              <section className="relative overflow-hidden bg-gradient-to-br from-white via-white to-brand-cream/30 border border-brand-navy/10 rounded-2xl p-7 sm:p-10 shadow-lg">
+                {/* Decorative gold ring in corner */}
+                <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full border border-brand-gold/15 pointer-events-none" />
+                <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full border border-brand-gold/20 pointer-events-none" />
+                <div className="relative flex items-start gap-5">
+                  <div className="w-14 h-14 rounded-2xl bg-brand-navy text-brand-gold flex items-center justify-center flex-shrink-0 shadow-md">
+                    <Sparkles className="w-7 h-7" />
                   </div>
                   <div className="flex-1">
-                    <h2 className="text-lg font-semibold text-slate-900">Your next introduction is being curated.</h2>
-                    <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+                    <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Curating</p>
+                    <h2 className="text-xl sm:text-2xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated.</h2>
+                    <p className="text-sm sm:text-base text-slate-600 mt-3 leading-relaxed max-w-xl">
                       Andrel surfaces high-signal introductions only when there's a strong, mutual fit. Sharpen your signal in the meantime — most users see new matches within a week of completing these steps.
                     </p>
 
-                    <div className="mt-5 space-y-2.5">
-                      <Link href="/dashboard/profile" className="flex items-start gap-3 rounded-lg border border-slate-200 hover:border-brand-navy hover:bg-slate-50 px-4 py-3 transition-colors">
+                    <div className="mt-6 space-y-3">
+                      <Link href="/dashboard/profile" className="flex items-start gap-3 rounded-xl border border-slate-200 hover:border-brand-navy hover:bg-white px-4 py-3.5 transition-colors group">
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-900">Complete your profile</p>
-                          <p className="text-xs text-slate-500 mt-0.5">Exact title, expertise, and bio drive who you match with.</p>
+                          <p className="text-sm font-semibold text-brand-navy">Complete your profile</p>
+                          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Exact title, expertise, and bio drive who you match with.</p>
                         </div>
-                        <ArrowRight className="w-4 h-4 text-slate-400 mt-1" />
+                        <ArrowRight className="w-4 h-4 text-slate-400 mt-1 group-hover:text-brand-navy transition-colors" />
                       </Link>
-                      <Link href="/dashboard/profile" className="flex items-start gap-3 rounded-lg border border-slate-200 hover:border-brand-navy hover:bg-slate-50 px-4 py-3 transition-colors">
+                      <Link href="/dashboard/profile" className="flex items-start gap-3 rounded-xl border border-slate-200 hover:border-brand-navy hover:bg-white px-4 py-3.5 transition-colors group">
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-900">Update who you want to meet</p>
-                          <p className="text-xs text-slate-500 mt-0.5">Specify desired connections to focus the matcher.</p>
+                          <p className="text-sm font-semibold text-brand-navy">Update who you want to meet</p>
+                          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Specify desired connections to focus the matcher.</p>
                         </div>
-                        <ArrowRight className="w-4 h-4 text-slate-400 mt-1" />
+                        <ArrowRight className="w-4 h-4 text-slate-400 mt-1 group-hover:text-brand-navy transition-colors" />
                       </Link>
                       <TargetedRequestModalLauncher
                         premiumCredits={premiumCredits}
@@ -635,45 +661,53 @@ export default async function IntroductionsPage() {
           {/* RIGHT RAIL */}
           <aside className="space-y-5 lg:sticky lg:top-8 lg:self-start">
 
-            {/* TARGETED REQUEST CARD */}
-            <section className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-brand-navy text-white flex items-center justify-center flex-shrink-0">
-                  <Send className="w-5 h-5" />
+            {/* ANDREL CONCIERGE CARD */}
+            <section className="relative overflow-hidden bg-brand-navy text-white rounded-2xl p-6 shadow-xl">
+              {/* Gold ambient glow */}
+              <div className="absolute -top-12 -right-12 w-44 h-44 bg-brand-gold/20 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-brand-gold/60 to-transparent" />
+              <div className="relative">
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-brand-gold text-brand-navy flex items-center justify-center flex-shrink-0 shadow-md">
+                    <Send className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-1">Premium</p>
+                    <h3 className="text-base font-bold text-white tracking-tight">Andrel Concierge</h3>
+                    <p className="text-xs text-white/70 mt-1.5 leading-relaxed">Need a warm introduction to someone specific? Our team can help facilitate targeted introductions.</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-slate-900">Request a targeted introduction</h3>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">Tell Andrel exactly who you want to meet. Your next batch will prioritize matches that fit.</p>
+                <div className="mt-5 text-xs text-white/70 border-t border-white/10 pt-3 flex items-center justify-between gap-3">
+                  <span>
+                    Premium credits: <span className="font-bold text-brand-gold">{premiumCredits}</span>
+                  </span>
+                  {hasPendingTargetedRequest && (
+                    <span className="text-brand-gold bg-brand-gold/15 border border-brand-gold/40 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider">pending</span>
+                  )}
                 </div>
-              </div>
-              <div className="mt-4 text-xs text-slate-500 border-t border-slate-100 pt-3 flex items-center justify-between gap-3">
-                <span>
-                  Premium credits: <span className="font-semibold text-slate-700">{premiumCredits}</span>
-                </span>
-                {hasPendingTargetedRequest && (
-                  <span className="text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">request pending</span>
-                )}
-              </div>
-              <div className="mt-4">
-                <TargetedRequestModalLauncher
-                  premiumCredits={premiumCredits}
-                  hasPendingRequest={hasPendingTargetedRequest}
-                  variant="primary"
-                />
+                <div className="mt-4">
+                  <TargetedRequestModalLauncher
+                    premiumCredits={premiumCredits}
+                    hasPendingRequest={hasPendingTargetedRequest}
+                    variant="primary"
+                  />
+                </div>
               </div>
             </section>
 
             {/* OPPORTUNITIES PANEL */}
-            <section className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3 mb-3">
+            <section className="relative overflow-hidden bg-white border border-slate-100 rounded-2xl p-6 shadow-md">
+              <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-brand-gold/30 to-transparent" />
+              <div className="flex items-start justify-between gap-3 mb-4">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-900">Opportunities for you</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Hiring + business signals from across the network.</p>
+                  <p className="text-[10px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1">Network signals</p>
+                  <h3 className="text-base font-bold text-brand-navy tracking-tight">Opportunities for you</h3>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Hiring + business signals from across the network.</p>
                 </div>
                 {oppCount > 0 && <Pill variant="gold">{oppCount}</Pill>}
               </div>
               {oppCount > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                   {(oppCandidateRows as any[]).map((c: any) => {
                     const opp = c.opportunities
                     const creator = opp?.profiles
@@ -681,11 +715,11 @@ export default async function IntroductionsPage() {
                       <Link
                         key={c.id}
                         href={`/dashboard/opportunities`}
-                        className="block rounded-lg border border-slate-100 hover:border-brand-navy hover:bg-slate-50 px-3 py-2.5 transition-colors"
+                        className="block rounded-xl border border-slate-200 hover:border-brand-navy hover:bg-brand-cream/30 px-3.5 py-3 transition-colors"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-900 truncate">{opp?.title || 'Untitled'}</p>
+                            <p className="text-sm font-semibold text-brand-navy truncate">{opp?.title || 'Untitled'}</p>
                             {(creator?.full_name || creator?.company) && (
                               <p className="text-xs text-slate-500 truncate mt-0.5">
                                 {[creator?.full_name, creator?.company].filter(Boolean).join(' · ')}
@@ -699,26 +733,26 @@ export default async function IntroductionsPage() {
                       </Link>
                     )
                   })}
-                  <Link href="/dashboard/opportunities" className="block text-center text-xs font-semibold text-brand-navy hover:underline pt-1">
+                  <Link href="/dashboard/opportunities" className="block text-center text-xs font-semibold text-brand-navy hover:text-brand-gold pt-2 transition-colors">
                     See all opportunities &rarr;
                   </Link>
                 </div>
               ) : (
-                <div className="text-center py-6">
-                  <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 mb-3">
-                    <Zap className="w-5 h-5 text-slate-400" />
+                <div className="relative text-center py-7">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-brand-cream border border-brand-gold/20 mb-4">
+                    <Zap className="w-6 h-6 text-brand-gold" />
                   </div>
-                  <p className="text-sm font-medium text-slate-900">Opportunity Concierge</p>
-                  <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
+                  <p className="text-sm font-bold text-brand-navy tracking-tight">Opportunity Concierge</p>
+                  <p className="text-xs text-slate-500 mt-2 max-w-xs mx-auto leading-relaxed">
                     No hiring or business signals are targeting you yet. {canCreateOpportunity
                       ? 'Signal a need to source the right people for what you\'re building.'
                       : 'Upgrade to Professional to signal your own hiring or business needs.'}
                   </p>
-                  <div className="mt-3">
+                  <div className="mt-4">
                     {canCreateOpportunity ? (
                       <Link
                         href="/dashboard/opportunities/new"
-                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-brand-navy text-white hover:bg-brand-navy/90 transition-colors"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-brand-navy text-white hover:bg-brand-navy/90 transition-colors shadow-sm"
                       >
                         Submit an opportunity
                         <ArrowRight className="w-3 h-3" />
@@ -726,7 +760,7 @@ export default async function IntroductionsPage() {
                     ) : (
                       <Link
                         href="/dashboard/billing"
-                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-white border border-brand-navy text-brand-navy hover:bg-brand-navy hover:text-white transition-colors"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-white border border-brand-navy text-brand-navy hover:bg-brand-navy hover:text-white transition-colors"
                       >
                         Upgrade to signal a need
                         <ArrowRight className="w-3 h-3" />
@@ -738,19 +772,21 @@ export default async function IntroductionsPage() {
             </section>
 
             {/* CREDITS PANEL — surfaces the real balance from meeting_credits */}
-            <section className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-slate-900">Credits</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Used by meetings and targeted requests.</p>
-              <div className="mt-3 flex items-baseline justify-between gap-3">
+            <section className="relative overflow-hidden bg-brand-navy text-white rounded-2xl p-6 shadow-md">
+              <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-brand-gold to-transparent" />
+              <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold">Credits</p>
+              <p className="text-xs text-white/60 mt-1">Used by meetings and targeted requests.</p>
+              <div className="mt-5 flex items-baseline justify-between gap-3">
                 <div>
-                  <p className="text-2xl font-bold text-slate-900 leading-none">{balance}</p>
-                  <p className="text-xs text-slate-500 mt-1">total balance</p>
+                  <p className="text-3xl font-bold text-white leading-none tracking-tight">{balance}</p>
+                  <p className="text-[11px] text-white/60 mt-2 uppercase tracking-wider">Total balance</p>
                 </div>
-                <div className="text-right text-xs text-slate-500">
-                  <p>{premiumCredits} <span className="text-brand-gold font-medium">premium</span></p>
+                <div className="text-right">
+                  <p className="text-xl font-bold text-brand-gold leading-none">{premiumCredits}</p>
+                  <p className="text-[11px] text-white/60 mt-2 uppercase tracking-wider">Premium</p>
                 </div>
               </div>
-              <Link href="/dashboard/billing" className="block text-center text-xs font-semibold text-brand-navy hover:underline mt-3 pt-3 border-t border-slate-100">
+              <Link href="/dashboard/billing" className="block text-center text-xs font-semibold text-brand-gold hover:text-white mt-5 pt-4 border-t border-white/10 transition-colors">
                 Manage credits &rarr;
               </Link>
             </section>

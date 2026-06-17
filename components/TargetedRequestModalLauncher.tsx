@@ -69,7 +69,7 @@ export default function TargetedRequestModalLauncher({ premiumCredits, hasPendin
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center justify-center w-full gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg bg-brand-navy text-white hover:bg-brand-navy/90 transition-colors"
+        className="inline-flex items-center justify-center w-full gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg bg-brand-gold text-brand-navy hover:bg-brand-gold/90 transition-colors shadow-md disabled:bg-white/10 disabled:text-white/40 disabled:cursor-not-allowed disabled:shadow-none"
       >
         <Send className="w-4 h-4" />
         Request a targeted intro
