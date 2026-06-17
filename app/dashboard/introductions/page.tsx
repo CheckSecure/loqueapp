@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Briefcase, MapPin, Inbox, Star, Sparkles, ChevronDown, ArrowRight, Send, Zap, Users } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
-import FeaturedIntroductionAvatar from '@/components/FeaturedIntroductionAvatar'
 import AdminIntroCard from '@/components/AdminIntroCard'
 import WithdrawInterestButton from '@/components/WithdrawInterestButton'
 import IntroductionCard from '@/components/IntroductionCard'
@@ -360,93 +359,86 @@ export default async function IntroductionsPage() {
     return <p className="text-xs text-slate-600 leading-relaxed">Curated based on your profile and preferences.</p>
   }
 
-  // Featured card — composition: avatar L / details (name → bio → actions) C / reasons R.
-  // Actions live INSIDE the details column to read as a self-contained dossier.
-  // Tag clutter (seniority/mentorship/interests) intentionally suppressed here for the
-  // premium dossier silhouette; the data still surfaces on the profile page.
   const renderFeatured = (row: any) => {
     const s = row.profile
     const headline = displayTitle(s)
+    const interests = Array.isArray(s.interests)
+      ? s.interests
+      : typeof s.interests === 'string' && s.interests
+        ? s.interests.split(',').map((i: string) => i.trim()).filter(Boolean)
+        : []
     return (
       <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
-        <div className="relative bg-white rounded-2xl border-l-[3px] border-brand-gold shadow-[0_12px_40px_rgba(15,28,58,0.08)] hover:shadow-[0_20px_60px_rgba(15,28,58,0.12)] transition-all overflow-hidden">
-          <div className="px-6 pt-6 pb-7 sm:px-10 sm:pt-9 sm:pb-9">
-            {/* Eyebrow — inside the card, signs the curator */}
-            <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-7">Curated by Andrel Concierge</p>
+        <div className="relative bg-white border border-slate-100 rounded-2xl pl-10 pr-9 py-9 sm:pl-14 sm:pr-12 sm:py-12 shadow-[0_8px_30px_rgba(15,28,58,0.08)] hover:shadow-[0_12px_40px_rgba(15,28,58,0.12)] transition-all overflow-hidden">
+          {/* Gold left-edge accent — thicker, more prominent */}
+          <div className="absolute left-0 top-10 bottom-10 w-1 bg-gradient-to-b from-brand-gold via-brand-gold/70 to-brand-gold/30 rounded-r-full pointer-events-none" />
+          {/* Soft cream radial accent in the top-right for depth */}
+          <div className="absolute -top-16 -right-16 w-48 h-48 bg-brand-cream/40 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
 
-            {/* Main row: avatar / details / reasons. Stacks below md. */}
-            <div className="flex flex-col md:flex-row md:items-start gap-7 md:gap-10">
-              {/* Avatar column — large dossier portrait. Scales past UIAvatar's xl (96px)
-                  ceiling via a contained client component that preserves enlargeable /
-                  ProfilePhotoLightbox behavior (same as the prior <UIAvatar enlargeable>
-                  wrapper). UIAvatar itself is untouched — other surfaces unaffected. */}
-              <div className="flex-shrink-0">
-                <FeaturedIntroductionAvatar
-                  id={s.id}
-                  name={s.full_name}
-                  src={s.avatar_url}
-                />
-              </div>
-
-              {/* Details column — name plate → context → bio → integrated decision panel */}
-              <div className="flex-1 min-w-0">
-                <p className="text-[2.25rem] sm:text-[2.75rem] font-bold text-brand-navy leading-[1.02] tracking-[-0.02em]">{s.full_name || 'New member'}</p>
-                {(headline || s.company) && (
-                  <div className="mt-3.5 flex items-baseline gap-2.5 text-[17px] sm:text-[18px] text-slate-700 font-medium">
-                    {headline && <span className="truncate">{headline}</span>}
-                    {headline && s.company && <span className="text-brand-gold/50 flex-shrink-0">|</span>}
-                    {s.company && <span className="truncate text-slate-600">{s.company}</span>}
-                  </div>
-                )}
-                {s.location && (
-                  <div className="flex items-center gap-1.5 text-sm text-slate-500 mt-2.5">
-                    <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-brand-gold/60" />
-                    <span className="truncate">{s.location}</span>
-                  </div>
-                )}
-
-                {s.bio && (
-                  <p className="mt-6 text-[15px] text-slate-700 leading-relaxed line-clamp-3 max-w-prose">{s.bio}</p>
-                )}
-
-                {/* Decision panel — inside the dossier. Same buttons, same handlers. */}
-                <div className="mt-7 max-w-md">
-                  {row.alreadyRequested ? (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
-                        <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
-                        </svg>
-                        <span className="text-xs font-medium text-emerald-700">Interest expressed</span>
-                      </div>
-                      <WithdrawInterestButton targetId={s.id} />
-                    </div>
-                  ) : (
-                    <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} />
-                  )}
-                </div>
-              </div>
-
-              {/* Reasons column — CSS-adaptive width. The panel collapses toward its content
-                  for short prose (concierge-memo feel) and expands naturally for multi-bullet
-                  computeMatchSignals output (premium-bullet feel) up to a 20rem cap. No JS
-                  branching on content length; renderReasonBlock output is unchanged. */}
-              <div className="flex-shrink-0 w-full md:w-fit md:max-w-[20rem] md:min-w-[15rem]">
-                <div className="rounded-xl bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/70 to-brand-cream/40 border border-brand-gold/30 px-6 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
-                  {/* Memo header — gold-tinted icon tile + uppercase eyebrow + thin gold rule */}
-                  <div className="flex items-center gap-2.5 mb-3 pb-3 border-b border-brand-gold/15">
-                    <div className="w-7 h-7 rounded-full bg-brand-gold/15 border border-brand-gold/35 flex items-center justify-center flex-shrink-0">
-                      <Users className="w-3.5 h-3.5 text-brand-gold" />
-                    </div>
-                    <p className="text-[10px] uppercase tracking-[0.16em] text-brand-navy font-bold leading-tight">Why we&rsquo;re introducing you</p>
-                  </div>
-                  {/* Content — CSS-styles bullets as gold checkmarks; prose paragraphs render naturally */}
-                  <div className="text-[13px] text-slate-700 leading-relaxed [&_ul]:list-none [&_ul]:pl-0 [&_ul]:space-y-2 [&_li]:relative [&_li]:pl-6 [&_li]:before:content-['✓'] [&_li]:before:absolute [&_li]:before:left-0 [&_li]:before:top-[1px] [&_li]:before:text-brand-gold [&_li]:before:font-bold [&_p]:m-0">
-                    {renderReasonBlock(row)}
-                  </div>
-                </div>
+          <div className="relative flex items-start gap-6 sm:gap-7">
+            <div className="flex-shrink-0 relative">
+              {/* Decorative gold halo behind the avatar */}
+              <div className="absolute -inset-1.5 rounded-full bg-gradient-to-br from-brand-gold/20 via-brand-gold/5 to-transparent blur-sm pointer-events-none" aria-hidden="true" />
+              <div className="relative">
+                <Avatar profile={s} size="lg" />
               </div>
             </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-2xl sm:text-3xl font-bold text-brand-navy truncate leading-[1.1] tracking-tight">{s.full_name || 'New member'}</p>
+              {(headline || s.company) && (
+                <div className="flex items-center gap-2 text-base text-slate-700 mt-2.5 font-medium">
+                  <Briefcase className="w-4 h-4 flex-shrink-0 text-brand-gold/70" />
+                  <span className="truncate">{[headline, s.company].filter(Boolean).join(' at ')}</span>
+                </div>
+              )}
+              {s.location && (
+                <div className="flex items-center gap-2 text-sm text-slate-400 mt-1.5">
+                  <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">{s.location}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {s.bio && <p className="relative mt-6 text-sm text-slate-600 leading-relaxed line-clamp-4">{s.bio}</p>}
+
+          <div className="relative mt-6 flex flex-wrap gap-2">
+            {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
+            {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
+          </div>
+
+          {interests.length > 0 && (
+            <div className="relative mt-2 flex flex-wrap gap-1.5">
+              {interests.slice(0, 6).map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
+            </div>
+          )}
+
+          <div className="relative mt-7 bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/30 rounded-xl px-6 py-5 shadow-[0_1px_2px_rgba(196,146,42,0.08)]">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 mt-0.5">
+                <Sparkles className="w-4 h-4 text-brand-gold" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-2">Why this introduction</p>
+                {renderReasonBlock(row)}
+              </div>
+            </div>
+          </div>
+
+          <div className="relative mt-7">
+            {row.alreadyRequested ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
+                  <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                  </svg>
+                  <span className="text-xs font-medium text-emerald-700">Interest expressed</span>
+                </div>
+                <WithdrawInterestButton targetId={s.id} />
+              </div>
+            ) : (
+              <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} />
+            )}
           </div>
         </div>
       </IntroductionCard>
