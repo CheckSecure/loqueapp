@@ -38,7 +38,7 @@ function Tag({ children, color = 'slate' }: { children: React.ReactNode; color?:
   )
 }
 
-function Avatar({ profile, size = 'md' }: { profile: any; size?: 'sm' | 'md' | 'lg' }) {
+function Avatar({ profile, size = 'md' }: { profile: any; size?: 'sm' | 'md' | 'lg' | 'xl' }) {
   return (
     <UIAvatar
       id={profile.id}
@@ -380,7 +380,7 @@ export default async function IntroductionsPage() {
               {/* Decorative gold halo behind the avatar */}
               <div className="absolute -inset-1.5 rounded-full bg-gradient-to-br from-brand-gold/20 via-brand-gold/5 to-transparent blur-sm pointer-events-none" aria-hidden="true" />
               <div className="relative">
-                <Avatar profile={s} size="lg" />
+                <Avatar profile={s} size="xl" />
               </div>
             </div>
             <div className="flex-1 min-w-0">
