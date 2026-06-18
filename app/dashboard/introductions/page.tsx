@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Briefcase, MapPin, Inbox, Star, Sparkles, ChevronDown, ArrowRight, Send, Zap, Users } from 'lucide-react'
+import { Briefcase, MapPin, Inbox, Star, Sparkles, ChevronDown, ArrowRight, Send, Zap } from 'lucide-react'
 import IntroductionActions from '@/components/IntroductionActions'
 import AdminIntroCard from '@/components/AdminIntroCard'
 import WithdrawInterestButton from '@/components/WithdrawInterestButton'
@@ -476,12 +476,9 @@ export default async function IntroductionsPage() {
             {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
           </div>
 
-          <div className="rounded-lg bg-gradient-to-br from-brand-gold-soft/60 via-brand-gold-soft/40 to-brand-cream/30 border border-brand-gold/25 px-3.5 py-3">
-            <div className="flex items-center gap-2 mb-1.5 pb-1.5 border-b border-brand-gold/15">
-              <Users className="w-3 h-3 text-brand-gold flex-shrink-0" />
-              <p className="text-[9px] uppercase tracking-[0.14em] text-brand-navy font-bold leading-tight">Why we&rsquo;re introducing you</p>
-            </div>
-            <div className="text-[12px] text-slate-700 leading-snug line-clamp-3 [&_ul]:list-none [&_ul]:pl-0 [&_ul]:space-y-1 [&_li]:relative [&_li]:pl-4 [&_li]:before:content-['✓'] [&_li]:before:absolute [&_li]:before:left-0 [&_li]:before:top-0 [&_li]:before:text-brand-gold [&_li]:before:font-bold [&_p]:text-[12px] [&_p]:m-0">
+          <div className="rounded-md bg-brand-cream/40 px-3 py-2">
+            <p className="text-[9px] uppercase tracking-[0.14em] text-brand-gold font-bold mb-1 leading-tight">Introduced by Andrel</p>
+            <div className="text-[12px] text-slate-600 leading-snug line-clamp-2 [&_p]:m-0 [&_p]:text-[12px]">
               {renderReasonBlock(row)}
             </div>
           </div>
