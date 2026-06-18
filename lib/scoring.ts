@@ -226,7 +226,7 @@ export async function computeAllScores() {
     .from('profiles')
     .select('id, full_name, title, company, bio, role_type, avatar_url, interests, seniority, subscription_tier, admin_priority, profile_complete, is_active')
     .eq('profile_complete', true)
-    .eq('is_active', true)
+    .eq('account_status', 'active')
 
   if (!profiles || profiles.length === 0) return { updated: 0 }
 

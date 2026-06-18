@@ -306,7 +306,7 @@ export async function POST(req: NextRequest) {
       .from('profiles')
       .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score, current_status, purposes, city, state, geographic_scope, meeting_format_preference, open_to_business_solutions, company')
       .eq('profile_complete', true)
-      .eq('is_active', true)
+      .eq('account_status', 'active')
       .neq('email', 'bizdev91@gmail.com')
 
     if (profilesError || !profiles || profiles.length < 2) {
