@@ -17,6 +17,10 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { computeMatchSignals } from '@/lib/match-signals'
 import TargetedRequestModalLauncher from '@/components/TargetedRequestModalLauncher'
+import DemoInterestButton from '@/components/DemoInterestButton'
+import DemoPassButton from '@/components/DemoPassButton'
+import DemoCardHider from '@/components/DemoCardHider'
+import { DEMO_FEATURED, DEMO_ADDITIONAL } from './_demo-data'
 
 export const metadata = { title: 'Introductions | Andrel' }
 
@@ -58,10 +62,24 @@ function displayTitle(p: any): string | null {
   return p?.exact_job_title || p?.title || p?.role_type || null
 }
 
-export default async function IntroductionsPage() {
+export default async function IntroductionsPage({ searchParams }: { searchParams?: { demo?: string } }) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+
+  // UI Review Mode — triple gate (ALL required):
+  //   (1) NODE_ENV === 'development' — kills the branch in production builds.
+  //   (2) user.email === 'alexandra@horizoncapital.com' — read from the
+  //       server-verified auth.getUser() result above; never from headers,
+  //       cookies, searchParams, or any client-supplied value.
+  //   (3) searchParams.demo === 'full' — explicit opt-in per request.
+  // Each gate is independently sufficient to block; all three required for
+  // defense in depth. When false, downstream effective* aliases resolve to
+  // the real-data variables by reference and the render is byte-identical.
+  const isDevReview =
+    process.env.NODE_ENV === 'development' &&
+    user.email === 'alexandra@horizoncapital.com' &&
+    searchParams?.demo === 'full'
 
   const { data: profileRows } = await supabase
     .from('profiles')
@@ -309,6 +327,13 @@ export default async function IntroductionsPage() {
   const featuredSuggestion = allSuggestions[0] ?? null
   const additionalSuggestions = allSuggestions.slice(1)
 
+  // UI Review overlay — when isDevReview, swap to the static demo data. When
+  // NOT isDevReview (i.e. always in production), these alias to the real
+  // values by reference and the downstream JSX is byte-identical to the
+  // pre-gate path.
+  const effectiveFeatured: any = isDevReview ? DEMO_FEATURED : featuredSuggestion
+  const effectiveAdditional: any[] = isDevReview ? DEMO_ADDITIONAL : additionalSuggestions
+
   // Earlier (prior batch, untouched, minus current)
   const currentIds = new Set(allSuggestions.map((s: any) => s.profile.id))
   const earlierSuggestions = priorSuggestionIds
@@ -367,9 +392,8 @@ export default async function IntroductionsPage() {
       : typeof s.interests === 'string' && s.interests
         ? s.interests.split(',').map((i: string) => i.trim()).filter(Boolean)
         : []
-    return (
-      <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
-        <div className="relative bg-white border border-slate-100 rounded-2xl pl-10 pr-9 py-9 sm:pl-14 sm:pr-12 sm:py-12 shadow-[0_8px_30px_rgba(15,28,58,0.08)] hover:shadow-[0_12px_40px_rgba(15,28,58,0.12)] transition-all overflow-hidden">
+    const innerCard = (
+      <div className="relative bg-white border border-slate-100 rounded-2xl pl-6 pr-5 py-5 sm:pl-8 sm:pr-6 sm:py-6 shadow-[0_8px_30px_rgba(15,28,58,0.08)] hover:shadow-[0_12px_40px_rgba(15,28,58,0.12)] transition-all overflow-hidden">
           {/* Gold left-edge accent — thicker, more prominent */}
           <div className="absolute left-0 top-10 bottom-10 w-1 bg-gradient-to-b from-brand-gold via-brand-gold/70 to-brand-gold/30 rounded-r-full pointer-events-none" />
           {/* Soft cream radial accent in the top-right for depth */}
@@ -380,19 +404,19 @@ export default async function IntroductionsPage() {
               {/* Decorative gold halo behind the avatar */}
               <div className="absolute -inset-1.5 rounded-full bg-gradient-to-br from-brand-gold/20 via-brand-gold/5 to-transparent blur-sm pointer-events-none" aria-hidden="true" />
               <div className="relative">
-                <Avatar profile={s} size="xl" />
+                <Avatar profile={s} size="lg" />
               </div>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-2xl sm:text-3xl font-bold text-brand-navy truncate leading-[1.1] tracking-tight">{s.full_name || 'New member'}</p>
+              <p className="text-xl sm:text-2xl font-bold text-brand-navy truncate leading-[1.1] tracking-tight">{s.full_name || 'New member'}</p>
               {(headline || s.company) && (
-                <div className="flex items-center gap-2 text-base text-slate-700 mt-2.5 font-medium">
+                <div className="flex items-center gap-2 text-sm text-slate-700 mt-1.5 font-medium">
                   <Briefcase className="w-4 h-4 flex-shrink-0 text-brand-gold/70" />
                   <span className="truncate">{[headline, s.company].filter(Boolean).join(' at ')}</span>
                 </div>
               )}
               {s.location && (
-                <div className="flex items-center gap-2 text-sm text-slate-400 mt-1.5">
+                <div className="flex items-center gap-2 text-sm text-slate-400 mt-1">
                   <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="truncate">{s.location}</span>
                 </div>
@@ -400,33 +424,31 @@ export default async function IntroductionsPage() {
             </div>
           </div>
 
-          {s.bio && <p className="relative mt-6 text-sm text-slate-600 leading-relaxed line-clamp-4">{s.bio}</p>}
+          {s.bio && <p className="relative mt-3 text-sm text-slate-600 leading-relaxed line-clamp-1">{s.bio}</p>}
 
-          <div className="relative mt-6 flex flex-wrap gap-2">
-            {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
-            {s.mentorship_role && <Tag color="emerald"><span className="flex items-center gap-1"><Star className="w-2.5 h-2.5" />{s.mentorship_role}</span></Tag>}
-          </div>
-
-          {interests.length > 0 && (
-            <div className="relative mt-2 flex flex-wrap gap-1.5">
-              {interests.slice(0, 6).map((tag: string) => <Tag key={tag}>{tag}</Tag>)}
-            </div>
-          )}
-
-          <div className="relative mt-7 bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/30 rounded-xl px-6 py-5 shadow-[0_1px_2px_rgba(196,146,42,0.08)]">
+          <div className="relative mt-4 bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/30 rounded-xl px-3.5 py-2.5 shadow-[0_1px_2px_rgba(196,146,42,0.08)]">
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0 mt-0.5">
                 <Sparkles className="w-4 h-4 text-brand-gold" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-2">Why this introduction</p>
+                <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1.5">Introduced by Andrel</p>
                 {renderReasonBlock(row)}
               </div>
             </div>
           </div>
 
-          <div className="relative mt-7">
-            {row.alreadyRequested ? (
+          <div className="relative mt-4">
+            {row.isDemo ? (
+              /* UI Review CTAs — both inert, local-state only. Mirrors the
+                 real RequestIntroButton's Express interest + pass layout. */
+              <div className="flex gap-2">
+                <div className="flex-1 min-w-0">
+                  <DemoInterestButton />
+                </div>
+                <DemoPassButton />
+              </div>
+            ) : row.alreadyRequested ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
                   <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
@@ -441,6 +463,19 @@ export default async function IntroductionsPage() {
             )}
           </div>
         </div>
+    )
+    // Demo rows skip the IntroductionCard navigation wrapper — their IDs
+    // (demo-sarah-whitman etc.) don't resolve to real profiles, so clicking
+    // through would 404. They wrap in DemoCardHider so the X/pass button can
+    // unmount the card locally via React Context. Real rows get the
+    // IntroductionCard wrapper and continue navigating to /dashboard/profile
+    // on card-body click (RequestIntroButton + passOnSuggestion unchanged).
+    if (row.isDemo) {
+      return <DemoCardHider key={row.rowId || s.id}>{innerCard}</DemoCardHider>
+    }
+    return (
+      <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
+        {innerCard}
       </IntroductionCard>
     )
   }
@@ -449,9 +484,8 @@ export default async function IntroductionsPage() {
   const renderAdditional = (row: any) => {
     const s = row.profile
     const headline = displayTitle(s)
-    return (
-      <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
-        <div className="relative bg-white border border-slate-100 border-l-2 border-l-brand-gold/60 rounded-2xl p-5 shadow-[0_6px_20px_rgba(15,28,58,0.06)] hover:shadow-[0_10px_32px_rgba(15,28,58,0.10)] hover:border-l-brand-gold transition-all flex flex-col gap-3.5">
+    const innerCard = (
+      <div className="relative bg-white border border-slate-100 border-l-2 border-l-brand-gold/60 rounded-2xl p-5 shadow-[0_6px_20px_rgba(15,28,58,0.06)] hover:shadow-[0_10px_32px_rgba(15,28,58,0.10)] hover:border-l-brand-gold transition-all flex flex-col gap-3.5">
           <div className="flex items-start gap-3.5">
             <Avatar profile={s} size="md" />
             <div className="flex-1 min-w-0">
@@ -476,15 +510,23 @@ export default async function IntroductionsPage() {
             {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
           </div>
 
-          <div className="rounded-md bg-brand-cream/40 px-3 py-2">
-            <p className="text-[9px] uppercase tracking-[0.14em] text-brand-gold font-bold mb-1 leading-tight">Introduced by Andrel</p>
+          <div className="rounded-md bg-brand-cream/60 px-3 py-2">
+            <p className="text-[9px] uppercase tracking-[0.14em] font-bold text-slate-500 mb-1 leading-tight">Why this match</p>
             <div className="text-[12px] text-slate-600 leading-snug line-clamp-2 [&_p]:m-0 [&_p]:text-[12px]">
               {renderReasonBlock(row)}
             </div>
           </div>
 
           <div>
-            {row.alreadyRequested ? (
+            {row.isDemo ? (
+              /* UI Review CTAs — both inert, local-state only. Compact for the smaller weekly card. */
+              <div className="flex gap-2">
+                <div className="flex-1 min-w-0">
+                  <DemoInterestButton compact />
+                </div>
+                <DemoPassButton compact />
+              </div>
+            ) : row.alreadyRequested ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
                   <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
@@ -499,6 +541,16 @@ export default async function IntroductionsPage() {
             )}
           </div>
         </div>
+    )
+    // Demo rows skip IntroductionCard (would 404 on demo IDs) and wrap in
+    // DemoCardHider for local pass behavior. Real rows keep IntroductionCard
+    // navigation untouched.
+    if (row.isDemo) {
+      return <DemoCardHider key={row.rowId || s.id}>{innerCard}</DemoCardHider>
+    }
+    return (
+      <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
+        {innerCard}
       </IntroductionCard>
     )
   }
@@ -573,19 +625,19 @@ export default async function IntroductionsPage() {
             )}
 
             {/* FEATURED + ADDITIONAL */}
-            {featuredSuggestion ? (
+            {effectiveFeatured ? (
               <section>
                 {/* Eyebrow now lives inside the featured card — see renderFeatured */}
-                {renderFeatured(featuredSuggestion)}
+                {renderFeatured(effectiveFeatured)}
 
-                {additionalSuggestions.length > 0 && (
+                {effectiveAdditional.length > 0 && (
                   <div className="mt-10">
                     <div className="flex items-end justify-between gap-4 mb-4">
-                      <h3 className="text-base font-bold text-brand-navy tracking-tight">Additional curated introductions</h3>
-                      <Pill variant="gold">{additionalSuggestions.length}</Pill>
+                      <h3 className="text-base font-bold text-brand-navy tracking-tight">This Week&rsquo;s Introductions</h3>
+                      <Pill variant="gold">{effectiveAdditional.length}</Pill>
                     </div>
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {additionalSuggestions.map(renderAdditional)}
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      {effectiveAdditional.map(renderAdditional)}
                     </div>
                   </div>
                 )}
