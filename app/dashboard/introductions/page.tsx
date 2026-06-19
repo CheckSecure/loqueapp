@@ -490,12 +490,11 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             <Avatar profile={s} size="md" />
             <div className="flex-1 min-w-0">
               <p className="text-base font-bold text-brand-navy truncate leading-tight tracking-tight">{s.full_name || 'New member'}</p>
-              {(headline || s.company) && (
-                <div className="mt-1 flex items-baseline gap-1.5 text-xs text-slate-700 font-medium">
-                  {headline && <span className="truncate">{headline}</span>}
-                  {headline && s.company && <span className="text-brand-gold/40 flex-shrink-0">|</span>}
-                  {s.company && <span className="truncate text-slate-500">{s.company}</span>}
-                </div>
+              {headline && (
+                <p className="mt-1 text-xs font-medium text-slate-700 truncate leading-tight">{headline}</p>
+              )}
+              {s.company && (
+                <p className="mt-0.5 text-xs text-slate-500 truncate leading-tight">{s.company}</p>
               )}
               {s.location && (
                 <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1">
