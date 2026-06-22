@@ -16,7 +16,7 @@ import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { computeMatchSignals } from '@/lib/match-signals'
-import TargetedRequestModalLauncher from '@/components/TargetedRequestModalLauncher'
+import ConciergeLauncher from '@/components/ConciergeLauncher'
 import DemoInterestButton from '@/components/DemoInterestButton'
 import DemoPassButton from '@/components/DemoPassButton'
 import DemoCardHider from '@/components/DemoCardHider'
@@ -92,6 +92,9 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
   const userTier = (profileRow as any)?.subscription_tier ?? 'free'
   const effectiveTier = profileRow ? getEffectiveTier(profileRow) : 'free'
+  // Concierge UI gate — must mirror the server gate (lib/concierge/eligibility.ts),
+  // which uses getEffectiveTier(). UI convenience only; the route is authoritative.
+  const canUseConcierge = ['professional', 'executive', 'founding'].includes(effectiveTier)
   const isPaid = userTier !== 'free'
   const isFoundingMember = Boolean(profileRow && effectiveTier === 'founding')
   const canCreateOpportunity = effectiveTier !== 'free'
@@ -123,6 +126,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     { data: creditRow },
     { data: pendingTargetedRequest },
     { data: oppCandidateRows },
+    { data: activeConciergeRequest },
   ] = await Promise.all([
     supabase
       .from('matches')
@@ -175,11 +179,19 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       .eq('opportunities.status', 'active')
       .order('shown_at', { ascending: false })
       .limit(3),
+    // Active Concierge request (if any). RLS allows users to SELECT their own
+    // concierge_requests rows; requester_id is the auth uid we insert with.
+    supabase
+      .from('concierge_requests')
+      .select('id, status, created_at')
+      .eq('requester_id', user.id)
+      .in('status', ['pending', 'reviewing', 'match_found'])
+      .maybeSingle(),
   ])
 
   const balance = creditRow?.balance ?? 0
-  const premiumCredits = (creditRow as any)?.premium_credits ?? 0
-  const hasPendingTargetedRequest = Boolean(pendingTargetedRequest)
+  const activeConciergeStatus =
+    ((activeConciergeRequest as any)?.status as 'pending' | 'reviewing' | 'match_found' | undefined) ?? null
 
   // Distinct batch_ids in DESC order — current is [0], prior is [1].
   const orderedBatchIds: string[] = []
@@ -672,9 +684,9 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                         </div>
                         <ArrowRight className="w-4 h-4 text-slate-400 mt-1 group-hover:text-brand-navy transition-colors" />
                       </Link>
-                      <TargetedRequestModalLauncher
-                        premiumCredits={premiumCredits}
-                        hasPendingRequest={hasPendingTargetedRequest}
+                      <ConciergeLauncher
+                        canUseConcierge={canUseConcierge}
+                        activeStatus={activeConciergeStatus}
                         variant="row"
                       />
                     </div>
@@ -719,21 +731,13 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                   <div className="flex-1 min-w-0">
                     <p className="text-[9px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-0.5">Premium</p>
                     <h3 className="text-sm font-bold text-white tracking-tight">Andrel Concierge</h3>
-                    <p className="text-[11px] text-white/65 mt-1 leading-relaxed">Need a warm introduction to someone specific? Our team can help facilitate targeted introductions.</p>
+                    <p className="text-[11px] text-white/65 mt-1 leading-relaxed">Need a warm introduction to someone specific? Andrel curates and facilitates the connection.</p>
                   </div>
                 </div>
-                <div className="mt-4 text-[11px] text-white/65 border-t border-white/10 pt-2.5 flex items-center justify-between gap-3">
-                  <span>
-                    Premium credits: <span className="font-bold text-brand-gold">{premiumCredits}</span>
-                  </span>
-                  {hasPendingTargetedRequest && (
-                    <span className="text-brand-gold bg-brand-gold/15 border border-brand-gold/40 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider">pending</span>
-                  )}
-                </div>
-                <div className="mt-3">
-                  <TargetedRequestModalLauncher
-                    premiumCredits={premiumCredits}
-                    hasPendingRequest={hasPendingTargetedRequest}
+                <div className="mt-4 border-t border-white/10 pt-3.5">
+                  <ConciergeLauncher
+                    canUseConcierge={canUseConcierge}
+                    activeStatus={activeConciergeStatus}
                     variant="primary"
                   />
                 </div>
