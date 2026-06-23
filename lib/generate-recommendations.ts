@@ -716,9 +716,18 @@ function generateIntroReason(userProfile: any, candidate: any): string {
   return `${pronoun} could be a valuable addition to your network`
 }
 
-export async function generateOnboardingRecommendations(userId: string, maxCount?: number) {
+/**
+ * Pure, READ-ONLY candidate ranker. Runs the exact same pipeline that the batch
+ * generator uses (pool fetch → exclusions → scoring → throttle → sort) but
+ * performs NO writes and RETURNS the scored candidates (with match_reason).
+ *
+ * Behavior is identical to the previous inline pipeline — this is an extract,
+ * not a scoring/matching change. generateOnboardingRecommendations (below) wraps
+ * this and adds the persistence (intro_requests insert + targeted_requests mark).
+ */
+export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   const adminClient = createAdminClient()
-  
+
   const { data: newUserProfile, error: profileError } = await adminClient
     .from('profiles')
     .select('*')
@@ -933,6 +942,25 @@ export async function generateOnboardingRecommendations(userId: string, maxCount
   const sorted = mentorshipControlled.slice(0, maxCount ?? recommendationCount)
   
   console.log('[generate-recommendations] Top 3 final scores:', sorted.slice(0, 3).map(c => ({ email: c.email, score: c.finalScore.toFixed(1) })))
+
+  // Attach a human-readable match reason per candidate — single source of truth
+  // shared by the read-only consumers and the persisting writer below.
+  const candidates = sorted.map(candidate => ({
+    ...candidate,
+    match_reason: generateIntroReason(newUserProfile, candidate),
+  }))
+
+  return { candidates, newUserProfile, targetedRequest }
+}
+
+/**
+ * Persisting batch generator — UNCHANGED behavior. Ranks via
+ * rankCandidatesForUser (no scoring/exclusion changes), then writes the
+ * 'suggested' intro_requests and marks any active targeted_request 'applied'.
+ */
+export async function generateOnboardingRecommendations(userId: string, maxCount?: number) {
+  const adminClient = createAdminClient()
+  const { candidates: sorted, targetedRequest } = await rankCandidatesForUser(userId, maxCount)
   
   if (sorted.length === 0) {
     return { count: 0 }
@@ -943,7 +971,7 @@ export async function generateOnboardingRecommendations(userId: string, maxCount
     requester_id: userId,
     target_user_id: candidate.id,
     status: 'suggested',
-    match_reason: generateIntroReason(newUserProfile, candidate),
+    match_reason: candidate.match_reason,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }))

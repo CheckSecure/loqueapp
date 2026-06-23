@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Pill } from '@/components/ui/Pill'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Search } from 'lucide-react'
 
 interface RequesterProfile {
   full_name: string | null
@@ -64,10 +64,38 @@ function Detail({ label, value }: { label: string; value: string | null }) {
   )
 }
 
+interface Candidate {
+  id: string
+  name: string
+  title: string | null
+  company: string | null
+  seniority: string | null
+  score: number
+  reason: string | null
+}
+
 export default function AdminConciergeClient({ requests }: { requests: ConciergeRequest[] }) {
   const router = useRouter()
   const [processing, setProcessing] = useState<string | null>(null)
   const [errorById, setErrorById] = useState<Record<string, string>>({})
+
+  // Read-only candidate recommendations, fetched on demand per request.
+  const [findingId, setFindingId] = useState<string | null>(null)
+  const [candidatesById, setCandidatesById] = useState<Record<string, Candidate[]>>({})
+  const [candErrorById, setCandErrorById] = useState<Record<string, string>>({})
+
+  async function findCandidates(id: string) {
+    setCandErrorById(prev => { const next = { ...prev }; delete next[id]; return next })
+    setFindingId(id)
+    const res = await fetch(`/api/admin/concierge/${id}/candidates`)
+    setFindingId(null)
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setCandErrorById(prev => ({ ...prev, [id]: data.error || 'Could not load candidates' }))
+      return
+    }
+    setCandidatesById(prev => ({ ...prev, [id]: data.candidates || [] }))
+  }
 
   async function updateStatus(id: string, status: string) {
     setErrorById(prev => { const next = { ...prev }; delete next[id]; return next })
@@ -128,6 +156,16 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
             )}
 
             <div className="flex flex-wrap gap-2 mt-3">
+              {req.status !== 'closed' && (
+                <button
+                  onClick={() => findCandidates(req.id)}
+                  disabled={findingId === req.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-gold border border-brand-gold/40 bg-brand-gold-soft rounded-lg hover:bg-brand-gold/10 disabled:opacity-50 transition-colors"
+                >
+                  {findingId === req.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                  Find candidates
+                </button>
+              )}
               {req.status === 'pending' && (
                 <button
                   onClick={() => updateStatus(req.id, 'reviewing')}
@@ -152,6 +190,39 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
 
             {errorById[req.id] && (
               <p className="text-xs text-red-600 mt-2">{errorById[req.id]}</p>
+            )}
+            {candErrorById[req.id] && (
+              <p className="text-xs text-red-600 mt-2">{candErrorById[req.id]}</p>
+            )}
+
+            {candidatesById[req.id] && (
+              <div className="mt-3 rounded-xl border border-brand-gold/20 bg-brand-cream/30 p-4">
+                <p className="text-xs font-semibold text-brand-navy">Recommended candidates</p>
+                <p className="text-[11px] text-slate-500 mb-3">
+                  Best candidates for the requester&apos;s profile (not yet criteria-aware — does not filter on the typed target role/company/industry). Read-only — no introduction is created.
+                </p>
+                {candidatesById[req.id].length === 0 ? (
+                  <p className="text-xs text-slate-500">No eligible candidates returned (small active pool after exclusions).</p>
+                ) : (
+                  <ol className="space-y-2.5">
+                    {candidatesById[req.id].map((c, i) => (
+                      <li key={c.id} className="flex items-start gap-3">
+                        <span className="text-xs font-bold text-brand-gold mt-0.5 w-4 flex-shrink-0">{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p className="text-sm font-semibold text-slate-900">{c.name}</p>
+                            <span className="text-[11px] font-semibold text-slate-500 flex-shrink-0">score {c.score}</span>
+                          </div>
+                          {(c.title || c.company) && (
+                            <p className="text-xs text-slate-600">{[c.title, c.company].filter(Boolean).join(' · ')}</p>
+                          )}
+                          {c.reason && <p className="text-xs text-slate-500 mt-0.5">{c.reason}</p>}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
             )}
           </div>
         )
