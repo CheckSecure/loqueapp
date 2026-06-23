@@ -90,21 +90,21 @@ interface MatchedUser {
 
 function getStatusBadge(status: string, isNew: boolean) {
   if (status === 'confirmed') {
-    return { text: 'Confirmed', color: 'bg-green-100 text-green-700 border-green-200' }
+    return { text: 'Confirmed', color: 'bg-emerald-50 text-emerald-700 border-emerald-200/70' }
   }
   if (status === 'requested' || status === 'reschedule_requested') {
     if (isNew) {
-      return { text: 'Awaiting your response', color: 'bg-amber-100 text-amber-800 border-amber-200' }
+      return { text: 'Awaiting your response', color: 'bg-brand-gold-soft text-brand-gold border-brand-gold/30' }
     }
-    return { text: 'Awaiting their response', color: 'bg-slate-100 text-slate-500 border-slate-200' }
+    return { text: 'Awaiting their response', color: 'bg-slate-50 text-slate-500 border-slate-200/70' }
   }
   if (status === 'declined' || status === 'reschedule_declined') {
     return {
       text: status === 'reschedule_declined' ? 'Reschedule Declined' : 'Declined',
-      color: 'bg-red-100 text-red-700 border-red-200',
+      color: 'bg-rose-50 text-rose-700 border-rose-200/70',
     }
   }
-  return { text: status, color: 'bg-gray-100 text-gray-700 border-gray-200' }
+  return { text: status, color: 'bg-slate-50 text-slate-600 border-slate-200/70' }
 }
 
 
@@ -151,58 +151,56 @@ export default function MeetingsClient({
       onClick={() => setSelectedMeeting(m)}
       onKeyDown={e => e.key === 'Enter' && setSelectedMeeting(m)}
       className={cn(
-        'rounded-xl p-4 md:p-5 shadow-sm flex flex-col gap-3 cursor-pointer transition-all',
+        'rounded-xl p-5 flex flex-col gap-3 cursor-pointer transition-all hover:shadow-sm',
         m.isNew && !faded
-          ? 'bg-amber-50/40 border border-amber-200 hover:border-amber-300 hover:shadow-md'
-          : 'bg-white border border-slate-100 hover:border-slate-200 hover:shadow-md',
+          ? 'border-y border-r border-slate-200/70 border-l-[3px] border-l-brand-gold bg-brand-cream/25'
+          : 'bg-white border border-slate-200/70 hover:border-slate-300',
         faded && 'opacity-60'
       )}
     >
       {/* Top row: icon + info + avatar */}
       <div className="flex items-start gap-3">
-        <div className={cn('w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5', faded ? 'bg-slate-100' : 'bg-[#F5F6FB]')}>
-          <Calendar className={cn('w-4 h-4', faded ? 'text-slate-400' : 'text-[#1B2850]')} />
+        <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5', faded ? 'bg-slate-100' : 'bg-brand-navy/[0.06]')}>
+          <Calendar className={cn('w-4 h-4', faded ? 'text-slate-400' : 'text-brand-navy')} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
-            <p className="text-sm font-semibold text-slate-900 truncate flex-1 min-w-0">{m.title}</p>
+            <p className="text-sm font-semibold text-brand-navy truncate flex-1 min-w-0">{m.title}</p>
             {(() => {
               const badge = getStatusBadge(m.status, m.isNew ?? false)
               return (
-                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${badge.color}`}>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${badge.color}`}>
                   {badge.text}
                 </span>
               )
             })()}
           </div>
           {m.purpose_category && (
-            <p className="text-xs text-slate-500 truncate mt-0.5">
-              <span className="text-slate-400">•</span> {m.purpose_category}
-            </p>
+            <p className="text-xs text-slate-500 truncate mt-1">{m.purpose_category}</p>
           )}
           {m.other?.full_name && (
-            <p className={m.isNew ? "text-xs text-slate-900 font-bold truncate mt-0.5" : "text-xs text-slate-400 truncate mt-0.5"}>with {m.other.full_name}</p>
+            <p className={m.isNew ? "text-xs font-semibold text-brand-navy truncate mt-0.5" : "text-xs text-slate-400 truncate mt-0.5"}>with {m.other.full_name}</p>
           )}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5">
             {m.proposed_scheduled_at ? (
               <span className="flex flex-col gap-0.5">
                 <span className="flex items-center gap-1 text-xs text-slate-400 line-through">
                   <Clock className="w-3 h-3" />
                   {formatDate(m.scheduled_at)} · {formatTime(m.scheduled_at, m.duration_minutes)} {getTimezoneAbbr()}
                 </span>
-                <span className="flex items-center gap-1 text-xs text-blue-600 font-semibold">
+                <span className="flex items-center gap-1 text-xs text-brand-navy font-semibold">
                   <Clock className="w-3 h-3" />
                   {formatDate(m.proposed_scheduled_at)} · {formatTime(m.proposed_scheduled_at, m.proposed_duration_minutes || m.duration_minutes)} {getTimezoneAbbr()}
                 </span>
               </span>
             ) : (
-              <span className={m.isNew ? "flex items-center gap-1 text-xs text-slate-900 font-semibold" : "flex items-center gap-1 text-xs text-slate-500"}>
+              <span className={m.isNew ? "flex items-center gap-1 text-xs text-brand-navy font-semibold" : "flex items-center gap-1 text-xs text-slate-500"}>
                 <Clock className="w-3 h-3" />
                 {formatDate(m.scheduled_at)} · {formatTime(m.scheduled_at, m.duration_minutes)} {getTimezoneAbbr()}
               </span>
             )}
             {m.meeting_type === 'virtual' || m.meeting_type === 'video' ? (
-              <span className="flex items-center gap-1 text-xs text-[#1B2850] font-medium">
+              <span className="flex items-center gap-1 text-xs text-brand-navy font-medium">
                 <Video className="w-3 h-3" /> Virtual
               </span>
             ) : m.location ? (
@@ -214,9 +212,9 @@ export default function MeetingsClient({
         </div>
         {m.other && (
           m.other.avatar_url ? (
-            <img src={m.other.avatar_url} alt={m.other.full_name || ''} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+            <img src={m.other.avatar_url} alt={m.other.full_name || ''} className="w-9 h-9 rounded-full object-cover ring-1 ring-slate-200 flex-shrink-0" />
           ) : (
-            <div className={`w-7 h-7 rounded-full ${pickColor(m.other.id)} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
+            <div className={`w-9 h-9 rounded-full ${pickColor(m.other.id)} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
               {initials(m.other.full_name)}
             </div>
           )
@@ -225,10 +223,10 @@ export default function MeetingsClient({
 
       {/* Action buttons row — stop propagation so they don't open the detail modal */}
       {!faded && (
-        <div className="flex items-center gap-2 pt-1 border-t border-slate-50">
+        <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
           <button
             onClick={e => { e.stopPropagation(); downloadICS(m) }}
-            className="flex-1 text-xs font-semibold border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:border-slate-300 hover:text-slate-800 transition-colors text-center"
+            className="flex-1 text-xs font-semibold border border-slate-200/70 text-slate-600 px-3 py-1.5 rounded-lg hover:border-slate-300 hover:text-slate-800 transition-colors text-center"
           >
             + Calendar
           </button>
@@ -238,7 +236,7 @@ export default function MeetingsClient({
               target="_blank"
               rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
-              className="flex-1 text-xs font-semibold bg-[#1B2850] text-white px-3 py-1.5 rounded-lg hover:bg-[#2E4080] transition-colors text-center"
+              className="flex-1 text-xs font-semibold bg-brand-navy text-white px-3 py-1.5 rounded-lg hover:bg-brand-navy/90 transition-colors text-center"
             >
               Join meeting
             </a>
@@ -251,20 +249,20 @@ export default function MeetingsClient({
   return (
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
       <div className="max-w-3xl">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-10">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Meetings</h1>
-            <p className="text-slate-500 text-sm mt-0.5">Your scheduled conversations and calls.</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight">Meetings</h1>
+            <p className="text-slate-500 text-sm mt-2">Your scheduled conversations and calls.</p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex bg-slate-100 p-0.5 rounded-lg">
+            <div className="flex bg-slate-100/80 p-0.5 rounded-lg">
               {(['list', 'calendar'] as const).map((v) => (
                 <button
                   key={v}
                   onClick={() => setView(v)}
                   className={cn(
                     'px-3 py-1.5 text-xs font-medium rounded-md capitalize transition-colors',
-                    view === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    view === v ? 'bg-white text-brand-navy shadow-sm' : 'text-slate-500 hover:text-slate-700'
                   )}
                 >
                   {v}
@@ -273,7 +271,7 @@ export default function MeetingsClient({
             </div>
             <button
               onClick={() => setShowSchedule(true)}
-              className="flex items-center gap-2 bg-[#1B2850] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#2E4080] transition-colors"
+              className="flex items-center gap-2 bg-brand-navy text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-navy/90 shadow-sm transition-colors"
             >
               <Plus className="w-4 h-4" />
               Schedule
@@ -286,9 +284,9 @@ export default function MeetingsClient({
         </PageHint>
 
         {view === 'calendar' && (
-          <div className="bg-white border border-slate-100 rounded-xl shadow-sm mb-8 overflow-hidden">
+          <div className="bg-white border border-slate-200/70 rounded-xl shadow-sm mb-8 overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h2 className="text-sm font-semibold text-slate-900">
+              <h2 className="text-sm font-semibold text-brand-navy">
                 {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}
               </h2>
               <div className="flex items-center gap-1">
@@ -296,25 +294,23 @@ export default function MeetingsClient({
                 <button className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"><ChevronRight className="w-4 h-4 text-slate-500" /></button>
               </div>
             </div>
-            <div className="p-4 text-center text-sm text-slate-400">
-              Calendar view coming soon. Switch to list to see your meetings.
+            <div className="p-10 text-center text-sm text-slate-400">
+              Calendar view coming soon — switch to list to see your meetings.
             </div>
           </div>
         )}
 
         <div className="space-y-6">
           <div>
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Upcoming</h2>
+            <h2 className="text-[11px] font-semibold text-slate-400 uppercase tracking-[0.14em] mb-4">Upcoming</h2>
             {upcoming.length === 0 ? (
-              <div className="bg-white border border-slate-100 rounded-xl p-10 text-center shadow-sm">
-                <div className="w-10 h-10 bg-[#F5F6FB] rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Calendar className="w-5 h-5 text-slate-400" />
-                </div>
-                <p className="text-sm font-semibold text-slate-600 mb-1">No upcoming meetings</p>
-                <p className="text-xs text-slate-400 mb-4">Schedule a call with someone in your network.</p>
+              <div className="bg-white border border-slate-200/70 rounded-2xl p-12 text-center shadow-sm">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-gold mb-3">Your calendar</p>
+                <p className="text-slate-900 font-semibold mb-1.5">No upcoming meetings</p>
+                <p className="text-sm text-slate-500 mb-5 max-w-sm mx-auto leading-relaxed">Schedule a call with someone in your network.</p>
                 <button
                   onClick={() => setShowSchedule(true)}
-                  className="text-xs font-semibold bg-[#1B2850] text-white px-4 py-2 rounded-lg hover:bg-[#2E4080] transition-colors"
+                  className="text-sm font-semibold bg-brand-navy text-white px-5 py-2.5 rounded-lg hover:bg-brand-navy/90 shadow-sm transition-colors"
                 >
                   Schedule meeting
                 </button>
@@ -328,7 +324,7 @@ export default function MeetingsClient({
 
           {past.length > 0 && (
             <div>
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Past</h2>
+              <h2 className="text-[11px] font-semibold text-slate-400 uppercase tracking-[0.14em] mb-4">Past</h2>
               <div className="space-y-3">
                 {past.map(m => <MeetingCard key={m.id} m={m} faded />)}
               </div>
