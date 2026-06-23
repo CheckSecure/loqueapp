@@ -140,7 +140,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       .order('created_at', { ascending: false }),
     supabase
       .from('intro_requests')
-      .select('id, requester_id, target_user_id, status, created_at, is_admin_initiated, other:profiles!requester_id(id, full_name, title, exact_job_title, company, location, bio, seniority, role_type, avatar_url, account_status)')
+      .select('id, requester_id, target_user_id, status, created_at, is_admin_initiated, match_reason, other:profiles!requester_id(id, full_name, title, exact_job_title, company, location, bio, seniority, role_type, avatar_url, account_status)')
       .eq('target_user_id', profileId)
       .eq('is_admin_initiated', true)
       .in('status', ['admin_pending', 'approved'])
@@ -628,6 +628,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                         otherUser={intro.other}
                         otherAlreadyApproved={intro.otherAlreadyApproved}
                         userAlreadyAccepted={intro.userAlreadyAccepted}
+                        matchReason={intro.match_reason}
                       />
                     </IntroductionCard>
                   ))}
