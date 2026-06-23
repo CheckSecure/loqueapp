@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Pill } from '@/components/ui/Pill'
-import { Loader2, Search } from 'lucide-react'
+import { Loader2, Search, Sparkles, CheckCircle2 } from 'lucide-react'
 
 interface RequesterProfile {
   full_name: string | null
@@ -97,6 +97,37 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
     setCandidatesById(prev => ({ ...prev, [id]: data.candidates || [] }))
   }
 
+  // Create Andrel Intro — per-candidate, with inline confirm.
+  const [confirmKey, setConfirmKey] = useState<string | null>(null) // `${reqId}:${candId}`
+  const [introducingKey, setIntroducingKey] = useState<string | null>(null)
+  const [introducedById, setIntroducedById] = useState<Record<string, boolean>>({})
+  const [introMsgById, setIntroMsgById] = useState<Record<string, string>>({})
+  const [introErrById, setIntroErrById] = useState<Record<string, string>>({})
+
+  async function introduce(reqId: string, candidate: Candidate) {
+    const key = `${reqId}:${candidate.id}`
+    setIntroErrById(prev => { const next = { ...prev }; delete next[reqId]; return next })
+    setIntroducingKey(key)
+    const res = await fetch(`/api/admin/concierge/${reqId}/introduce`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidate_id: candidate.id, match_reason: candidate.reason || undefined }),
+    })
+    setIntroducingKey(null)
+    setConfirmKey(null)
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setIntroErrById(prev => ({ ...prev, [reqId]: data.error || 'Failed to create introduction' }))
+      return
+    }
+    setIntroducedById(prev => ({ ...prev, [reqId]: true }))
+    setIntroMsgById(prev => ({
+      ...prev,
+      [reqId]: 'Andrel introduction created — both members notified and will see it on their Introductions page.',
+    }))
+    router.refresh()
+  }
+
   async function updateStatus(id: string, status: string) {
     setErrorById(prev => { const next = { ...prev }; delete next[id]; return next })
     setProcessing(id)
@@ -125,6 +156,7 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
         const name = r?.full_name || 'Unknown member'
         const email = r?.email || '—'
         const busy = processing === req.id
+        const isIntroduced = req.status === 'introduced' || introducedById[req.id]
         return (
           <div key={req.id} className="pb-5 border-b border-slate-100 last:border-b-0 last:pb-0">
             <div className="flex items-start justify-between gap-4 mb-3">
@@ -156,7 +188,7 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
             )}
 
             <div className="flex flex-wrap gap-2 mt-3">
-              {req.status !== 'closed' && (
+              {req.status !== 'closed' && !isIntroduced && (
                 <button
                   onClick={() => findCandidates(req.id)}
                   disabled={findingId === req.id}
@@ -194,6 +226,15 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
             {candErrorById[req.id] && (
               <p className="text-xs text-red-600 mt-2">{candErrorById[req.id]}</p>
             )}
+            {introErrById[req.id] && (
+              <p className="text-xs text-red-600 mt-2">{introErrById[req.id]}</p>
+            )}
+            {introMsgById[req.id] && (
+              <p className="flex items-center gap-1.5 text-xs text-emerald-700 mt-2">
+                <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                {introMsgById[req.id]}
+              </p>
+            )}
 
             {candidatesById[req.id] && (
               <div className="mt-3 rounded-xl border border-brand-gold/20 bg-brand-cream/30 p-4">
@@ -217,6 +258,36 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
                             <p className="text-xs text-slate-600">{[c.title, c.company].filter(Boolean).join(' · ')}</p>
                           )}
                           {c.reason && <p className="text-xs text-slate-500 mt-0.5">{c.reason}</p>}
+
+                          {!isIntroduced && (
+                            confirmKey === `${req.id}:${c.id}` ? (
+                              <div className="mt-2 flex items-center gap-2">
+                                <span className="text-[11px] text-slate-600">Create Andrel intro with {c.name}?</span>
+                                <button
+                                  onClick={() => introduce(req.id, c)}
+                                  disabled={introducingKey === `${req.id}:${c.id}`}
+                                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-white bg-brand-navy rounded-md hover:bg-brand-navy/90 disabled:opacity-50 transition-colors"
+                                >
+                                  {introducingKey === `${req.id}:${c.id}` && <Loader2 className="w-3 h-3 animate-spin" />}
+                                  Confirm
+                                </button>
+                                <button
+                                  onClick={() => setConfirmKey(null)}
+                                  className="px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-800 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmKey(`${req.id}:${c.id}`)}
+                                className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-navy border border-brand-navy/30 rounded-md hover:bg-brand-navy/5 transition-colors"
+                              >
+                                <Sparkles className="w-3 h-3 text-brand-gold" />
+                                Create Andrel Intro
+                              </button>
+                            )
+                          )}
                         </div>
                       </li>
                     ))}
