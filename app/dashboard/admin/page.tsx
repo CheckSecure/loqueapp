@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, GitBranch, UserPlus, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, Briefcase, Zap, ThumbsUp } from 'lucide-react'
+import { Users, GitBranch, UserPlus, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, Briefcase, Zap, ThumbsUp, Sparkles } from 'lucide-react'
 
 export const metadata = { title: 'Admin Dashboard | Andrel' }
 
@@ -30,6 +30,12 @@ export default async function AdminDashboard() {
     .from('issue_reports')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'new')
+
+  // Pending Concierge requests awaiting triage
+  const { count: pendingConciergeCount } = await adminClient
+    .from('concierge_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending')
 
   // Shared time windows
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -351,6 +357,30 @@ export default async function AdminDashboard() {
             </p>
             <div className="flex items-center gap-4 text-xs text-slate-600">
               <span>{(newIssueCount || 0) > 0 ? `${newIssueCount} unreviewed` : 'No new reports'}</span>
+            </div>
+          </Link>
+
+          {/* Concierge Queue */}
+          <Link
+            href="/dashboard/admin/concierge"
+            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
+                <Sparkles className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
+              </div>
+              {(pendingConciergeCount || 0) > 0 && (
+                <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
+                  {(pendingConciergeCount || 0) > 9 ? '9+' : pendingConciergeCount}
+                </span>
+              )}
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Concierge Queue</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Member-requested introductions — triage pending requests
+            </p>
+            <div className="flex items-center gap-4 text-xs text-slate-600">
+              <span>{(pendingConciergeCount || 0) > 0 ? `${pendingConciergeCount} pending` : 'No pending requests'}</span>
             </div>
           </Link>
 
