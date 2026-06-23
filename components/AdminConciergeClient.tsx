@@ -58,8 +58,8 @@ function formatDate(iso: string): string {
 function Detail({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-slate-500">{label}</dt>
-      <dd className="text-sm text-slate-800">{value || <span className="text-slate-400">—</span>}</dd>
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</dt>
+      <dd className="text-sm text-slate-800 mt-0.5">{value || <span className="text-slate-300">—</span>}</dd>
     </div>
   )
 }
@@ -146,11 +146,15 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
   }
 
   if (requests.length === 0) {
-    return <p className="text-slate-500 text-sm">No Concierge requests yet.</p>
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center">
+        <p className="text-sm text-slate-500">No Concierge requests yet.</p>
+      </div>
+    )
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-6 space-y-5">
+    <div className="space-y-4">
       {requests.map((req) => {
         const r = Array.isArray(req.requester) ? req.requester[0] : req.requester
         const name = r?.full_name || 'Unknown member'
@@ -158,43 +162,55 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
         const busy = processing === req.id
         const isIntroduced = req.status === 'introduced' || introducedById[req.id]
         return (
-          <div key={req.id} className="pb-5 border-b border-slate-100 last:border-b-0 last:pb-0">
-            <div className="flex items-start justify-between gap-4 mb-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{name}</p>
-                <p className="text-xs text-slate-500">{email}</p>
-                <p className="text-xs text-slate-400 mt-0.5">Submitted {formatDate(req.created_at)}</p>
+          <div
+            key={req.id}
+            className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(16,24,40,0.04)]"
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-gold">
+                  <Sparkles className="w-3 h-3" />
+                  Andrel Concierge
+                </span>
+                <p className="text-base font-semibold text-brand-navy leading-tight mt-1.5 truncate">{name}</p>
+                <p className="text-xs text-slate-500 mt-0.5 truncate">{email}</p>
               </div>
-              <Pill variant={statusVariant(req.status)}>{statusLabel(req.status)}</Pill>
+              <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                <Pill variant={statusVariant(req.status)} dot>{statusLabel(req.status)}</Pill>
+                <span className="text-[11px] text-slate-400">Submitted {formatDate(req.created_at)}</span>
+              </div>
             </div>
 
-            <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-2 mb-3">
+            {/* Request details */}
+            <dl className="mt-6 grid sm:grid-cols-2 gap-x-8 gap-y-3.5">
               <Detail label="Looking to meet" value={req.target_person} />
               <Detail label="Role / title" value={req.target_role} />
               <Detail label="Company" value={req.target_company} />
               <Detail label="Industry" value={req.target_industry} />
             </dl>
 
-            <div className="mb-2">
-              <p className="text-xs font-medium text-slate-500">Why it's valuable</p>
-              <p className="text-sm text-slate-800">{req.reason || <span className="text-slate-400">—</span>}</p>
+            <div className="mt-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Why it&apos;s valuable</p>
+              <p className="text-sm text-slate-700 leading-relaxed">{req.reason || <span className="text-slate-300">—</span>}</p>
             </div>
 
             {req.notes && (
-              <div className="mb-2">
-                <p className="text-xs font-medium text-slate-500">Notes</p>
-                <p className="text-sm text-slate-800">{req.notes}</p>
+              <div className="mt-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Notes</p>
+                <p className="text-sm text-slate-700 leading-relaxed">{req.notes}</p>
               </div>
             )}
 
-            <div className="flex flex-wrap gap-2 mt-3">
+            {/* Actions */}
+            <div className="flex flex-wrap gap-2 mt-5">
               {req.status !== 'closed' && !isIntroduced && (
                 <button
                   onClick={() => findCandidates(req.id)}
                   disabled={findingId === req.id}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-gold border border-brand-gold/40 bg-brand-gold-soft rounded-lg hover:bg-brand-gold/10 disabled:opacity-50 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-brand-gold border border-brand-gold/40 bg-brand-gold-soft rounded-lg hover:bg-brand-gold/10 disabled:opacity-50 transition-colors"
                 >
-                  {findingId === req.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                  {findingId === req.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                   Find candidates
                 </button>
               )}
@@ -202,9 +218,9 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
                 <button
                   onClick={() => updateStatus(req.id, 'reviewing')}
                   disabled={busy}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#1B2850] border border-[#1B2850]/30 rounded-lg hover:bg-[#1B2850]/5 disabled:opacity-50 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-brand-navy border border-brand-navy/25 rounded-lg hover:bg-brand-navy/5 disabled:opacity-50 transition-colors"
                 >
-                  {busy && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   Start review
                 </button>
               )}
@@ -212,82 +228,92 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
                 <button
                   onClick={() => updateStatus(req.id, 'closed')}
                   disabled={busy}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
                 >
-                  {busy && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   Close
                 </button>
               )}
             </div>
 
             {errorById[req.id] && (
-              <p className="text-xs text-red-600 mt-2">{errorById[req.id]}</p>
+              <p className="text-xs text-red-600 mt-3">{errorById[req.id]}</p>
             )}
             {candErrorById[req.id] && (
-              <p className="text-xs text-red-600 mt-2">{candErrorById[req.id]}</p>
+              <p className="text-xs text-red-600 mt-3">{candErrorById[req.id]}</p>
             )}
             {introErrById[req.id] && (
-              <p className="text-xs text-red-600 mt-2">{introErrById[req.id]}</p>
+              <p className="text-xs text-red-600 mt-3">{introErrById[req.id]}</p>
             )}
             {introMsgById[req.id] && (
-              <p className="flex items-center gap-1.5 text-xs text-emerald-700 mt-2">
-                <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+              <p className="flex items-start gap-1.5 text-xs text-emerald-700 mt-3 rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-px" />
                 {introMsgById[req.id]}
               </p>
             )}
 
             {candidatesById[req.id] && (
-              <div className="mt-3 rounded-xl border border-brand-gold/20 bg-brand-cream/30 p-4">
-                <p className="text-xs font-semibold text-brand-navy">Recommended candidates</p>
-                <p className="text-[11px] text-slate-500 mb-3">
+              <div className="mt-5 rounded-xl border border-brand-gold/20 bg-brand-cream/40 p-5">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-brand-gold" />
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-brand-navy">Recommended candidates</p>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 mb-4 leading-relaxed">
                   Best candidates for the requester&apos;s profile (not yet criteria-aware — does not filter on the typed target role/company/industry). Read-only — no introduction is created.
                 </p>
                 {candidatesById[req.id].length === 0 ? (
                   <p className="text-xs text-slate-500">No eligible candidates returned (small active pool after exclusions).</p>
                 ) : (
-                  <ol className="space-y-2.5">
+                  <ol className="space-y-3">
                     {candidatesById[req.id].map((c, i) => (
-                      <li key={c.id} className="flex items-start gap-3">
-                        <span className="text-xs font-bold text-brand-gold mt-0.5 w-4 flex-shrink-0">{i + 1}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <p className="text-sm font-semibold text-slate-900">{c.name}</p>
-                            <span className="text-[11px] font-semibold text-slate-500 flex-shrink-0">score {c.score}</span>
-                          </div>
-                          {(c.title || c.company) && (
-                            <p className="text-xs text-slate-600">{[c.title, c.company].filter(Boolean).join(' · ')}</p>
-                          )}
-                          {c.reason && <p className="text-xs text-slate-500 mt-0.5">{c.reason}</p>}
-
-                          {!isIntroduced && (
-                            confirmKey === `${req.id}:${c.id}` ? (
-                              <div className="mt-2 flex items-center gap-2">
-                                <span className="text-[11px] text-slate-600">Create Andrel intro with {c.name}?</span>
-                                <button
-                                  onClick={() => introduce(req.id, c)}
-                                  disabled={introducingKey === `${req.id}:${c.id}`}
-                                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-white bg-brand-navy rounded-md hover:bg-brand-navy/90 disabled:opacity-50 transition-colors"
-                                >
-                                  {introducingKey === `${req.id}:${c.id}` && <Loader2 className="w-3 h-3 animate-spin" />}
-                                  Confirm
-                                </button>
-                                <button
-                                  onClick={() => setConfirmKey(null)}
-                                  className="px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-800 transition-colors"
-                                >
-                                  Cancel
-                                </button>
+                      <li key={c.id} className="rounded-lg border border-slate-200/70 bg-white p-4">
+                        <div className="flex items-start gap-3">
+                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-brand-gold-soft text-brand-gold text-xs font-bold flex-shrink-0">{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-900 truncate">{c.name}</p>
+                                {(c.title || c.company) && (
+                                  <p className="text-xs text-slate-500 mt-0.5 truncate">{[c.title, c.company].filter(Boolean).join(' · ')}</p>
+                                )}
                               </div>
-                            ) : (
-                              <button
-                                onClick={() => setConfirmKey(`${req.id}:${c.id}`)}
-                                className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-navy border border-brand-navy/30 rounded-md hover:bg-brand-navy/5 transition-colors"
-                              >
-                                <Sparkles className="w-3 h-3 text-brand-gold" />
-                                Create Andrel Intro
-                              </button>
-                            )
-                          )}
+                              <div className="flex flex-col items-center leading-none flex-shrink-0 rounded-md bg-brand-navy/[0.04] border border-brand-navy/10 px-2.5 py-1">
+                                <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">Score</span>
+                                <span className="text-sm font-bold text-brand-navy mt-0.5">{c.score}</span>
+                              </div>
+                            </div>
+                            {c.reason && <p className="text-xs text-slate-600 mt-2 leading-relaxed">{c.reason}</p>}
+
+                            {!isIntroduced && (
+                              confirmKey === `${req.id}:${c.id}` ? (
+                                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand-navy/15 bg-brand-navy/[0.03] px-3 py-2">
+                                  <span className="text-[11px] text-slate-600">Create Andrel intro with <span className="font-semibold text-slate-800">{c.name}</span>?</span>
+                                  <button
+                                    onClick={() => introduce(req.id, c)}
+                                    disabled={introducingKey === `${req.id}:${c.id}`}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold text-white bg-brand-navy rounded-md hover:bg-brand-navy/90 disabled:opacity-50 transition-colors"
+                                  >
+                                    {introducingKey === `${req.id}:${c.id}` && <Loader2 className="w-3 h-3 animate-spin" />}
+                                    Confirm
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmKey(null)}
+                                    className="px-2.5 py-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setConfirmKey(`${req.id}:${c.id}`)}
+                                  className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-brand-navy rounded-lg hover:bg-brand-navy/90 shadow-sm transition-colors"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-brand-gold" />
+                                  Create Andrel Intro
+                                </button>
+                              )
+                            )}
+                          </div>
                         </div>
                       </li>
                     ))}
