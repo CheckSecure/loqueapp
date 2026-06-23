@@ -59,11 +59,12 @@ export default function ConciergeLauncher({ canUseConcierge, activeStatus = null
     }
     if (activeStatus) {
       return (
-        <div className="flex w-full items-start gap-3 rounded-lg border border-brand-gold/30 bg-brand-cream/40 px-4 py-3">
+        <div className="flex w-full items-start gap-3 rounded-lg border border-brand-gold/30 bg-brand-cream/40 px-4 py-3.5">
           <Clock className="w-4 h-4 text-brand-gold flex-shrink-0 mt-1" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-brand-navy">Concierge request active</p>
-            <p className="text-xs text-slate-500 mt-0.5">{STATUS_LABEL[activeStatus]} — Andrel is identifying the best introduction.</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-gold mb-0.5">Andrel Concierge</p>
+            <p className="text-sm font-medium text-brand-navy">Your request is being reviewed</p>
+            <p className="text-xs text-slate-500 mt-0.5">{STATUS_LABEL[activeStatus]} — Andrel is personally identifying the right introduction.</p>
           </div>
         </div>
       )
@@ -112,15 +113,15 @@ export default function ConciergeLauncher({ canUseConcierge, activeStatus = null
 
   if (activeStatus) {
     return (
-      <div className="rounded-lg border border-brand-gold/30 bg-white/10 px-3 py-3">
-        <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4 text-brand-gold flex-shrink-0" />
+      <div className="rounded-lg border border-brand-gold/30 bg-white/[0.06] px-4 py-3.5">
+        <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-brand-gold">Andrel Concierge</p>
+        <div className="flex items-center gap-2 mt-1.5">
           <span className="text-brand-gold bg-brand-gold/15 border border-brand-gold/40 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider">
             {STATUS_LABEL[activeStatus]}
           </span>
         </div>
         <p className="text-[11px] text-white/70 mt-2 leading-relaxed">
-          Your Concierge request is active. Andrel is identifying the best introduction — we'll let you know.
+          Andrel is personally reviewing your request and will identify the right introduction.
         </p>
       </div>
     )

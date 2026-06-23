@@ -20,6 +20,8 @@ interface AdminIntroCardProps {
   }
   otherAlreadyApproved?: boolean
   userAlreadyAccepted?: boolean
+  /** Curated reason for this introduction. Rendered prominently when present; generic fallback otherwise. */
+  matchReason?: string | null
 }
 
 function initials(name: string | null) {
@@ -32,7 +34,7 @@ function pickColor(id: string) {
   return AVATAR_COLORS[n % AVATAR_COLORS.length]
 }
 
-export default function AdminIntroCard({ introRequestId, otherUser, otherAlreadyApproved, userAlreadyAccepted }: AdminIntroCardProps) {
+export default function AdminIntroCard({ introRequestId, otherUser, otherAlreadyApproved, userAlreadyAccepted, matchReason }: AdminIntroCardProps) {
   const router = useRouter()
   const [state, setState] = useState<'idle' | 'accepting' | 'passing' | 'accepted' | 'matched' | 'passed' | 'no_credits' | 'error'>(userAlreadyAccepted ? 'accepted' : 'idle')
   const [errorMsg, setErrorMsg] = useState('')
@@ -83,7 +85,7 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
 
   return (
     <div className="bg-white border border-[#C4922A]/20 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3">
-      <p className="text-xs text-slate-500">Curated based on strong professional alignment</p>
+      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-gold">Introduced by Andrel</p>
       <div className="flex items-start gap-3">
         <EnlargeableAvatar src={otherUser.avatar_url} name={otherUser.full_name} className="flex-shrink-0">
           {otherUser.avatar_url ? (
@@ -109,6 +111,12 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
         </div>
       </div>
       {otherUser.bio && <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{otherUser.bio}</p>}
+
+      <div className="rounded-lg bg-brand-cream/50 border border-brand-gold/15 px-3.5 py-2.5">
+        <p className="text-sm text-brand-navy leading-relaxed">
+          {matchReason || 'Based on your background and professional interests, Andrel selected this introduction.'}
+        </p>
+      </div>
 
       {otherAlreadyApproved && state === 'idle' && (
         <div className="text-xs font-medium text-[#1B2850] bg-[#F5F6FB] border border-[#1B2850]/10 rounded-lg px-3 py-2">

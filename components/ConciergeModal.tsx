@@ -125,9 +125,9 @@ export default function ConciergeModal({ open, onClose }: Props) {
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-[10px] uppercase tracking-[0.16em] text-brand-gold font-bold">Andrel Concierge</p>
-              <h2 className="text-base font-semibold text-slate-900 leading-tight">Request a warm introduction</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Tell us who you want to meet. Andrel will curate and facilitate the connection.</p>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold">Andrel Concierge</p>
+              <h2 className="text-base font-semibold text-brand-navy leading-tight">Need help making the right connection?</h2>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">Tell us who you&apos;d like to meet and our team will personally review your request and facilitate introductions when appropriate.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700 -mt-1 -mr-1 p-1" aria-label="Close">
@@ -147,6 +147,16 @@ export default function ConciergeModal({ open, onClose }: Props) {
             </div>
           ) : (
             <>
+              <div className="rounded-lg bg-brand-cream/40 border border-brand-gold/15 px-3.5 py-3">
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-1.5">For example</p>
+                <ul className="space-y-1 text-xs text-slate-600">
+                  <li>Introduce me to a healthcare GC.</li>
+                  <li>Looking for an energy litigator.</li>
+                  <li>Seeking a growth-stage investor.</li>
+                  <li>Exploring business development opportunities.</li>
+                </ul>
+              </div>
+
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Who are you looking to meet?</label>
                 <input
