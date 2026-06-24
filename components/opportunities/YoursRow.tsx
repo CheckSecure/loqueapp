@@ -19,7 +19,7 @@ const STATUS_LABEL: Record<Opportunity['status'], string> = {
 };
 
 const STATUS_TONE: Record<Opportunity['status'], string> = {
-  active: 'text-[#1B2850]',
+  active: 'text-brand-navy',
   dormant: 'text-amber-700',
   closed: 'text-slate-400',
   expired: 'text-slate-400',
@@ -38,16 +38,16 @@ export function YoursRow({
   const isTerminal = opportunity.status === 'closed' || opportunity.status === 'expired';
 
   return (
-    <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-5 py-4 hover:border-[#1B2850]/40">
+    <div className="flex items-center justify-between rounded-xl border border-slate-200/70 bg-white px-5 py-4 transition-all hover:border-brand-navy/30 hover:shadow-sm">
       <Link
         href={`/dashboard/opportunities/${opportunity.id}`}
         className="flex min-w-0 flex-1 items-center justify-between"
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
-            <span className="truncate text-sm font-medium text-slate-900">{opportunity.title}</span>
+            <span className="truncate text-sm font-semibold text-brand-navy">{opportunity.title}</span>
             {waitingCount > 0 && opportunity.status === 'active' && (
-              <span className="rounded-full bg-[#C4922A]/15 px-2 py-0.5 text-[11px] font-medium text-[#C4922A]">
+              <span className="rounded-full bg-brand-gold-soft border border-brand-gold/20 px-2 py-0.5 text-[11px] font-medium text-brand-gold">
                 {waitingCount} waiting
               </span>
             )}

@@ -107,18 +107,18 @@ export default async function RespondedOpportunityPage({
     <div className="mx-auto max-w-3xl px-6 py-10">
       <Link
         href="/dashboard/opportunities/responses"
-        className="text-sm text-slate-500 hover:text-slate-700"
+        className="text-sm text-slate-500 hover:text-brand-navy transition-colors"
       >
         ← Your responses
       </Link>
 
-      <article className="mt-6 rounded-lg border border-slate-200 border-l-4 border-l-[#C4922A] bg-white p-7 shadow-sm">
-        <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+      <article className="mt-6 rounded-2xl border border-slate-200/70 border-l-4 border-l-brand-gold bg-white p-7 shadow-sm">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-gold">
           {oppRow.type === 'hiring' ? 'Hiring' : 'Business need'}
           {oppRow.urgency && oppRow.type === 'business' && ` · ${oppRow.urgency}`}
         </div>
 
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900">{oppRow.title}</h1>
+        <h1 className="mt-2 text-2xl font-bold text-brand-navy tracking-tight">{oppRow.title}</h1>
 
         {creatorLine && (
           <p className="mt-1 text-sm text-slate-700">{creatorLine}</p>
@@ -138,7 +138,7 @@ export default async function RespondedOpportunityPage({
           {canOpenConversation && (
             <Link
               href={`/dashboard/messages/${conversationId}`}
-              className="rounded-md bg-[#1B2850] px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#151f3d]"
+              className="rounded-lg bg-brand-navy px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-brand-navy/90 transition-colors"
             >
               Open conversation
             </Link>
@@ -146,7 +146,7 @@ export default async function RespondedOpportunityPage({
           {isNoLongerActive && status === 'introduced' && conversationId && (
             <Link
               href={`/dashboard/messages/${conversationId}`}
-              className="text-sm text-slate-500 hover:text-slate-700"
+              className="text-sm text-slate-500 hover:text-brand-navy transition-colors"
             >
               View conversation →
             </Link>

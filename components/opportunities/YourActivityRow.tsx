@@ -10,7 +10,7 @@ const STATUS_LABEL: Record<Status, string> = {
 
 const STATUS_TONE: Record<Status, string> = {
   interested: 'text-amber-700',
-  introduced: 'text-[#1B2850]',
+  introduced: 'text-brand-navy',
   withdrawn: 'text-slate-400',
 };
 
@@ -44,9 +44,9 @@ export function YourActivityRow({
       href={`/dashboard/opportunities/responded/${opportunity.id}`}
       className="block"
     >
-      <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-5 py-4 transition-colors hover:border-[#1B2850]/40 hover:bg-slate-50">
+      <div className="flex items-center justify-between rounded-xl border border-slate-200/70 bg-white px-5 py-4 transition-all hover:border-brand-navy/30 hover:bg-slate-50 hover:shadow-sm">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-slate-900">{opportunity.title}</div>
+          <div className="truncate text-sm font-semibold text-brand-navy">{opportunity.title}</div>
           {creatorLine && (
             <div className="mt-0.5 truncate text-xs text-slate-600">{creatorLine}</div>
           )}
