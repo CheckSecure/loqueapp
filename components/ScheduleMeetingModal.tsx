@@ -50,15 +50,18 @@ export default function ScheduleMeetingModal({
   }
 
   const fieldClass =
-    'w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition bg-white'
+    'w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-brand-navy focus:ring-1 focus:ring-brand-navy/20 transition bg-white'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-bold text-slate-900">Schedule a meeting</h2>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200/70 w-full max-w-md p-6 sm:p-7 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-1">Andrel</p>
+            <h2 className="text-lg font-bold text-brand-navy tracking-tight">Schedule a meeting</h2>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors -mt-1 -mr-1">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -66,14 +69,14 @@ export default function ScheduleMeetingModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           <input type="hidden" name="timezone_offset" value={new Date().getTimezoneOffset().toString()} />
           {error && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">
+            <p className="text-sm text-red-700 bg-red-50 border border-red-100 px-3 py-2.5 rounded-lg">
               {error}
             </p>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Meeting with <span className="text-red-400">*</span>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">
+              Meeting with <span className="text-brand-gold">*</span>
             </label>
             <select name="recipient_id" required defaultValue={initialRecipientId || ""} className={fieldClass}>
               <option value="">Select a connection…</option>
@@ -87,7 +90,7 @@ export default function ScheduleMeetingModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">
               Meeting title <span className="text-slate-400 font-normal text-xs ml-1">optional</span>
             </label>
             <input
@@ -99,8 +102,8 @@ export default function ScheduleMeetingModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Purpose <span className="text-red-400">*</span>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">
+              Purpose <span className="text-brand-gold">*</span>
             </label>
             <select name="purpose" required defaultValue="" className={fieldClass}>
               <option value="" disabled>Select a purpose…</option>
@@ -112,8 +115,8 @@ export default function ScheduleMeetingModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Date <span className="text-red-400">*</span>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                Date <span className="text-brand-gold">*</span>
               </label>
               <input
                 name="date"
@@ -124,8 +127,8 @@ export default function ScheduleMeetingModal({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Time <span className="text-red-400">*</span>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                Time <span className="text-brand-gold">*</span>
               </label>
               <input
                 name="time"
@@ -139,7 +142,7 @@ export default function ScheduleMeetingModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Duration</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Duration</label>
               <select name="duration_minutes" defaultValue="30" className={fieldClass}>
                 <option value="30">30 minutes</option>
                 <option value="45">45 minutes</option>
@@ -147,7 +150,7 @@ export default function ScheduleMeetingModal({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Format</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Format</label>
               <select 
                 name="format" 
                 defaultValue="virtual" 
@@ -161,7 +164,7 @@ export default function ScheduleMeetingModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">
               Meeting link <span className="text-slate-400 font-normal text-xs ml-1">for virtual</span>
             </label>
             <input
@@ -173,7 +176,7 @@ export default function ScheduleMeetingModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">
               Location <span className="text-slate-400 font-normal text-xs ml-1">for in-person</span>
             </label>
             <input
@@ -185,7 +188,7 @@ export default function ScheduleMeetingModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">
               Notes <span className="text-slate-400 font-normal text-xs ml-1">optional</span>
             </label>
             <textarea
@@ -199,7 +202,7 @@ export default function ScheduleMeetingModal({
           <button
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-[#1B2850] text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60 mt-2"
+            className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-brand-navy/90 shadow-sm transition-colors disabled:opacity-60 mt-2"
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             {loading ? 'Saving…' : 'Schedule meeting'}
