@@ -97,13 +97,13 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
       <div
         onClick={handleCardClick}
         className={`bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col gap-4 ${
-          highlighted ? 'border-[#C4922A] bg-[#FDF9F3]' : 'border-slate-100'
+          highlighted ? 'border-brand-gold/40 bg-brand-cream/30' : 'border-slate-200/70'
         }`}
       >
         <div className="flex items-start gap-3">
           <EnlargeableAvatar src={profile.avatar_url} name={profile.full_name} className="flex-shrink-0">
             {profile.avatar_url ? (
-              <img src={profile.avatar_url} alt={profile.full_name} className={`w-11 h-11 rounded-full object-cover ${isDeactivated ? 'grayscale opacity-60' : ''}`} />
+              <img src={profile.avatar_url} alt={profile.full_name} className={`w-11 h-11 rounded-full object-cover ring-1 ring-slate-200 ${isDeactivated ? 'grayscale opacity-60' : ''}`} />
             ) : (
               <div className={`w-11 h-11 rounded-full ${avatarColor} flex items-center justify-center text-white text-sm font-bold`}>
                 {initials}
@@ -112,11 +112,11 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
           </EnlargeableAvatar>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-slate-900 truncate">
+              <p className="text-sm font-semibold text-brand-navy truncate">
                 {isDeactivated ? 'Former member' : profile.full_name}
               </p>
               {highlighted && !isDeactivated && (
-                <span className="px-1.5 py-0.5 bg-[#C4922A] text-white text-[10px] font-bold rounded uppercase">New</span>
+                <span className="px-1.5 py-0.5 bg-brand-gold-soft text-brand-gold border border-brand-gold/30 text-[10px] font-bold rounded uppercase tracking-wide">New</span>
               )}
             </div>
             {!isDeactivated && (profile.exact_job_title || profile.title || profile.company) && (
@@ -143,13 +143,13 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
           <div className="text-xs text-slate-400">Introduced through Andrel · Connected {connectedRelative}</div>
         )}
 
-        <div className="flex gap-2 pt-1 border-t border-slate-50">
+        <div className="flex gap-2 pt-3 border-t border-slate-100">
           <button
             data-card-action
             type="button"
             onClick={handleMessageClick}
             disabled={navigatingToMessage}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-[#1B2850] text-white text-xs font-semibold rounded-lg hover:bg-[#162040] transition-colors disabled:opacity-75"
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-brand-navy text-white text-xs font-semibold rounded-lg hover:bg-brand-navy/90 transition-colors disabled:opacity-75"
           >
             <MessageSquare className="w-3.5 h-3.5" />
             Message
@@ -158,7 +158,7 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
             data-card-action
             href={`/dashboard/meetings?schedule=1&with=${profile.id}`}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200/70 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors"
           >
             <Calendar className="w-3.5 h-3.5" />
             Schedule
@@ -168,7 +168,7 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
             type="button"
             onClick={handleOpenDetails}
             aria-label="View full profile"
-            className="flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200/70 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors"
           >
             <Eye className="w-3.5 h-3.5" />
             View
