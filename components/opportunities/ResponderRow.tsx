@@ -132,7 +132,7 @@ export function ResponderRow({
         <EnlargeableAvatar src={p?.avatar_url} name={displayName} className="flex-shrink-0">
           {p?.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={p.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover" />
+            <img src={p.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover ring-1 ring-slate-200" />
           ) : (
             <div className="h-12 w-12 rounded-full bg-slate-200" />
           )}
@@ -140,9 +140,9 @@ export function ResponderRow({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <div className="text-sm font-medium text-slate-900">{displayName}</div>
+            <div className="text-sm font-medium text-brand-navy">{displayName}</div>
             {isNew && (
-              <span className="rounded-full bg-[#C4922A]/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#C4922A]">
+              <span className="rounded-full bg-brand-gold-soft border border-brand-gold/30 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-brand-gold">
                 New
               </span>
             )}
@@ -155,7 +155,7 @@ export function ResponderRow({
             return (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {expertiseTags.slice(0, 5).map((tag) => (
-                  <span key={tag} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+                  <span key={tag} className="rounded-full bg-slate-50 border border-slate-200/70 px-2 py-0.5 text-[11px] text-slate-700">
                     {tag}
                   </span>
                 ))}
@@ -168,18 +168,18 @@ export function ResponderRow({
           responder.conversation_id ? (
             <Link
               href={`/dashboard/messages/${responder.conversation_id}`}
-              className="ml-4 rounded-md border border-[#1B2850] px-3 py-1.5 text-xs font-medium text-[#1B2850] hover:bg-[#1B2850] hover:text-white"
+              className="ml-4 rounded-lg border border-brand-navy px-3 py-1.5 text-xs font-medium text-brand-navy hover:bg-brand-navy hover:text-white transition-colors"
             >
               Open conversation →
             </Link>
           ) : (
-            <span className="ml-4 text-xs font-medium text-[#1B2850]">Introduced</span>
+            <span className="ml-4 text-xs font-medium text-brand-navy">Introduced</span>
           )
         ) : canIntroduce ? (
           <div className="ml-4 flex flex-shrink-0 flex-col items-end gap-2">
             {confirming ? (
               <div className="flex gap-2">
-                <button type="button" onClick={introduce} disabled={busy} className="rounded-md bg-[#1B2850] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60">
+                <button type="button" onClick={introduce} disabled={busy} className="rounded-lg bg-brand-navy px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-navy/90 disabled:opacity-60 transition-colors">
                   {busy ? 'Introducing…' : 'Confirm'}
                 </button>
                 <button type="button" onClick={() => setConfirming(false)} disabled={busy} className="text-xs text-slate-500 hover:text-slate-700">
@@ -187,7 +187,7 @@ export function ResponderRow({
                 </button>
               </div>
             ) : (
-              <button type="button" onClick={() => setConfirming(true)} className="rounded-md border border-[#1B2850] px-3 py-1.5 text-xs font-medium text-[#1B2850] hover:bg-[#1B2850] hover:text-white">
+              <button type="button" onClick={() => setConfirming(true)} className="rounded-lg border border-brand-navy px-3 py-1.5 text-xs font-medium text-brand-navy hover:bg-brand-navy hover:text-white transition-colors">
                 Introduce
               </button>
             )}
@@ -196,7 +196,7 @@ export function ResponderRow({
                 type="button"
                 onClick={() => setDeclineConfirming(true)}
                 disabled={busy || confirming}
-                className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-40"
+                className="text-xs text-slate-500 hover:text-brand-navy disabled:opacity-40 transition-colors"
               >
                 Not a fit
               </button>
