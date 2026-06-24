@@ -83,7 +83,7 @@ export default async function OpportunitiesPage() {
     <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8 sm:py-10">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Opportunities</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight">Opportunities</h1>
           <p className="mt-2 text-sm text-slate-500">
             Private, curated signals — no noise, no browsing.
           </p>
@@ -113,7 +113,7 @@ export default async function OpportunitiesPage() {
 
       <section className="mt-10">
         <div className="mb-5">
-          <h2 className="text-base font-semibold text-slate-900">
+          <h2 className="text-base font-semibold text-brand-navy">
             For you
           </h2>
           <p className="mt-1 text-sm text-slate-500">
@@ -138,7 +138,7 @@ export default async function OpportunitiesPage() {
       </section>
 
       <section className="mt-14">
-        <h2 className="text-base font-semibold text-slate-900">
+        <h2 className="text-base font-semibold text-brand-navy">
           Your activity
         </h2>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -162,17 +162,17 @@ export default async function OpportunitiesPage() {
       </section>
 
       <section className="mt-14">
-        <h2 className="text-base font-semibold text-slate-900 mb-5">How Opportunities Work</h2>
+        <h2 className="text-base font-semibold text-brand-navy mb-5">How Opportunities Work</h2>
         <div className="grid gap-4 sm:grid-cols-3">
-          <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+          <div className="flex items-start gap-3 bg-brand-cream/30 border border-brand-gold/15 rounded-xl px-4 py-3.5">
             <Zap className="w-5 h-5 text-brand-navy flex-shrink-0 mt-0.5" />
             <p className="text-sm text-slate-700">Signal a hiring or business need</p>
           </div>
-          <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+          <div className="flex items-start gap-3 bg-brand-cream/30 border border-brand-gold/15 rounded-xl px-4 py-3.5">
             <Users className="w-5 h-5 text-brand-navy flex-shrink-0 mt-0.5" />
             <p className="text-sm text-slate-700">Andrel identifies relevant members</p>
           </div>
-          <div className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+          <div className="flex items-start gap-3 bg-brand-cream/30 border border-brand-gold/15 rounded-xl px-4 py-3.5">
             <Lock className="w-5 h-5 text-brand-navy flex-shrink-0 mt-0.5" />
             <p className="text-sm text-slate-700">Shared privately</p>
           </div>
@@ -210,11 +210,11 @@ function DestinationCard({
   return (
     <Link
       href={href}
-      className="group flex flex-col justify-between rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition-all hover:border-brand-navy/40 hover:shadow-md"
+      className="group flex flex-col justify-between rounded-2xl border border-slate-200/70 bg-white p-6 shadow-sm transition-all hover:border-brand-navy/30 hover:shadow-md"
     >
       <div>
         <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-sm font-semibold text-slate-900 group-hover:text-brand-navy">{title}</h3>
+          <h3 className="text-sm font-semibold text-brand-navy group-hover:text-brand-navy/80">{title}</h3>
           {count > 0 && (
             <span className="text-xs font-medium text-slate-500">
               {count} {countLabel}
