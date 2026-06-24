@@ -188,7 +188,7 @@ export default function MeetingDetailModal({
       {/* Backdrop */}
       <div
         className={cn(
-          'absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity duration-250',
+          'absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-250',
           visible ? 'opacity-100' : 'opacity-0'
         )}
         onClick={handleClose}
@@ -212,14 +212,17 @@ export default function MeetingDetailModal({
         </div>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 flex-shrink-0">
-          <h2 className="text-sm font-semibold text-slate-900">Meeting details</h2>
+        <div className="flex items-start justify-between px-5 py-4 border-b border-slate-100 flex-shrink-0">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-0.5">Andrel</p>
+            <h2 className="text-sm font-semibold text-brand-navy">Meeting details</h2>
+          </div>
           <button
             onClick={handleClose}
             aria-label="Close"
-            className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors"
+            className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors -mt-0.5"
           >
-            <X className="w-4 h-4 text-slate-500" />
+            <X className="w-4 h-4 text-slate-400" />
           </button>
         </div>
 
@@ -231,13 +234,13 @@ export default function MeetingDetailModal({
             {meeting.other && (
               <button
                 onClick={goToProfile}
-                className="w-full flex items-center gap-4 p-4 bg-[#F5F6FB] rounded-2xl hover:bg-slate-100 transition-colors text-left group"
+                className="w-full flex items-center gap-4 p-4 bg-brand-cream/40 border border-brand-gold/15 rounded-2xl hover:bg-brand-cream/60 transition-colors text-left group"
               >
                 {meeting.other.avatar_url ? (
                   <img
                     src={meeting.other.avatar_url}
                     alt={meeting.other.full_name}
-                    className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                    className="w-12 h-12 rounded-full object-cover ring-1 ring-slate-200 flex-shrink-0"
                   />
                 ) : (
                   <div className={cn(
@@ -248,7 +251,7 @@ export default function MeetingDetailModal({
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-[#1B2850] transition-colors">
+                  <p className="text-sm font-semibold text-brand-navy truncate group-hover:text-brand-navy/80 transition-colors">
                     {meeting.other.full_name}
                   </p>
                   {(meeting.other.exact_job_title || meeting.other.title || meeting.other.company) && (
@@ -256,7 +259,7 @@ export default function MeetingDetailModal({
                       {[meeting.other.exact_job_title || meeting.other.title, meeting.other.company].filter(Boolean).join(' · ')}
                     </p>
                   )}
-                  <p className="text-xs text-[#C4922A] font-medium mt-1.5">View profile →</p>
+                  <p className="text-xs text-brand-gold font-medium mt-1.5">View profile →</p>
                 </div>
               </button>
             )}
@@ -264,16 +267,16 @@ export default function MeetingDetailModal({
             {/* Topic */}
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Topic</p>
-              <p className="text-base font-semibold text-slate-900 leading-snug">{meeting.title}</p>
+              <p className="text-base font-semibold text-brand-navy leading-snug">{meeting.title}</p>
               {meeting.isPast && (
-                <span className="inline-block mt-2 text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Past meeting</span>
+                <span className="inline-block mt-2 text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">Past meeting</span>
               )}
             </div>
 
             {/* Date & time — Add to Calendar sits directly below */}
             <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
-                <Calendar className="w-4 h-4 text-[#1B2850]" />
+              <div className="w-9 h-9 rounded-xl bg-brand-navy/[0.06] flex items-center justify-center flex-shrink-0">
+                <Calendar className="w-4 h-4 text-brand-navy" />
               </div>
               <div className="flex-1">
                 {meeting.proposed_scheduled_at ? (
@@ -284,10 +287,10 @@ export default function MeetingDetailModal({
                     <p className="text-xs text-slate-400 line-through mt-0.5">
                       {formatTimeRange(meeting.scheduled_at, meeting.duration_minutes)} {getTimezoneAbbr()} · {meeting.duration_minutes} min
                     </p>
-                    <p className="text-sm font-semibold text-blue-600 mt-2">
+                    <p className="text-sm font-semibold text-brand-navy mt-2">
                       Proposed: {formatFullDate(meeting.proposed_scheduled_at)}
                     </p>
-                    <p className="text-xs text-blue-600 mt-0.5">
+                    <p className="text-xs text-brand-navy mt-0.5">
                       {formatTimeRange(meeting.proposed_scheduled_at, meeting.proposed_duration_minutes || meeting.duration_minutes)} {getTimezoneAbbr()} · {meeting.proposed_duration_minutes || meeting.duration_minutes} min
                     </p>
                   </>
@@ -301,7 +304,7 @@ export default function MeetingDetailModal({
                 )}
                 <button
                   onClick={() => downloadICS(meeting)}
-                  className="mt-2 text-xs text-[#C4922A] font-medium hover:underline"
+                  className="mt-2 text-xs text-brand-gold font-medium hover:underline"
                 >
                   Add to Calendar
                 </button>
@@ -311,8 +314,8 @@ export default function MeetingDetailModal({
             {/* Format / location */}
             {(meeting.meeting_type === 'virtual' || meeting.meeting_type === 'video') ? (
               <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
-                  <Video className="w-4 h-4 text-[#1B2850]" />
+                <div className="w-9 h-9 rounded-xl bg-brand-navy/[0.06] flex items-center justify-center flex-shrink-0">
+                  <Video className="w-4 h-4 text-brand-navy" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-slate-900">Virtual meeting</p>
@@ -322,7 +325,7 @@ export default function MeetingDetailModal({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={e => e.stopPropagation()}
-                      className="mt-1 flex items-center gap-1 text-xs text-[#C4922A] font-medium hover:underline truncate"
+                      className="mt-1 flex items-center gap-1 text-xs text-brand-gold font-medium hover:underline truncate"
                     >
                       <ExternalLink className="w-3 h-3 flex-shrink-0" />
                       <span className="truncate">{meeting.zoom_link}</span>
@@ -332,8 +335,8 @@ export default function MeetingDetailModal({
               </div>
             ) : meeting.location ? (
               <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
-                  <MapPin className="w-4 h-4 text-[#1B2850]" />
+                <div className="w-9 h-9 rounded-xl bg-brand-navy/[0.06] flex items-center justify-center flex-shrink-0">
+                  <MapPin className="w-4 h-4 text-brand-navy" />
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-900">In person</p>
@@ -342,8 +345,8 @@ export default function MeetingDetailModal({
               </div>
             ) : (
               <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
-                  <Clock className="w-4 h-4 text-[#1B2850]" />
+                <div className="w-9 h-9 rounded-xl bg-brand-navy/[0.06] flex items-center justify-center flex-shrink-0">
+                  <Clock className="w-4 h-4 text-brand-navy" />
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-900 capitalize">
@@ -356,8 +359,8 @@ export default function MeetingDetailModal({
             {/* Notes */}
             {meeting.notes && (
               <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-[#F5F6FB] flex items-center justify-center flex-shrink-0">
-                  <FileText className="w-4 h-4 text-[#1B2850]" />
+                <div className="w-9 h-9 rounded-xl bg-brand-navy/[0.06] flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-4 h-4 text-brand-navy" />
                 </div>
                 <div className="flex-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Notes</p>
