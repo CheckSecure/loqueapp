@@ -1465,4 +1465,134 @@ Admin account: `bizdev91@gmail.com` — password managed by the operator.
 
 ---
 
+## 11. Concierge v1 + Executive-Network UI Refresh (June 2026)
+
+*Added 2026-06-24. Everything above this section predates it (last synced April 28); this section is appended, not edited.*
+
+### 11.1 Andrel Concierge v1 — premium admin-assisted introductions
+
+A new, tier-gated, human-in-the-loop introduction service, **separate from the
+credit-metered `targeted_requests` batch booster** (do not conflate the two).
+A Professional/Executive/Founding member describes who they want to meet; the
+request lands in an admin queue; an admin reviews recommended candidates and
+creates an "Introduced by Andrel" introduction.
+
+**Data model — `concierge_requests`** (applied manually in Supabase per the
+operator convention; no migration file):
+- `id, requester_id → profiles, target_person, target_role, target_company,
+  target_industry, reason, notes, status, created_at, updated_at`.
+- `status` is a **named CHECK** over `pending | reviewing | match_found |
+  introduced | closed` (named so it's a one-line drop/recreate when the state
+  machine evolves — deliberately *not* an enum; contrast the dropped
+  `notifications_type_check` lesson in §10).
+- **Partial unique index** `(requester_id) WHERE status IN
+  ('pending','reviewing','match_found')` → one active Concierge request per
+  member (DB-enforced; the submit route also returns a friendly 409 on `23505`).
+- **RLS:** enabled, SELECT-own only, **no user write policy**. All writes go
+  through the server using `createAdminClient()` *after* the tier gate — so the
+  free-tier gate cannot be bypassed from the client (there is no user-context
+  write path). Mirrors the notifications RLS hardening.
+
+**Submission + gating** (`app/api/concierge/submit/route.ts`,
+`lib/concierge/eligibility.ts`):
+- Server-authoritative gate, order: `profile_complete` → `account_status =
+  'active'` → `getEffectiveTier()` ∈ {professional, executive, founding} (free /
+  expired-founding rejected 403). `requester_id` comes from auth, never the body.
+- Member UI: `components/ConciergeModal.tsx` + `ConciergeLauncher.tsx` (entry
+  point on the introductions page, replacing the old targeted-intro card; free
+  users see an upgrade panel). UI gate mirrors the server via a
+  `canUseConcierge` boolean computed with `getEffectiveTier()`.
+
+**Admin queue** (`/dashboard/admin/concierge`, `AdminConciergeClient.tsx`,
+`/api/admin/concierge/[id]`): admin-gated via `requireAdmin`; reads/writes via
+service role; status transitions `pending → reviewing` and `any → closed`.
+
+**Read-only recommender extract** (`lib/generate-recommendations.ts`):
+`generateOnboardingRecommendations` is **side-effectful** (it writes `suggested`
+`intro_requests` + flips `targeted_requests` to `applied`, returns only a count).
+To surface candidates read-only, it was split — **behavior-preserving** — into
+a pure `rankCandidatesForUser(userId, maxCount)` that runs the identical pool /
+exclusion / scoring pipeline and **returns** scored candidates (+ `match_reason`)
+with **zero writes**; the writer now calls it then does its inserts. The
+candidate pool already gates on `account_status='active'` AND
+`profile_complete=true` and excludes self / matches / prior+hidden+passed intros
+/ blocked / referral / same-company. `GET /api/admin/concierge/[id]/candidates`
+calls the ranker; it is requester-profile-based, **not** criteria-aware yet.
+
+**Create Andrel Intro** (`lib/introRequests/createAdminIntroPair.ts`,
+`/api/admin/concierge/[id]/introduce`): extracted (behavior-preserving) from
+`admin-create-match`. Creates **two reciprocal `intro_requests`** rows
+(`status='admin_pending'`, `is_admin_initiated=true`, `match_reason`,
+`admin_notes='concierge'`) so **both** members see "Introduced by Andrel" and can
+still Express Interest / Pass — it **never** force-creates a `matches` row (the
+match forms only on mutual acceptance via the existing express-interest path).
+Duplicate-pair guard returns a 409. Deliberately **not** `facilitate-intro`
+(which force-creates a match and requires pre-existing mutual interest). The
+introductions-page admin-intro query now also selects `match_reason` and passes
+it into `AdminIntroCard`, which renders the real curated reason when present and
+a generic fallback otherwise.
+
+**Commits:** `27f26f2` (submit) · `347d474` (admin queue) · `c1db958` (read-only
+recommendations) · `b7147e7` (Create Andrel Intro) · `761dbc9` `347d474`
+`07cd8d7` (UI gate / admin UI / match_reason wiring).
+
+**Pool hygiene:** the recommender cannot distinguish a real member from an
+active seed/fixture profile — no `is_test`/seed column exists. Fixtures
+(`Sarah Whitman`, `Emily Carter`, the `cadre-demo-2026` cluster) must be
+**deactivated** (`account_status='deactivated'`, honored by commit `e5f6e76`)
+before trusting Concierge recommendations. `_demo-data.ts` (the Alexandra UI
+Review Mode data) is render-only and never reaches the DB.
+
+### 11.2 Executive-network UI refresh (presentation-only)
+
+A consistent restrained "executive network" visual language — brand-navy
+hierarchy, subtle gold accents, softer borders, premium empty states, calmer
+chips — applied across **every member surface**. Each batch was
+**presentation-only with byte-identical-logic fences**: no handler / fetch /
+query / status-value / label / gating / shared-primitive changes; verified per
+commit (tsc baseline **133** unchanged; build green; diffs className/markup only).
+
+| Surface | Commits |
+|---|---|
+| Messages conversation list | `e3a2ee2` |
+| Meetings: list · Schedule/Reschedule modals · Detail modal | `96f8682` · `8e7e47c` · `4557f2b` |
+| Profile: standalone member page · Network ConnectionDetailModal | `df8e333` · `ecd1cd6` |
+| Network: member card · page shell + search | `5c69290` · `ecfd389` |
+| Opportunities: read-only activity · hub shell · B.1 detail/receiver/banner · B.2 responder row | `46aeefd` · `9527683` · `d89fdbe` · `4ba2f43` |
+
+Shared primitives held off-limits throughout (styled *around*, never edited):
+`ui/Pill`, `ui/Avatar`, `ui/Button`, `ui/EmptyState`, `ui/Toggle`,
+`EnlargeableAvatar`, `ProfilePhotoLightbox`, `PageHint`, `FormerMemberBadge`.
+Load-bearing fences preserved verbatim: `data-card-action` (NetworkCard),
+`getStatusBadge` keys/labels, the meeting-modal `duration-250`↔250ms close pair,
+ResponderRow's dual confirm state machines, ArchiveAction's
+`preventDefault()+stopPropagation()`, and all FormData `name=` attributes.
+
+### 11.3 Deferred / open items (as of 2026-06-24)
+
+- **Opportunities Batch B.3** — `CloseButton` + `ArchiveAction` (destructive
+  2-step; preserve the confirm state machine + ArchiveAction's
+  `preventDefault`/`stopPropagation` guard). **Not yet done.**
+- **Opportunities forms** — `BusinessForm` / `HiringForm` restyle deferred
+  (HIGH RISK: load-bearing FormData `name=` fences — `title, industry, urgency,
+  expertise, role_types, seniority, target_connections, description,
+  include_recruiters`).
+- **Concierge live happy-path test** — creating an actual Andrel intro is not
+  yet exercised end-to-end (the 4-member pool is fully connected; needs an
+  unconnected real member pair). `createAdminIntroPair` is production-proven via
+  `admin-create-match`.
+- **Concierge active-card data** — the member's active-request card +
+  `introduced` message aren't wired (the active-concierge query only selects
+  `id, status, created_at`; surfacing submitted-date / "looking to meet" /
+  `introduced` needs a query change).
+- **Criteria-aware Concierge ranking** — recommendations are requester-profile-
+  based; do not filter on the request's typed role/company/industry yet.
+- **Messages conversation-type badges** beyond "Opportunity" — no reliable
+  provenance signal (`adminFacilitated` is ambiguous; do not infer types from it).
+- **Network "View full profile" aria-label gap** — NetworkCard's "View" button
+  is `aria-label="View full profile"` but opens the modal, not the standalone
+  `/dashboard/profile/[id]` page. Product decision, not a presentation fix.
+
+---
+
 *End of document. Update as the system evolves.*
