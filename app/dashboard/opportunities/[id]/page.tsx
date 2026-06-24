@@ -89,16 +89,16 @@ export default async function OpportunityDetail({
     <div className="mx-auto max-w-3xl px-6 py-10">
       <TouchOnMount opportunityId={opp.id} />
 
-      <Link href="/dashboard/opportunities?tab=yours" className="text-sm text-slate-500 hover:text-slate-700">← Opportunities</Link>
+      <Link href="/dashboard/opportunities?tab=yours" className="text-sm text-slate-500 hover:text-brand-navy transition-colors">← Opportunities</Link>
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+      <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-brand-gold">
               {opp.type === 'hiring' ? 'Hiring' : 'Business need'}
               {opp.urgency && <> · {opp.urgency}</>}
             </div>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-900">{opp.title}</h1>
+            <h1 className="mt-1 text-2xl font-bold text-brand-navy tracking-tight">{opp.title}</h1>
             <div className="mt-2 text-xs text-slate-500">
               {opp.status === 'active' && `${daysLeft} days left`}
               {opp.status === 'dormant' && 'Dormant — visits will reactivate'}
@@ -115,7 +115,7 @@ export default async function OpportunityDetail({
       </div>
 
       <section className="mt-10">
-        <h2 className="text-sm font-medium text-slate-900">People ready to connect</h2>
+        <h2 className="text-sm font-semibold text-brand-navy">People ready to connect</h2>
         <p className="mt-1 text-xs text-slate-500">
           {waiting.length === 0 ? 'No responses yet.' : `${waiting.length} waiting`}
         </p>
@@ -129,7 +129,7 @@ export default async function OpportunityDetail({
 
       {introducedWithConvo.length > 0 && (
         <section className="mt-10">
-          <h2 className="text-sm font-medium text-slate-900">Introduced</h2>
+          <h2 className="text-sm font-semibold text-brand-navy">Introduced</h2>
           <div className="mt-4 space-y-3">
             {introducedWithConvo.map((r) => (
               <ResponderRow key={r.id} opportunityId={opp.id} responder={r as any} canIntroduce={false} />

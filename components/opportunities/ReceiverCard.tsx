@@ -98,13 +98,13 @@ export function ReceiverCard({
   const creatorAvatar = opportunity.profiles?.avatar_url || undefined;
 
   return (
-    <article className="group rounded-2xl border border-slate-100 border-l-4 border-l-brand-gold bg-white p-6 sm:p-7 shadow-sm transition-all hover:shadow-md hover:border-slate-200 hover:border-l-brand-gold">
+    <article className="group rounded-2xl border border-slate-200/70 border-l-4 border-l-brand-gold bg-white p-6 sm:p-7 shadow-sm transition-all hover:shadow-md hover:border-slate-300 hover:border-l-brand-gold">
       <div className="flex items-center gap-2">
         <Pill variant="gold" dot>Selected for you</Pill>
         <span className="text-xs text-slate-400">Based on your experience</span>
       </div>
 
-      <h3 className="mt-4 text-xl font-semibold text-slate-900 tracking-tight leading-snug">{opportunity.title}</h3>
+      <h3 className="mt-4 text-xl font-semibold text-brand-navy tracking-tight leading-snug">{opportunity.title}</h3>
 
       {(creatorName || creatorCompany) && (
         <div className="mt-4 flex items-center gap-3">
@@ -117,7 +117,7 @@ export function ReceiverCard({
           />
           <div className="min-w-0">
             {creatorName && (
-              <div className="text-sm font-medium text-slate-900 truncate">{creatorName}</div>
+              <div className="text-sm font-medium text-brand-navy truncate">{creatorName}</div>
             )}
             {creatorCompany && (
               <div className="text-xs text-slate-500 truncate">{creatorCompany}</div>
@@ -154,7 +154,7 @@ export function ReceiverCard({
           type="button"
           onClick={dismiss}
           disabled={busy}
-          className="text-sm text-slate-500 hover:text-slate-700 underline-offset-4 hover:underline disabled:opacity-60 transition-colors self-center sm:self-auto"
+          className="text-sm text-slate-500 hover:text-brand-navy underline-offset-4 hover:underline disabled:opacity-60 transition-colors self-center sm:self-auto"
         >
           Not for me
         </button>
