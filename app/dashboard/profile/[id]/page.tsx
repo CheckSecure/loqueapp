@@ -45,7 +45,7 @@ function initials(name?: string) {
 
 function Badge({ label }: { label: string }) {
   return (
-    <span className="inline-block text-xs font-medium bg-[#F5F6FB] text-[#1B2850] px-3 py-1.5 rounded-full border border-slate-100">
+    <span className="inline-block text-xs font-medium bg-brand-cream/40 text-brand-navy px-3 py-1.5 rounded-full border border-brand-gold/15">
       {label}
     </span>
   )
@@ -58,9 +58,9 @@ function Section({ icon: Icon, title, children }: {
 }) {
   return (
     <div>
-      <div className="flex items-center gap-2 mb-3">
-        <Icon className="w-4 h-4 text-[#C4922A]" />
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">{title}</h3>
+      <div className="flex items-center gap-2 mb-4">
+        <Icon className="w-3.5 h-3.5 text-brand-gold" />
+        <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.14em]">{title}</h3>
       </div>
       {children}
     </div>
@@ -173,16 +173,16 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
         {/* Back navigation */}
         <Link
           href="/dashboard/meetings"
-          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-[#1B2850] transition-colors mb-6"
+          className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand-navy transition-colors mb-8"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
         </Link>
 
         {/* Hero card */}
-        <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden mb-6">
+        <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm overflow-hidden mb-6">
           {/* Banner */}
-          <div className="h-24 bg-gradient-to-br from-[#1B2850] to-[#2E4080]" />
+          <div className="h-24 bg-gradient-to-br from-[#162449] via-brand-navy to-[#0A1530]" />
 
           <div className="px-6 pb-6">
             {/* Avatar — overlaps banner */}
@@ -200,7 +200,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
               )}
             </EnlargeableAvatar>
 
-            <h1 className="text-xl font-bold text-slate-900">{name}</h1>
+            <h1 className="text-2xl font-bold text-brand-navy tracking-tight">{name}</h1>
 
             {(profile.title || profile.company) && (
               <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
@@ -222,7 +222,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
           {/* What they're looking for (connected) / Why connect (not yet connected) */}
           {hasWhyConnect && (
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+            <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm p-6">
               <Section icon={Users} title={connection ? "What they're looking for" : 'Why connect'}>
                 <div className="space-y-3">
                   {whyConnectPurposes.length > 0 && (
@@ -248,7 +248,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
           {/* Relationship history — connected profiles only */}
           {connection && (
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+            <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm p-6">
               <Section icon={Calendar} title="Relationship history">
                 <div className="space-y-2 text-sm text-slate-600">
                   {connectedLabel && <p>Connected through Andrel · {connectedLabel}</p>}
@@ -273,7 +273,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
           {/* Why Andrel introduced you — true shared signals only */}
           {match.signals.length > 0 && (
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+            <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm p-6">
               <Section icon={Sparkles} title="Why Andrel introduced you">
                 {match.hasStrongSignals ? (
                   <div className="flex flex-wrap gap-2">
@@ -291,7 +291,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
           {/* Bio */}
           {profile.bio && (
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+            <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm p-6">
               <Section icon={BookOpen} title="About">
                 <p className="text-sm text-slate-700 leading-relaxed">{profile.bio}</p>
               </Section>
@@ -300,13 +300,13 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
           {/* Role details */}
           {(profile.seniority || profile.role_type || profile.mentorship_role) && (
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+            <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm p-6">
               <Section icon={Users} title="Professional details">
                 <dl className="space-y-3">
                   {profile.seniority && (
                     <div className="flex items-start justify-between gap-4">
                       <dt className="text-xs text-slate-500 flex-shrink-0 pt-0.5">Seniority</dt>
-                      <dd className="text-sm font-medium text-slate-800 text-right">
+                      <dd className="text-sm font-medium text-brand-navy text-right">
                         {seniorityLabel[profile.seniority] ?? profile.seniority}
                       </dd>
                     </div>
@@ -314,7 +314,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                   {(profile.exact_job_title || profile.role_type) && (
                     <div className="flex items-start justify-between gap-4">
                       <dt className="text-xs text-slate-500 flex-shrink-0 pt-0.5">Role</dt>
-                      <dd className="text-sm font-medium text-slate-800 text-right">
+                      <dd className="text-sm font-medium text-brand-navy text-right">
                         {profile.exact_job_title || roleTypeLabel[profile.role_type] || profile.role_type}
                       </dd>
                     </div>
@@ -322,7 +322,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                   {profile.mentorship_role && (
                     <div className="flex items-start justify-between gap-4">
                       <dt className="text-xs text-slate-500 flex-shrink-0 pt-0.5">Mentorship</dt>
-                      <dd className="text-sm font-medium text-slate-800 text-right">
+                      <dd className="text-sm font-medium text-brand-navy text-right">
                         {mentorshipLabel[profile.mentorship_role] ?? profile.mentorship_role}
                       </dd>
                     </div>
@@ -334,7 +334,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
           {/* Expertise */}
           {parseExpertise(profile.expertise).length > 0 && (
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+            <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm p-6">
               <Section icon={Star} title="Expertise">
                 <div className="flex flex-wrap gap-2">
                   {parseExpertise(profile.expertise).map((tag: string) => (
@@ -347,7 +347,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
           {/* Introduction interests */}
           {Array.isArray(profile.intro_preferences) && profile.intro_preferences.length > 0 && (
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+            <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm p-6">
               <Section icon={MessageSquare} title="Open to introductions with">
                 <div className="flex flex-wrap gap-2">
                   {profile.intro_preferences.map((tag: string) => (
@@ -360,13 +360,13 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
           {/* Previous roles */}
           {previousRoles.length > 0 && (
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5">
+            <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm p-6">
               <Section icon={Briefcase} title="Previous Roles">
                 <div className="space-y-3">
                   {previousRoles.map((role, i) => (
                     <div key={i} className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-sm font-medium text-slate-800">{role.title}</p>
+                        <p className="text-sm font-semibold text-brand-navy">{role.title}</p>
                         <p className="text-xs text-slate-500">{role.company}</p>
                       </div>
                       {(role.start_date || role.end_date) && (
