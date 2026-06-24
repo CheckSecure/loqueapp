@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { MessageSquare } from 'lucide-react'
 import NetworkList from '@/components/NetworkList'
 import PageHint from '@/components/PageHint'
 import MarkNetworkNotificationsRead from '@/components/MarkNetworkNotificationsRead'
@@ -123,9 +122,9 @@ export default async function NetworkPage() {
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
       <MarkNetworkNotificationsRead userId={profileId} />
       <div className="max-w-4xl">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900">Network</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Your confirmed introductions — people you've been connected with through Andrel.</p>
+        <div className="mb-10">
+          <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight">Network</h1>
+          <p className="text-slate-500 text-sm mt-2">Your confirmed introductions — people you've been connected with through Andrel.</p>
         </div>
 
         <PageHint hintKey="network">
@@ -133,12 +132,10 @@ export default async function NetworkPage() {
         </PageHint>
 
         {connections.length === 0 ? (
-          <div className="bg-white border border-slate-100 rounded-xl p-12 text-center shadow-sm">
-            <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <MessageSquare className="w-6 h-6 text-slate-400" />
-            </div>
-            <p className="text-sm font-semibold text-slate-700 mb-1">No connections yet</p>
-            <p className="text-xs text-slate-400 max-w-xs mx-auto">Once Andrel facilitates an introduction, your connections will appear here.</p>
+          <div className="bg-white border border-slate-200/70 rounded-2xl p-14 text-center shadow-sm">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-gold mb-3">Your network</p>
+            <p className="text-slate-900 font-semibold mb-1.5">No connections yet</p>
+            <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">Once Andrel facilitates an introduction, your connections will appear here.</p>
           </div>
         ) : (
           <NetworkList connections={connections} />

@@ -76,7 +76,7 @@ export default function NetworkList({ connections }: { connections: Connection[]
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search your network..."
-            className="w-full text-sm pl-9 pr-3 py-2 rounded-xl border border-slate-200 placeholder:text-slate-400 bg-white focus:outline-none focus:border-brand-navy focus:ring-1 focus:ring-brand-navy"
+            className="w-full text-sm pl-9 pr-3 py-2.5 rounded-xl border border-slate-200/80 text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:border-brand-navy focus:ring-1 focus:ring-brand-navy/20 transition"
           />
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -84,7 +84,7 @@ export default function NetworkList({ connections }: { connections: Connection[]
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortBy)}
-            className="text-sm py-2 pl-3 pr-8 rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-brand-navy focus:ring-1 focus:ring-brand-navy"
+            className="text-sm py-2.5 pl-3 pr-8 rounded-xl border border-slate-200/80 bg-white text-slate-700 focus:outline-none focus:border-brand-navy focus:ring-1 focus:ring-brand-navy/20 transition"
           >
             {SORT_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -94,8 +94,8 @@ export default function NetworkList({ connections }: { connections: Connection[]
       </div>
 
       {visible.length === 0 ? (
-        <div className="text-sm text-slate-500 px-1 py-6">
-          No connections match &ldquo;{query}&rdquo;.
+        <div className="bg-white border border-slate-200/70 rounded-2xl p-10 text-center shadow-sm">
+          <p className="text-sm text-slate-500">No connections match &ldquo;{query}&rdquo;.</p>
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 gap-4">
