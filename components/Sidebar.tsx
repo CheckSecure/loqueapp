@@ -131,7 +131,6 @@ export default function Sidebar({
       <div className="px-6 py-7 border-b border-white/5 flex items-center justify-between">
         <div className="flex items-baseline gap-2">
           <span className="text-xl font-bold text-white tracking-tight">Andrel</span>
-          <span className="text-[9px] uppercase tracking-[0.2em] text-brand-gold font-bold">Private</span>
         </div>
         <NotificationBell />
       </div>
