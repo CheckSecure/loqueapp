@@ -2,13 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { getEffectiveTier } from '@/lib/tier-override'
-
-const TIER_ACTIVE_SLOTS: Record<string, number> = {
-  free: 3,
-  professional: 5,
-  executive: 8,
-  founding: 3  // Aligned with free — founding does not get a higher intro cadence
-}
+import { getActiveIntroCap } from '@/lib/introductions/limits'
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get('authorization')
@@ -33,7 +27,7 @@ export async function GET(req: Request) {
   for (const user of users) {
     try {
       const tier = getEffectiveTier(user)
-      const targetSlots = TIER_ACTIVE_SLOTS[tier]
+      const targetSlots = getActiveIntroCap(tier)
       
       const { data: activeIntros } = await adminClient
         .from('intro_requests')

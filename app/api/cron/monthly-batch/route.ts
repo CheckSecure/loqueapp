@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
+import { getActiveIntroCap } from '@/lib/introductions/limits'
 
 const TIER_CREDIT_FLOORS: Record<string, number> = {
   free: 3,
@@ -13,13 +14,6 @@ const TIER_CREDIT_CAPS: Record<string, number> = {
   free: 6,
   professional: 20,
   executive: 40
-}
-
-const TIER_ACTIVE_SLOTS: Record<string, number> = {
-  free: 3,
-  professional: 5,
-  executive: 8,
-  founding: 5  // Same as professional for weekly batches
 }
 
 export async function GET(req: Request) {
@@ -54,7 +48,7 @@ export async function GET(req: Request) {
     try {
       const effectiveTier = getEffectiveTier(user)
       const creditFloor = getMonthlyCredits(effectiveTier)
-      const targetSlots = TIER_ACTIVE_SLOTS[effectiveTier]
+      const targetSlots = getActiveIntroCap(effectiveTier)
       
       // 1. Refill credits to floor (not additive)
       const { data: currentCredits } = await adminClient

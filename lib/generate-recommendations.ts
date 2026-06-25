@@ -4,13 +4,7 @@ import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { applyVerticalBoost } from '@/lib/matching/vertical-boost'
-
-const TIER_RECOMMENDATION_COUNTS: Record<string, number> = {
-  free: 3,
-  professional: 5,
-  executive: 8,
-  founding: 3,  // Aligned with free — founding does not get a higher intro cadence
-}
+import { getActiveIntroCap } from '@/lib/introductions/limits'
 
 // Unified scoring model for all tiers
 // Final Score = Alignment (55%) + Network Value (30%) + Responsiveness (15%)
@@ -777,7 +771,7 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   })
   
   const userTier = getEffectiveTier(newUserProfile)
-  const recommendationCount = TIER_RECOMMENDATION_COUNTS[userTier] || 3
+  const recommendationCount = getActiveIntroCap(userTier)
   console.log('[generate-recommendations] User tier:', userTier, 'Count:', recommendationCount)
   
   const { data: allUsers, error: usersError } = await adminClient
