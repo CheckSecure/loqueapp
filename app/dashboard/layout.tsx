@@ -164,7 +164,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <>
       <WelcomeModal />
       <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} opportunityBadgeCount={opportunityBadgeCount} adminBadgeCount={adminBadgeCount} />
-      <div className="min-h-screen md:flex bg-slate-50">
+      <div className="min-h-screen md:flex bg-[#FAF6EE]">
         <Sidebar
           displayName={displayName}
           email={user.email || ''}
