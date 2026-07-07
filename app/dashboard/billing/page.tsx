@@ -295,7 +295,7 @@ function BillingInner() {
         {/* Recurring subscription disclosure — point-of-sale, adjacent to the tier
             Upgrade buttons. Copy/legal links only; no billing/checkout/Stripe logic. */}
         <p className="text-xs text-slate-400 mt-4 leading-relaxed">
-          Subscriptions automatically renew monthly until canceled. You can cancel anytime from your account settings. Canceling stops future renewals but does not automatically refund the current billing period.{' '}
+          Subscriptions automatically renew until canceled. You can cancel anytime from your account settings. Canceling stops future renewals but does not automatically refund the current billing period.{' '}
           See our <Link href="/terms" className="underline hover:text-slate-600">Terms of Service</Link> and <Link href="/privacy" className="underline hover:text-slate-600">Privacy Policy</Link>.
         </p>
       </div>
