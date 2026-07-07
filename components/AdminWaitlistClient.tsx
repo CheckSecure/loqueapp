@@ -221,7 +221,7 @@ export default function AdminWaitlistClient({
                             <div className="flex items-center gap-1.5 mb-2">
                               <UserPlus className="w-3.5 h-3.5 text-[#C4922A]" />
                               <span className="text-xs font-medium text-[#C4922A] bg-[#FDF3E3] px-2 py-0.5 rounded-full">
-                                Referred by {entry.referrals.referrer?.full_name ?? 'unknown'}
+                                Nominated by {entry.referrals.referrer?.full_name ?? 'unknown'}
                               </span>
                             </div>
                             {entry.referrals.referral_note && (

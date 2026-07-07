@@ -107,10 +107,10 @@ export default async function SettingsPage() {
               <UserPlus className="w-4 h-4 text-brand-navy" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-slate-900">Invite someone valuable</p>
-              <p className="text-xs text-slate-500 mt-0.5">Andrel grows through trusted referrals. Invite someone you&apos;d genuinely want to meet — you&apos;ll earn 1 credit if they join.</p>
+              <p className="text-sm font-semibold text-slate-900">Nominate someone</p>
+              <p className="text-xs text-slate-500 mt-0.5">Nominate trusted professionals who would add value to the Andrel community.</p>
             </div>
-            <span className="text-slate-400 text-sm">Manage referrals →</span>
+            <span className="text-slate-400 text-sm">Manage nominations →</span>
           </Link>
         </div>
       </details>

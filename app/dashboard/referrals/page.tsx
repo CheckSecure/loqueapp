@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ReferralForm from './ReferralForm'
 
-export const metadata = { title: 'Referrals | Andrel' }
+export const metadata = { title: 'Nominations | Andrel' }
 
 type ReferralRow = {
   id: string
@@ -51,24 +51,22 @@ export default async function ReferralsPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 sm:py-12 space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Referrals</h1>
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Nominations</h1>
         <p className="text-slate-500 text-sm mt-2">
-          Andrel grows through trusted referrals. Invite someone you'd genuinely want to meet or introduce to others.
+          Andrel grows through trusted relationships. Nominate exceptional executives, founders, investors, attorneys, and leaders you believe would strengthen the community.
         </p>
-        <p className="text-slate-400 text-xs mt-1">When someone you refer becomes a member, you'll receive 1 credit.</p>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-900">Refer someone</h2>
-          <span className="text-xs text-slate-400">{outstandingCount} / {SLOTS_TOTAL} slots used</span>
+          <h2 className="text-sm font-semibold text-slate-900">Nominate someone</h2>
         </div>
         <div className="px-6 py-5">
           {canRefer ? (
             <ReferralForm userEmail={user.email ?? ''} />
           ) : (
             <p className="text-sm text-slate-500">
-              You've used all 3 referral slots. Your slots will free up as referrals are reviewed.
+              You can have up to {SLOTS_TOTAL} open nominations at a time. Additional nominations become available as they are reviewed.
             </p>
           )}
         </div>
@@ -77,7 +75,7 @@ export default async function ReferralsPage() {
       {rows.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100">
-            <h2 className="text-sm font-semibold text-slate-900">Your referrals</h2>
+            <h2 className="text-sm font-semibold text-slate-900">Your nominations</h2>
           </div>
           <div className="divide-y divide-slate-50">
             {rows.map(r => (
