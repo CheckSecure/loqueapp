@@ -160,6 +160,17 @@ export default function AdminWaitlistClient({
 
           {/* Content */}
           <div className="p-6">
+            {/* Two-step workflow helper — Approve (Step 1) vs Send Invite (Step 2). Copy only. */}
+            {activeTab === 'pending' && (
+              <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                <span className="font-semibold">Step 1 · Approve.</span> Approving confirms this person and moves them to Approved — <span className="font-bold underline">no email is sent yet</span>. Send the invite from the Approved tab.
+              </div>
+            )}
+            {activeTab === 'approved' && (
+              <div className="mb-4 rounded-lg border border-slate-200 bg-slate-100 px-4 py-3 text-xs text-slate-700">
+                <span className="font-semibold">Step 2 · Send Invite.</span> Approved members are ready to invite. Click Send Invite to email login access.
+              </div>
+            )}
             {filtered.length === 0 ? (
               <div className="text-center py-12">
                 <UserPlus className="w-12 h-12 text-slate-300 mx-auto mb-4" />
