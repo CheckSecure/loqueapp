@@ -5,26 +5,37 @@ import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 
 const WELCOME_MESSAGE = `Welcome to Andrel — glad you're here.
 
-Andrel is a curated professional network built around thoughtful introductions, not feeds or browsing.
+Andrel is a curated professional network built around trusted relationships and thoughtful introductions — not cold outreach, feeds, or collecting connections.
 
-Here's how to get the most out of it:
+Our goal is simple: help accomplished professionals meet the right people at the right time.
 
-1. Complete your profile carefully.
-Your title, company, bio, expertise, interests, and preferences help us understand who would be valuable for you to meet.
+Here's how to get the most out of Andrel:
 
-2. Review your introductions.
-When someone is suggested, you can express interest or pass. Andrel uses a simple credit system to keep introductions intentional and high-quality — expressing interest uses a credit, so the focus stays on the right connections.
+1. Complete your profile thoughtfully
 
-3. Use Messages to build the relationship.
-Once an introduction is active, you can message directly and use the suggested prompts to start the conversation.
+Your background, expertise, interests, and goals help us understand who would be valuable for you to meet. The stronger your profile, the better your introductions.
 
-4. Check Opportunities.
-Opportunities are private, curated signals for hiring or business needs — whether you're looking for a role or offering help on a specific problem. You can opt in from Settings if you're open to relevant opportunities.
+2. Review your introductions
 
-5. Keep it intentional.
-Andrel works best when users respond thoughtfully, accept introductions they genuinely want, and use the platform to build real professional relationships.
+You'll receive curated suggestions based on shared interests, goals, and potential value. When someone looks like a meaningful connection, express interest. If it's not the right fit, simply pass.
 
-If you have questions or want help getting started, just reply here.
+3. Build real relationships
+
+When there's mutual interest, you'll be connected and can start a conversation directly through Andrel. We provide suggested prompts to make the first conversation easier.
+
+4. Share opportunities and needs
+
+Andrel helps members discover private opportunities — whether that's hiring, exploring partnerships, finding expertise, or helping someone in the network. If you're open to relevant opportunities, you can update your preferences anytime from Settings.
+
+5. Help shape the community
+
+Great networks are built through trusted people. If you know someone who would add value to Andrel, you can nominate them for membership.
+
+Andrel works best when members are intentional — thoughtful profiles, meaningful introductions, and relationships built over time.
+
+I'm excited to have you as part of the founding community.
+
+If you have questions or ideas, just reply here.
 
 — Daniel`
 
