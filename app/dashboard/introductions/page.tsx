@@ -827,6 +827,25 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
               )}
             </section>
 
+            {/* HELP SHAPE ANDREL — member nomination card (reuses Opportunities panel card pattern) */}
+            <section className="relative overflow-hidden bg-white border border-slate-100 rounded-2xl p-6 shadow-md">
+              <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-brand-gold/30 to-transparent" />
+              <p className="text-[10px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1">Trusted network</p>
+              <h3 className="text-base font-bold text-brand-navy tracking-tight">Help Shape Andrel</h3>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                Andrel grows through trusted relationships. Nominate leaders you believe would add value to the community.
+              </p>
+              <div className="mt-4">
+                <Link
+                  href="/dashboard/referrals"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-lg bg-brand-navy text-white hover:bg-brand-navy/90 transition-colors shadow-md"
+                >
+                  Nominate Someone
+                  <ArrowRight className="w-3 h-3" />
+                </Link>
+              </div>
+            </section>
+
             {/* Credits are now rendered exclusively in the shared sidebar membership card; the
                 meeting_credits.balance value lives in `const balance` above via the same query, but
                 is no longer rendered here to avoid duplicate display. */}
