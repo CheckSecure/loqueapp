@@ -40,6 +40,7 @@ export const ROLE_CATEGORIES = {
   'Legal': [
     'General Counsel',
     'Chief Legal Officer',
+    'In-House Counsel',
     'Deputy General Counsel',
     'Associate General Counsel',
     'Law Firm Partner',
@@ -363,9 +364,10 @@ export const ROLE_TAXONOMY_VALUES = [
   'Other',
   'Government / Public Sector',
   // ─── Phase B canonical titles, dedup'd against A-1 ───
-  // Legal (5 new; 'Legal Operations' dedup'd against A-1)
+  // Legal (6 new; 'Legal Operations' dedup'd against A-1)
   'General Counsel',
   'Chief Legal Officer',
+  'In-House Counsel',
   'Deputy General Counsel',
   'Associate General Counsel',
   'Law Firm Partner',
