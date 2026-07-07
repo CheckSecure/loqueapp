@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Check, Zap, ArrowRight } from 'lucide-react'
 import { FoundingMemberBadge } from '@/components/ui/FoundingMemberBadge'
+import ManageBillingButton from '@/components/ManageBillingButton'
 import { cn } from '@/lib/utils'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
@@ -206,6 +207,14 @@ function BillingInner() {
                 </ul>
               )}
               <p className="text-xs text-slate-400 mt-2">{credits} credit{credits !== 1 ? 's' : ''} remaining</p>
+              {/* Paid Stripe subscribers only — founding members and free users have no
+                  Stripe subscription to manage, so no cancellation copy is shown to them. */}
+              {!isFoundingMember && currentTier !== 'free' && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <p className="text-xs text-slate-500 mb-2">Update your payment method, view billing details, or cancel your subscription.</p>
+                  <ManageBillingButton />
+                </div>
+              )}
             </div>
           </div>
         </div>
