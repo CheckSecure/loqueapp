@@ -318,6 +318,21 @@ export default function AdminWaitlistClient({
                               <Send className="w-4 h-4" />
                               {processing === entry.id ? 'Sending...' : 'Send Invite'}
                             </button>
+                            {/* Secondary destructive action — reuses the existing handleDecline path
+                                (POST /api/admin/waitlist/decline). No new route or decline logic;
+                                confirm-gated. Sends the row to Declined, no email, referral synced. */}
+                            <button
+                              onClick={() => {
+                                if (window.confirm('Remove this approved nomination? No email will be sent.')) {
+                                  handleDecline(entry.id)
+                                }
+                              }}
+                              disabled={processing === entry.id}
+                              className="flex items-center gap-1.5 px-4 py-1.5 bg-white text-red-600 border border-red-200 text-xs font-medium rounded-lg hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              Remove
+                            </button>
                           </div>
                         )}
 
