@@ -368,7 +368,7 @@ export default function OnboardingForm() {
               <div className="flex gap-2">
                 {[
                   { value: 'local', label: 'Local connections only' },
-                  { value: 'us-wide', label: 'Open to US-wide' },
+                  { value: 'us-wide', label: 'Open to global connections' },
                 ].map(option => (
                   <button
                     key={option.value}

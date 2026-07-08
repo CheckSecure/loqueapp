@@ -291,8 +291,8 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
               onChange={e => setGeoScope(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
             >
-              <option value="us-wide">Open to connections nationwide</option>
-              <option value="local">Prefer local connections only</option>
+              <option value="us-wide">Open to global connections</option>
+              <option value="local">Local connections only</option>
             </select>
           </div>
 
