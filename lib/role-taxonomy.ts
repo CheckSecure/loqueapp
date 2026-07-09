@@ -16,7 +16,7 @@
  * never loses their stored value when editing.
  *
  * Downstream scoring/matching code (lib/scoring.ts roleScores,
- * app/actions.ts COMPLEMENTARY, lib/matching/business-solutions.ts,
+ * lib/matching/business-solutions.ts,
  * lib/match-signals.ts) reads role_type values by exact-string or
  * substring match. The map-key drift documented in A-1 preflight (D3)
  * persists unchanged here — Phase B does not address it.
@@ -32,9 +32,8 @@
  * values are the title lists they pick from.
  *
  * Adding/renaming/removing a title or category is a behavior change.
- * Existing scoring maps (lib/scoring.ts, app/actions.ts COMPLEMENTARY)
- * key off the stored value, so any change here must be audited against
- * those maps.
+ * Existing scoring maps (lib/scoring.ts) key off the stored value, so
+ * any change here must be audited against those maps.
  */
 export const ROLE_CATEGORIES = {
   'Legal': [
