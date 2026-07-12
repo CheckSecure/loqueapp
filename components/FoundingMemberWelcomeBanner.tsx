@@ -50,13 +50,13 @@ export default function FoundingMemberWelcomeBanner({ show }: { show: boolean })
         You&apos;re among our founding members and one of the first professionals invited into the network.
       </p>
       <p className="text-sm text-slate-700 leading-relaxed mb-3">
-        New members are joining daily as we continue onboarding the community in phases. Our introduction engine works in batches, and as the network grows, your matches will surface here automatically.
+        New members are joining in phases, and introductions will surface as the community grows.
       </p>
       <p className="text-sm text-slate-700 leading-relaxed mb-3">
-        In the meantime, take a few minutes to complete your profile and review your professional interests so we can make stronger introductions.
+        Please complete your profile and preferences so we can make stronger introductions.
       </p>
       <p className="text-sm text-slate-700 leading-relaxed mb-5">
-        Thank you for helping build the founding community.
+        Thank you for helping shape the founding community.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Link
