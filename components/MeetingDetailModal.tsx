@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { downloadMeetingICS } from '@/lib/ics'
 import { deleteMeeting, acceptMeeting, declineMeeting } from '@/app/actions'
 import RescheduleMeetingModal from './RescheduleMeetingModal'
 import { Button } from '@/components/ui/Button'
@@ -38,10 +39,6 @@ function formatTimeRange(iso: string, duration: number) {
   const fmt = (dt: Date) => dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return `${fmt(d)} – ${fmt(end)}`
 }
-function toICSDate(iso: string) {
-  return iso.replace(/[-:]/g, '').replace(/\.\d{3}/, '').replace('Z', 'Z')
-}
-
 export interface MeetingDetail {
   id: string
   title: string
@@ -62,32 +59,6 @@ export interface MeetingDetail {
   isOrganizer: boolean
   isPast: boolean
   isNew?: boolean
-}
-
-function downloadICS(m: MeetingDetail) {
-  const start = new Date(m.scheduled_at)
-  const end = new Date(start.getTime() + m.duration_minutes * 60000)
-  const now = new Date()
-  const description = [m.notes, m.zoom_link ? `Meeting link: ${m.zoom_link}` : ''].filter(Boolean).join('\\n')
-  const lines = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Loque//Loque Networking//EN',
-    'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
-    `UID:loque-meeting-${m.id}@loque.app`,
-    `DTSTAMP:${toICSDate(now.toISOString())}`,
-    `DTSTART:${toICSDate(start.toISOString())}`,
-    `DTEND:${toICSDate(end.toISOString())}`,
-    `SUMMARY:${m.title}`,
-    description ? `DESCRIPTION:${description}` : '',
-    m.zoom_link ? `URL:${m.zoom_link}` : '',
-    'END:VEVENT', 'END:VCALENDAR',
-  ].filter(Boolean).join('\r\n')
-  const blob = new Blob([lines], { type: 'text/calendar;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${m.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.ics`
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
 export default function MeetingDetailModal({
@@ -303,7 +274,7 @@ export default function MeetingDetailModal({
                   </>
                 )}
                 <button
-                  onClick={() => downloadICS(meeting)}
+                  onClick={() => downloadMeetingICS(meeting)}
                   className="mt-2 text-xs text-brand-gold font-medium hover:underline"
                 >
                   Add to Calendar
