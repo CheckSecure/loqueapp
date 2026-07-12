@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import { getEffectiveTier, getMonthlyCredits, getCreditCap } from '@/lib/tier-override'
 
 const TIERS = [
   {
@@ -90,6 +91,7 @@ const FOUNDING_BENEFITS = [
 function BillingInner() {
   const searchParams = useSearchParams()
   const [currentTier, setCurrentTier] = useState('free')
+  const [effectiveTier, setEffectiveTier] = useState('free')
   const [isFoundingMember, setIsFoundingMember] = useState(false)
   const [foundingExpiresAt, setFoundingExpiresAt] = useState<string | null>(null)
   const [credits, setCredits] = useState(0)
@@ -113,6 +115,7 @@ function BillingInner() {
         supabase.from('meeting_credits').select('balance').eq('user_id', user.id).single(),
       ])
       setCurrentTier(profile?.subscription_tier ?? 'free')
+      setEffectiveTier(profile ? getEffectiveTier(profile) : 'free')
       setIsFoundingMember(Boolean(profile?.is_founding_member))
       setFoundingExpiresAt(profile?.founding_member_expires_at ?? null)
       setCredits(creditRow?.balance ?? 0)
@@ -161,6 +164,14 @@ function BillingInner() {
       <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
     </div>
   )
+
+  // Membership summary values sourced from the shared tier config
+  // (lib/tier-override.ts) — no duplicated tier numbers here.
+  const monthlyAllowance = getMonthlyCredits(effectiveTier)
+  const maxBalance = getCreditCap(effectiveTier)
+  const tierLabel = isFoundingMember
+    ? 'Founding Member'
+    : effectiveTier.charAt(0).toUpperCase() + effectiveTier.slice(1)
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 space-y-10">
@@ -335,20 +346,28 @@ function BillingInner() {
             {credits} <span className="text-base font-semibold text-slate-400">credit{credits !== 1 ? 's' : ''}</span>
           </p>
 
+          {/* Membership summary — allowance & cap from lib/tier-override.ts */}
+          <div className="mt-4 rounded-xl bg-brand-cream/40 border border-brand-gold/15 p-3.5 sm:p-4">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold">Your membership</p>
+            <p className="mt-1 text-sm font-bold text-brand-navy">{tierLabel}</p>
+            <p className="mt-0.5 text-sm text-slate-600">{monthlyAllowance} credits per month</p>
+            <p className="mt-0.5 text-xs text-slate-500">Maximum balance: {maxBalance} credits</p>
+          </div>
+
           <div className="mt-5 pt-5 border-t border-slate-100">
             <p className="text-sm font-semibold text-brand-navy mb-3">How credits work</p>
             <ul className="space-y-2.5">
               <li className="flex items-start gap-2.5 text-sm text-slate-600 leading-relaxed">
                 <Check className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
-                <span>A credit is used only when a connection is made — when you and another member both express interest, you&apos;re introduced and each use one credit. Expressing interest or passing on a suggestion costs nothing.</span>
+                <span>A credit is only used when you and another member both express interest and an introduction is made. Expressing interest or passing costs nothing.</span>
               </li>
               <li className="flex items-start gap-2.5 text-sm text-slate-600 leading-relaxed">
                 <Check className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
-                <span>Your membership maintains a monthly credit allowance. At the start of each month, your balance is topped up to your plan&apos;s included amount if it has fallen below it. Unused credits remain in your balance.</span>
+                <span>Your membership includes monthly introduction credits. Unused membership credits roll over up to your plan&apos;s maximum balance.</span>
               </li>
               <li className="flex items-start gap-2.5 text-sm text-slate-600 leading-relaxed">
                 <Check className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
-                <span>Purchased credit packs are added to your balance and do not expire. Concierge requests and opportunity responses currently do not use introduction credits.</span>
+                <span>Purchased credit packs do not expire and are added on top of your membership credits. Concierge requests and opportunity responses currently do not use introduction credits.</span>
               </li>
             </ul>
           </div>
