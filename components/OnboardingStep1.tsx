@@ -44,6 +44,10 @@ export default function OnboardingStep1({
   const [additionalExpertise, setAdditionalExpertise] = useState<string[]>(initialExpertiseAll.filter(e => !EXPERTISE_OPTIONS.includes(e)))
   const [roleType, setRoleType] = useState<string>(profile?.role_type || '')
   const [exactJobTitle, setExactJobTitle] = useState<string | null>(profile?.exact_job_title ?? null)
+  // Derived from the role-title selector (selected role label, or custom role
+  // text for 'Other'). Kept populated so the server-side title validation in
+  // /api/profile/complete continues to pass.
+  const [title, setTitle] = useState<string>(profile?.title || '')
 
   const initials = (profile?.full_name || email)
     .split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
@@ -53,9 +57,22 @@ export default function OnboardingStep1({
     setLoading(true)
     setError(null)
 
+    // Role title is required; its derived title must survive the server-side
+    // title validation (>= 2 visible chars). For 'Other', the derived title is
+    // the custom role text — enforce the same rule client-side here.
+    if (!roleType.trim()) { setError('Please select your role title'); setLoading(false); return }
+    if (title.trim().length < 2) {
+      setError(roleType === 'Other' ? 'Please enter your custom role title' : 'Please select your role title')
+      setLoading(false)
+      return
+    }
+
     const formData = new FormData(e.currentTarget)
     formData.set('expertise', [...expertise, ...additionalExpertise].join(','))
     formData.set('role_type', roleType)
+    // Derived title (selected role label, or custom role text for 'Other').
+    // The standalone free-text title input was removed, so set it explicitly.
+    formData.set('title', title.trim())
     // Always send exact_job_title so the server can distinguish "absent"
     // (partial update — leave alone) from "explicit clear" (empty → null).
     formData.set('exact_job_title', exactJobTitle ?? '')
@@ -106,29 +123,16 @@ export default function OnboardingStep1({
             required
           />
         </div>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Job title</label>
-            <input
-              name="title"
-              type="text"
-              defaultValue={profile?.title || ''}
-              placeholder="VP & General Counsel"
-              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Company or organization</label>
-            <input
-              name="company"
-              type="text"
-              defaultValue={profile?.company || ''}
-              placeholder="Acme Corp, Independent, Self-employed, Retired, or Between roles"
-              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
-              required
-            />
-          </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Company or organization</label>
+          <input
+            name="company"
+            type="text"
+            defaultValue={profile?.company || ''}
+            placeholder="Acme Corp, Independent, Self-employed, Retired, or Between roles"
+            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
+            required
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Location</label>
@@ -176,9 +180,10 @@ export default function OnboardingStep1({
           <SearchableTitleSelect
             roleType={roleType}
             exactJobTitle={exactJobTitle}
-            onChange={({ role_type, exact_job_title }) => {
+            onChange={({ role_type, exact_job_title, title }) => {
               setRoleType(role_type)
               setExactJobTitle(exact_job_title)
+              setTitle(title)
             }}
           />
         </div>

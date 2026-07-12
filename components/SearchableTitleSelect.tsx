@@ -6,13 +6,23 @@ import { TITLE_ALIASES, resolveTitlePick, type SearchableTitle } from '@/lib/sea
 import { titleToCategory } from '@/lib/role-taxonomy'
 import { Search, X, ChevronDown } from 'lucide-react'
 
+// Sentinel display label for the "not listed" escape hatch. Selecting it sets
+// role_type to the 'Other' taxonomy sentinel (never arbitrary free text), so
+// the firewall in lib/searchable-titles.ts stays intact.
+const OTHER_LABEL = 'Other (not listed)'
+
 interface Props {
   /** Current stored role_type (must already be in ROLE_CATEGORIES or legacy). */
   roleType: string
   /** Current stored exact_job_title (display override). null = use role_type. */
   exactJobTitle: string | null
-  /** Emits the resolved write payload. role_type is ALWAYS a structured value. */
-  onChange: (next: { role_type: string; exact_job_title: string | null }) => void
+  /**
+   * Emits the resolved write payload. role_type is ALWAYS a structured value or
+   * the 'Other' sentinel — never arbitrary free text. `title` is the derived
+   * title label the parent persists to profiles.title: the selected role label
+   * for canonical picks, or the trimmed custom role text for 'Other'.
+   */
+  onChange: (next: { role_type: string; exact_job_title: string | null; title: string }) => void
 }
 
 /**
@@ -41,14 +51,19 @@ export default function SearchableTitleSelect({ roleType, exactJobTitle, onChang
 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [isOther, setIsOther] = useState<boolean>(roleType === 'Other')
   const [pickedDisplay, setPickedDisplay] = useState<string>(
-    initial?.display ?? exactJobTitle ?? roleType ?? ''
+    roleType === 'Other' ? OTHER_LABEL : (initial?.display ?? exactJobTitle ?? roleType ?? '')
   )
   const [customExact, setCustomExact] = useState<string>(
     // Show custom override field only when user has typed an exact title
     // that DOESN'T equal the alias's display string (a true override).
     initial && exactJobTitle && exactJobTitle !== initial.display ? exactJobTitle : ''
   )
+  // Required custom role text when 'Other (not listed)' is selected. Populates
+  // profiles.title via the parent (not role_type — that stays the 'Other'
+  // sentinel). Not prefilled on re-entry: onboarding starts fresh.
+  const [customRole, setCustomRole] = useState<string>('')
   const wrapperRef = useRef<HTMLDivElement>(null)
 
   // Close on outside click
@@ -71,29 +86,64 @@ export default function SearchableTitleSelect({ roleType, exactJobTitle, onChang
   function pickDisplay(display: string) {
     const resolved = resolveTitlePick(display)
     if (!resolved) return // shouldn't happen — display came from filtered list
+    setIsOther(false)
     setPickedDisplay(display)
     setQuery('')
     setOpen(false)
     // Reset custom override on a fresh pick
     setCustomExact('')
     // Emit. exact_job_title comes from the alias mapping (null if structured).
-    onChange({ role_type: resolved.role_type, exact_job_title: resolved.exact_job_title })
+    // title = the selected role label so the parent keeps profiles.title populated.
+    onChange({ role_type: resolved.role_type, exact_job_title: resolved.exact_job_title, title: display })
+  }
+
+  function pickOther() {
+    setIsOther(true)
+    setPickedDisplay(OTHER_LABEL)
+    setQuery('')
+    setOpen(false)
+    setCustomExact('')
+    // role_type is the 'Other' sentinel; title comes from the required custom
+    // role field (empty until the user types — the parent enforces >= 2 chars).
+    onChange({ role_type: 'Other', exact_job_title: null, title: customRole.trim() })
+  }
+
+  function applyCustomRole(text: string) {
+    setCustomRole(text)
+    const displayOverride = customExact.trim()
+    onChange({
+      role_type: 'Other',
+      exact_job_title: displayOverride.length > 0 ? displayOverride : null,
+      title: text.trim(),
+    })
   }
 
   function applyCustomExact(text: string) {
     setCustomExact(text)
+    const trimmed = text.trim()
+    if (isOther) {
+      // 'Other' mode: the display override is independent of the custom role
+      // (which drives title). role_type stays the 'Other' sentinel.
+      onChange({
+        role_type: 'Other',
+        exact_job_title: trimmed.length > 0 ? trimmed : null,
+        title: customRole.trim(),
+      })
+      return
+    }
     const resolved = resolveTitlePick(pickedDisplay)
     if (!resolved) return
-    const trimmed = text.trim()
     onChange({
       role_type: resolved.role_type,
       exact_job_title: trimmed.length > 0 ? trimmed : resolved.exact_job_title,
+      title: pickedDisplay,
     })
   }
 
   // Display labels
-  const currentCategory = titleToCategory(roleType)
+  const currentCategory = titleToCategory(isOther ? 'Other' : roleType)
   const currentMatch = TITLE_ALIASES.find((e) => e.display === pickedDisplay)
+  const storedRoleType = isOther ? 'Other' : (currentMatch?.role_type ?? roleType)
 
   return (
     <div className="space-y-3">
@@ -103,7 +153,7 @@ export default function SearchableTitleSelect({ roleType, exactJobTitle, onChang
           <div className="flex-1">
             <p className="text-sm font-medium text-[#1B2850]">{pickedDisplay}</p>
             <p className="mt-0.5 text-xs text-slate-500">
-              Stored as <span className="font-mono">{currentMatch?.role_type ?? roleType}</span>
+              Stored as <span className="font-mono">{storedRoleType}</span>
               {currentCategory && ` · ${currentCategory}`}
             </p>
           </div>
@@ -139,7 +189,7 @@ export default function SearchableTitleSelect({ roleType, exactJobTitle, onChang
             </div>
             <ul role="listbox" className="py-1">
               {filtered.length === 0 ? (
-                <li className="px-3 py-2 text-xs text-slate-400">No matches. Refine your search.</li>
+                <li className="px-3 py-2 text-xs text-slate-400">No matches. Refine your search — or choose &ldquo;Other (not listed)&rdquo; below.</li>
               ) : (
                 filtered.map((e) => {
                   const isAlias = e.display !== e.role_type
@@ -170,16 +220,53 @@ export default function SearchableTitleSelect({ roleType, exactJobTitle, onChang
                   )
                 })
               )}
+              {/* Escape hatch — never in TITLE_ALIASES, so the firewall is untouched. */}
+              <li className="border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={pickOther}
+                  className={cn(
+                    'flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50',
+                    isOther && 'bg-[#1B2850]/5 text-[#1B2850]'
+                  )}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-slate-900">{OTHER_LABEL}</p>
+                    <p className="truncate text-xs text-slate-500">Enter your own role title</p>
+                  </div>
+                </button>
+              </li>
             </ul>
           </div>
         )}
       </div>
 
-      {/* Optional free-text exact title — lets a user on a structured pick add a custom display */}
+      {/* Required custom role — revealed only for the 'Other (not listed)' pick.
+          Populates profiles.title (via the parent); role_type stays 'Other'. */}
+      {isOther && (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Custom role title <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={customRole}
+            onChange={(e) => applyCustomRole(e.target.value)}
+            placeholder="Head of AI Safety"
+            maxLength={140}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-[#1B2850] focus:outline-none"
+          />
+        </div>
+      )}
+
+      {/* Optional display override — never affects matching. */}
       <div>
         <label className="mb-1 block text-xs font-medium text-slate-600">
-          Exact job title <span className="text-slate-400 font-normal">(optional — overrides display only, never matching)</span>
+          Display title <span className="text-slate-400 font-normal">(optional)</span>
         </label>
+        <p className="mb-1 text-xs text-slate-400">
+          Displayed on your profile. Does not affect matching.
+        </p>
         <input
           type="text"
           value={customExact}

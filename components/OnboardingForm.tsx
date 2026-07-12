@@ -260,10 +260,6 @@ export default function OnboardingForm() {
               <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Smith" required className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-1.5">Title / Role</label>
-              <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Chief Executive Officer" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
-            </div>
-            <div>
               <label className="block text-sm font-semibold text-slate-800 mb-1.5">Company or organization</label>
               <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Acme Corp, Independent, Self-employed, Retired, or Between roles" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
             </div>
@@ -284,9 +280,10 @@ export default function OnboardingForm() {
               <SearchableTitleSelect
                 roleType={roleType}
                 exactJobTitle={exactJobTitle}
-                onChange={({ role_type, exact_job_title }) => {
+                onChange={({ role_type, exact_job_title, title }) => {
                   setRoleType(role_type)
                   setExactJobTitle(exact_job_title)
+                  setTitle(title)
                 }}
               />
             </div>
