@@ -41,6 +41,7 @@ const PURPOSES = [
   'Mentorship',
   'Business Development',
   'Advice / Expertise',
+  'Networking',
 ]
 
 type Step = 'password' | 'profile' | 'preferences'
