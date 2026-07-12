@@ -202,10 +202,10 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
             <h1 className="text-2xl font-bold text-brand-navy tracking-tight">{name}</h1>
 
-            {(profile.title || profile.company) && (
+            {(profile.exact_job_title || profile.title || profile.role_type || profile.company) && (
               <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
                 <Briefcase className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                {[profile.title, profile.company].filter(Boolean).join(' · ')}
+                {[profile.exact_job_title || profile.title || profile.role_type, profile.company].filter(Boolean).join(' · ')}
               </p>
             )}
 

@@ -12,6 +12,8 @@ interface Conversation {
     id: string
     full_name: string
     title: string | null
+    exact_job_title: string | null
+    role_type: string | null
     company: string | null
     avatar_url: string | null
     subscription_tier: string | null | null
@@ -128,9 +130,9 @@ export default function MessagesPage() {
                   )}
                 </div>
 
-                {!isFormer && conv.otherUser?.title && (
+                {!isFormer && (conv.otherUser?.exact_job_title || conv.otherUser?.title || conv.otherUser?.role_type) && (
                   <p className="text-xs text-slate-500 truncate mt-0.5">
-                    {conv.otherUser.title}
+                    {conv.otherUser.exact_job_title || conv.otherUser.title || conv.otherUser.role_type}
                     {conv.otherUser.company && ` · ${conv.otherUser.company}`}
                   </p>
                 )}

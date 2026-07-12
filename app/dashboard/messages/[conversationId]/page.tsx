@@ -13,6 +13,8 @@ interface ConversationData {
     id: string
     full_name: string
     title: string | null
+    exact_job_title: string | null
+    role_type: string | null
     company: string | null
     avatar_url: string | null
     subscription_tier: string | null | null
@@ -129,9 +131,9 @@ export default function ConversationPage() {
             )}
             <div>
               <h1 className="font-medium text-gray-900">{conversation.otherUser.full_name}</h1>
-              {conversation.otherUser.title && (
+              {(conversation.otherUser.exact_job_title || conversation.otherUser.title || conversation.otherUser.role_type) && (
                 <p className="text-sm text-gray-500">
-                  {conversation.otherUser.title}
+                  {conversation.otherUser.exact_job_title || conversation.otherUser.title || conversation.otherUser.role_type}
                   {conversation.otherUser.company && ` · ${conversation.otherUser.company}`}
                 </p>
               )}
