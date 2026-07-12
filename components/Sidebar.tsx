@@ -6,7 +6,7 @@ import { Users, MessageSquare, Calendar, UserCircle, LogOut, CreditCard, ShieldC
 import NotificationBell from './NotificationBell'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -36,18 +36,6 @@ interface SidebarProps {
 }
 
 function CreditsChip({ credits }: { credits: number }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
   const chipStyle =
     credits === 0
       ? 'text-red-300'
@@ -61,35 +49,15 @@ function CreditsChip({ credits }: { credits: number }) {
       : `✦ ${credits} credit${credits === 1 ? '' : 's'}`
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className={cn(
-          'text-sm font-bold tracking-tight hover:opacity-80 transition-opacity',
-          chipStyle
-        )}
-      >
-        {label}
-      </button>
-      {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-60 bg-white border border-slate-200 rounded-xl shadow-2xl p-3.5 z-50">
-          <p className="text-xs font-semibold text-slate-800 mb-1">Meeting credits</p>
-          <p className="text-xs text-slate-500 leading-relaxed">
-            Credits are used to request meetings. Purchase more credits to continue connecting.
-          </p>
-          {credits < 5 && (
-            <p className={cn('text-xs font-medium mt-2', credits === 0 ? 'text-red-600' : 'text-amber-600')}>
-              {credits === 0 ? 'You have no credits left.' : `Only ${credits} credit${credits === 1 ? '' : 's'} remaining.`}
-            </p>
-          )}
-          <div className="mt-3 pt-2.5 border-t border-slate-100">
-            <Link href="/dashboard/billing" className="text-xs font-semibold text-[#1B2850] hover:text-[#2E4080] transition-colors">
-              Purchase credits →
-            </Link>
-          </div>
-        </div>
+    <Link
+      href="/dashboard/billing#credits"
+      className={cn(
+        'text-sm font-bold tracking-tight hover:opacity-80 transition-opacity',
+        chipStyle
       )}
-    </div>
+    >
+      {label}
+    </Link>
   )
 }
 

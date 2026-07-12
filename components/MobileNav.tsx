@@ -55,7 +55,7 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Compact credits chip */}
           <Link
-            href="/dashboard/billing"
+            href="/dashboard/billing#credits"
             className={cn(
               'px-2 py-1 rounded-full border text-[11px] font-semibold transition-colors hover:opacity-80',
               creditStyle

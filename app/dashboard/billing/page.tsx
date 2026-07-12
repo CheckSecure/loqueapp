@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Check, Zap, ArrowRight } from 'lucide-react'
 import { FoundingMemberBadge } from '@/components/ui/FoundingMemberBadge'
@@ -97,6 +97,8 @@ function BillingInner() {
   const [annual, setAnnual] = useState(false)
   const [loading, setLoading] = useState(true)
   const [checkingOut, setCheckingOut] = useState<string | null>(null)
+  const [highlightCredits, setHighlightCredits] = useState(false)
+  const creditsRef = useRef<HTMLDivElement>(null)
 
   const success = searchParams.get('success')
   const cancelled = searchParams.get('cancelled')
@@ -121,6 +123,21 @@ function BillingInner() {
     }
     load()
   }, [])
+
+  // Deep-link support for the sidebar credit chip (/dashboard/billing#credits).
+  // The section only exists after the loading spinner clears, so native hash
+  // scrolling can miss it — scroll it into view once loaded and apply a brief,
+  // subtle highlight on arrival.
+  useEffect(() => {
+    if (loading) return
+    if (typeof window === 'undefined' || window.location.hash !== '#credits') return
+    const el = creditsRef.current
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setHighlightCredits(true)
+    const t = setTimeout(() => setHighlightCredits(false), 2000)
+    return () => clearTimeout(t)
+  }, [loading])
 
   const handleCheckout = async (priceId: string, mode: 'subscription' | 'payment') => {
     setCheckingOut(priceId)
@@ -302,11 +319,42 @@ function BillingInner() {
       )}
 
       {/* Credits */}
-      <div>
+      <div id="credits" ref={creditsRef} className="scroll-mt-20 md:scroll-mt-8">
         <div className="mb-4">
-          <h2 className="text-sm font-semibold text-slate-900">Introduction Credits</h2>
-          <p className="text-xs text-slate-500 mt-1 leading-relaxed">Credits keep introductions intentional. A credit is used when a connection is successfully made. Credit packs unlock additional introductions when you want more access.</p>
+          <h2 className="text-lg font-bold text-brand-navy tracking-tight">Introduction Credits</h2>
+          <p className="text-sm text-slate-500 mt-1 leading-relaxed">Credits help keep introductions intentional and focused on the connections that matter most.</p>
         </div>
+
+        {/* Balance + how credits work */}
+        <div className={cn(
+          'bg-white rounded-2xl border shadow-sm p-5 sm:p-6 mb-4 transition-all duration-500',
+          highlightCredits ? 'border-brand-gold ring-2 ring-brand-gold/40' : 'border-slate-100'
+        )}>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold">Your balance</p>
+          <p className="mt-1.5 text-3xl font-bold text-brand-navy tracking-tight">
+            {credits} <span className="text-base font-semibold text-slate-400">credit{credits !== 1 ? 's' : ''}</span>
+          </p>
+
+          <div className="mt-5 pt-5 border-t border-slate-100">
+            <p className="text-sm font-semibold text-brand-navy mb-3">How credits work</p>
+            <ul className="space-y-2.5">
+              <li className="flex items-start gap-2.5 text-sm text-slate-600 leading-relaxed">
+                <Check className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
+                <span>A credit is used only when a connection is made — when you and another member both express interest, you&apos;re introduced and each use one credit. Expressing interest or passing on a suggestion costs nothing.</span>
+              </li>
+              <li className="flex items-start gap-2.5 text-sm text-slate-600 leading-relaxed">
+                <Check className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
+                <span>Your membership maintains a monthly credit allowance. At the start of each month, your balance is topped up to your plan&apos;s included amount if it has fallen below it. Unused credits remain in your balance.</span>
+              </li>
+              <li className="flex items-start gap-2.5 text-sm text-slate-600 leading-relaxed">
+                <Check className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
+                <span>Purchased credit packs are added to your balance and do not expire. Concierge requests and opportunity responses currently do not use introduction credits.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <p className="text-sm font-semibold text-brand-navy mb-3">Need more credits?</p>
         <div className="grid grid-cols-3 gap-3">
           {CREDIT_PACKS.map((pack) => (
             <div key={pack.name} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 text-center">
