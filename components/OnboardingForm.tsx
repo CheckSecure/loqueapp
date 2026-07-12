@@ -118,6 +118,8 @@ export default function OnboardingForm() {
   const handleProfileNext = (e: React.FormEvent) => {
     e.preventDefault()
     if (!fullName.trim()) { setError('Full name is required'); return }
+    if (title.trim().length < 2) { setError('Please enter your title or role'); return }
+    if (company.trim().length < 2) { setError('Please enter your company or organization'); return }
     if (!roleType.trim()) { setError('Please select your professional role'); return }
     if (!seniority.trim()) { setError('Please select your seniority level'); return }
     if (expertise.filter(Boolean).length === 0) { setError('Please select at least one area of expertise'); return }
@@ -130,6 +132,8 @@ export default function OnboardingForm() {
     console.log('[OnboardingForm] handleSubmit called!')
     // Defense-in-depth: handleProfileNext should have gated these, but state
     // could be cleared between steps. Catch here before sending to the server.
+    if (title.trim().length < 2) { setError('Please enter your title or role'); return }
+    if (company.trim().length < 2) { setError('Please enter your company or organization'); return }
     if (!roleType.trim()) { setError('Please select your professional role'); return }
     if (!seniority.trim()) { setError('Please select your seniority level'); return }
     if (expertise.filter(Boolean).length === 0) { setError('Please select at least one area of expertise'); return }
@@ -260,8 +264,8 @@ export default function OnboardingForm() {
               <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Chief Executive Officer" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-1.5">Company</label>
-              <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Acme Corp" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">Company or organization</label>
+              <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Acme Corp, Independent, Self-employed, Retired, or Between roles" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
             </div>
             
             <div className="grid grid-cols-2 gap-3">

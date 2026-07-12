@@ -119,12 +119,12 @@ export default function OnboardingStep1({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Company</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Company or organization</label>
             <input
               name="company"
               type="text"
               defaultValue={profile?.company || ''}
-              placeholder="Acme Inc."
+              placeholder="Acme Corp, Independent, Self-employed, Retired, or Between roles"
               className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
               required
             />

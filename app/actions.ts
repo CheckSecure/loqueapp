@@ -196,6 +196,16 @@ export async function completeOnboarding(formData: FormData) {
   if (!seniority) return { error: 'Please select your seniority level' }
   if (expertise.length === 0) return { error: 'Please select at least one area of expertise' }
 
+  // Identity gate — applied ONLY on this onboarding-completion write (which sets
+  // profile_complete=true), never in updateProfile / profile edits, so existing
+  // profile_complete users are never retroactively validated. Trim and require
+  // at least 2 visible characters. No value blacklist — legitimate answers like
+  // "Independent", "Self-employed", or "Retired" must pass without false positives.
+  const title = ((formData.get('title') as string) || '').trim()
+  const company = ((formData.get('company') as string) || '').trim()
+  if (title.length < 2) return { error: 'Please enter your title or role' }
+  if (company.length < 2) return { error: 'Please enter your company or organization' }
+
   // Use admin client to bypass RLS
   const adminClient = createAdminClient()
 
@@ -232,9 +242,9 @@ export async function completeOnboarding(formData: FormData) {
     email_verified: true,  // User received invite via email, so email is verified
     email_verified_at: new Date().toISOString(),
     full_name: (formData.get('full_name') as string) || null,
-    title: (formData.get('title') as string) || null,
+    title: title,
     exact_job_title: ((formData.get('exact_job_title') as string) || '').trim() || null,
-    company: (formData.get('company') as string) || null,
+    company: company,
     city: city || null,
     state: state || null,
     location: location,

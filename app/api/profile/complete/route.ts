@@ -13,6 +13,29 @@ export async function POST() {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
+  // Onboarding-completion identity gate (dashboard flow). OnboardingStep1 has
+  // already persisted title/company via /api/profile/update; we re-validate the
+  // stored values here — the completion route — so profile_complete can never be
+  // set on invalid identity data. Kept consistent with completeOnboarding
+  // (app/actions.ts): trim + require at least 2 visible characters, no blacklist.
+  // Deliberately NOT added to /api/profile/update or updateProfile, so
+  // existing-user profile editing (which shares /api/profile/update) is
+  // unaffected and already-complete users are never retroactively validated.
+  const { data: identity } = await supabase
+    .from('profiles')
+    .select('title, company')
+    .eq('id', user.id)
+    .single()
+
+  const title = (identity?.title || '').trim()
+  const company = (identity?.company || '').trim()
+  if (title.length < 2) {
+    return NextResponse.json({ error: 'Professional title is required.' }, { status: 400 })
+  }
+  if (company.length < 2) {
+    return NextResponse.json({ error: 'Company or organization is required.' }, { status: 400 })
+  }
+
   const { error } = await supabase
     .from('profiles')
     .update({ profile_complete: true, onboarding_step: 2 })
