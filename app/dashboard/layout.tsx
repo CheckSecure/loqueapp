@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import MobileNav from '@/components/MobileNav'
 import Tutorial from '@/components/Tutorial'
+import FloatingHelp from '@/components/FloatingHelp'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -200,6 +201,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {children}
         </main>
       </div>
+      <FloatingHelp />
     </>
   )
 }

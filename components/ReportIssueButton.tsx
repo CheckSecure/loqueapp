@@ -38,10 +38,14 @@ type Props = {
   variant?: Variant
   triggerVariant?: 'button' | 'row'
   description?: string
+  /** Optional trigger label override (display only). Defaults to the variant's
+   *  copy. Does not affect the modal, route, storage, or notification behavior. */
+  label?: string
 }
 
-export default function ReportIssueButton({ variant = 'report', triggerVariant = 'button', description }: Props = {}) {
+export default function ReportIssueButton({ variant = 'report', triggerVariant = 'button', description, label }: Props = {}) {
   const copy = COPY[variant]
+  const triggerLabel = label ?? copy.triggerLabel
   const TriggerIcon = copy.icon
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
@@ -104,7 +108,7 @@ export default function ReportIssueButton({ variant = 'report', triggerVariant =
         >
           <TriggerIcon className="w-4 h-4 text-slate-600 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-slate-900">{copy.triggerLabel}</p>
+            <p className="text-sm font-medium text-slate-900">{triggerLabel}</p>
             {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
           </div>
           <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
@@ -112,7 +116,7 @@ export default function ReportIssueButton({ variant = 'report', triggerVariant =
       ) : (
         <Button variant="secondary" size="md" onClick={() => setOpen(true)}>
           <TriggerIcon className="w-4 h-4 mr-2" />
-          {copy.triggerLabel}
+          {triggerLabel}
         </Button>
       )}
 
