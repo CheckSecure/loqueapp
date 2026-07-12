@@ -3,39 +3,13 @@ import { createNotificationSafe } from '@/lib/notifications'
 import { getAdminUser } from '@/lib/admin/getAdminUser'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 
-const WELCOME_MESSAGE = `Welcome to Andrel — glad you're here.
+const WELCOME_MESSAGE = `Welcome to Andrel — I'm really glad you're here.
 
-Andrel is a curated professional network built around trusted relationships and thoughtful introductions — not cold outreach, feeds, or collecting connections.
+Andrel was built around a simple idea: the best professional opportunities come through trusted relationships, not cold outreach.
 
-Our goal is simple: help accomplished professionals meet the right people at the right time.
+Our goal is to thoughtfully introduce accomplished people who can genuinely help one another — whether that's sharing expertise, exploring opportunities, or building meaningful long-term relationships.
 
-Here's how to get the most out of Andrel:
-
-1. Complete your profile thoughtfully
-
-Your background, expertise, interests, and goals help us understand who would be valuable for you to meet. The stronger your profile, the better your introductions.
-
-2. Review your introductions
-
-You'll receive curated suggestions based on shared interests, goals, and potential value. When someone looks like a meaningful connection, express interest. If it's not the right fit, simply pass.
-
-3. Build real relationships
-
-When there's mutual interest, you'll be connected and can start a conversation directly through Andrel. We provide suggested prompts to make the first conversation easier.
-
-4. Share opportunities and needs
-
-Andrel helps members discover private opportunities — whether that's hiring, exploring partnerships, finding expertise, or helping someone in the network. If you're open to relevant opportunities, you can update your preferences anytime from Settings.
-
-5. Help shape the community
-
-Great networks are built through trusted people. If you know someone who would add value to Andrel, you can nominate them for membership.
-
-Andrel works best when members are intentional — thoughtful profiles, meaningful introductions, and relationships built over time.
-
-I'm excited to have you as part of the founding community.
-
-If you have questions or ideas, just reply here.
+As one of our founding members, your feedback will help shape where Andrel goes from here. If you have ideas, questions, or someone specific you'd like to meet, just send me a message here — I'd love to hear from you.
 
 — Daniel`
 
