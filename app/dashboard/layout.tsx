@@ -4,7 +4,7 @@ import { getOpportunityBadgeCount } from '@/lib/opportunities/unreadCount'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import MobileNav from '@/components/MobileNav'
-import WelcomeModal from '@/components/WelcomeModal'
+import Tutorial from '@/components/Tutorial'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -180,7 +180,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <>
-      <WelcomeModal />
+      <Tutorial />
       <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} opportunityBadgeCount={opportunityBadgeCount} adminBadgeCount={adminBadgeCount} />
       <div className="min-h-screen md:flex bg-[#FAF6EE]">
         <Sidebar

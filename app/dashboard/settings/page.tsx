@@ -8,7 +8,8 @@ import AccountDeletion from '@/components/AccountDeletion'
 import { OpportunityPreferences } from '@/components/opportunities/OpportunityPreferences'
 import ReportIssueButton from '@/components/ReportIssueButton'
 import EmailPreferencesForm from '@/components/EmailPreferencesForm'
-import { ChevronDown, BookOpen, UserPlus, ChevronRight } from 'lucide-react'
+import TutorialReplayButton from '@/components/TutorialReplayButton'
+import { ChevronDown, BookOpen, UserPlus, ChevronRight, Compass } from 'lucide-react'
 
 export const metadata = { title: 'Settings | Andrel' }
 
@@ -144,6 +145,29 @@ export default async function SettingsPage() {
             triggerVariant="row"
             description="Found a bug or have feedback? Let us know."
           />
+        </div>
+      </details>
+
+      {/* Tutorial */}
+      <details className={sectionCard}>
+        <summary className={sectionSummary}>
+          <h2 className={sectionTitle}>Tutorial</h2>
+          <ChevronDown className={sectionChevron} />
+        </summary>
+        <div className="px-6 py-5">
+          <div className="flex items-start gap-4">
+            <div className="w-9 h-9 rounded-lg bg-brand-cream flex items-center justify-center flex-shrink-0">
+              <Compass className="w-4 h-4 text-brand-navy" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Review how Andrel&apos;s introductions, messages, meetings, opportunities, and other features work.
+              </p>
+              <div className="mt-3">
+                <TutorialReplayButton />
+              </div>
+            </div>
+          </div>
         </div>
       </details>
 
