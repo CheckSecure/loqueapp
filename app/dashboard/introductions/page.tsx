@@ -10,7 +10,7 @@ import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
 import EarlierIntroductionsBanner from '@/components/EarlierIntroductionsBanner'
 import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
-import ProfilePhotoReminder from '@/components/ProfilePhotoReminder'
+import ProfileCompletionCard from '@/components/ProfileCompletionCard'
 import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
@@ -84,7 +84,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
   const { data: profileRows } = await supabase
     .from('profiles')
-    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, created_at, role_type, seniority, interests, mentorship_role, location, expertise, purposes, avatar_url')
+    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, created_at, role_type, seniority, interests, mentorship_role, location, expertise, purposes, avatar_url, company, bio, linkedin_url')
     .or(`id.eq.${user.id},email.eq.${user.email}`)
     .limit(1)
 
@@ -589,7 +589,17 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
         <FoundingMemberWelcomeBanner show={showFoundingWelcome} />
 
-        <ProfilePhotoReminder hasPhoto={Boolean((profileRow as any)?.avatar_url)} />
+        <ProfileCompletionCard
+          fields={{
+            photo: Boolean((profileRow as any)?.avatar_url),
+            company: Boolean((profileRow as any)?.company?.trim?.()),
+            role: Boolean((profileRow as any)?.role_type?.trim?.()),
+            expertise: Array.isArray((profileRow as any)?.expertise) && (profileRow as any).expertise.length > 0,
+            about: Boolean((profileRow as any)?.bio?.trim?.()),
+            linkedin: Boolean((profileRow as any)?.linkedin_url?.trim?.()),
+            location: Boolean((profileRow as any)?.location?.trim?.()),
+          }}
+        />
 
         {!isPaid && !isFoundingMember && (
           <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-white/40 border border-brand-gold/15 px-4 py-2">
