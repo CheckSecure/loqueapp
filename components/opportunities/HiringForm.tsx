@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect';
-import RolePicker from '@/components/opportunities/RolePicker';
+import SearchableTitleSelect from '@/components/SearchableTitleSelect';
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite'];
 
@@ -127,7 +127,7 @@ export default function HiringForm() {
 
         <Field label="Who are you looking for? *" error={fieldErrors.role_types}>
           <p className="mb-2 text-xs text-slate-500">Search and select one or more roles.</p>
-          <RolePicker value={roleTypes} onChange={(next) => { clearError('role_types'); setRoleTypes(next); }} />
+          <SearchableTitleSelect mode="multiple" values={roleTypes} onValuesChange={(next) => { clearError('role_types'); setRoleTypes(next); }} />
         </Field>
 
         <Field label="Looking for someone specific? (optional)">
