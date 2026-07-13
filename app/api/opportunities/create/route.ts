@@ -29,6 +29,9 @@ type CreatePayload = {
     role_types?: string[];
     need?: string;
     target_connections?: CategoryTitleSelection;
+    /** Free-text targeting hint (concierge/admin visibility + detail display).
+     *  Additive JSONB field — NOT used by matching. */
+    specific_hint?: string;
   };
   include_recruiters?: boolean;
   urgency?: Urgency;
@@ -199,9 +202,14 @@ export async function POST(request: Request) {
   // strictly applies). Other criteria fields (role_types, expertise,
   // seniority, need) are untouched so existing matcher reads continue
   // byte-identically.
+  const rawHint = typeof payload.criteria.specific_hint === 'string'
+    ? payload.criteria.specific_hint.trim().slice(0, 200)
+    : '';
   const sanitizedCriteria = {
     ...payload.criteria,
     target_connections: validateSelectionWithCaps(payload.criteria.target_connections, {}),
+    // Free-text hint — trimmed + length-capped. Not used by matching.
+    specific_hint: rawHint || undefined,
   };
 
   const { data: opportunity, error: insertErr } = await admin

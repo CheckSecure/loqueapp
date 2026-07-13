@@ -3,12 +3,19 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
-import ExpertisePicker from '@/components/ExpertisePicker';
-import ConnectionTargetPicker from '@/components/ConnectionTargetPicker';
-import type { CategoryTitleSelection } from '@/lib/role-taxonomy';
+import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect';
+import RolePicker from '@/components/opportunities/RolePicker';
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite'];
-const ROLE_TYPE_OPTIONS = ['In-house Counsel', 'Law firm attorney', 'Consultant', 'Compliance', 'Legal Operations'];
+
+// Compact quick-add row. Values MUST be valid EXPERTISE_OPTIONS so they feed the
+// same selected-expertise state (and matching) as the searchable selector.
+const POPULAR_EXPERTISE = [
+  'AI', 'Privacy', 'Cybersecurity', 'Litigation', 'M&A',
+  'Finance', 'Healthcare', 'Sales', 'Marketing', 'Operations',
+];
+
+const SPECIFIC_HINT_MAX = 200;
 
 export default function HiringForm() {
   const router = useRouter();
@@ -20,7 +27,7 @@ export default function HiringForm() {
   const [industry, setIndustry] = useState('');
   const [expertise, setExpertise] = useState<string[]>([]);
   const [roleTypes, setRoleTypes] = useState<string[]>([]);
-  const [targetConnections, setTargetConnections] = useState<CategoryTitleSelection>({});
+  const [specificHint, setSpecificHint] = useState('');
   const [description, setDescription] = useState('');
   const [includeRecruiters, setIncludeRecruiters] = useState(false);
 
@@ -32,15 +39,20 @@ export default function HiringForm() {
     });
   }
 
-  function toggleRoleType(t: string) {
-    clearError('role_types');
-    setRoleTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  function togglePopular(tag: string) {
+    clearError('expertise');
+    setExpertise((prev) => (prev.includes(tag) ? prev : [...prev, tag]));
   }
 
   async function send() {
     setFieldErrors({});
     setBusy(true);
     try {
+      if (roleTypes.length < 1) {
+        setFieldErrors({ role_types: 'Select at least one role.' });
+        setBusy(false);
+        return;
+      }
       if (expertise.length < 1) {
         setFieldErrors({ expertise: 'Hiring needs require at least 1 expertise tag.' });
         setBusy(false);
@@ -59,7 +71,7 @@ export default function HiringForm() {
             industry: industry.trim() || undefined,
             expertise,
             role_types: roleTypes,
-            target_connections: targetConnections,
+            specific_hint: specificHint.trim() || undefined,
           },
           include_recruiters: includeRecruiters,
         }),
@@ -113,30 +125,51 @@ export default function HiringForm() {
           <input type="text" value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Fintech" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
         </Field>
 
-        <Field label="Role types to consider" error={fieldErrors.role_types}>
-          <div className="flex flex-wrap gap-2">
-            {ROLE_TYPE_OPTIONS.map((t) => (
-              <button type="button" key={t} onClick={() => toggleRoleType(t)} className={`rounded-full border px-3 py-1 text-xs ${roleTypes.includes(t) ? 'border-[#1B2850] bg-[#1B2850] text-white' : 'border-slate-300 text-slate-600 hover:border-slate-400'}`}>
-                {t}
-              </button>
-            ))}
+        <Field label="Who are you looking for? *" error={fieldErrors.role_types}>
+          <p className="mb-2 text-xs text-slate-500">Search and select one or more roles.</p>
+          <RolePicker value={roleTypes} onChange={(next) => { clearError('role_types'); setRoleTypes(next); }} />
+        </Field>
+
+        <Field label="Looking for someone specific? (optional)">
+          <p className="mb-2 text-xs text-slate-500">Company, organization, person, or short description.</p>
+          <input
+            type="text"
+            value={specificHint}
+            onChange={(e) => setSpecificHint(e.target.value)}
+            maxLength={SPECIFIC_HINT_MAX}
+            placeholder="Someone at OpenAI, a healthcare GC, or a former FTC attorney"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
+        </Field>
+
+        <Field label="Helpful expertise" error={fieldErrors.expertise}>
+          <p className="mb-2 text-xs text-slate-500">Search and select at least one area that matches the role.</p>
+          <div className="mb-2">
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-slate-400">Popular</p>
+            <div className="flex flex-wrap gap-1.5">
+              {POPULAR_EXPERTISE.map((tag) => {
+                const active = expertise.includes(tag);
+                return (
+                  <button
+                    type="button"
+                    key={tag}
+                    onClick={() => togglePopular(tag)}
+                    disabled={active}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${active ? 'border-[#1B2850] bg-[#1B2850] text-white opacity-60' : 'border-slate-300 text-slate-600 hover:border-[#1B2850]/40'}`}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </Field>
-
-        <Field label="Specific connections (optional)">
-          <p className="mb-2 text-xs text-slate-500">Narrow by category or specific titles. Leave empty to use just the role types above.</p>
-          <ConnectionTargetPicker value={targetConnections} onChange={setTargetConnections} />
-        </Field>
-
-        <Field label="Expertise tags" error={fieldErrors.expertise}>
-          <ExpertisePicker
+          <SearchableExpertiseSelect
             selected={expertise}
             onChange={(next) => { clearError('expertise'); setExpertise(next); }}
           />
-          <p className="mt-1 text-xs text-slate-500">Select at least 1 that matches the role.</p>
         </Field>
 
-        <Field label="Description (optional)" error={fieldErrors.description}>
+        <Field label="Anything else candidates should know? (optional)" error={fieldErrors.description}>
           <textarea
             value={description}
             onChange={(e) => { clearError('description'); setDescription(e.target.value); }}
@@ -148,13 +181,16 @@ export default function HiringForm() {
           <p className="mt-1 text-xs text-slate-500">Contact details will be removed before candidates see this.</p>
         </Field>
 
-        <label className="flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-4">
-          <input type="checkbox" checked={includeRecruiters} onChange={(e) => setIncludeRecruiters(e.target.checked)} className="mt-0.5" />
-          <div>
-            <div className="text-sm font-medium text-slate-900">Include recruiters</div>
-            <p className="mt-0.5 text-xs text-slate-500">Only recruiters already in your network will be notified.</p>
-          </div>
-        </label>
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+          <div className="text-sm font-medium text-slate-900">Expand the search</div>
+          <label className="mt-3 flex items-start gap-3">
+            <input type="checkbox" checked={includeRecruiters} onChange={(e) => setIncludeRecruiters(e.target.checked)} className="mt-0.5" />
+            <div>
+              <div className="text-sm text-slate-900">Include recruiters in my network</div>
+              <p className="mt-0.5 text-xs text-slate-500">Relevant recruiters already connected to you may also be notified.</p>
+            </div>
+          </label>
+        </div>
 
         {fieldErrors._root && <p className="text-sm text-red-600">{fieldErrors._root}</p>}
 

@@ -23,7 +23,7 @@ export default async function OpportunityDetail({
 
   const { data: opp } = await admin
     .from('opportunities')
-    .select('id, creator_id, type, title, description, urgency, status, created_at, expires_at')
+    .select('id, creator_id, type, title, description, urgency, status, created_at, expires_at, criteria')
     .eq('id', id)
     .maybeSingle();
 
@@ -111,6 +111,13 @@ export default async function OpportunityDetail({
 
         {opp.description && (
           <p className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{opp.description}</p>
+        )}
+
+        {(opp as any).criteria?.specific_hint && (
+          <p className="mt-4 text-sm text-slate-500">
+            <span className="font-medium text-slate-700">Looking for someone specific:</span>{' '}
+            {(opp as any).criteria.specific_hint}
+          </p>
         )}
       </div>
 
