@@ -10,6 +10,7 @@ import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
 import EarlierIntroductionsBanner from '@/components/EarlierIntroductionsBanner'
 import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
+import ProfilePhotoReminder from '@/components/ProfilePhotoReminder'
 import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
@@ -83,7 +84,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
   const { data: profileRows } = await supabase
     .from('profiles')
-    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, created_at, role_type, seniority, interests, mentorship_role, location, expertise, purposes')
+    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, created_at, role_type, seniority, interests, mentorship_role, location, expertise, purposes, avatar_url')
     .or(`id.eq.${user.id},email.eq.${user.email}`)
     .limit(1)
 
@@ -587,6 +588,8 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
         </div>
 
         <FoundingMemberWelcomeBanner show={showFoundingWelcome} />
+
+        <ProfilePhotoReminder hasPhoto={Boolean((profileRow as any)?.avatar_url)} />
 
         {!isPaid && !isFoundingMember && (
           <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-white/40 border border-brand-gold/15 px-4 py-2">
