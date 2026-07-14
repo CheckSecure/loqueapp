@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { parseExpertise } from '@/lib/parseExpertise'
-import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
+import { normalizeExpertise } from '@/lib/expertise'
 import { type CategoryTitleSelection } from '@/lib/role-taxonomy'
 import ConnectionTargetPicker from '@/components/ConnectionTargetPicker'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
@@ -48,9 +47,8 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
   const [desiredConnections, setDesiredConnections] = useState<CategoryTitleSelection>(profile?.desired_connections || {})
   const [roleType, setRoleType] = useState<string>(profile?.role_type || '')
   const [exactJobTitle, setExactJobTitle] = useState<string | null>(profile?.exact_job_title ?? null)
-  const initialExpertiseAll = parseExpertise(profile?.expertise)
-  const [expertise, setExpertise] = useState<string[]>(initialExpertiseAll.filter(e => EXPERTISE_OPTIONS.includes(e)))
-  const [additionalExpertise, setAdditionalExpertise] = useState<string[]>(initialExpertiseAll.filter(e => !EXPERTISE_OPTIONS.includes(e)))
+  // Unified: every previously-saved value loads into one removable selected list.
+  const [expertise, setExpertise] = useState<string[]>(normalizeExpertise(profile?.expertise))
   const toggleExpertise = (item: string) => {
     setExpertise(prev => prev.includes(item) ? prev.filter(x => x !== item) : [...prev, item])
   }
@@ -67,7 +65,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
     formData.set('intro_preferences', introPref.join(','))
     formData.set('purposes', purposes.join(','))
     formData.set('interests', interests.join(','))
-    formData.set('expertise', [...expertise, ...additionalExpertise].join(','))
+    formData.set('expertise', expertise.join(','))
     formData.set('role_type', roleType)
     // Always send exact_job_title (empty string = clear). Server treats "" as null.
     formData.set('exact_job_title', exactJobTitle ?? '')
@@ -216,9 +214,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
         <p className="text-xs text-slate-400 mb-3">Type to search; select multiple areas of expertise.</p>
         <SearchableExpertiseSelect
           selected={expertise}
-          additional={additionalExpertise}
           onChange={setExpertise}
-          onRemoveAdditional={(tag) => setAdditionalExpertise(prev => prev.filter(x => x !== tag))}
         />
       </div>
 

@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { parseExpertise } from '@/lib/parseExpertise'
-import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
+import { normalizeExpertise } from '@/lib/expertise'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Loader2, ArrowRight } from 'lucide-react'
@@ -39,9 +38,8 @@ export default function OnboardingStep1({
 }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const initialExpertiseAll = parseExpertise(profile?.expertise)
-  const [expertise, setExpertise] = useState<string[]>(initialExpertiseAll.filter(e => EXPERTISE_OPTIONS.includes(e)))
-  const [additionalExpertise, setAdditionalExpertise] = useState<string[]>(initialExpertiseAll.filter(e => !EXPERTISE_OPTIONS.includes(e)))
+  // Unified: every previously-saved value loads into one removable selected list.
+  const [expertise, setExpertise] = useState<string[]>(normalizeExpertise(profile?.expertise))
   const [roleType, setRoleType] = useState<string>(profile?.role_type || '')
   const [exactJobTitle, setExactJobTitle] = useState<string | null>(profile?.exact_job_title ?? null)
   // Derived from the role-title selector (selected role label, or custom role
@@ -68,7 +66,7 @@ export default function OnboardingStep1({
     }
 
     const formData = new FormData(e.currentTarget)
-    formData.set('expertise', [...expertise, ...additionalExpertise].join(','))
+    formData.set('expertise', expertise.join(','))
     formData.set('role_type', roleType)
     // Derived title (selected role label, or custom role text for 'Other').
     // The standalone free-text title input was removed, so set it explicitly.
@@ -195,9 +193,7 @@ export default function OnboardingStep1({
         <p className="text-xs text-slate-400 mb-3">Type to search; select multiple areas of expertise.</p>
         <SearchableExpertiseSelect
           selected={expertise}
-          additional={additionalExpertise}
           onChange={setExpertise}
-          onRemoveAdditional={(tag) => setAdditionalExpertise(prev => prev.filter(x => x !== tag))}
         />
       </div>
 

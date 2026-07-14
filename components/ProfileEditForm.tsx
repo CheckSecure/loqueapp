@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { parseExpertise } from '@/lib/parseExpertise'
-import { EXPERTISE_OPTIONS } from '@/lib/profile-options'
+import { normalizeExpertise } from '@/lib/expertise'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Loader2, CheckCircle, User, ChevronDown, ChevronUp } from 'lucide-react'
@@ -29,9 +28,8 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
   const [previousRoles, setPreviousRoles] = useState<{ company: string; title: string; start_date: string; end_date: string }[]>(
     Array.isArray(initialData.previous_roles) ? initialData.previous_roles : []
   )
-  const initialExpertiseAll = parseExpertise(initialData.expertise)
-  const [expertise, setExpertise] = useState<string[]>(initialExpertiseAll.filter(e => EXPERTISE_OPTIONS.includes(e)))
-  const [additionalExpertise, setAdditionalExpertise] = useState<string[]>(initialExpertiseAll.filter(e => !EXPERTISE_OPTIONS.includes(e)))
+  // Unified: every previously-saved value loads into one removable selected list.
+  const [expertise, setExpertise] = useState<string[]>(normalizeExpertise(initialData.expertise))
   const [purposes, setPurposes] = useState<string[]>(Array.isArray(initialData.purposes) ? initialData.purposes : [])
   const [meetingFormat, setMeetingFormat] = useState(initialData.meeting_format_preference || 'both')
   const [geoScope, setGeoScope] = useState(initialData.geographic_scope || 'us-wide')
@@ -64,7 +62,7 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     formData.append('exact_job_title', exactJobTitle ?? '')
     formData.append('current_status', currentStatus)
     formData.append('previous_roles', JSON.stringify(previousRoles))
-    formData.append('expertise', [...expertise, ...additionalExpertise].join(','))
+    formData.append('expertise', expertise.join(','))
     formData.append('purposes', purposes.join(','))
     formData.append('meeting_format_preference', meetingFormat)
     formData.append('geographic_scope', geoScope)
@@ -245,9 +243,7 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">Expertise <span className="text-slate-400 font-normal">(type to search; select multiple)</span></label>
             <SearchableExpertiseSelect
               selected={expertise}
-              additional={additionalExpertise}
               onChange={setExpertise}
-              onRemoveAdditional={(tag) => setAdditionalExpertise(prev => prev.filter(x => x !== tag))}
             />
           </div>
 

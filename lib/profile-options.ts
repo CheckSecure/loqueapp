@@ -85,4 +85,8 @@ export const EXPERTISE_OPTIONS: string[] = [
   'Life Sciences',
   'Pharma',
   'Medical Devices',
+  // ─── Phase E additions — canonicalized from previously-saved member values ───
+  'Business Development',
+  'Legal Technology',
+  'Networking',
 ]
