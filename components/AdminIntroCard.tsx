@@ -2,8 +2,10 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Sparkles, Briefcase, MapPin, CheckCircle, Loader2, X } from 'lucide-react'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
+import { toList } from '@/lib/match-signals'
 
 interface AdminIntroCardProps {
   introRequestId: string
@@ -17,11 +19,14 @@ interface AdminIntroCardProps {
     bio: string | null
     seniority: string | null
     role_type: string | null
+    expertise?: unknown
   }
   otherAlreadyApproved?: boolean
   userAlreadyAccepted?: boolean
   /** Curated reason for this introduction. Rendered prominently when present; generic fallback otherwise. */
   matchReason?: string | null
+  /** Common-ground signals (computeMatchSignals output), computed server-side. Display only. */
+  commonGround?: string[]
 }
 
 function initials(name: string | null) {
@@ -34,7 +39,8 @@ function pickColor(id: string) {
   return AVATAR_COLORS[n % AVATAR_COLORS.length]
 }
 
-export default function AdminIntroCard({ introRequestId, otherUser, otherAlreadyApproved, userAlreadyAccepted, matchReason }: AdminIntroCardProps) {
+export default function AdminIntroCard({ introRequestId, otherUser, otherAlreadyApproved, userAlreadyAccepted, matchReason, commonGround }: AdminIntroCardProps) {
+  const expertiseTags = toList(otherUser.expertise)
   const router = useRouter()
   const [state, setState] = useState<'idle' | 'accepting' | 'passing' | 'accepted' | 'matched' | 'passed' | 'no_credits' | 'error'>(userAlreadyAccepted ? 'accepted' : 'idle')
   const [errorMsg, setErrorMsg] = useState('')
@@ -112,11 +118,36 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
       </div>
       {otherUser.bio && <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{otherUser.bio}</p>}
 
-      <div className="rounded-lg bg-brand-cream/50 border border-brand-gold/15 px-3.5 py-2.5">
-        <p className="text-sm text-brand-navy leading-relaxed">
-          {matchReason || 'Based on your background and professional interests, Andrel selected this introduction.'}
-        </p>
+      {expertiseTags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {expertiseTags.slice(0, 5).map((tag) => (
+            <span key={tag} className="rounded-full border border-brand-navy/10 bg-brand-navy/[0.04] px-2.5 py-0.5 text-[11px] font-medium text-brand-navy/80">{tag}</span>
+          ))}
+          {expertiseTags.length > 5 && (
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">+{expertiseTags.length - 5} more</span>
+          )}
+        </div>
+      )}
+
+      <div className="rounded-lg bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/25 px-3.5 py-2.5">
+        <div className="flex items-start gap-2.5">
+          <Sparkles className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1">Why we introduced you</p>
+            <p className="text-sm text-brand-navy leading-relaxed">
+              {matchReason || 'Based on your background and professional interests, Andrel selected this introduction.'}
+            </p>
+          </div>
+        </div>
       </div>
+
+      {commonGround && commonGround.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {commonGround.slice(0, 4).map((sig) => (
+            <span key={sig} className="inline-flex items-center rounded-full border border-brand-gold/20 bg-brand-gold-soft/50 px-2.5 py-0.5 text-[11px] font-medium text-brand-navy/75">{sig}</span>
+          ))}
+        </div>
+      )}
 
       {otherAlreadyApproved && state === 'idle' && (
         <div className="text-xs font-medium text-[#1B2850] bg-[#F5F6FB] border border-[#1B2850]/10 rounded-lg px-3 py-2">
@@ -154,14 +185,14 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
           <button
             onClick={handleAccept}
             disabled={false}
-            className="flex-1 text-sm font-semibold bg-[#1B2850] text-white py-2.5 rounded-lg hover:bg-[#2E4080] transition-colors"
+            className="flex-1 min-h-[44px] text-sm font-semibold bg-[#1B2850] text-white py-2.5 rounded-lg hover:bg-[#2E4080] transition-colors"
           >
             Accept Introduction
           </button>
           <button
             onClick={handlePass}
             disabled={false}
-            className="px-4 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+            className="px-4 min-h-[44px] text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
           >
             Pass
           </button>
@@ -176,6 +207,14 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
       )}
 
       {state === 'error' && errorMsg && (<p className="text-xs text-red-600 text-center">{errorMsg}</p>)}
+
+      <Link
+        href={`/dashboard/profile/${otherUser.id}`}
+        className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 transition-colors hover:text-brand-navy"
+      >
+        View full profile
+        <span aria-hidden="true">→</span>
+      </Link>
     </div>
   )
 }

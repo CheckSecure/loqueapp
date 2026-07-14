@@ -16,7 +16,7 @@ import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { getEffectiveTier } from '@/lib/tier-override'
-import { computeMatchSignals } from '@/lib/match-signals'
+import { computeMatchSignals, toList } from '@/lib/match-signals'
 import ConciergeLauncher from '@/components/ConciergeLauncher'
 import DemoInterestButton from '@/components/DemoInterestButton'
 import DemoPassButton from '@/components/DemoPassButton'
@@ -141,7 +141,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       .order('created_at', { ascending: false }),
     supabase
       .from('intro_requests')
-      .select('id, requester_id, target_user_id, status, created_at, is_admin_initiated, match_reason, other:profiles!requester_id(id, full_name, title, exact_job_title, company, location, bio, seniority, role_type, avatar_url, account_status)')
+      .select('id, requester_id, target_user_id, status, created_at, is_admin_initiated, match_reason, other:profiles!requester_id(id, full_name, title, exact_job_title, company, location, bio, seniority, role_type, avatar_url, account_status, expertise, interests, mentorship_role, purposes)')
       .eq('target_user_id', profileId)
       .eq('is_admin_initiated', true)
       .in('status', ['admin_pending', 'approved'])
@@ -397,6 +397,55 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     return <p className="text-xs text-slate-600 leading-relaxed">Curated based on your profile and preferences.</p>
   }
 
+  // Expertise tags: up to 5 + "+N more". Uses toList to normalize the varied
+  // stored shape (array / csv / jsonb). Presentation only — no data change.
+  const renderExpertiseTags = (raw: any) => {
+    const list = toList(raw)
+    if (list.length === 0) return null
+    const shown = list.slice(0, 5)
+    const extra = list.length - shown.length
+    return (
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {shown.map((tag) => (
+          <span key={tag} className="rounded-full border border-brand-navy/10 bg-brand-navy/[0.04] px-2.5 py-0.5 text-[11px] font-medium text-brand-navy/80">{tag}</span>
+        ))}
+        {extra > 0 && (
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">+{extra} more</span>
+        )}
+      </div>
+    )
+  }
+
+  // Common ground chips from the existing computeMatchSignals output. Only shown
+  // when a stored prose match_reason exists — otherwise renderReasonBlock already
+  // renders these same signals as the reason, so chips would duplicate them.
+  const renderCommonGround = (row: any) => {
+    const hasProseReason = row.matchReason && typeof row.matchReason === 'string' && row.matchReason.trim().length > 0
+    if (!hasProseReason) return null
+    const { signals } = computeMatchSignals(profileRow, row.profile)
+    if (!signals || signals.length === 0) return null
+    return (
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {signals.slice(0, 4).map((sig: string) => (
+          <span key={sig} className="inline-flex items-center rounded-full border border-brand-gold/20 bg-brand-gold-soft/50 px-2.5 py-0.5 text-[11px] font-medium text-brand-navy/75">{sig}</span>
+        ))}
+      </div>
+    )
+  }
+
+  // Tertiary "View full profile" link. Rendered as an <a>, which the
+  // IntroductionCard click-wrapper deliberately ignores (closest('a')) — so no
+  // nested navigation conflict.
+  const renderViewProfileLink = (targetId: string) => (
+    <Link
+      href={`/dashboard/profile/${targetId}`}
+      className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-500 transition-colors hover:text-brand-navy"
+    >
+      View full profile
+      <span aria-hidden="true">→</span>
+    </Link>
+  )
+
   const renderFeatured = (row: any) => {
     const s = row.profile
     const headline = displayTitle(s)
@@ -437,7 +486,9 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             </div>
           </div>
 
-          {s.bio && <p className="relative mt-3 text-sm text-slate-600 leading-relaxed line-clamp-1">{s.bio}</p>}
+          {s.bio && <p className="relative mt-3 text-sm text-slate-600 leading-relaxed line-clamp-2">{s.bio}</p>}
+
+          <div className="relative">{renderExpertiseTags(s.expertise)}</div>
 
           <div className="relative mt-4 bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/30 rounded-xl px-3.5 py-2.5 shadow-[0_1px_2px_rgba(196,146,42,0.08)]">
             <div className="flex items-start gap-3">
@@ -445,13 +496,15 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                 <Sparkles className="w-4 h-4 text-brand-gold" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1.5">Introduced by Andrel</p>
+                <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1.5">Why we introduced you</p>
                 {renderReasonBlock(row)}
               </div>
             </div>
           </div>
 
-          <div className="relative mt-4">
+          {renderCommonGround(row)}
+
+          <div className="relative mt-4 flex flex-col gap-2">
             {row.isDemo ? (
               /* UI Review CTAs — both inert, local-state only. Mirrors the
                  real RequestIntroButton's Express interest + pass layout. */
@@ -474,6 +527,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             ) : (
               <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} />
             )}
+            {!row.isDemo && renderViewProfileLink(s.id)}
           </div>
         </div>
     )
@@ -522,14 +576,23 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             {s.seniority && <Tag color="indigo">{s.seniority}</Tag>}
           </div>
 
-          <div className="rounded-md bg-brand-cream/60 px-3 py-2">
-            <p className="text-[9px] uppercase tracking-[0.14em] font-bold text-slate-500 mb-1 leading-tight">Why this match</p>
-            <div className="text-[12px] text-slate-600 leading-snug line-clamp-2 [&_p]:m-0 [&_p]:text-[12px]">
-              {renderReasonBlock(row)}
+          {renderExpertiseTags(s.expertise)}
+
+          <div className="rounded-lg bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/25 px-3 py-2.5">
+            <div className="flex items-start gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-brand-gold flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1 leading-tight">Why we introduced you</p>
+                <div className="text-[12px] text-slate-600 leading-snug line-clamp-2 [&_p]:m-0 [&_p]:text-[12px]">
+                  {renderReasonBlock(row)}
+                </div>
+              </div>
             </div>
           </div>
 
-          <div>
+          {renderCommonGround(row)}
+
+          <div className="flex flex-col gap-2">
             {row.isDemo ? (
               /* UI Review CTAs — both inert, local-state only. Compact for the smaller weekly card. */
               <div className="flex gap-2">
@@ -551,6 +614,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             ) : (
               <RequestIntroButton targetId={s.id} alreadyRequested={false} rowId={row.rowId} />
             )}
+            {!row.isDemo && renderViewProfileLink(s.id)}
           </div>
         </div>
     )
@@ -642,6 +706,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                         otherAlreadyApproved={intro.otherAlreadyApproved}
                         userAlreadyAccepted={intro.userAlreadyAccepted}
                         matchReason={intro.match_reason}
+                        commonGround={computeMatchSignals(profileRow, intro.other).signals}
                       />
                     </IntroductionCard>
                   ))}

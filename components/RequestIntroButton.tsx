@@ -167,7 +167,7 @@ export default function RequestIntroButton({
         <button
           onClick={handleRequest}
           disabled={state === 'loading' || passing}
-          className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-[#1B2850] text-white py-2 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60"
+          className="flex-1 min-h-[44px] flex items-center justify-center gap-1.5 text-xs font-semibold bg-[#1B2850] text-white py-2 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60"
         >
           {state === 'loading' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {state === 'loading' ? 'Submitting...' : state === 'error' ? 'Try again' : 'Express interest'}
@@ -177,8 +177,9 @@ export default function RequestIntroButton({
           <button
             onClick={() => setShowPassMenu(v => !v)}
             disabled={passing}
-            className="h-full px-2.5 text-slate-400 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-600 transition-colors disabled:opacity-60"
+            className="h-full min-w-[44px] flex items-center justify-center px-2.5 text-slate-400 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-600 transition-colors disabled:opacity-60"
             title="Pass"
+            aria-label="Pass"
           >
             {passing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
           </button>
