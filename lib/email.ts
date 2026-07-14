@@ -671,32 +671,31 @@ export async function sendLaunchAnnouncementEmail(
             Thank you for joining the Andrel waitlist.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            Today, we're excited to officially open Andrel and begin welcoming our founding members.
+            Today, we're excited to officially launch the platform and begin welcoming our founding members.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            Andrel was built around a simple idea: the most valuable opportunities rarely come from cold outreach. They come from trusted introductions to the right people at the right time.
+            Andrel was built around a simple idea: the most valuable professional connections are rarely made through cold outreach. They come from trusted introductions to the right people at the right time.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            As a founding member, you'll be among the first professionals invited into the network.
+            As a founding member, you'll be among the first professionals invited into this private network.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 8px;">
-            Through Andrel, you'll have the opportunity to:
+            Through Andrel, you can expect:
           </p>
           <ul style="color: #334155; font-size: 16px; line-height: 1.7; margin: 0 0 24px 0; padding-left: 24px; list-style-type: disc;">
-            <li style="margin-bottom: 8px;">Receive curated introductions to relevant professionals</li>
-            <li style="margin-bottom: 8px;">Discover business development opportunities</li>
-            <li style="margin-bottom: 8px;">Explore hiring and career opportunities</li>
-            <li style="margin-bottom: 8px;">Build strategic partnerships and collaborations</li>
-            <li style="margin-bottom: 8px;">Join a private network built on trust rather than cold outreach</li>
+            <li style="margin-bottom: 8px;">Meaningful introductions to potential colleagues</li>
+            <li style="margin-bottom: 8px;">Business development through trusted relationships</li>
+            <li style="margin-bottom: 8px;">Career advancement and professional growth</li>
+            <li style="margin-bottom: 8px;">Strategic partnerships and collaborations</li>
           </ul>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
             Over the next few days, you'll receive a separate email with your login credentials and instructions for accessing the platform.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            We are onboarding members in phases to ensure every introduction remains thoughtful, relevant, and high quality.
+            We're onboarding members in phases to ensure every introduction is thoughtful, relevant, and of the highest quality.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            Thank you for being part of the founding community. We're looking forward to introducing you to exceptional people and opportunities.
+            Thank you for helping shape Andrel from the very beginning. We look forward to connecting you with exceptional people, valuable relationships, and meaningful collaborations.
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
             Welcome to Andrel.
