@@ -3,9 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
-import ExpertisePicker from '@/components/ExpertisePicker';
-import ConnectionTargetPicker from '@/components/ConnectionTargetPicker';
-import type { CategoryTitleSelection } from '@/lib/role-taxonomy';
+import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect';
+import { DELIVERY_CEILING } from '@/lib/opportunities/caps';
 
 type Urgency = 'low' | 'medium' | 'urgent';
 
@@ -17,6 +16,15 @@ const URGENCY_COPY: Record<Urgency, { label: string; window: string }> = {
   urgent: { label: 'Urgent', window: '7-day window' },
 };
 
+// Compact quick-add row. Values MUST be valid EXPERTISE_OPTIONS so they feed the
+// same selected-expertise state (and matching) as the searchable selector.
+const POPULAR_EXPERTISE = [
+  'AI', 'Privacy', 'Cybersecurity', 'Finance', 'Healthcare',
+  'Marketing', 'Operations', 'Sales', 'Litigation', 'M&A',
+];
+
+const SPECIFIC_HINT_MAX = 200;
+
 export default function BusinessForm() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -26,7 +34,7 @@ export default function BusinessForm() {
   const [industry, setIndustry] = useState('');
   const [urgency, setUrgency] = useState<Urgency>('medium');
   const [expertise, setExpertise] = useState<string[]>([]);
-  const [targetConnections, setTargetConnections] = useState<CategoryTitleSelection>({});
+  const [specificHint, setSpecificHint] = useState('');
   const [description, setDescription] = useState('');
 
   function clearError(key: string) {
@@ -35,6 +43,11 @@ export default function BusinessForm() {
       const { [key]: _, ...rest } = prev;
       return rest;
     });
+  }
+
+  function togglePopular(tag: string) {
+    clearError('expertise');
+    setExpertise((prev) => (prev.includes(tag) ? prev : [...prev, tag]));
   }
 
   async function send() {
@@ -58,7 +71,7 @@ export default function BusinessForm() {
             need: need.trim(),
             industry: industry.trim() || undefined,
             expertise,
-            target_connections: targetConnections,
+            specific_hint: specificHint.trim() || undefined,
           },
         }),
       });
@@ -82,17 +95,24 @@ export default function BusinessForm() {
   return (
     <div className="mx-auto max-w-xl px-6 py-12">
       <h1 className="text-2xl font-semibold text-slate-900">Business need</h1>
-      <p className="mt-2 text-sm text-slate-500">Sent only to 3 highly-relevant providers.</p>
+
+      {/* Estimated reach — reuses the known business delivery ceiling. */}
+      <div className="mt-4 rounded-lg border border-brand-gold/20 bg-brand-gold-soft/40 px-4 py-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-brand-gold">Estimated recipients</p>
+        <p className="mt-0.5 text-sm text-slate-600">
+          Approximately {DELIVERY_CEILING.business} highly relevant providers will receive this request.
+        </p>
+      </div>
 
       <div className="mt-8 space-y-5">
-        <Field label="Need" error={fieldErrors.title}>
+        <Field label="What do you need?" error={fieldErrors.title}>
           <input
             type="text"
             value={need}
             onChange={(e) => { clearError('title'); setNeed(e.target.value); }}
             list="need-suggestions"
             maxLength={140}
-            placeholder="Privacy counsel"
+            placeholder="Privacy counsel, cybersecurity assessment, executive coach..."
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           />
           <datalist id="need-suggestions">
@@ -115,20 +135,46 @@ export default function BusinessForm() {
           </div>
         </Field>
 
-        <Field label="Expertise tags" error={fieldErrors.expertise}>
-          <ExpertisePicker
+        <Field label="Helpful expertise *" error={fieldErrors.expertise}>
+          <p className="mb-2 text-xs text-slate-500">Search and select at least two areas that match your need.</p>
+          <div className="mb-2">
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-slate-400">Popular</p>
+            <div className="flex flex-wrap gap-1.5">
+              {POPULAR_EXPERTISE.map((tag) => {
+                const active = expertise.includes(tag);
+                return (
+                  <button
+                    type="button"
+                    key={tag}
+                    onClick={() => togglePopular(tag)}
+                    disabled={active}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${active ? 'border-[#1B2850] bg-[#1B2850] text-white opacity-60' : 'border-slate-300 text-slate-600 hover:border-[#1B2850]/40'}`}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <SearchableExpertiseSelect
             selected={expertise}
             onChange={(next) => { clearError('expertise'); setExpertise(next); }}
           />
-          <p className="mt-1 text-xs text-slate-500">Select at least 2. Must match tags on provider profiles.</p>
         </Field>
 
-        <Field label="Specific connections (optional)">
-          <p className="mb-2 text-xs text-slate-500">Narrow by category or specific titles. Leave empty to let the matcher pick.</p>
-          <ConnectionTargetPicker value={targetConnections} onChange={setTargetConnections} />
+        <Field label="Looking for someone specific? (optional)">
+          <p className="mb-2 text-xs text-slate-500">Company, organization, person, or short description.</p>
+          <input
+            type="text"
+            value={specificHint}
+            onChange={(e) => setSpecificHint(e.target.value)}
+            maxLength={SPECIFIC_HINT_MAX}
+            placeholder="Someone at OpenAI, a former SEC attorney, or a healthcare privacy expert"
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+          />
         </Field>
 
-        <Field label="Description (optional)" error={fieldErrors.description}>
+        <Field label="Anything providers should know? (optional)" error={fieldErrors.description}>
           <textarea
             value={description}
             onChange={(e) => { clearError('description'); setDescription(e.target.value); }}
