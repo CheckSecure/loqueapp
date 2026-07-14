@@ -119,51 +119,83 @@ export default async function AdminDashboard() {
     .eq('batch_id', currentBatch.id)
     : { count: 0 }
 
+  // ── Derived-only values (no new queries — all sources fetched above) ──
+  // Weekly-active percentage: both numerator (activeUsers7d) and denominator
+  // (totalRegistered) are already fetched, so the % is safe to derive.
+  const weeklyActivePct = (totalRegistered && totalRegistered > 0)
+    ? Math.round(((activeUsers7d || 0) / totalRegistered) * 100)
+    : null
+
+  const batchNeedsReview = Boolean(currentBatch && currentBatch.status !== 'active')
+
+  // Needs Attention — reuses existing counts only; zero-value rows are excluded.
+  const attentionItems = [
+    { label: `${waitlistByStatus.pending} awaiting approval`, href: '/dashboard/admin/waitlist', show: waitlistByStatus.pending > 0, tone: 'red' as const },
+    { label: `${pendingConciergeCount} concierge request${(pendingConciergeCount || 0) === 1 ? '' : 's'}`, href: '/dashboard/admin/concierge', show: (pendingConciergeCount || 0) > 0, tone: 'yellow' as const },
+    { label: `${newIssueCount} issue report${(newIssueCount || 0) === 1 ? '' : 's'}`, href: '/dashboard/admin/issues', show: (newIssueCount || 0) > 0, tone: 'red' as const },
+    { label: `${pendingIntros} admin intro${(pendingIntros || 0) === 1 ? '' : 's'} awaiting response`, href: '/dashboard/admin/members', show: (pendingIntros || 0) > 0, tone: 'yellow' as const },
+    { label: 'Current batch needs review', href: '/dashboard/admin/batches', show: batchNeedsReview, tone: 'yellow' as const },
+  ].filter(i => i.show)
+
+  // Status accent classes keyed by real state.
+  const toneTop: Record<string, string> = {
+    red: 'border-t-red-400', yellow: 'border-t-amber-400', green: 'border-t-emerald-400', blue: 'border-t-sky-300', neutral: 'border-t-slate-200',
+  }
+  const toneDot: Record<string, string> = {
+    red: 'bg-red-500', yellow: 'bg-amber-500', green: 'bg-emerald-500', blue: 'bg-sky-400', neutral: 'bg-slate-300',
+  }
+  const oppsHasActivity = (opportunitiesCreated7d || 0) > 0 || (opportunityResponses7d || 0) > 0
+
+  const navCardBase = 'bg-white rounded-xl border border-slate-200 border-t-2 p-5 hover:border-[#1B2850]/30 hover:shadow-md transition-all group'
+  const iconChip = 'w-11 h-11 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors'
+  const iconCls = 'w-5 h-5 text-[#1B2850] group-hover:text-white transition-colors'
+
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        
+    <div className="min-h-screen bg-slate-50 p-5 sm:p-6">
+      <div className="max-w-7xl mx-auto space-y-5">
+
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Admin Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-1">Platform control center</p>
+          <p className="text-sm text-slate-500 mt-0.5">Launch operations console</p>
         </div>
 
-        {/* Platform Health */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-2">
+        {/* Top metrics */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center justify-between mb-1.5">
               <Users className="w-5 h-5 text-[#1B2850]" />
             </div>
-            <p className="text-3xl font-bold text-slate-900">{totalRegistered || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Total Members</p>
+            <p className="text-3xl font-bold text-slate-900 leading-none">{totalRegistered || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">Members</p>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-2">
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center justify-between mb-1.5">
               <TrendingUp className="w-5 h-5 text-amber-600" />
-              <span className="text-xs text-slate-500">Last 7 days</span>
+              <span className="text-[11px] text-slate-400">7d</span>
             </div>
-            <p className="text-3xl font-bold text-slate-900">{activeUsers7d || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Active Last 7 Days</p>
+            <p className="text-3xl font-bold text-slate-900 leading-none">{activeUsers7d || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Weekly Active{weeklyActivePct !== null && <span className="text-slate-400"> · {weeklyActivePct}% of members</span>}
+            </p>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-2">
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center justify-between mb-1.5">
               <Network className="w-5 h-5 text-green-600" />
             </div>
-            <p className="text-3xl font-bold text-slate-900">{totalMatches || 0}</p>
+            <p className="text-3xl font-bold text-slate-900 leading-none">{totalMatches || 0}</p>
             <p className="text-xs text-slate-500 mt-1">Active Matches</p>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-2">
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center justify-between mb-1.5">
               <UserPlus className="w-5 h-5 text-sky-500" />
             </div>
-            <p className="text-3xl font-bold text-slate-900">{waitlistTotal}</p>
-            <p className="text-xs text-slate-500 mt-1">Waitlist Pipeline</p>
+            <p className="text-3xl font-bold text-slate-900 leading-none">{waitlistByStatus.pending}</p>
+            <p className="text-xs text-slate-500 mt-1">Waitlist · awaiting review</p>
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
-              <span>{waitlistByStatus.pending} pending</span>
               <span>{waitlistByStatus.approved} approved</span>
               <span>{waitlistByStatus.invited} invited</span>
               <span>{waitlistByStatus.declined} declined</span>
@@ -171,238 +203,175 @@ export default async function AdminDashboard() {
           </div>
         </div>
 
+        {/* Needs Attention */}
+        <div>
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">Needs Attention</h2>
+          <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+            {attentionItems.length === 0 ? (
+              <p className="px-4 py-3 text-sm text-slate-500">No items currently require attention.</p>
+            ) : (
+              attentionItems.map((item) => (
+                <Link key={item.label} href={item.href} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${toneDot[item.tone]}`} aria-hidden="true" />
+                  <span className="flex-1 text-sm font-medium text-slate-800">{item.label}</span>
+                  <span className="text-slate-300 group-hover:text-slate-400">→</span>
+                </Link>
+              ))
+            )}
+          </div>
+        </div>
+
         {/* Engagement — Last 7 Days */}
         <div>
-          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Last 7 Days</h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center justify-between mb-2">
-                <Zap className="w-5 h-5 text-amber-500" />
-              </div>
-              <p className="text-3xl font-bold text-slate-900">{introsSuggested7d || 0}</p>
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">Last 7 Days</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center justify-between mb-1.5"><Zap className="w-5 h-5 text-amber-500" /></div>
+              <p className="text-3xl font-bold text-slate-900 leading-none">{introsSuggested7d || 0}</p>
               <p className="text-xs text-slate-500 mt-1">Intros Suggested</p>
             </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center justify-between mb-2">
-                <ThumbsUp className="w-5 h-5 text-green-500" />
-              </div>
-              <p className="text-3xl font-bold text-slate-900">{interestExpressed7d || 0}</p>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center justify-between mb-1.5"><ThumbsUp className="w-5 h-5 text-green-500" /></div>
+              <p className="text-3xl font-bold text-slate-900 leading-none">{interestExpressed7d || 0}</p>
               <p className="text-xs text-slate-500 mt-1">Interest Expressed</p>
             </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center justify-between mb-2">
-                <MessageSquare className="w-5 h-5 text-blue-500" />
-              </div>
-              <p className="text-3xl font-bold text-slate-900">{messagesSent7d || 0}</p>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center justify-between mb-1.5"><MessageSquare className="w-5 h-5 text-blue-500" /></div>
+              <p className="text-3xl font-bold text-slate-900 leading-none">{messagesSent7d || 0}</p>
               <p className="text-xs text-slate-500 mt-1">Messages Sent</p>
             </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <div className="flex items-center justify-between mb-2">
-                <Calendar className="w-5 h-5 text-indigo-500" />
-              </div>
-              <p className="text-3xl font-bold text-slate-900">{meetingsScheduled7d || 0}</p>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center justify-between mb-1.5"><Calendar className="w-5 h-5 text-indigo-500" /></div>
+              <p className="text-3xl font-bold text-slate-900 leading-none">{meetingsScheduled7d || 0}</p>
               <p className="text-xs text-slate-500 mt-1">Meetings Scheduled</p>
             </div>
-
           </div>
         </div>
 
         {/* Main Navigation Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-
-          {/* Launch Metrics */}
-          <Link
-            href="/dashboard/admin/metrics"
-            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
-                <TrendingUp className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
-              </div>
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Launch Metrics</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Founding member activation, intros, matches, meetings, and opportunities
-            </p>
-          </Link>
-
-          {/* Members */}
-          <Link
-            href="/dashboard/admin/members"
-            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
-                <Users className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
-              </div>
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Members</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Manage users, boost priority, force matches, edit tiers and credits
-            </p>
-            <div className="flex items-center gap-4 text-xs text-slate-600">
-              <span>{totalMembers || 0} active</span>
-              {(pendingIntros || 0) > 0 && <span className="text-amber-600 font-medium">{pendingIntros} admin intro{pendingIntros === 1 ? '' : 's'} awaiting response</span>}
-            </div>
-          </Link>
-
-          {/* Batch Management */}
-          <Link
-            href="/dashboard/admin/batches"
-            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
-                <GitBranch className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
-              </div>
-              {currentBatch && currentBatch.status !== 'active' && (
-                <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded">
-                  Needs Review
-                </span>
-              )}
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Batch Management</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Generate weekly batches, review suggestions, approve recommendations
-            </p>
-            <div className="flex items-center gap-4 text-xs text-slate-600">
-              {currentBatch && <span>{batchSuggestions || 0} suggestions in current batch</span>}
-            </div>
-          </Link>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
 
           {/* Waitlist */}
-          <Link
-            href="/dashboard/admin/waitlist"
-            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
-                <UserPlus className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
-              </div>
+          <Link href="/dashboard/admin/waitlist" className={`${navCardBase} ${toneTop[waitlistByStatus.pending > 0 ? 'red' : 'green']}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={iconChip}><UserPlus className={iconCls} /></div>
               {(waitlistByStatus.pending || 0) > 0 && (
                 <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
                   {(waitlistByStatus.pending || 0) > 9 ? '9+' : waitlistByStatus.pending}
                 </span>
               )}
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Waitlist</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Approve new members, send invites, manage access
-            </p>
-            <div className="flex items-center gap-4 text-xs text-slate-600">
-              <span>{waitlistByStatus.pending || 0} pending approval</span>
-            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1">Waitlist</h3>
+            <p className="text-xs text-slate-500 mb-2.5">Approve new members, send invites, manage access</p>
+            <div className="text-xs text-slate-600"><span>{waitlistByStatus.pending || 0} pending approval</span></div>
           </Link>
 
-          {/* Operations */}
-          <Link
-            href="/dashboard/admin/operations"
-            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
-                <Wrench className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
-              </div>
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Operations</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Advanced tools for debugging, manual overrides, and system support.
-            </p>
-            <div className="flex items-center gap-4 text-xs text-slate-600">
-              <span>Support &amp; debug tools</span>
-            </div>
-          </Link>
-
-          {/* Match Inspector */}
-          <Link
-            href="/dashboard/admin/match-inspector"
-            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
-                <Search className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
-              </div>
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Match Inspector</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Inspect any pair — relationship state, eligibility, insights, and override tools
-            </p>
-            <div className="flex items-center gap-4 text-xs text-slate-600">
-              <span>Pair lookup &amp; manual actions</span>
-            </div>
-          </Link>
-
-          {/* Issue Reports */}
-          <Link
-            href="/dashboard/admin/issues"
-            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
-                <AlertCircle className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
-              </div>
-              {(newIssueCount || 0) > 0 && (
-                <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
-                  {(newIssueCount || 0) > 9 ? '9+' : newIssueCount}
-                </span>
+          {/* Batch Management */}
+          <Link href="/dashboard/admin/batches" className={`${navCardBase} ${toneTop[batchNeedsReview ? 'yellow' : 'green']}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={iconChip}><GitBranch className={iconCls} /></div>
+              {batchNeedsReview && (
+                <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded">Needs Review</span>
               )}
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Issue Reports</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              User-submitted bug reports and support questions
-            </p>
-            <div className="flex items-center gap-4 text-xs text-slate-600">
-              <span>{(newIssueCount || 0) > 0 ? `${newIssueCount} unreviewed` : 'No new reports'}</span>
+            <h3 className="text-base font-bold text-slate-900 mb-1">Batch Management</h3>
+            <p className="text-xs text-slate-500 mb-2.5">Generate weekly batches, review suggestions, approve recommendations</p>
+            <div className="text-xs text-slate-600">{currentBatch && <span>{batchSuggestions || 0} suggestions in current batch</span>}</div>
+          </Link>
+
+          {/* Members */}
+          <Link href="/dashboard/admin/members" className={`${navCardBase} ${toneTop[(pendingIntros || 0) > 0 ? 'yellow' : 'neutral']}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={iconChip}><Users className={iconCls} /></div>
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1">Members</h3>
+            <p className="text-xs text-slate-500 mb-2.5">Manage users, boost priority, force matches, edit tiers and credits</p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+              <span>{totalMembers || 0} active</span>
+              {(pendingIntros || 0) > 0 && <span className="text-amber-600 font-medium">{pendingIntros} admin intro{pendingIntros === 1 ? '' : 's'} awaiting response</span>}
             </div>
           </Link>
 
           {/* Concierge Queue */}
-          <Link
-            href="/dashboard/admin/concierge"
-            className="bg-white rounded-xl border border-slate-200 p-6 hover:border-[#1B2850]/30 hover:shadow-md transition-all group"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors">
-                <Sparkles className="w-6 h-6 text-[#1B2850] group-hover:text-white transition-colors" />
-              </div>
+          <Link href="/dashboard/admin/concierge" className={`${navCardBase} ${toneTop[(pendingConciergeCount || 0) > 0 ? 'yellow' : 'green']}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={iconChip}><Sparkles className={iconCls} /></div>
               {(pendingConciergeCount || 0) > 0 && (
                 <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
                   {(pendingConciergeCount || 0) > 9 ? '9+' : pendingConciergeCount}
                 </span>
               )}
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Concierge Queue</h3>
-            <p className="text-sm text-slate-500 mb-4">
-              Member-requested introductions — triage pending requests
-            </p>
-            <div className="flex items-center gap-4 text-xs text-slate-600">
-              <span>{(pendingConciergeCount || 0) > 0 ? `${pendingConciergeCount} pending` : 'No pending requests'}</span>
-            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1">Concierge Queue</h3>
+            <p className="text-xs text-slate-500 mb-2.5">Member-requested introductions — triage pending requests</p>
+            <div className="text-xs text-slate-600"><span>{(pendingConciergeCount || 0) > 0 ? `${pendingConciergeCount} pending` : 'No pending requests'}</span></div>
           </Link>
 
           {/* Opportunities — read-only metrics card */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 rounded-lg bg-[#F5F6FB] flex items-center justify-center">
-                <Briefcase className="w-6 h-6 text-[#1B2850]" />
-              </div>
+          <div className={`bg-white rounded-xl border border-slate-200 border-t-2 ${toneTop.blue} p-5`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-11 h-11 rounded-lg bg-[#F5F6FB] flex items-center justify-center"><Briefcase className="w-5 h-5 text-[#1B2850]" /></div>
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Opportunities</h3>
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm text-slate-500">Created (7d)</p>
-                <p className="text-2xl font-bold text-slate-900">{opportunitiesCreated7d || 0}</p>
+            <h3 className="text-base font-bold text-slate-900 mb-2.5">Opportunities</h3>
+            {oppsHasActivity ? (
+              <div className="flex gap-6">
+                <div>
+                  <p className="text-2xl font-bold text-slate-900 leading-none">{opportunitiesCreated7d || 0}</p>
+                  <p className="text-xs text-slate-500 mt-1">Created (7d)</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-slate-900 leading-none">{opportunityResponses7d || 0}</p>
+                  <p className="text-xs text-slate-500 mt-1">Responses (7d)</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-slate-500">Responses (7d)</p>
-                <p className="text-2xl font-bold text-slate-900">{opportunityResponses7d || 0}</p>
-              </div>
-            </div>
+            ) : (
+              <p className="text-sm text-slate-400">No activity this week</p>
+            )}
           </div>
+
+          {/* Launch Metrics */}
+          <Link href="/dashboard/admin/metrics" className={`${navCardBase} ${toneTop.blue}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={iconChip}><TrendingUp className={iconCls} /></div>
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1">Launch Metrics</h3>
+            <p className="text-xs text-slate-500">Founding member activation, intros, matches, meetings, and opportunities</p>
+          </Link>
+
+          {/* Match Inspector */}
+          <Link href="/dashboard/admin/match-inspector" className={`${navCardBase} ${toneTop.blue}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={iconChip}><Search className={iconCls} /></div>
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1">Match Inspector</h3>
+            <p className="text-xs text-slate-500 mb-2.5">Inspect any pair — relationship state, eligibility, insights, and override tools</p>
+            <div className="text-xs text-slate-600"><span>Pair lookup &amp; manual actions</span></div>
+          </Link>
+
+          {/* Platform Operations */}
+          <Link href="/dashboard/admin/operations" className={`${navCardBase} ${toneTop.blue}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={iconChip}><Wrench className={iconCls} /></div>
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1">Platform Operations</h3>
+            <p className="text-xs text-slate-500 mb-2.5">Advanced tools for debugging, manual overrides, and system support.</p>
+            <div className="text-xs text-slate-600"><span>Support &amp; debug tools</span></div>
+          </Link>
+
+          {/* Issue Reports */}
+          <Link href="/dashboard/admin/issues" className={`${navCardBase} ${toneTop[(newIssueCount || 0) > 0 ? 'red' : 'green']}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={iconChip}><AlertCircle className={iconCls} /></div>
+              {(newIssueCount || 0) > 0 && (
+                <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
+                  {(newIssueCount || 0) > 9 ? '9+' : newIssueCount}
+                </span>
+              )}
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1">Issue Reports</h3>
+            <p className="text-xs text-slate-500 mb-2.5">User-submitted bug reports and support questions</p>
+            <div className="text-xs text-slate-600"><span>{(newIssueCount || 0) > 0 ? `${newIssueCount} unreviewed` : 'No new reports'}</span></div>
+          </Link>
 
         </div>
       </div>
