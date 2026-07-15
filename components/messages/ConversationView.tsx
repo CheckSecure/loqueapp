@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { formatMessageTime, formatDaySeparator, shouldShowDaySeparator } from '@/lib/messageTime'
 
 interface Message {
   id: string
@@ -183,34 +184,58 @@ export default function ConversationView({ conversationId, isDeactivated }: Conv
           </p>
         )}
 
-        {messages.map(msg => {
+        {messages.map((msg, i) => {
+          // Centered day separator before the first message and whenever the
+          // viewer's local calendar day changes (Today / Yesterday / full date).
+          const separatorLabel = shouldShowDaySeparator(messages, i)
+            ? formatDaySeparator(msg.created_at)
+            : null
+          const daySeparator = separatorLabel ? (
+            <div className="flex items-center justify-center py-2">
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-medium text-gray-500">
+                {separatorLabel}
+              </span>
+            </div>
+          ) : null
+
+          const time = formatMessageTime(msg.created_at)
+
           if (msg.is_system) {
             return (
-              <div
-                key={msg.id}
-                className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-line"
-              >
-                {msg.content}
-              </div>
+              <Fragment key={msg.id}>
+                {daySeparator}
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-line">
+                  {msg.content}
+                </div>
+              </Fragment>
             )
           }
 
           const isMine = msg.sender_id === currentUserId
           return (
-            <div
-              key={msg.id}
-              className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
-                  isMine
-                    ? 'bg-[#1B2850] text-white'
-                    : 'bg-gray-100 text-gray-900'
-                }`}
-              >
-                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+            <Fragment key={msg.id}>
+              {daySeparator}
+              <div className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
+                    isMine
+                      ? 'bg-[#1B2850] text-white'
+                      : 'bg-gray-100 text-gray-900'
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  {time && (
+                    <p
+                      className={`mt-0.5 text-[10px] leading-none text-right ${
+                        isMine ? 'text-white/60' : 'text-gray-400'
+                      }`}
+                    >
+                      {time}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
+            </Fragment>
           )
         })}
       </div>

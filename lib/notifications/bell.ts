@@ -48,3 +48,24 @@ export function markOneReadQuery(client: any, userId: string, id: string, readAt
     .eq('user_id', userId)
     .eq('id', id)
 }
+
+/**
+ * Mark ONLY the message notifications for one conversation read — scoped to the
+ * user, the 'message_received' type, and data->>conversationId. Opening a
+ * conversation clears its own message notifications without touching any other
+ * conversation's (or any other type's) notifications.
+ */
+export function markConversationMessageNotificationsReadQuery(
+  client: any,
+  userId: string,
+  conversationId: string,
+  readAt: string,
+) {
+  return client
+    .from('notifications')
+    .update({ read_at: readAt })
+    .eq('user_id', userId)
+    .eq('type', 'message_received')
+    .eq('data->>conversationId', conversationId)
+    .is('read_at', null)
+}

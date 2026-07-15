@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { markConversationMessageNotificationsReadQuery } from '@/lib/notifications/bell'
 
 /**
  * POST /api/messages/read
@@ -90,6 +91,17 @@ export async function POST(req: Request) {
     console.error('[messages/read] update error:', updateErr)
     return NextResponse.json({ error: 'Failed to mark read' }, { status: 500 })
   }
+
+  // 4. Also clear THIS conversation's message notifications for the user, so the
+  //    bell reflects the read on next load. Scoped to type + data->>conversationId
+  //    so other conversations' notifications are untouched. Non-fatal.
+  const { error: notifErr } = await markConversationMessageNotificationsReadQuery(
+    admin,
+    user.id,
+    conversationId,
+    nowIso,
+  )
+  if (notifErr) console.error('[messages/read] notification read error (non-fatal):', notifErr)
 
   const markedCount = updated?.length ?? 0
   return NextResponse.json({ success: true, markedCount })

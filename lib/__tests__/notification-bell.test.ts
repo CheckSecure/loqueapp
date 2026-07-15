@@ -5,6 +5,7 @@ import {
   scopedNotificationsQuery,
   markAllReadQuery,
   markOneReadQuery,
+  markConversationMessageNotificationsReadQuery,
 } from '@/lib/notifications/bell'
 
 /**
@@ -18,6 +19,7 @@ function makeFakeClient() {
     update: null as unknown,
     eq: [] as [string, unknown][],
     in: [] as [string, unknown][],
+    is: [] as [string, unknown][],
   }
   const builder: any = {
     from(t: string) { calls.from = t; return builder },
@@ -25,6 +27,7 @@ function makeFakeClient() {
     update(u: unknown) { calls.update = u; return builder },
     eq(col: string, val: unknown) { calls.eq.push([col, val]); return builder },
     in(col: string, vals: unknown) { calls.in.push([col, vals]); return builder },
+    is(col: string, val: unknown) { calls.is.push([col, val]); return builder },
     order() { return builder },
     limit() { return builder },
   }
@@ -81,5 +84,49 @@ describe('mark-read cannot affect another user\'s rows', () => {
     expect(calls.eq).toContainEqual(['id', 'notif-1'])
     // The user_id constraint is always present, so it can never target another user's row.
     expect(calls.eq.some(([col]) => col === 'user_id')).toBe(true)
+  })
+})
+
+describe('marking one conversation read does not clear unrelated notifications', () => {
+  it('scopes to user + message_received + THIS conversation + still-unread only', () => {
+    const { builder, calls } = makeFakeClient()
+    markConversationMessageNotificationsReadQuery(builder, USER, 'conv-1', '2026-01-01T00:00:00.000Z')
+    expect(calls.from).toBe('notifications')
+    expect(calls.update).toEqual({ read_at: '2026-01-01T00:00:00.000Z' })
+    expect(calls.eq).toContainEqual(['user_id', USER])
+    expect(calls.eq).toContainEqual(['type', 'message_received'])
+    expect(calls.eq).toContainEqual(['data->>conversationId', 'conv-1'])
+    expect(calls.is).toContainEqual(['read_at', null])
+  })
+
+  it('a different conversation targets a different filter (never each other)', () => {
+    const a = makeFakeClient()
+    const b = makeFakeClient()
+    markConversationMessageNotificationsReadQuery(a.builder, USER, 'conv-1', 'T')
+    markConversationMessageNotificationsReadQuery(b.builder, USER, 'conv-2', 'T')
+    expect(a.calls.eq).toContainEqual(['data->>conversationId', 'conv-1'])
+    expect(a.calls.eq).not.toContainEqual(['data->>conversationId', 'conv-2'])
+    expect(b.calls.eq).toContainEqual(['data->>conversationId', 'conv-2'])
+  })
+})
+
+describe('bell live-update reducer (realtime INSERT) + unread count', () => {
+  // Mirrors NotificationBell: dedupe by id, prepend, unread = !read_at count.
+  const applyInsert = (prev: any[], row: any) => (prev.some(n => n.id === row.id) ? prev : [row, ...prev])
+  const unread = (list: any[]) => list.filter(n => !n.read_at).length
+
+  it('a new realtime row appears and increments the unread count', () => {
+    const start = [{ id: 'n1', read_at: '2026-01-01' }] // already read
+    expect(unread(start)).toBe(0)
+    const next = applyInsert(start, { id: 'n2', read_at: null })
+    expect(next).toHaveLength(2)
+    expect(unread(next)).toBe(1)
+  })
+
+  it('a duplicate realtime row (same id) does not double-count', () => {
+    const list = [{ id: 'n2', read_at: null }]
+    const next = applyInsert(list, { id: 'n2', read_at: null })
+    expect(next).toHaveLength(1)
+    expect(unread(next)).toBe(1)
   })
 })

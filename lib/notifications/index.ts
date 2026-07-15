@@ -26,10 +26,14 @@ export type NotificationType =
 export interface NotificationData {
   matchId?: string
   conversationId?: string
+  messageId?: string
   batchCount?: number
   creditsRemaining?: number
   fromUserId?: string
   fromUserName?: string
+  /** Set by createNotificationSafe when a dedupeKey is supplied — enables
+   *  per-entity idempotency (e.g. one notification per message id). */
+  dedupeKey?: string
   [key: string]: any
 }
 
@@ -130,30 +134,49 @@ const LINK_BY_TYPE: Partial<Record<string, string>> = {
 export async function createNotificationSafe({
   userId,
   type,
-  data, link}: {
+  data, link, dedupeKey}: {
   userId: string
   type: NotificationType
-  data?: NotificationData; link?: string}) {
+  data?: NotificationData; link?: string
+  /**
+   * Per-entity idempotency key (e.g. a message id). When supplied, a duplicate
+   * is defined as an EXISTING notification with the same (user_id, type,
+   * data->>dedupeKey) — with NO time window — so distinct entities each notify
+   * once and a retry for the same entity is a no-op. When omitted, the legacy
+   * "one per (user_id, type) per 24h" digest behavior is preserved so existing
+   * notification types are unaffected.
+   */
+  dedupeKey?: string}) {
   const adminClient = createAdminClient()
 
-  console.log('[Notifications] createNotificationSafe called:', { userId, type })
+  console.log('[Notifications] createNotificationSafe called:', { userId, type, dedupeKey })
   try {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    
-    const { data: existing, error: dupeErr } = await adminClient
+    let dupeQuery = adminClient
       .from('notifications')
       .select('id')
       .eq('user_id', userId)
       .eq('type', type)
-      .gte('created_at', twentyFourHoursAgo)
-      .maybeSingle()
-    
+
+    if (dedupeKey) {
+      // Idempotent per entity — no time window.
+      dupeQuery = dupeQuery.eq('data->>dedupeKey', dedupeKey)
+    } else {
+      // Legacy digest dedup — at most one of this type per 24h.
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      dupeQuery = dupeQuery.gte('created_at', twentyFourHoursAgo)
+    }
+
+    const { data: existing, error: dupeErr } = await dupeQuery.maybeSingle()
+
     if (dupeErr) console.error('[Notifications] Dupe check error:', dupeErr)
 
     if (existing) {
-      console.log(`[Notifications] Duplicate prevented: ${type} for user ${userId}`)
+      console.log(`[Notifications] Duplicate prevented: ${type} for user ${userId}${dedupeKey ? ` (dedupeKey ${dedupeKey})` : ''}`)
       return null
     }
+
+    // Persist the dedupeKey inside data so the check above can find it next time.
+    if (dedupeKey) data = { ...(data ?? {}), dedupeKey }
 
     const copy = NOTIFICATION_COPY[type]
     if (!copy) {
@@ -177,15 +200,18 @@ export async function createNotificationSafe({
       .single()
 
     if (error) {
+      // 23505 = unique_violation. With the partial unique index
+      // (notifications_user_type_dedupe_key_uniq) a concurrent identical request
+      // can lose the race here; that is the intended idempotent outcome, not an
+      // error — the notification already exists. Return cleanly, don't surface it.
+      if ((error as { code?: string }).code === '23505') {
+        console.log('[Notifications] Idempotent no-op (dedupeKey unique conflict):', { userId, type, dedupeKey })
+        return null
+      }
       console.error('[Notifications] Insert error:', error)
       return null
     }
     console.log('[Notifications] Inserted OK:', notification?.id)
-
-    if (error) {
-      console.error('[Notifications] Failed to create:', error)
-      return null
-    }
 
     try {
       await adminClient.rpc('cleanup_old_notifications', {

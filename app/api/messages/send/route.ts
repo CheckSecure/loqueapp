@@ -93,14 +93,18 @@ export async function POST(request: Request) {
       })
       .eq('id', conversationId)
 
-    // Send notification to recipient
+    // Send notification to recipient. dedupeKey = message id → one notification
+    // per message (retries are idempotent); link opens this exact conversation.
     await createNotificationSafe({
       userId: recipientId,
       type: 'message_received',
       data: {
         conversationId,
-        fromUserId: user.id
-      }
+        fromUserId: user.id,
+        messageId: message.id
+      },
+      link: `/dashboard/messages/${conversationId}`,
+      dedupeKey: message.id
     })
 
     console.log('[Message Sent]:', {
