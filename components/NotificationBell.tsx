@@ -5,9 +5,17 @@ import { Bell, X, CheckCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import {
+  realtimeFilterForUser,
+  isOwnNotification,
+  scopedNotificationsQuery,
+  markAllReadQuery,
+  markOneReadQuery,
+} from '@/lib/notifications/bell'
 
 interface Notification {
   id: string
+  user_id?: string
   type: string
   title: string
   body: string
@@ -28,6 +36,7 @@ function timeAgo(date: string) {
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const ref = useRef<HTMLDivElement>(null)
@@ -35,7 +44,27 @@ export default function NotificationBell() {
 
   const unreadCount = notifications.filter(n => !n.read_at).length
 
-  useEffect(() => { loadNotifications() }, [])
+  // Resolve the signed-in user, then load only their notifications.
+  useEffect(() => {
+    let active = true
+    const supabase = createClient()
+    ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!active) return
+      const uid = user?.id ?? null
+      setUserId(uid)
+      if (!uid) {
+        setNotifications([])
+        setLoading(false)
+        return
+      }
+      const { data } = await scopedNotificationsQuery(supabase, uid)
+      if (!active) return
+      setNotifications((data ?? []) as Notification[])
+      setLoading(false)
+    })()
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -46,55 +75,49 @@ export default function NotificationBell() {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  // Realtime: subscribe only once we know the user, filter server-side to their
+  // rows, and defensively re-check ownership before touching local state.
   useEffect(() => {
+    if (!userId) return
     const supabase = createClient()
     const channel = supabase
-      .channel('notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, payload => {
-        setNotifications(prev => [payload.new as Notification, ...prev])
-      })
+      .channel(`notifications:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: realtimeFilterForUser(userId) },
+        payload => {
+          const row = payload.new as Notification
+          if (!isOwnNotification(row, userId)) return
+          setNotifications(prev => (prev.some(n => n.id === row.id) ? prev : [row, ...prev]))
+        }
+      )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [])
-
-  const loadNotifications = async () => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('notifications')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(20)
-    setNotifications(data ?? [])
-    setLoading(false)
-  }
+  }, [userId])
 
   const markAllRead = async () => {
+    if (!userId) return
     const supabase = createClient()
     const unread = notifications.filter(n => !n.read_at)
     if (unread.length === 0) return
-    await supabase
-      .from('notifications')
-      .update({ read_at: new Date().toISOString() })
-      .in('id', unread.map(n => n.id))
+    await markAllReadQuery(supabase, userId, unread.map(n => n.id), new Date().toISOString())
     setNotifications(prev => prev.map(n => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })))
   }
 
   const handleNotificationClick = async (n: Notification) => {
-    const supabase = createClient()
-    await supabase
-      .from('notifications')
-      .update({ read_at: new Date().toISOString() })
-      .eq('id', n.id)
-    setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item))
+    if (userId) {
+      const supabase = createClient()
+      await markOneReadQuery(supabase, userId, n.id, new Date().toISOString())
+      setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, read_at: new Date().toISOString() } : item))
+    }
     setOpen(false)
     if (n.link) window.location.href = n.link
   }
 
-  // NEW: Mark all as read when bell is opened
+  // Mark all as read when bell is opened
   const handleBellClick = async () => {
     setOpen(v => !v)
     if (!open && unreadCount > 0) {
-      // Mark all as read when opening
       await markAllRead()
     }
   }
