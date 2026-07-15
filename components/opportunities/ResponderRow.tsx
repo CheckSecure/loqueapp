@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar';
@@ -69,7 +70,7 @@ export function ResponderRow({
 
   const p = responder.profiles;
   const displayName = p?.full_name || 'Member';
-  const roleLine = [p?.title, p?.company].filter(Boolean).join(' · ');
+  const roleLine = professionalIdentityLine(p);
 
   async function introduce() {
     setBusy(true);

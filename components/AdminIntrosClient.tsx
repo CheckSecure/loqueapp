@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { useRouter } from 'next/navigation'
 import { CheckCircle, XCircle, Clock, Sparkles, AlertCircle } from 'lucide-react'
 import { adminApproveIntro, adminRejectIntro } from '@/app/actions'
@@ -128,7 +129,7 @@ export default function AdminIntrosClient({ introRequests }: { introRequests: In
                               {request.requester?.full_name || 'Unknown'}
                             </p>
                             <p className="text-xs text-slate-500">
-                              {request.requester?.title} • {request.requester?.company}
+                              {professionalIdentityLine(request.requester)}
                             </p>
                           </div>
                           <span className="text-slate-400">→</span>
@@ -137,7 +138,7 @@ export default function AdminIntrosClient({ introRequests }: { introRequests: In
                               {request.target?.full_name || 'Unknown'}
                             </p>
                             <p className="text-xs text-slate-500">
-                              {request.target?.title} • {request.target?.company}
+                              {professionalIdentityLine(request.target)}
                             </p>
                           </div>
                         </div>

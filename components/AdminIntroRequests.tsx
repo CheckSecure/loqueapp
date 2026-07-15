@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { adminApproveIntro, adminRejectIntro } from '@/app/actions'
 import { Loader2, CheckCircle, XCircle, Clock, Link2, AlertCircle, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -35,7 +36,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function PersonCell({ p }: { p: RequestRow['requester'] }) {
   if (!p) return <span className="text-xs text-slate-400">Unknown</span>
-  const subtitle = [p.title || p.role_type?.replace(/_/g, ' '), p.company].filter(Boolean).join(' · ')
+  const subtitle = professionalIdentityLine(p)
   return (
     <div>
       <p className="text-sm font-semibold text-slate-900 leading-tight">{p.full_name || '—'}</p>

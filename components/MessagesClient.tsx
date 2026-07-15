@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Send, Search, MessageSquare, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { sendMessage } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -232,11 +233,9 @@ export default function MessagesClient({
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-900">{selected.other?.full_name || 'Unknown'}</p>
-              {(selected.other?.role || selected.other?.company) && (
-                <p className="text-xs text-slate-400">
-                  {[selected.other?.role, selected.other?.company].filter(Boolean).join(' at ')}
-                </p>
-              )}
+              {(() => { const line = professionalIdentityLine({ role_type: selected.other?.role, company: selected.other?.company }); return line ? (
+                <p className="text-xs text-slate-400">{line}</p>
+              ) : null })()}
             </div>
           </div>
 

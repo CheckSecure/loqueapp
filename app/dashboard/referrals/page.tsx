@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { redirect } from 'next/navigation'
 import ReferralForm from './ReferralForm'
 
@@ -83,11 +84,9 @@ export default async function ReferralsPage() {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-900 truncate">{r.waitlist?.full_name ?? '—'}</p>
                   <p className="text-xs text-slate-400 truncate">{r.waitlist?.email}</p>
-                  {(r.waitlist?.title || r.waitlist?.company) && (
-                    <p className="text-xs text-slate-400 mt-0.5 truncate">
-                      {[r.waitlist.title, r.waitlist.company].filter(Boolean).join(' · ')}
-                    </p>
-                  )}
+                  {(() => { const line = professionalIdentityLine(r.waitlist); return line ? (
+                    <p className="text-xs text-slate-400 mt-0.5 truncate">{line}</p>
+                  ) : null })()}
                 </div>
                 <span className={`flex-shrink-0 text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_CLASS[r.status] ?? 'bg-slate-100 text-slate-500'}`}>
                   {STATUS_LABEL[r.status] ?? r.status}

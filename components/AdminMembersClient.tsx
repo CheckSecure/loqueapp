@@ -2,6 +2,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { Search, Filter, UserPlus, Zap, Edit, CheckCircle, AlertTriangle, Users, TrendingUp } from 'lucide-react'
 import { adminForceMatch, adminUpdateUser, adminSetFoundingMember, adminAdjustCredits } from '@/app/actions'
 import { useRouter } from 'next/navigation'
@@ -406,7 +407,7 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-slate-900">{user.full_name || 'Unnamed'}</p>
-                          <p className="text-xs text-slate-500">{user.title} {user.company && `• ${user.company}`}</p>
+                          <p className="text-xs text-slate-500">{professionalIdentityLine(user)}</p>
                         </div>
                         {user.is_priority && (
                           <Zap className="w-4 h-4 text-amber-500" />

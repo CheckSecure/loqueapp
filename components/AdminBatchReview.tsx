@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { useRouter } from 'next/navigation'
 import { CheckCircle, Loader2, Trash2, Users, Sparkles, ChevronDown, ChevronUp, ExternalLink, X } from 'lucide-react'
 
@@ -126,7 +127,7 @@ export default function AdminBatchReview({ batch }: { batch: Batch }) {
               <X className="w-4 h-4" />
             </button>
             <p className="text-lg font-bold text-slate-900 mb-1">{previewProfile.full_name}</p>
-            <p className="text-sm text-slate-500 mb-1">{[previewProfile.title, previewProfile.company].filter(Boolean).join(' at ')}</p>
+            <p className="text-sm text-slate-500 mb-1">{professionalIdentityLine(previewProfile)}</p>
             {previewProfile.role_type && <p className="text-xs text-slate-400 mb-3">{previewProfile.role_type}</p>}
             {previewProfile.bio && <p className="text-sm text-slate-600 leading-relaxed">{previewProfile.bio}</p>}
             {previewProfile.email && <p className="text-xs text-slate-400 mt-3">{previewProfile.email}</p>}
@@ -227,7 +228,7 @@ export default function AdminBatchReview({ batch }: { batch: Batch }) {
                           </button>
                         </div>
                         <p className="text-xs text-slate-500">
-                          {[s.suggested_profile.title, s.suggested_profile.company].filter(Boolean).join(' at ')}
+                          {professionalIdentityLine(s.suggested_profile)}
                         </p>
                         {s.suggested_profile.role_type && (
                           <p className="text-xs text-slate-400 mt-0.5">{s.suggested_profile.role_type}</p>

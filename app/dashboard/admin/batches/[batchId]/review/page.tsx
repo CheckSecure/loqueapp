@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
@@ -113,7 +114,7 @@ export default async function BatchReviewPage({ params }: { params: { batchId: s
                           {recipient?.full_name || 'Unknown'}
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5 truncate">
-                          {recipient?.title || ''}{recipient?.company ? ` at ${recipient.company}` : ''}
+                          {professionalIdentityLine(recipient)}
                           {recipient?.subscription_tier ? ` · ${recipient.subscription_tier}` : ''}
                         </p>
                       </div>

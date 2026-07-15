@@ -1,10 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { normalizeExpertise } from '@/lib/expertise'
+import { shouldShowRecentRoleHint } from '@/lib/professionalIdentity'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Loader2, CheckCircle, User, ChevronDown, ChevronUp } from 'lucide-react'
+
+// localStorage flag: once the "add a recent role" hint is dismissed we never
+// show it again (no repeated nagging, no modal, no onboarding interruption).
+const RECENT_ROLE_HINT_KEY = 'andrel:recent-role-hint:dismissed:v1'
 
 const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suite']
 
@@ -34,6 +39,36 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
   const [meetingFormat, setMeetingFormat] = useState(initialData.meeting_format_preference || 'both')
   const [geoScope, setGeoScope] = useState(initialData.geographic_scope || 'us-wide')
   const [bio, setBio] = useState(initialData.bio || '')
+
+  // Optional "add recent role" hint for placeholder companies (Independent,
+  // Self-employed, …). Read the persisted dismissal on mount (SSR-safe).
+  const [recentRoleHintDismissed, setRecentRoleHintDismissed] = useState(true)
+  useEffect(() => {
+    try {
+      setRecentRoleHintDismissed(!!localStorage.getItem(RECENT_ROLE_HINT_KEY))
+    } catch {
+      setRecentRoleHintDismissed(false)
+    }
+  }, [])
+
+  const dismissRecentRoleHint = () => {
+    try { localStorage.setItem(RECENT_ROLE_HINT_KEY, '1') } catch { /* best-effort */ }
+    setRecentRoleHintDismissed(true)
+  }
+
+  // Show only when: company is a placeholder, the user hasn't already added a
+  // usable previous role, and they haven't dismissed the hint before.
+  const hasUsablePreviousRole = previousRoles.some(r => r.company?.trim() && r.title?.trim())
+  const showRecentRoleHint = shouldShowRecentRoleHint({
+    company,
+    hasUsablePreviousRole,
+    dismissed: recentRoleHintDismissed,
+  })
+
+  const addRecentRoleFromHint = () => {
+    setPreviousRoles(prev => [...prev, { company: '', title: '', start_date: '', end_date: '' }])
+    dismissRecentRoleHint()
+  }
 
   const toggleExpertise = (item: string) => {
     setExpertise(prev => prev.includes(item) ? prev.filter(x => x !== item) : [...prev, item])
@@ -171,6 +206,31 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
               placeholder="e.g., Acme Corp"
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
             />
+
+            {showRecentRoleHint && (
+              <div className="mt-2 rounded-lg border border-brand-gold/25 bg-brand-gold-soft/40 px-3.5 py-3">
+                <p className="text-xs font-semibold text-brand-navy">Add a little more context</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                  You can optionally show your most recent organization to help members better understand your professional background.
+                </p>
+                <div className="mt-2.5 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={addRecentRoleFromHint}
+                    className="inline-flex items-center rounded-md bg-brand-navy px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#2E4080]"
+                  >
+                    Add recent role
+                  </button>
+                  <button
+                    type="button"
+                    onClick={dismissRecentRoleHint}
+                    className="text-xs font-medium text-slate-500 transition-colors hover:text-slate-700"
+                  >
+                    Not now
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>

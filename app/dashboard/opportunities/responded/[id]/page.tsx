@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -44,7 +45,7 @@ export default async function RespondedOpportunityPage({
     .from('opportunities')
     .select(
       'id, type, title, description, urgency, status, created_at, expires_at, archived_at, ' +
-      'profiles!opportunities_creator_id_fkey(full_name, company)'
+      'profiles!opportunities_creator_id_fkey(full_name, company, exact_job_title, title, role_type)'
     )
     .eq('id', id)
     .maybeSingle();
@@ -54,7 +55,7 @@ export default async function RespondedOpportunityPage({
 
   const creator = oppRow.profiles;
   const creatorLine = creator
-    ? [creator.full_name, creator.company].filter(Boolean).join(' · ')
+    ? [creator.full_name, professionalIdentityLine(creator)].filter(Boolean).join(' · ')
     : '';
 
   const isNoLongerActive = ['closed', 'expired', 'dormant'].includes(oppRow.status) || !!oppRow.archived_at;

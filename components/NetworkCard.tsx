@@ -8,6 +8,7 @@ import { formatDistanceToNow } from 'date-fns'
 import ConnectionDetailModal from '@/components/network/ConnectionDetailModal'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
+import { professionalIdentity } from '@/lib/professionalIdentity'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -119,12 +120,17 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
                 <span className="px-1.5 py-0.5 bg-brand-gold-soft text-brand-gold border border-brand-gold/30 text-[10px] font-bold rounded uppercase tracking-wide">New</span>
               )}
             </div>
-            {!isDeactivated && (profile.exact_job_title || profile.title || profile.company) && (
-              <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
-                <Briefcase className="w-3 h-3 flex-shrink-0" />
-                <span className="truncate">{[profile.exact_job_title || profile.title, profile.company].filter(Boolean).join(' at ')}</span>
+            {!isDeactivated && (() => { const identity = professionalIdentity(profile); return identity.primary ? (
+              <div className="mt-0.5">
+                <div className="flex items-center gap-1 text-xs text-slate-500">
+                  <Briefcase className="w-3 h-3 flex-shrink-0" />
+                  <span className="truncate">{identity.primary}</span>
+                </div>
+                {identity.secondary && (
+                  <p className="ml-4 text-[11px] text-slate-400 truncate">{identity.secondary}</p>
+                )}
               </div>
-            )}
+            ) : null })()}
             {isDeactivated && <FormerMemberBadge />}
             {profile.location && (
               <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">

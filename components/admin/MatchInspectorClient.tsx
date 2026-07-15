@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { Search, CheckCircle2, XCircle, AlertTriangle, Loader2, ExternalLink } from 'lucide-react'
 
 export default function MatchInspectorClient() {
@@ -53,7 +54,7 @@ export default function MatchInspectorClient() {
         <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">User {label}</div>
         <div className="text-sm font-semibold text-slate-900">{u.full_name || '(no name)'}</div>
         <div className="text-xs text-slate-500 mt-0.5">{u.email || '(no email)'}</div>
-        {(u.title || u.company) && (<div className="text-xs text-slate-600 mt-1">{[u.title, u.company].filter(Boolean).join(' at ')}</div>)}
+        {(() => { const line = professionalIdentityLine(u); return line ? (<div className="text-xs text-slate-600 mt-1">{line}</div>) : null })()}
         <div className="flex flex-wrap gap-1.5 mt-3">
           {u.seniority && (<span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-50 border border-slate-100 text-slate-600">{u.seniority}</span>)}
           {u.subscription_tier && (<span className="text-[11px] px-2 py-0.5 rounded-full bg-[#F5F6FB] border border-[#1B2850]/10 text-[#1B2850]">{u.subscription_tier}</span>)}

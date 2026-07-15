@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import PageHint from '@/components/PageHint'
 
 interface Conversation {
@@ -130,12 +131,9 @@ export default function MessagesPage() {
                   )}
                 </div>
 
-                {!isFormer && (conv.otherUser?.exact_job_title || conv.otherUser?.title || conv.otherUser?.role_type) && (
-                  <p className="text-xs text-slate-500 truncate mt-0.5">
-                    {conv.otherUser.exact_job_title || conv.otherUser.title || conv.otherUser.role_type}
-                    {conv.otherUser.company && ` · ${conv.otherUser.company}`}
-                  </p>
-                )}
+                {!isFormer && (() => { const line = professionalIdentityLine(conv.otherUser); return line ? (
+                  <p className="text-xs text-slate-500 truncate mt-0.5">{line}</p>
+                ) : null })()}
 
                 {isFormer && (
                   <FormerMemberBadge />

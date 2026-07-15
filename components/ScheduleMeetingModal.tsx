@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { X, Loader2 } from 'lucide-react'
 import { scheduleMeeting } from '@/app/actions'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { useRouter } from 'next/navigation'
 
 const PURPOSES = ['Networking', 'Business development', 'Mentorship', 'Referral', 'Collaboration']
@@ -83,7 +84,7 @@ export default function ScheduleMeetingModal({
               {matchedUsers.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.full_name}
-                  {u.title || u.company ? ` — ${[u.title, u.company].filter(Boolean).join(', ')}` : ''}
+                  {(() => { const line = professionalIdentityLine(u); return line ? ` — ${line}` : '' })()}
                 </option>
               ))}
             </select>

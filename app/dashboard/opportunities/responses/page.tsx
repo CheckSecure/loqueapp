@@ -15,7 +15,7 @@ export default async function YourResponsesPage() {
 
   const { data } = await admin
     .from('opportunity_responses')
-    .select('id, opportunity_id, status, created_at, opportunities(id, title, type, status, profiles!opportunities_creator_id_fkey(full_name, company))')
+    .select('id, opportunity_id, status, created_at, opportunities(id, title, type, status, profiles!opportunities_creator_id_fkey(full_name, company, exact_job_title, title, role_type))')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 

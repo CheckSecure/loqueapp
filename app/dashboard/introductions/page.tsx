@@ -19,6 +19,7 @@ import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
+import { professionalIdentity, professionalIdentityLine } from '@/lib/professionalIdentity'
 import ConciergeLauncher from '@/components/ConciergeLauncher'
 import DemoInterestButton from '@/components/DemoInterestButton'
 import DemoPassButton from '@/components/DemoPassButton'
@@ -177,7 +178,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     // client — RLS-policed, no service-role on member surface.
     supabase
       .from('opportunity_candidates')
-      .select('id, opportunity_id, role, opportunities!inner(id, creator_id, type, title, description, urgency, status, expires_at, profiles!opportunities_creator_id_fkey(full_name, company))')
+      .select('id, opportunity_id, role, opportunities!inner(id, creator_id, type, title, description, urgency, status, expires_at, profiles!opportunities_creator_id_fkey(full_name, company, exact_job_title, title, role_type))')
       .eq('user_id', user.id)
       .is('dismissed_at', null)
       .eq('opportunities.status', 'active')
@@ -466,7 +467,6 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
   const renderFeatured = (row: any) => {
     const s = row.profile
-    const headline = displayTitle(s)
     const interests = Array.isArray(s.interests)
       ? s.interests
       : typeof s.interests === 'string' && s.interests
@@ -489,12 +489,17 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xl sm:text-2xl font-bold text-brand-navy truncate leading-[1.1] tracking-tight">{s.full_name || 'New member'}</p>
-              {(headline || s.company) && (
-                <div className="flex items-center gap-2 text-sm text-slate-700 mt-1.5 font-medium">
-                  <Briefcase className="w-4 h-4 flex-shrink-0 text-brand-gold/70" />
-                  <span className="truncate">{[headline, s.company].filter(Boolean).join(' at ')}</span>
+              {(() => { const identity = professionalIdentity(s); return identity.primary ? (
+                <div className="mt-1.5">
+                  <div className="flex items-center gap-2 text-sm text-slate-700 font-medium">
+                    <Briefcase className="w-4 h-4 flex-shrink-0 text-brand-gold/70" />
+                    <span className="truncate">{identity.primary}</span>
+                  </div>
+                  {identity.secondary && (
+                    <p className="ml-6 text-xs text-slate-500 truncate">{identity.secondary}</p>
+                  )}
                 </div>
-              )}
+              ) : null })()}
               {s.location && (
                 <div className="flex items-center gap-2 text-sm text-slate-400 mt-1">
                   <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
@@ -568,19 +573,20 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // Additional card — compact grid
   const renderAdditional = (row: any) => {
     const s = row.profile
-    const headline = displayTitle(s)
     const innerCard = (
       <div className="relative bg-white border border-slate-100 border-l-2 border-l-brand-gold/60 rounded-2xl p-5 shadow-[0_6px_20px_rgba(15,28,58,0.06)] hover:shadow-[0_10px_32px_rgba(15,28,58,0.10)] hover:border-l-brand-gold transition-all flex flex-col gap-3.5">
           <div className="flex items-start gap-3.5">
             <Avatar profile={s} size="md" />
             <div className="flex-1 min-w-0">
               <p className="text-base font-bold text-brand-navy truncate leading-tight tracking-tight">{s.full_name || 'New member'}</p>
-              {headline && (
-                <p className="mt-1 text-xs font-medium text-slate-700 truncate leading-tight">{headline}</p>
-              )}
-              {s.company && (
-                <p className="mt-0.5 text-xs text-slate-500 truncate leading-tight">{s.company}</p>
-              )}
+              {(() => { const identity = professionalIdentity(s); return (<>
+                {identity.primary && (
+                  <p className="mt-1 text-xs font-medium text-slate-700 truncate leading-tight">{identity.primary}</p>
+                )}
+                {identity.secondary && (
+                  <p className="mt-0.5 text-xs text-slate-500 truncate leading-tight">{identity.secondary}</p>
+                )}
+              </>) })()}
               {s.location && (
                 <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1">
                   <MapPin className="w-3 h-3 flex-shrink-0 text-brand-gold/50" />
@@ -864,11 +870,9 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-brand-navy truncate">{opp?.title || 'Untitled'}</p>
-                            {(creator?.full_name || creator?.company) && (
-                              <p className="text-xs text-slate-500 truncate mt-0.5">
-                                {[creator?.full_name, creator?.company].filter(Boolean).join(' · ')}
-                              </p>
-                            )}
+                            {(() => { const line = [creator?.full_name, professionalIdentityLine(creator)].filter(Boolean).join(' · '); return line ? (
+                              <p className="text-xs text-slate-500 truncate mt-0.5">{line}</p>
+                            ) : null })()}
                           </div>
                           {opp?.urgency && opp.urgency !== 'low' && (
                             <Pill variant={opp.urgency === 'urgent' ? 'gold' : 'navy'}>{opp.urgency}</Pill>

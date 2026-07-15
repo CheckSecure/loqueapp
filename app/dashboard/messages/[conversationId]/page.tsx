@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import ConversationView from '@/components/messages/ConversationView'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
 import IssueReportBanner from '@/components/IssueReportBanner'
 
@@ -131,12 +132,9 @@ export default function ConversationPage() {
             )}
             <div>
               <h1 className="font-medium text-gray-900">{conversation.otherUser.full_name}</h1>
-              {(conversation.otherUser.exact_job_title || conversation.otherUser.title || conversation.otherUser.role_type) && (
-                <p className="text-sm text-gray-500">
-                  {conversation.otherUser.exact_job_title || conversation.otherUser.title || conversation.otherUser.role_type}
-                  {conversation.otherUser.company && ` · ${conversation.otherUser.company}`}
-                </p>
-              )}
+              {(() => { const line = professionalIdentityLine(conversation.otherUser); return line ? (
+                <p className="text-sm text-gray-500">{line}</p>
+              ) : null })()}
             </div>
           </Link>
         )}

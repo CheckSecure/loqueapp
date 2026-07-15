@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 
 type Status = 'interested' | 'introduced' | 'withdrawn';
 
@@ -27,7 +28,13 @@ export function YourActivityRow({
         title: string;
         type: 'hiring' | 'business';
         status: string;
-        profiles?: { full_name: string | null; company: string | null } | null;
+        profiles?: {
+          full_name: string | null
+          company: string | null
+          exact_job_title?: string | null
+          title?: string | null
+          role_type?: string | null
+        } | null;
       }
     | null;
   respondedAt: string;
@@ -36,7 +43,7 @@ export function YourActivityRow({
   if (!opportunity) return null;
   const when = new Date(respondedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const creatorLine = opportunity.profiles
-    ? [opportunity.profiles.full_name, opportunity.profiles.company].filter(Boolean).join(' · ')
+    ? [opportunity.profiles.full_name, professionalIdentityLine(opportunity.profiles)].filter(Boolean).join(' · ')
     : '';
 
   return (

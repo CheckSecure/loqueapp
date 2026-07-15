@@ -4,6 +4,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles, Calendar } from 'lucide-react'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
+import { professionalIdentity } from '@/lib/professionalIdentity'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 
 // Humanizes raw networking-goal values into calmer, reader-facing phrasing.
@@ -202,12 +203,17 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
             <h1 className="text-2xl font-bold text-brand-navy tracking-tight">{name}</h1>
 
-            {(profile.exact_job_title || profile.title || profile.role_type || profile.company) && (
-              <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
-                <Briefcase className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                {[profile.exact_job_title || profile.title || profile.role_type, profile.company].filter(Boolean).join(' · ')}
-              </p>
-            )}
+            {(() => { const identity = professionalIdentity(profile); return identity.primary ? (
+              <>
+                <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
+                  <Briefcase className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                  {identity.primary}
+                </p>
+                {identity.secondary && (
+                  <p className="text-xs text-slate-500 mt-0.5 ml-5">{identity.secondary}</p>
+                )}
+              </>
+            ) : null })()}
 
             {profile.location && (
               <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">

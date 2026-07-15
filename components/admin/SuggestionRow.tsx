@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 
@@ -80,7 +81,7 @@ export default function SuggestionRow({
             {index + 1}. {suggested?.full_name || 'Unknown'}
           </p>
           <p className="text-xs text-slate-500 mt-0.5 truncate">
-            {suggested?.title || ''}{suggested?.company ? ` at ${suggested.company}` : ''}
+            {professionalIdentityLine(suggested)}
             {suggested?.role_type ? ` · ${suggested.role_type}` : ''}
           </p>
         </div>

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Sparkles, Briefcase, MapPin, CheckCircle, Loader2, X } from 'lucide-react'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 import { toList } from '@/lib/match-signals'
+import { professionalIdentity } from '@/lib/professionalIdentity'
 
 interface AdminIntroCardProps {
   introRequestId: string
@@ -102,12 +103,17 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
         </EnlargeableAvatar>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-slate-900 truncate">{otherUser.full_name || 'New member'}</p>
-          {(otherUser.title || otherUser.company) && (
-            <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5">
-              <Briefcase className="w-3 h-3 flex-shrink-0" />
-              <span className="truncate">{[otherUser.title, otherUser.company].filter(Boolean).join(' at ')}</span>
+          {(() => { const identity = professionalIdentity(otherUser); return identity.primary ? (
+            <div className="mt-0.5">
+              <div className="flex items-center gap-1 text-xs text-slate-500">
+                <Briefcase className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{identity.primary}</span>
+              </div>
+              {identity.secondary && (
+                <p className="ml-4 text-[11px] text-slate-400 truncate">{identity.secondary}</p>
+              )}
             </div>
-          )}
+          ) : null })()}
           {otherUser.location && (
             <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
               <MapPin className="w-3 h-3 flex-shrink-0" />

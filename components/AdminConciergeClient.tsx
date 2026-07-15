@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { useRouter } from 'next/navigation'
 import { Pill } from '@/components/ui/Pill'
 import { Loader2, Search, Sparkles, CheckCircle2 } from 'lucide-react'
@@ -274,7 +275,7 @@ export default function AdminConciergeClient({ requests }: { requests: Concierge
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-slate-900 truncate">{c.name}</p>
                                 {(c.title || c.company) && (
-                                  <p className="text-xs text-slate-500 mt-0.5 truncate">{[c.title, c.company].filter(Boolean).join(' · ')}</p>
+                                  <p className="text-xs text-slate-500 mt-0.5 truncate">{professionalIdentityLine(c)}</p>
                                 )}
                               </div>
                               <div className="flex flex-col items-center leading-none flex-shrink-0 rounded-md bg-brand-navy/[0.04] border border-brand-navy/10 px-2.5 py-1">

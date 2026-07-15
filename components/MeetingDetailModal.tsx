@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { X, Calendar, Clock, Video, MapPin, FileText, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { downloadMeetingICS } from '@/lib/ics'
 import { deleteMeeting, acceptMeeting, declineMeeting } from '@/app/actions'
 import RescheduleMeetingModal from './RescheduleMeetingModal'
@@ -225,11 +226,9 @@ export default function MeetingDetailModal({
                   <p className="text-sm font-semibold text-brand-navy truncate group-hover:text-brand-navy/80 transition-colors">
                     {meeting.other.full_name}
                   </p>
-                  {(meeting.other.exact_job_title || meeting.other.title || meeting.other.company) && (
-                    <p className="text-xs text-slate-500 truncate mt-0.5">
-                      {[meeting.other.exact_job_title || meeting.other.title, meeting.other.company].filter(Boolean).join(' · ')}
-                    </p>
-                  )}
+                  {(() => { const line = professionalIdentityLine(meeting.other); return line ? (
+                    <p className="text-xs text-slate-500 truncate mt-0.5">{line}</p>
+                  ) : null })()}
                   <p className="text-xs text-brand-gold font-medium mt-1.5">View profile →</p>
                 </div>
               </button>
