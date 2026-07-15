@@ -13,6 +13,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { excludeTestAccounts } from '@/lib/testAccounts'
 import {
   DELIVERY_CEILING,
   TRANCHE_CEILING,
@@ -416,12 +417,12 @@ export async function selectCandidates(opportunity: OpportunityRow, creatorCompa
     rateLimitedUserIds(opportunity.creator_id),
   ]);
 
-  const { data: pool } = await admin
+  const { data: pool } = await excludeTestAccounts(admin
     .from('profiles')
     .select(PROFILE_SELECT)
     .eq('open_to_roles', true)
     .eq('account_status', 'active')
-    .eq('profile_complete', true);
+    .eq('profile_complete', true));
 
   const requestedRoleTypes = opportunity.criteria.role_types ?? [];
 
@@ -472,12 +473,12 @@ export async function selectProviders(opportunity: OpportunityRow, creatorCompan
 
   const acceptedRoles = acceptedRoleTypesForNeed(opportunity.criteria.need);
 
-  const { data: pool } = await admin
+  const { data: pool } = await excludeTestAccounts(admin
     .from('profiles')
     .select(PROFILE_SELECT)
     .eq('open_to_business_solutions', true)
     .eq('account_status', 'active')
-    .eq('profile_complete', true);
+    .eq('profile_complete', true));
 
   const filtered = (pool ?? [])
     .filter((p) => !excluded.has(p.id))
@@ -573,6 +574,7 @@ export async function selectRecruiters(opportunity: OpportunityRow, creatorCompa
     .eq('recruiter', true)
     .eq('account_status', 'active')
     .eq('profile_complete', true)
+    .not('is_test_account', 'is', true)
     .in('id', Array.from(networkIds));
 
   const filtered = (pool ?? [])

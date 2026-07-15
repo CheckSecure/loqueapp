@@ -17,6 +17,7 @@ export async function GET(req: Request) {
     .from('profiles')
     .select('id, full_name, email, last_active_at')
     .not('email', 'is', null)
+    .not('is_test_account', 'is', true)
     .or(`last_active_at.is.null,last_active_at.lt.${cutoff}`)
 
   if (!profiles || profiles.length === 0) {

@@ -225,6 +225,7 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
       .select('*')
       .eq('account_status', 'active')
       .eq('profile_complete', true)
+      .not('is_test_account', 'is', true)
     if (candidatePoolResult.error) {
       return NextResponse.json({ error: candidatePoolResult.error.message }, { status: 500 })
     }

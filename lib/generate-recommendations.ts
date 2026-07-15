@@ -7,6 +7,7 @@ import { applyVerticalBoost } from '@/lib/matching/vertical-boost'
 import { getActiveIntroCap } from '@/lib/introductions/limits'
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
+import { excludeTestAccounts } from '@/lib/testAccounts'
 
 // Unified scoring model for all tiers
 // Final Score = Alignment (55%) + Network Value (30%) + Responsiveness (15%)
@@ -611,13 +612,13 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   const recommendationCount = getActiveIntroCap(userTier)
   console.log('[generate-recommendations] User tier:', userTier, 'Count:', recommendationCount)
   
-  const { data: allUsers, error: usersError } = await adminClient
+  const { data: allUsers, error: usersError } = await excludeTestAccounts(adminClient
     .from('profiles')
     .select('*')
     .eq('account_status', 'active')
     .eq('profile_complete', true)
     .neq('id', userId)
-    .neq('email', 'bizdev91@gmail.com')
+    .neq('email', 'bizdev91@gmail.com'))
   
   if (usersError || !allUsers) {
     throw new Error('Failed to fetch users')

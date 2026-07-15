@@ -13,13 +13,16 @@ const ADMIN_EMAIL = 'bizdev91@gmail.com'
 // established activation marker (see app/api/cron/activation-reminders). Paginates
 // listUsers; at launch scale (tens of users) this is a single page.
 async function countActivatedUsers(admin: ReturnType<typeof createAdminClient>): Promise<number> {
+  // Exclude internal QA accounts so they don't inflate the activated-member count.
+  const { data: testRows } = await admin.from('profiles').select('id').eq('is_test_account', true)
+  const testIds = new Set((testRows ?? []).map((r) => r.id))
   let activated = 0
   let page = 1
   const perPage = 1000
   while (true) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
     if (error) break
-    for (const u of data.users) if (u.last_sign_in_at) activated++
+    for (const u of data.users) if (u.last_sign_in_at && !testIds.has(u.id)) activated++
     if (data.users.length < perPage) break
     page++
   }
@@ -62,8 +65,8 @@ export default async function AdminMetricsPage() {
     activatedCount,
   ] = await Promise.all([
     admin.from('waitlist').select('id', { count: 'exact', head: true }).eq('status', 'invited').not('invited_at', 'is', null),
-    admin.from('profiles').select('id', { count: 'exact', head: true }),
-    admin.from('profiles').select('id', { count: 'exact', head: true }).eq('profile_complete', true),
+    admin.from('profiles').select('id', { count: 'exact', head: true }).not('is_test_account', 'is', true),
+    admin.from('profiles').select('id', { count: 'exact', head: true }).eq('profile_complete', true).not('is_test_account', 'is', true),
     // Intro acceptance: positive vs negative terminal decisions on intro_requests.
     admin.from('intro_requests').select('id', { count: 'exact', head: true }).in('status', ['accepted', 'approved']),
     admin.from('intro_requests').select('id', { count: 'exact', head: true }).in('status', ['declined', 'expired']),

@@ -33,6 +33,7 @@ export async function GET(req: Request) {
     .select('id, email, subscription_tier, is_founding_member, founding_member_expires_at')
     .eq('account_status', 'active')
     .eq('profile_complete', true)
+    .not('is_test_account', 'is', true)
   
   if (usersError || !users) {
     console.error('[Monthly Refill] Error fetching users:', usersError)
