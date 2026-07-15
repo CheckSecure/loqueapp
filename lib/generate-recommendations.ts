@@ -6,6 +6,7 @@ import { isSameCompany } from '@/lib/matching/same-company'
 import { applyVerticalBoost } from '@/lib/matching/vertical-boost'
 import { getActiveIntroCap } from '@/lib/introductions/limits'
 import { introReasonText } from '@/lib/match-signals'
+import { parseExpertise } from '@/lib/parseExpertise'
 
 // Unified scoring model for all tiers
 // Final Score = Alignment (55%) + Network Value (30%) + Responsiveness (15%)
@@ -728,8 +729,9 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
     const hasName = !!u.full_name
     const hasRole = !!u.role_type
     if (!hasName || !hasRole) return false
-    if (Array.isArray(u.expertise)) return u.expertise.length > 0
-    return true
+    // Canonical parse so string-stored expertise (JSON string / CSV / PG-array)
+    // is measured by real item count, not treated as absent (or always-present).
+    return parseExpertise(u.expertise).length > 0
   })
   
   console.log('[generate-recommendations] Users after filter:', usersWithData.length)

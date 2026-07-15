@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { parseExpertise } from '@/lib/parseExpertise'
 
 type SignalType = 'profile_complete' | 'message_sent' | 'message_replied' | 'meeting_scheduled' | 'meeting_completed' | 'intro_accepted'
 
@@ -72,7 +73,7 @@ export async function checkProfileCompletion(userId: string) {
     profile.full_name &&
     profile.title &&
     profile.company &&
-    profile.expertise?.length > 0 &&
+    parseExpertise(profile.expertise).length > 0 &&
     profile.purposes?.length > 0 &&
     profile.bio
   )
