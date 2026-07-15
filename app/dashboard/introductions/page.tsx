@@ -11,6 +11,8 @@ import RequestIntroButton from '@/components/RequestIntroButton'
 import EarlierIntroductionsBanner from '@/components/EarlierIntroductionsBanner'
 import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
 import ProfileCompletionCard from '@/components/ProfileCompletionCard'
+import ProfilePhotoReminder from '@/components/ProfilePhotoReminder'
+import { computeProfileCompletionFields, isOnlyPhotoMissing } from '@/lib/profileCompletion'
 import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
@@ -89,6 +91,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     .limit(1)
 
   const profileRow = profileRows?.[0] ?? null
+  const completionFields = computeProfileCompletionFields(profileRow)
   const profileId = profileRow?.id ?? user.id
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
   const userTier = (profileRow as any)?.subscription_tier ?? 'free'
@@ -653,17 +656,15 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
         <FoundingMemberWelcomeBanner show={showFoundingWelcome} />
 
-        <ProfileCompletionCard
-          fields={{
-            photo: Boolean((profileRow as any)?.avatar_url),
-            company: Boolean((profileRow as any)?.company?.trim?.()),
-            role: Boolean((profileRow as any)?.role_type?.trim?.()),
-            expertise: Array.isArray((profileRow as any)?.expertise) && (profileRow as any).expertise.length > 0,
-            about: Boolean((profileRow as any)?.bio?.trim?.()),
-            linkedin: Boolean((profileRow as any)?.linkedin_url?.trim?.()),
-            location: Boolean((profileRow as any)?.location?.trim?.()),
-          }}
-        />
+        {/* Mutually exclusive: when the ONLY gap is the photo, the focused
+            ProfilePhotoReminder owns the prompt; otherwise the completion card
+            does (and keeps "Profile photo" in its checklist). Both use the same
+            completionFields, so they can never render together. */}
+        {isOnlyPhotoMissing(completionFields) ? (
+          <ProfilePhotoReminder hasPhoto={completionFields.photo} />
+        ) : (
+          <ProfileCompletionCard fields={completionFields} />
+        )}
 
         {!isPaid && !isFoundingMember && (
           <div className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-white/40 border border-brand-gold/15 px-4 py-2">

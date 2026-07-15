@@ -3,32 +3,16 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Check, Circle } from 'lucide-react'
+import {
+  COMPLETION_ITEMS as ITEMS,
+  completionPercent,
+  type ProfileCompletionFields,
+} from '@/lib/profileCompletion'
 
 // localStorage-only dismissal, versioned.
 const STORAGE_KEY = 'andrel_profile_completion_card_v1'
 
-export interface ProfileCompletionFields {
-  photo: boolean
-  company: boolean
-  role: boolean
-  expertise: boolean
-  about: boolean
-  linkedin: boolean
-  location: boolean
-}
-
-// Simple weights totaling 100 — computed independently from the matcher's
-// network-value completeness (lib/scoring.ts) so this user-facing card never
-// couples to matching logic.
-const ITEMS: { key: keyof ProfileCompletionFields; label: string; weight: number }[] = [
-  { key: 'company', label: 'Company', weight: 15 },
-  { key: 'role', label: 'Role', weight: 15 },
-  { key: 'expertise', label: 'Expertise', weight: 15 },
-  { key: 'photo', label: 'Profile photo', weight: 20 },
-  { key: 'about', label: 'About', weight: 15 },
-  { key: 'linkedin', label: 'LinkedIn', weight: 10 },
-  { key: 'location', label: 'Location', weight: 10 },
-]
+export type { ProfileCompletionFields }
 
 /**
  * Lightweight profile-completion progress card (not a blocker).
@@ -41,7 +25,7 @@ const ITEMS: { key: keyof ProfileCompletionFields; label: string; weight: number
 export default function ProfileCompletionCard({ fields }: { fields: ProfileCompletionFields }) {
   const [dismissed, setDismissed] = useState<boolean | null>(null)
 
-  const percent = ITEMS.reduce((sum, item) => sum + (fields[item.key] ? item.weight : 0), 0)
+  const percent = completionPercent(fields)
   const complete = percent >= 100
 
   useEffect(() => {
