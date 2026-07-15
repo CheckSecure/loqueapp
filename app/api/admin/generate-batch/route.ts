@@ -4,6 +4,7 @@ import { parseExpertise } from '@/lib/parseExpertise'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
 import { isSameCompany } from '@/lib/matching/same-company'
+import { introReasonText } from '@/lib/match-signals'
 
 export const dynamic = 'force-dynamic'
 
@@ -190,71 +191,12 @@ function getScoreBucket(score: number): 'high_score' | 'mid_score' | 'low_score'
   return 'low_score'
 }
 
+// Deterministic, gender-neutral reason for a batch suggestion. Delegates to the
+// single shared builder (lib/match-signals.ts) so the batch surface tells the
+// same story as onboarding/cron/admin generation. Newline-joined bullets, or a
+// restrained fallback when no meaningful signal exists.
 function generateReason(recipient: any, candidate: any): string {
-  const recipientPrefs: string[] = Array.isArray(recipient.intro_preferences) ? recipient.intro_preferences : []
-  const candidateRole: string = candidate.role_type || ''
-  const recipientPurposes: string[] = Array.isArray(recipient.purposes) ? recipient.purposes : []
-  const candidatePurposes: string[] = Array.isArray(candidate.purposes) ? candidate.purposes : []
-  const recipientExpertise = parseExpertise(recipient.expertise)
-  const candidateExpertise = parseExpertise(candidate.expertise)
-  const recipientInterests: string[] = Array.isArray(recipient.interests) ? recipient.interests : []
-  const candidateInterests: string[] = Array.isArray(candidate.interests) ? candidate.interests : []
-
-  const sharedPurposes = recipientPurposes.filter((p: string) =>
-    candidatePurposes.some((cp: string) => cp.toLowerCase() === p.toLowerCase())
-
-  )
-  
-  const sharedExpertise = recipientExpertise.filter((e: string) =>
-    candidateExpertise.some((ce: string) => ce.toLowerCase() === e.toLowerCase())
-  )
-  
-  const sharedInterests = recipientInterests.filter((i: string) =>
-    candidateInterests.some((ci: string) => ci.toLowerCase() === i.toLowerCase())
-  )
-
-  const rMentor = recipient.mentorship_role?.toLowerCase()
-  const cMentor = candidate.mentorship_role?.toLowerCase()
-  
-  const sameCity = recipient.city?.toLowerCase().trim() === candidate.city?.toLowerCase().trim()
-  const candidateName = candidate.full_name?.split(' ')[0] || 'They'
-
-  // Priority 1: Purpose + Expertise alignment
-  if (sharedPurposes.length > 0 && sharedExpertise.length > 0) {
-    return `${candidateName} shares your focus on ${sharedPurposes[0]} with expertise in ${sharedExpertise[0]} — strong strategic alignment.`
-  }
-
-  // Priority 2: Mentorship
-  if (rMentor === 'mentee' && cMentor === 'mentor') {
-    return `${candidateName} is an experienced mentor in your field — strong mentorship alignment.`
-  }
-  if (rMentor === 'mentor' && cMentor === 'mentee') {
-    return `${candidateName} is looking for guidance in areas where you have deep expertise.`
-  }
-
-  // Priority 3: Local connection
-  if (sameCity && recipient.geographic_scope === 'local') {
-    return `${candidateName} is based in ${recipient.city} and matches your preference for local connections.`
-  }
-
-  // Priority 4: Purpose alignment
-  if (sharedPurposes.length > 0) {
-    return `${candidateName} is also focused on ${sharedPurposes[0]} — aligned on goals and timing.`
-  }
-
-
-  // Priority 5: Interest alignment
-  if (sharedInterests.length >= 2) {
-    return `You both share a focus on ${sharedInterests.slice(0, 2).join(' and ')} — strong thematic alignment.`
-  }
-
-  // Priority 6: Role preference match
-  if (recipientPrefs.some((p: string) => p.toLowerCase() === candidateRole.toLowerCase())) {
-    return `${candidateName} matches the type of connection you're looking for — curated based on your preferences.`
-  }
-
-  // Fallback
-  return `Curated based on your professional background and stated goals.`
+  return introReasonText(recipient, candidate)
 }
 
 function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low' {

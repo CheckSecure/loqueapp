@@ -6,6 +6,7 @@ import {
   buildBidirectionalIntroRequestFilter,
 } from '@/lib/db/filters'
 import { isSameCompany } from '@/lib/matching/same-company'
+import { buildIntroReasons } from '@/lib/match-signals'
 
 export type CreateAdminIntroFailure =
   | 'invalid_pair'
@@ -49,10 +50,11 @@ export async function createAdminIntroPair(
 
   const admin = createAdminClient()
 
-  // Block if either user is deactivated
+  // Block if either user is deactivated. Also pulls the signal fields so we can
+  // enrich the stored reason with a real, symmetric pair signal (see below).
   const { data: deactProfiles } = await admin
     .from('profiles')
-    .select('id, full_name, account_status, company')
+    .select('id, full_name, account_status, company, role_type, seniority, industry, location, city, expertise, purposes, interests, mentorship_role, open_to_mentorship, open_to_business_solutions, open_to_roles, desired_connections')
     .in('id', [userAId, userBId])
 
   const deactA = (deactProfiles || []).find(p => p.id === userAId)
@@ -105,6 +107,16 @@ export async function createAdminIntroPair(
     return { ok: true, mode: 'intro_already_proposed', introRequests: existingIntros }
   }
 
+  // Enrich the stored reason: keep the "Introduced by Andrel" facilitation
+  // context AND add one real, symmetric pair signal when available (item 13).
+  // Symmetric ({ mutual: true }) because the SAME string is shown to both
+  // members. Falls back to the provided reason (or null) when no signal fires.
+  const mutualSignal = buildIntroReasons(deactA, deactB, { mutual: true, max: 1 })[0] || null
+  const finalReason =
+    matchReason && mutualSignal
+      ? `${matchReason.replace(/\.\s*$/, '')}. ${mutualSignal}.`
+      : matchReason || (mutualSignal ? `${mutualSignal}.` : null)
+
   // Create TWO intro_requests in admin_pending state, both directions
   const now = new Date().toISOString()
   const { data: newIntros, error: insErr } = await admin
@@ -115,7 +127,7 @@ export async function createAdminIntroPair(
         target_user_id: userBId,
         status: 'admin_pending',
         is_admin_initiated: true,
-        match_reason: matchReason,
+        match_reason: finalReason,
         admin_notes: adminNotes,
         created_at: now,
       },
@@ -124,7 +136,7 @@ export async function createAdminIntroPair(
         target_user_id: userAId,
         status: 'admin_pending',
         is_admin_initiated: true,
-        match_reason: matchReason,
+        match_reason: finalReason,
         admin_notes: adminNotes,
         created_at: now,
       },

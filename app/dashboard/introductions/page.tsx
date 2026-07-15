@@ -378,8 +378,19 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // Reason render: prefer stored match_reason (rich prose from generateIntroReason),
   // fall back to computeMatchSignals at render, fall back to generic.
   const renderReasonBlock = (row: any) => {
-    if (row.matchReason && typeof row.matchReason === 'string' && row.matchReason.trim().length > 0) {
-      return <p className="text-xs text-slate-600 leading-relaxed">{row.matchReason}</p>
+    const stored = typeof row.matchReason === 'string' ? row.matchReason.trim() : ''
+    if (stored.length > 0) {
+      // New reasons are stored as newline-joined bullets; legacy prose is a
+      // single line. Render multi-line as a list, single line as a paragraph.
+      const lines = stored.split('\n').map((l: string) => l.trim()).filter(Boolean)
+      if (lines.length > 1) {
+        return (
+          <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
+            {lines.map((l: string) => <li key={l}>{l}</li>)}
+          </ul>
+        )
+      }
+      return <p className="text-xs text-slate-600 leading-relaxed">{lines[0] ?? stored}</p>
     }
     const match = computeMatchSignals(profileRow, row.profile)
     if (match.hasStrongSignals && match.signals.length > 0) {
@@ -423,8 +434,12 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // when a stored prose match_reason exists — otherwise renderReasonBlock already
   // renders these same signals as the reason, so chips would duplicate them.
   const renderCommonGround = (row: any) => {
-    const hasProseReason = row.matchReason && typeof row.matchReason === 'string' && row.matchReason.trim().length > 0
-    if (!hasProseReason) return null
+    const stored = typeof row.matchReason === 'string' ? row.matchReason.trim() : ''
+    // Only supplement legacy single-line prose reasons with signal chips. New
+    // multi-line reasons already list the signals as bullets, so chips would
+    // duplicate them.
+    const isSingleLineProse = stored.length > 0 && !stored.includes('\n')
+    if (!isSingleLineProse) return null
     const { signals } = computeMatchSignals(profileRow, row.profile)
     if (!signals || signals.length === 0) return null
     return (

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 import { isSameCompany } from '@/lib/matching/same-company'
+import { introReasonText } from '@/lib/match-signals'
 
 export const dynamic = 'force-dynamic'
 
@@ -129,28 +130,11 @@ function getScoreBucket(score: number): string {
   return 'low_score'
 }
 
+// Deterministic, gender-neutral replacement reason. Delegates to the single
+// shared builder (lib/match-signals.ts) so replacements read identically to
+// every other generation path.
 function buildReason(recipient: any, candidate: any): string {
-  const parts: string[] = []
-  const recipientPurposes: string[] = Array.isArray(recipient.purposes) ? recipient.purposes : []
-  const candidatePurposes: string[] = Array.isArray(candidate.purposes) ? candidate.purposes : []
-  const sharedPurposes = recipientPurposes.filter((p) =>
-    candidatePurposes.some((cp) => cp.toLowerCase() === p.toLowerCase())
-  )
-  if (sharedPurposes.length > 0) {
-    parts.push(`Shared interest in ${sharedPurposes.slice(0, 2).join(', ')}`)
-  }
-  const recipientExpertise = parseExpertise(recipient.expertise)
-  const candidateExpertise = parseExpertise(candidate.expertise)
-  const sharedExpertise = recipientExpertise.filter((e) =>
-    candidateExpertise.some((ce) => ce.toLowerCase() === e.toLowerCase())
-  )
-  if (sharedExpertise.length > 0) {
-    parts.push(`Overlap in ${sharedExpertise.slice(0, 2).join(', ')}`)
-  }
-  if (parts.length === 0) {
-    return 'Recommended based on profile match'
-  }
-  return parts.join('. ')
+  return introReasonText(recipient, candidate)
 }
 
 export async function POST(req: NextRequest, { params }: { params: { batchId: string } }) {
