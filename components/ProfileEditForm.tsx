@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { normalizeExpertise } from '@/lib/expertise'
 import { shouldShowRecentRoleHint } from '@/lib/professionalIdentity'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
@@ -16,6 +17,7 @@ const SENIORITY_OPTIONS = ['Junior', 'Mid-Level', 'Senior', 'Executive', 'C-Suit
 const PURPOSE_OPTIONS = ['Fundraising', 'Hiring', 'Partnerships', 'Mentorship', 'Business Development', 'Market Insights', 'Career Growth']
 
 export default function ProfileEditForm({ initialData }: { initialData: any }) {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -117,6 +119,9 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     }
 
     setSuccess(true)
+    // Refresh server-rendered data so the profile-completion banner/percentage
+    // reflect the save immediately — no logout or hard refresh required.
+    router.refresh()
     setTimeout(() => {
       setSuccess(false)
       setIsOpen(false)
