@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { normalizeEmail, findAuthUserByEmail, registrationExistingState } from '@/lib/invitations'
 import { revalidatePath } from 'next/cache'
 import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail, sendAdminAlertEmail, sendWaitlistConfirmationEmail, escapeHtml } from '@/lib/email'
 import {
@@ -608,8 +609,33 @@ export async function submitWaitlist(data: {
   // server-action call can bypass that, and Resend will reject malformed
   // addresses anyway — fail fast with a clean error before the DB insert.
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!data.email || !EMAIL_RE.test(data.email.trim())) {
+  const email = normalizeEmail(data.email)
+  if (!email || !EMAIL_RE.test(email)) {
     return { error: 'Please enter a valid email address.' }
+  }
+
+  // Re-entry guard: if this email already has a waitlist row, a profile, or an
+  // auth user (any case), do NOT create another waitlist row. One generic
+  // message for every existing state (no account enumeration).
+  const admin = createAdminClient()
+  const emailPattern = email.replace(/([\\%_])/g, '\\$1') // escape ILIKE wildcards
+  const [{ data: wlExisting }, { data: profExisting }] = await Promise.all([
+    admin.from('waitlist').select('id').ilike('email', emailPattern).limit(1),
+    admin.from('profiles').select('id').ilike('email', emailPattern).limit(1),
+  ])
+  let authExists = false
+  try {
+    authExists = !!(await findAuthUserByEmail(admin, email))
+  } catch (e) {
+    console.error('[submitWaitlist] auth lookup failed (treating as not-exists):', e)
+  }
+  const guard = registrationExistingState({
+    waitlistExists: !!(wlExisting && wlExisting.length > 0),
+    profileExists: !!(profExisting && profExisting.length > 0),
+    authExists,
+  })
+  if (guard.blocked) {
+    return { error: guard.message, existing: true }
   }
 
   const supabase = createClient()
@@ -620,7 +646,7 @@ export async function submitWaitlist(data: {
   
   const { error } = await supabase.from('waitlist').insert({
     full_name: data.fullName,
-    email: data.email,
+    email: email,
     title: data.title || null,
     company: data.company || null,
     role_type: data.roleType || null,

@@ -39,12 +39,14 @@ export default function WaitlistForm() {
   const [showMore, setShowMore] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [existing, setExisting] = useState(false)
   const [done, setDone] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setExisting(false)
     const result = await submitWaitlist({
       fullName,
       email,
@@ -59,6 +61,7 @@ export default function WaitlistForm() {
     setLoading(false)
     if (result.error) {
       setError(result.error)
+      setExisting(!!(result as any).existing)
       return
     }
     setDone(true)
@@ -101,7 +104,13 @@ export default function WaitlistForm() {
 
       {error && (
         <div className="bg-red-500/20 border border-red-400/30 text-red-200 text-xs px-3 py-2.5 rounded-lg">
-          {error}
+          <p>{error}</p>
+          {existing && (
+            <div className="mt-2 flex flex-wrap gap-3">
+              <a href="/login" className="font-semibold text-white underline underline-offset-2 hover:text-[#C4922A]">Sign In</a>
+              <a href="/login?reset=1" className="font-semibold text-white underline underline-offset-2 hover:text-[#C4922A]">Reset Password / Resend Access</a>
+            </div>
+          )}
         </div>
       )}
 

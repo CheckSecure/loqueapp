@@ -68,23 +68,40 @@ export default function AdminWaitlistClient({
     setProcessing(null)
   }
 
-  const handleSendInvite = async (entryId: string, email: string) => {
+  const postInvite = async (entryId: string, action: 'invite' | 'password_reset') => {
+    const res = await fetch('/api/admin/send-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entryId, markAsFounding: !!markFounding[entryId], action }),
+    })
+    return res.json()
+  }
+
+  const handleSendInvite = async (entryId: string) => {
     setProcessing(entryId)
     try {
-      const res = await fetch('/api/admin/send-invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entryId, markAsFounding: !!markFounding[entryId] })
-      })
-      const data = await res.json()
+      let data = await postInvite(entryId, 'invite')
+      // Active member: never silently reset via Resend — offer an explicit reset.
+      if (!data.success && data.state === 'active') {
+        if (window.confirm(`${data.message}\n\nSend a password reset email instead?`)) {
+          data = await postInvite(entryId, 'password_reset')
+        } else {
+          setProcessing(null)
+          return
+        }
+      }
       if (data.success) {
-        alert('Invite sent successfully!')
+        alert(
+          data.state === 'resent' ? 'Access email resent.'
+          : data.state === 'password_reset_sent' ? 'Password reset email sent.'
+          : 'Invite sent successfully.'
+        )
         router.refresh()
       } else {
-        alert(`Failed to send invite: ${data.error}`)
+        alert(data.message || data.error || 'Could not complete the request.')
       }
-    } catch (err: any) {
-      alert(`Failed to send invite: ${err.message}`)
+    } catch {
+      alert('Network error. Please try again.')
     }
     setProcessing(null)
   }
@@ -311,7 +328,7 @@ export default function AdminWaitlistClient({
                               Mark as founding member
                             </label>
                             <button
-                              onClick={() => handleSendInvite(entry.id, entry.email)}
+                              onClick={() => handleSendInvite(entry.id)}
                               disabled={processing === entry.id}
                               className="flex items-center gap-2 px-4 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040] disabled:opacity-50"
                             >
@@ -338,11 +355,11 @@ export default function AdminWaitlistClient({
 
                         {activeTab === 'invited' && (
                           <button
-                            onClick={() => handleSendInvite(entry.id, entry.email)}
+                            onClick={() => handleSendInvite(entry.id)}
                             disabled={processing === entry.id}
                             className="px-4 py-2 border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50"
                           >
-                            Resend
+                            {processing === entry.id ? 'Sending...' : 'Resend Access Email'}
                           </button>
                         )}
                       </div>
