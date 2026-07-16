@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatMessageTime, formatDaySeparator, shouldShowDaySeparator } from '@/lib/messageTime'
+import { canEditMessage } from '@/lib/messaging/editWindow'
 
 interface Message {
   id: string
@@ -12,6 +13,7 @@ interface Message {
   content: string
   is_system: boolean
   created_at: string
+  edited_at?: string | null
   read_at?: string | null
   sender?: {
     id: string
@@ -36,6 +38,11 @@ export default function ConversationView({ conversationId, isDeactivated }: Conv
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Inline message editing (own messages, within the 60-minute window).
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
 
   const router = useRouter()
 
@@ -128,6 +135,47 @@ export default function ConversationView({ conversationId, isDeactivated }: Conv
     }
   }
 
+  function startEdit(msg: Message) {
+    setEditingId(msg.id)
+    setEditText(msg.content)
+    setEditError(null)
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setEditText('')
+    setEditError(null)
+  }
+
+  async function handleEditSave(messageId: string) {
+    const trimmed = editText.trim()
+    if (!trimmed || savingEdit) return
+    setSavingEdit(true)
+    setEditError(null)
+    try {
+      const res = await fetch('/api/messages/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId, content: trimmed }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.success) {
+        setEditError(data.error || 'Could not save your edit.')
+        return
+      }
+      // Update immediately — no hard refresh. The recipient sees it on the next
+      // poll. created_at is untouched; edited_at now marks it as edited.
+      setMessages(prev => prev.map(m =>
+        m.id === messageId ? { ...m, content: data.message.content, edited_at: data.message.edited_at } : m
+      ))
+      cancelEdit()
+    } catch {
+      setEditError('Could not save your edit.')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   function handlePromptClick(prompt: string) {
     setInput(prompt)
   }
@@ -212,10 +260,12 @@ export default function ConversationView({ conversationId, isDeactivated }: Conv
           }
 
           const isMine = msg.sender_id === currentUserId
+          const editable = canEditMessage(msg, currentUserId)
+          const isEditing = editingId === msg.id
           return (
             <Fragment key={msg.id}>
               {daySeparator}
-              <div className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+              <div className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
                 <div
                   className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
                     isMine
@@ -223,17 +273,59 @@ export default function ConversationView({ conversationId, isDeactivated }: Conv
                       : 'bg-gray-100 text-gray-900'
                   }`}
                 >
-                  <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                  {time && (
-                    <p
-                      className={`mt-0.5 text-[10px] leading-none text-right ${
-                        isMine ? 'text-white/60' : 'text-gray-400'
-                      }`}
-                    >
-                      {time}
-                    </p>
+                  {isEditing ? (
+                    <div className="min-w-[220px]">
+                      <textarea
+                        value={editText}
+                        onChange={e => setEditText(e.target.value)}
+                        rows={2}
+                        autoFocus
+                        className="w-full rounded-lg border border-white/30 bg-white/95 px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C4922A]"
+                      />
+                      {editError && <p className="mt-1 text-[11px] text-red-200">{editError}</p>}
+                      <div className="mt-1.5 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          disabled={savingEdit}
+                          className={`text-[11px] font-medium ${isMine ? 'text-white/70 hover:text-white' : 'text-gray-500 hover:text-gray-700'} disabled:opacity-50`}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEditSave(msg.id)}
+                          disabled={savingEdit || !editText.trim()}
+                          className="rounded-md bg-[#C4922A] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[#b0821f] disabled:opacity-50"
+                        >
+                          {savingEdit ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                      {time && (
+                        <p
+                          className={`mt-0.5 text-[10px] leading-none text-right ${
+                            isMine ? 'text-white/60' : 'text-gray-400'
+                          }`}
+                        >
+                          {msg.edited_at ? 'Edited · ' : ''}{time}
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
+                {isMine && editable && !isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => startEdit(msg)}
+                    className="mt-0.5 px-1 py-0.5 text-[11px] font-medium text-gray-400 hover:text-gray-600"
+                  >
+                    Edit
+                  </button>
+                )}
               </div>
             </Fragment>
           )
