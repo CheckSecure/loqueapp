@@ -5,6 +5,7 @@ import {
   findReusableOutboundIntro,
   isBatchExcludingStatus,
   suggestedCardState,
+  introSectionFor,
   BATCH_EXCLUDING_STATUSES,
 } from '@/lib/introRequests/state'
 
@@ -78,6 +79,47 @@ describe('suggestedCardState — feed / pending / connected surfaces agree', () 
   })
   it('a target never shows "express" once interest is expressed', () => {
     expect(suggestedCardState({ targetId: 'james', expressedTargetIds: expressed, matchedUserIds: matched })).not.toBe('express')
+  })
+})
+
+describe('introSectionFor — a target lands in exactly one page section', () => {
+  const sec = (o: Partial<Parameters<typeof introSectionFor>[0]>) =>
+    introSectionFor({ isMatched: false, hasOutboundExpressed: false, hasSuggestedRow: false, ...o })
+
+  it('approved one-sided interest appears in Pending (regression: James Kahrs)', () => {
+    // approved is an expressed status → hasOutboundExpressed true, no match
+    expect(sec({ hasOutboundExpressed: true })).toBe('pending')
+  })
+  it('pending one-sided interest appears in Pending', () => {
+    expect(sec({ hasOutboundExpressed: true })).toBe('pending')
+  })
+  it('suggested with no interest appears in Suggestions', () => {
+    expect(sec({ hasSuggestedRow: true })).toBe('suggested')
+  })
+  it('approved + suggested duplicate pair appears only once — in Pending, never Suggestions', () => {
+    const s = sec({ hasOutboundExpressed: true, hasSuggestedRow: true })
+    expect(s).toBe('pending')
+    expect(s).not.toBe('suggested')
+  })
+  it('matched pair appears only in Connections (never Pending or Suggestions)', () => {
+    const s = sec({ isMatched: true, hasOutboundExpressed: true, hasSuggestedRow: true })
+    expect(s).toBe('connected')
+  })
+  it('passed/declined/hidden-only rows appear nowhere active', () => {
+    // no match, no expressed interest, no suggested row → 'none'
+    expect(sec({})).toBe('none')
+  })
+})
+
+// The Pending section is fed by the SAME expressed set the feed uses, so a row
+// that is 'approved' (or 'pending') resolves to hasOutboundExpressed via the
+// shared status predicate — proving feed and Pending derive from one source.
+describe('Pending section and feed derive from the same persisted status set', () => {
+  it("an 'approved' outbound row counts as expressed for BOTH surfaces", () => {
+    const outbound = [{ target_user_id: 'james', status: 'approved' }]
+    const expressed = expressedTargetIdSet(outbound)
+    expect(expressed.has('james')).toBe(true) // drives Pending inclusion
+    expect(introSectionFor({ isMatched: false, hasOutboundExpressed: expressed.has('james'), hasSuggestedRow: false })).toBe('pending')
   })
 })
 

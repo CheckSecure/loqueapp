@@ -73,3 +73,25 @@ export function suggestedCardState(args: {
   if (args.expressedTargetIds.has(args.targetId)) return 'pending'
   return 'express'
 }
+
+/**
+ * Which introductions-page SECTION a target belongs in, from persisted state.
+ * Precedence (mirrors app/dashboard/introductions/page.tsx exactly):
+ *   connected — an active match exists (shown in Connections / network, not here)
+ *   pending   — the viewer has an OUTBOUND pending/approved request, no match yet
+ *   suggested — a bare recommendation row with no expressed interest
+ *   none      — only terminal rows (declined/passed/hidden) or nothing → shown nowhere active
+ * A target is placed in exactly ONE section, so no card is ever duplicated.
+ */
+export type IntroSection = 'connected' | 'pending' | 'suggested' | 'none'
+
+export function introSectionFor(args: {
+  isMatched: boolean
+  hasOutboundExpressed: boolean // an outbound pending/approved request exists
+  hasSuggestedRow: boolean
+}): IntroSection {
+  if (args.isMatched) return 'connected'
+  if (args.hasOutboundExpressed) return 'pending'
+  if (args.hasSuggestedRow) return 'suggested'
+  return 'none'
+}

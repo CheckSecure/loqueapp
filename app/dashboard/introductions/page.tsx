@@ -133,6 +133,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     { data: pendingTargetedRequest },
     { data: oppCandidateRows },
     { data: activeConciergeRequest },
+    { data: pendingIntrosRaw },
   ] = await Promise.all([
     supabase
       .from('matches')
@@ -193,6 +194,16 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       .eq('requester_id', user.id)
       .in('status', ['pending', 'reviewing', 'match_found'])
       .maybeSingle(),
+    // Outbound interests the viewer has expressed (pending/approved) that have
+    // not yet become a match — the source for the "Interest expressed" / Pending
+    // section. Independent of the 'suggested' recommendation rows, so a pair
+    // stays visible even after its suggested row is gone.
+    supabase
+      .from('intro_requests')
+      .select('id, target_user_id, status, created_at, match_reason, target:profiles!target_user_id(id, full_name, title, exact_job_title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes, account_status)')
+      .eq('requester_id', profileId)
+      .in('status', ['pending', 'approved'])
+      .order('created_at', { ascending: false }),
   ])
 
   const balance = creditRow?.balance ?? 0
@@ -340,10 +351,28 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     }))
     .filter((r: any) => r.profile)
 
+  // Pending / interest-expressed: OUTBOUND pending or approved requests that
+  // have NOT become a match. Deduped by target so duplicate rows (or a suggested
+  // + approved pair) render exactly one card. Excludes matched (Connections) and
+  // inactive targets. This is what keeps an expressed interest visible even once
+  // its 'suggested' row is gone.
+  const pendingByTarget = new Map<string, any>()
+  for (const intro of (pendingIntrosRaw as any[] | null) || []) {
+    const t = intro.target
+    if (!t || matchedUserIds.has(t.id) || (t.account_status && t.account_status !== 'active')) continue
+    if (!pendingByTarget.has(t.id)) {
+      pendingByTarget.set(t.id, { rowId: intro.id, profile: t, matchReason: intro.match_reason || null, status: intro.status })
+    }
+  }
+  const pendingProfiles = Array.from(pendingByTarget.values())
+  const pendingTargetIds = new Set<string>(pendingProfiles.map((p: any) => p.profile.id))
+
   const allSuggestions = Array.from(
     new Map(
       [...suggestedProfiles, ...currentBatchEntries]
-        .filter((item: any) => item?.profile?.id)
+        // Never show a pair as a fresh suggestion once interest is expressed —
+        // it belongs in the Pending section (no duplicate cards across sections).
+        .filter((item: any) => item?.profile?.id && !pendingTargetIds.has(item.profile.id))
         .map((item: any) => [item.profile.id, item])
     ).values()
   ).slice(0, tierCap)
@@ -362,7 +391,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // Earlier (prior batch, untouched, minus current)
   const currentIds = new Set(allSuggestions.map((s: any) => s.profile.id))
   const earlierSuggestions = priorSuggestionIds
-    .filter((id: string) => !deactivatedIds.has(id) && !currentIds.has(id))
+    .filter((id: string) => !deactivatedIds.has(id) && !currentIds.has(id) && !pendingTargetIds.has(id))
     .map((id: string) => ({
       rowId: priorRowMap[id]?.id,
       profile: profileMap[id],
@@ -663,6 +692,44 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     )
   }
 
+  // Pending / interest-expressed card: the viewer has expressed interest and is
+  // awaiting the other side. Withdraw stays reachable here (independent of any
+  // 'suggested' row), and the pair leaves this section automatically once a
+  // match forms (matched targets are excluded from pendingProfiles).
+  const renderPending = (row: any) => {
+    const s = row.profile
+    const identity = professionalIdentity(s)
+    return (
+      <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
+        <div className="relative bg-white border border-slate-100 rounded-2xl p-5 shadow-[0_6px_20px_rgba(15,28,58,0.06)] flex flex-col gap-3">
+          <div className="flex items-start gap-3.5">
+            <Avatar profile={s} size="md" />
+            <div className="flex-1 min-w-0">
+              <p className="text-base font-bold text-brand-navy truncate leading-tight tracking-tight">{s.full_name || 'New member'}</p>
+              {identity.primary && (
+                <p className="mt-0.5 text-xs font-medium text-slate-700 truncate leading-tight">{identity.primary}</p>
+              )}
+              {s.location && (
+                <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-1">
+                  <MapPin className="w-3 h-3 flex-shrink-0 text-brand-gold/50" />
+                  <span className="truncate">{s.location}</span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
+              <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/></svg>
+              <span className="text-xs font-medium text-emerald-700">Interest expressed · awaiting response</span>
+            </div>
+            <WithdrawInterestButton targetId={s.id} />
+          </div>
+          {renderViewProfileLink(s.id)}
+        </div>
+      </IntroductionCard>
+    )
+  }
+
   // Opportunity panel — receiver side. Empty state = "Opportunity Concierge".
   const oppCount = (oppCandidateRows ?? []).length
 
@@ -740,6 +807,20 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                       />
                     </IntroductionCard>
                   ))}
+                </div>
+              </section>
+            )}
+
+            {/* INTEREST EXPRESSED / PENDING — outbound pending/approved, no match yet */}
+            {pendingProfiles.length > 0 && (
+              <section>
+                <div className="flex items-end justify-between gap-4 mb-1.5">
+                  <h3 className="text-base font-bold text-brand-navy tracking-tight">Interest expressed</h3>
+                  <Pill variant="gold">{pendingProfiles.length}</Pill>
+                </div>
+                <p className="text-xs text-slate-500 mb-4">Awaiting their response — we&rsquo;ll connect you the moment interest is mutual.</p>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {pendingProfiles.map(renderPending)}
                 </div>
               </section>
             )}
