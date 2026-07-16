@@ -15,6 +15,7 @@ export default function RequestIntroButton({
   alreadyRequested?: boolean
   rowId?: string
 }) {
+  const router = useRouter()
   const [state, setState] = useState<'idle' | 'loading' | 'signaling' | 'facilitating' | 'done' | 'error' | 'passed' | 'hidden'>(
     alreadyRequested ? 'done' : 'idle'
   )
@@ -89,6 +90,9 @@ export default function RequestIntroButton({
     setState('facilitating')
     await new Promise(r => setTimeout(r, 1800))
     setState('done')
+    // Refresh server data so the card reflects the persisted Pending state
+    // immediately — no hard reload or logout required.
+    router.refresh()
   }
 
   const handlePass = async (permanent: boolean) => {

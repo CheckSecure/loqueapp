@@ -20,6 +20,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
 import { professionalIdentity, professionalIdentityLine } from '@/lib/professionalIdentity'
+import { expressedTargetIdSet } from '@/lib/introRequests/state'
 import ConciergeLauncher from '@/components/ConciergeLauncher'
 import DemoInterestButton from '@/components/DemoInterestButton'
 import DemoPassButton from '@/components/DemoPassButton'
@@ -158,7 +159,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       .limit(50),
     supabase
       .from('intro_requests')
-      .select('target_user_id, created_at')
+      .select('target_user_id, status, created_at')
       .eq('requester_id', user.id)
       .order('created_at', { ascending: false }),
     supabase
@@ -258,7 +259,11 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   }))
 
   const adminIntrosFiltered = adminIntros.filter(Boolean)
-  const requestedIds = new Set((existingRequests || []).map((r: any) => r.target_user_id))
+  // Targets the viewer has an OUTBOUND expressed-interest request for (pending
+  // or approved). Every intro surface derives its Pending / "Interest expressed"
+  // state from THIS one persisted set (not from raw 'suggested' rows or terminal
+  // declined/passed rows), so feed, batch, and earlier cards can never disagree.
+  const requestedIds = expressedTargetIdSet(existingRequests as any)
 
   // Split visible batch suggestions into current vs prior, excluding matched users.
   const currentBatchRows = (visibleBatchRows || []).filter(
@@ -317,7 +322,10 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       rowId: intro.id,
       profile: intro.target,
       matchReason: intro.match_reason || null,
-      alreadyRequested: false,
+      // Derive from persisted outbound state so a suggested card whose target
+      // already has a pending/approved interest shows Pending, not "Express
+      // interest" (fixes duplicate-row reappearance).
+      alreadyRequested: requestedIds.has(intro.target.id),
       fromOnboarding: true,
     }))
 

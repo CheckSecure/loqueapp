@@ -60,11 +60,20 @@ export async function POST(request: Request) {
     const expresserId = user.id
     const otherUserId = isRequester ? introRequest.target_user_id : introRequest.requester_id
 
-    // STEP 2: Update intro request status to 'approved'
-    await supabase
+    // STEP 2: Update intro request status to 'approved'. Check the result — a
+    // failed/blocked write must surface an error, never a false success.
+    const { error: statusUpdateErr } = await supabase
       .from('intro_requests')
-      .update({ status: 'approved' })
+      .update({ status: 'approved', updated_at: new Date().toISOString() })
       .eq('id', introRequestId)
+
+    if (statusUpdateErr) {
+      console.error('[Express Interest] status update failed:', statusUpdateErr)
+      return NextResponse.json(
+        { error: 'Could not record your interest. Please try again.' },
+        { status: 500 },
+      )
+    }
 
     // Notify the other user that someone expressed interest
     const { data: expresserProfile } = await supabase

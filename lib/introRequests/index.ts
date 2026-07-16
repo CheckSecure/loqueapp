@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from '@/lib/supabase/server'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { isSameCompany } from '@/lib/matching/same-company'
+import { EXPRESSED_STATUSES, findReusableOutboundIntro } from '@/lib/introRequests/state'
 
 async function resolveProfileId(supabase: ReturnType<typeof createClient>, authUserId: string, authUserEmail?: string) {
   const orClause = authUserEmail
@@ -28,18 +29,29 @@ export async function createIntroRequest(
     return { error: 'You cannot request an introduction to yourself.' }
   }
 
-  const { data: existing, error: dupErr } = await supabase
+  // Idempotency: if the viewer already has an OUTBOUND request for this person
+  // that is pending or approved, reuse it instead of inserting a duplicate on
+  // repeated clicks or retries. (A prior 'suggested' recommendation row is left
+  // as-is; the feed suppresses the "Express interest" card whenever an outbound
+  // pending/approved row exists — see app/dashboard/introductions/page.tsx and
+  // lib/introRequests/state.ts.)
+  const { data: existingActive, error: dupErr } = await supabase
     .from('intro_requests')
-    .select('id')
+    .select('id, status, created_at')
     .eq('requester_id', authUserId)
     .eq('target_user_id', targetUserId)
-    .eq('status', 'pending')
-    .limit(1)
+    .in('status', EXPRESSED_STATUSES as unknown as string[])
+    .order('created_at', { ascending: true })
 
-  console.log('[createIntroRequest] duplicate check — existing:', existing, 'dupErr:', JSON.stringify(dupErr))
+  if (dupErr) {
+    console.error('[createIntroRequest] duplicate check failed:', JSON.stringify(dupErr))
+    return { error: dupErr.message }
+  }
 
-  if (existing && existing.length > 0) {
-    return { error: 'You already have a pending request for this person.' }
+  const reusable = findReusableOutboundIntro(existingActive ?? [])
+  if (reusable) {
+    console.log('[createIntroRequest] reusing existing outbound intro:', reusable.id, reusable.status)
+    return { success: true, introRequestId: reusable.id, alreadyExpressed: true }
   }
 
   // Same-company gate (V1: unconditional suppression)
@@ -95,6 +107,10 @@ export async function createIntroRequest(
   if (error) return { error: error.message }
 
   const newIntroRequestId = introRequest?.id
+  if (!newIntroRequestId) {
+    // Insert reported no error but returned no row — do not report success.
+    return { error: 'Could not create introduction request. Please try again.' }
+  }
 
   // Auto-match: check if target has already expressed interest in requester
   const { data: reverseRequest } = await supabase
@@ -104,7 +120,7 @@ export async function createIntroRequest(
     .eq('target_user_id', authUserId)
     .eq('status', 'pending')
     .limit(1)
-    .single()
+    .maybeSingle()
 
   if (reverseRequest?.id) {
     console.log('[createIntroRequest] mutual interest detected — ready for admin review')

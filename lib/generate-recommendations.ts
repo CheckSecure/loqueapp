@@ -8,6 +8,7 @@ import { getActiveIntroCap } from '@/lib/introductions/limits'
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { excludeTestAccounts } from '@/lib/testAccounts'
+import { BATCH_EXCLUDING_STATUSES } from '@/lib/introRequests/state'
 
 // Unified scoring model for all tiers
 // Final Score = Alignment (55%) + Network Value (30%) + Responsiveness (15%)
@@ -698,7 +699,7 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
     .from('intro_requests')
     .select('target_user_id, requester_id')
     .or(`requester_id.eq.${userId},target_user_id.eq.${userId}`)
-    .in('status', ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'])
+    .in('status', BATCH_EXCLUDING_STATUSES as unknown as string[])
   
   existingIntros?.forEach(req => {
     const otherId = req.requester_id === userId ? req.target_user_id : req.requester_id
