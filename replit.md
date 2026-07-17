@@ -20,7 +20,14 @@ All Supabase client files (`lib/supabase/client.ts`, `lib/supabase/server.ts`) i
 
 ## Database Schema (in Supabase)
 
-- `profiles` — user profiles (id = Supabase auth user UUID). Columns: `full_name, title, company, location, bio, expertise, intro_preferences, open_to_intros, seniority, role_type, mentorship_role`. **No `avatar_color` column** — avatar colors are computed from the user ID via `pickColor()` in each component.
+- `profiles` — user profiles (id = Supabase auth user UUID). Key columns include the following, grouped by function; this is a non-exhaustive summary:
+  - **Identity and role:** `full_name, email, title, exact_job_title, company, location, city, state, seniority, role_type, bio`
+  - **Introduction and matching preferences:** `expertise, intro_preferences, purposes, interests, desired_connections, looking_for, geographic_scope, meeting_format_preference, open_to_business_solutions, open_to_roles, open_to_mentorship, mentorship_role`
+  - **Links and profile presentation:** `linkedin_url, twitter_url, website_url, avatar_url`
+  - **Lifecycle and administration:** `onboarding_complete, onboarding_step, profile_complete, is_admin, is_approved, is_active, is_test_account, account_status`
+  - **Membership and billing:** `subscription_tier, subscription_status, is_founding_member, founding_member_expires_at, launch_cohort`
+  - **Trust and activity:** `trust_score, boost_score, verification_status, email_verified, is_verified, last_active_at`
+  - **No `avatar_color` column** — avatar colors are computed from the user ID via `pickColor()` in each component.
 - `introductions` — intro requests between users (status: pending/accepted/declined)
 - `conversations` — message threads
 - `conversation_participants` — many-to-many: users ↔ conversations
