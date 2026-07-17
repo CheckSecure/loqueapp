@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { serializeMultiSelectField } from '@/lib/profile/multiSelect'
 import { normalizeExpertise } from '@/lib/expertise'
 import { type CategoryTitleSelection } from '@/lib/role-taxonomy'
 import ConnectionTargetPicker from '@/components/ConnectionTargetPicker'
@@ -63,8 +64,8 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
     setError(null)
     const formData = new FormData(e.currentTarget)
     formData.set('intro_preferences', introPref.join(','))
-    formData.set('purposes', purposes.join(','))
-    formData.set('interests', interests.join(','))
+    formData.set('purposes', serializeMultiSelectField(purposes))
+    formData.set('interests', serializeMultiSelectField(interests))
     formData.set('expertise', expertise.join(','))
     formData.set('role_type', roleType)
     // Always send exact_job_title (empty string = clear). Server treats "" as null.

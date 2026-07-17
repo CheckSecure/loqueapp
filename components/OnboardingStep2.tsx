@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { serializeMultiSelectField } from '@/lib/profile/multiSelect'
 import { useRouter } from 'next/navigation'
 import { Loader2, CheckCircle } from 'lucide-react'
 
@@ -28,8 +29,8 @@ export default function OnboardingStep2({ profile }: { profile: Profile | null }
     setError(null)
 
     const formData = new FormData(e.currentTarget)
-    formData.set('purposes', purposes.join(','))
-    formData.set('interests', interests.join(','))
+    formData.set('purposes', serializeMultiSelectField(purposes))
+    formData.set('interests', serializeMultiSelectField(interests))
     formData.set('intro_preferences', introPref.join(','))
 
     const response = await fetch('/api/profile/update', {

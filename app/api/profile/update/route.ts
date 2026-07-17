@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { parseMultiSelectField } from '@/lib/profile/multiSelect'
 import { createClient } from '@/lib/supabase/server'
 import { verifyLinkedInConsistency } from '@/app/actions/verify-linkedin'
 import { checkProfileCompletion } from '@/lib/trust/signals'
@@ -14,8 +15,8 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData()
 
-    const purposes = (formData.get('purposes') as string || '')
-      .split(',').map(s => s.trim()).filter(Boolean)
+    const purposes = parseMultiSelectField(formData.get('purposes'))
+    const interests = parseMultiSelectField(formData.get('interests'))
     const introPref = (formData.get('intro_preferences') as string || '')
       .split(',').map(s => s.trim()).filter(Boolean)
 
@@ -96,7 +97,10 @@ export async function POST(req: NextRequest) {
         ...(expertiseToWrite !== undefined && { expertise: expertiseToWrite }),
         ...(exactJobTitleToWrite !== undefined && { exact_job_title: exactJobTitleToWrite }),
         intro_preferences: introPref,
-        purposes: purposes,
+        // Present-only: write goals/interests ONLY when this form submitted them,
+        // so a partial save (a form without these fields) can never wipe them.
+        ...(formData.has('purposes') && { purposes }),
+        ...(formData.has('interests') && { interests }),
         meeting_format_preference: formData.get('meeting_format_preference'),
         geographic_scope: formData.get('geographic_scope'),
         ...(formData.has('open_to_business_solutions') && {

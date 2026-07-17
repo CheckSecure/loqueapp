@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeEmail, findAuthUserByEmail, registrationExistingState } from '@/lib/invitations'
+import { parseMultiSelectField } from '@/lib/profile/multiSelect'
 import { revalidatePath } from 'next/cache'
 import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail, sendAdminAlertEmail, sendWaitlistConfirmationEmail, escapeHtml } from '@/lib/email'
 import {
@@ -39,6 +40,11 @@ export async function updateProfile(formData: FormData) {
   }
   const introPref = (formData.get('intro_preferences') as string || '')
     .split(',').map(s => s.trim()).filter(Boolean)
+  // Goals ("Your goals on Andrel") and personal interests — previously omitted
+  // from this upsert, so profile edits silently dropped them. Parsed with the
+  // shared normalizer so onboarding and profile-edit stay identical.
+  const purposes = parseMultiSelectField(formData.get('purposes'))
+  const interests = parseMultiSelectField(formData.get('interests'))
 
   // open_to_mentorship is derived from mentorship_role. mentorship_role is the
   // user-facing/editable field; open_to_mentorship is what the matching engine
@@ -93,6 +99,10 @@ export async function updateProfile(formData: FormData) {
     bio: formData.get('bio') as string || null,
     expertise,
     intro_preferences: introPref,
+    // Present-only writes (ProfileForm always submits both) — the fix for the
+    // dropped-goals/interests bug, and can never wipe a field a caller omits.
+    ...(formData.has('purposes') && { purposes }),
+    ...(formData.has('interests') && { interests }),
     desired_connections: desiredConnections,
     linkedin_url: formData.get('linkedin_url') as string || null,
     twitter_url: formData.get('twitter_url') as string || null,
@@ -171,8 +181,8 @@ export async function completeOnboarding(formData: FormData) {
 
   const introPref = (formData.get('intro_preferences') as string || '')
     .split(',').map(s => s.trim()).filter(Boolean)
-  const purposes = (formData.get('purposes') as string || '')
-    .split(',').map(s => s.trim()).filter(Boolean)
+  const purposes = parseMultiSelectField(formData.get('purposes'))
+  const interests = parseMultiSelectField(formData.get('interests'))
   // Parse expertise - handle both JSON array and comma-separated string
   const expertiseRaw = formData.get('expertise') as string || ''
   let expertise: string[] = []
@@ -257,6 +267,9 @@ export async function completeOnboarding(formData: FormData) {
     looking_for: (formData.get('looking_for') as string) || null,
     intro_preferences: introPref,
     purposes: purposes,
+    // Present-only: only the surfaces that collect interests submit them, so
+    // onboarding without an interests field never overwrites an existing value.
+    ...(formData.has('interests') && { interests }),
     desired_connections: desiredConnections,
     meeting_format_preference: (formData.get('meeting_format_preference') as string) || 'both',
     geographic_scope: (formData.get('geographic_scope') as string) || 'us-wide',
