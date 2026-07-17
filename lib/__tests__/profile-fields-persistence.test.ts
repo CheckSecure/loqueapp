@@ -17,9 +17,12 @@ describe('every profile-save path parses goals + interests with the shared norma
     expect((actions.match(/parseMultiSelectField\(formData\.get\('purposes'\)\)/g) || []).length).toBeGreaterThanOrEqual(2)
     expect((actions.match(/parseMultiSelectField\(formData\.get\('interests'\)\)/g) || []).length).toBeGreaterThanOrEqual(2)
   })
-  it('/api/profile/update parses both fields', () => {
-    expect(route).toContain("parseMultiSelectField(formData.get('purposes'))")
-    expect(route).toContain("parseMultiSelectField(formData.get('interests'))")
+  it('/api/profile/update delegates to the shared present-only payload builder', () => {
+    expect(route).toContain('buildProfileUpdate(formData)')
+    // …which parses both fields present-only (behavior tested in profile-update-payload.test.ts).
+    const payloadSrc = readFileSync('lib/profile/updatePayload.ts', 'utf8')
+    expect(payloadSrc).toContain("if (has('purposes')) payload.purposes = parseMultiSelectField")
+    expect(payloadSrc).toContain("if (has('interests')) payload.interests = parseMultiSelectField")
   })
 })
 
@@ -32,9 +35,9 @@ describe('every profile-save path PERSISTS goals + interests', () => {
     expect(actions).toContain('purposes: purposes,')
     expect(actions).toContain("...(formData.has('interests') && { interests })")
   })
-  it('/api/profile/update writes both present-only', () => {
-    expect(route).toContain("...(formData.has('purposes') && { purposes })")
-    expect(route).toContain("...(formData.has('interests') && { interests })")
+  it('/api/profile/update never reports a false success (0-row guard)', () => {
+    expect(route).toContain('.select(\'id\')')
+    expect(route).toMatch(/updatedRows.*length === 0|!updatedRows/)
   })
 })
 
