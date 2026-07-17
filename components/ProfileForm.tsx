@@ -23,7 +23,6 @@ interface Profile {
   purposes?: string[]
   interests?: string[]
   desired_connections?: CategoryTitleSelection
-  open_to_intros?: boolean
   linkedin_url?: string
   twitter_url?: string
   website_url?: string
@@ -95,19 +94,6 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
                 displayName={profile?.full_name || email}
               />
             )}
-            <div className="flex items-center gap-1.5 mb-1">
-              <input
-                type="checkbox"
-                id="open_to_intros"
-                name="open_to_intros"
-                value="true"
-                defaultChecked={profile?.open_to_intros ?? true}
-                className="w-4 h-4 accent-[#C4922A]"
-              />
-              <label htmlFor="open_to_intros" className="text-xs font-medium text-slate-600 cursor-pointer">
-                Open to introductions
-              </label>
-            </div>
           </div>
           <p className="text-xs text-slate-400 mt-1">{email}</p>
         </div>
