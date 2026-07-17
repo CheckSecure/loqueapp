@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { normalizeEmail } from '@/lib/auth/normalizeEmail'
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -19,7 +20,13 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
     const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    // Normalize exactly as the invite/reset side does, so trailing spaces or
+    // mixed casing pasted from the invite email can't miss the account. The
+    // password is intentionally NOT trimmed (spaces can be significant).
+    const { error } = await supabase.auth.signInWithPassword({
+      email: normalizeEmail(email),
+      password,
+    })
     if (error) {
       setError(error.message)
       setLoading(false)

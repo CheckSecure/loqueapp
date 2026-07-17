@@ -6,15 +6,30 @@
  * lookups. Server-only (imports node:crypto).
  */
 import { randomBytes } from 'node:crypto'
+import { normalizeEmail } from '@/lib/auth/normalizeEmail'
 
 /** Canonical email form used for every lookup, insert, and comparison. */
-export function normalizeEmail(email: string | null | undefined): string {
-  return (email ?? '').trim().toLowerCase()
-}
+export { normalizeEmail }
 
-/** Cryptographically secure temporary password (URL-safe, ~24 chars). */
-export function generateTempPassword(): string {
-  return randomBytes(24).toString('base64url').slice(0, 24)
+/**
+ * Unambiguous alphabet for temporary passwords: excludes the character pairs
+ * that are indistinguishable when read from an email and re-typed by hand
+ * (0/O, 1/l/I) and all punctuation (`-` `_` `+` `/`) that copy/paste, HTML
+ * escaping, or line-wrapping can silently alter or drop. 56 symbols.
+ */
+const TEMP_PW_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+
+/**
+ * Cryptographically secure temporary password (20 chars, ~116 bits). Uses only
+ * TEMP_PW_ALPHABET so a member can reliably read it from the invite email and
+ * type it into the login form — the previous base64url form could contain
+ * `0/O/1/l/I/-/_`, a recurring source of "the password doesn't work" reports.
+ */
+export function generateTempPassword(length = 20): string {
+  const bytes = randomBytes(length)
+  let out = ''
+  for (let i = 0; i < length; i++) out += TEMP_PW_ALPHABET[bytes[i] % TEMP_PW_ALPHABET.length]
+  return out
 }
 
 /**

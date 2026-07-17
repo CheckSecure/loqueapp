@@ -184,9 +184,7 @@ export async function sendInviteEmail(
             Your temporary password is:
           </p>
           <div style="background: #F5F6FB; border: 2px solid #1B2850; padding: 16px; margin: 24px 0; border-radius: 8px; text-align: center;">
-            <code style="color: #1B2850; font-size: 18px; font-weight: 700; letter-spacing: 2px;">
-              ${tempPassword}
-            </code>
+            <code style="color: #1B2850; font-size: 18px; font-weight: 700; letter-spacing: 2px;">${tempPassword}</code>
           </div>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
             Please log in and change your password immediately.
