@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import AdminWaitlistClient from '@/components/AdminWaitlistClient'
+import { excludeJoinedFromInvited, toCompletedEmailSet } from '@/lib/waitlist/joined'
 
 export const metadata = { title: 'Waitlist | Admin' }
 
@@ -33,10 +34,22 @@ export default async function AdminWaitlistPage() {
   //   - orphaned referral_source='referral' rows with no joined referral
   //   - referrer rows missing for any reason (stale data, FK issues)
   // Note: PostgREST returns the to-one referrals join as an object, not an array.
-  const visible = (waitlist ?? []).filter(w =>
+  const referralVisible = (waitlist ?? []).filter(w =>
     w.referral_source !== 'referral' ||
     (w.referrals as any)?.referrer?.account_status === 'active'
   )
+
+  // Drop people who have already joined (completed onboarding) from Invited so
+  // the tab shows only invited people who have NOT yet joined. Canonical signal:
+  // profiles.profile_complete = true, matched by email. Read-only — no waitlist
+  // rows are mutated here, so this also covers members who joined before the
+  // automatic invited→activated transition existed (no backfill required).
+  const { data: completedProfiles } = await adminClient
+    .from('profiles')
+    .select('email')
+    .eq('profile_complete', true)
+  const completedEmails = toCompletedEmailSet(completedProfiles)
+  const visible = excludeJoinedFromInvited(referralVisible, completedEmails)
 
   const counts = {
     pending:  visible.filter(w => w.status === 'pending').length,
