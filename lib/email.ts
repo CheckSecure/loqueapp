@@ -718,6 +718,88 @@ export async function sendLaunchAnnouncementEmail(
   }
 }
 
+// Canonical production destination for the first-matching-round reminder CTA.
+// An invited member follows this into the normal password login → onboarding
+// flow. It is NOT a tokenized/personalized link (the app authenticates with a
+// password, so a generic login URL is the correct, safe destination) and it
+// never creates a new account.
+export const FIRST_MATCHING_REMINDER_CTA_URL = 'https://www.andrel.app/login'
+
+/**
+ * One-time "first matching round" reminder for invited members who have not yet
+ * completed onboarding. `firstName` must already be a safe, non-blank display
+ * value (callers use firstNameOrThere()); it is defensively re-defaulted to
+ * "there" so a blank can never render.
+ */
+export async function sendFirstMatchingRoundReminderEmail(
+  toEmail: string,
+  firstName: string,
+): Promise<{ success: boolean; error?: string }> {
+  const name = (firstName || '').trim() || 'there'
+  const url = FIRST_MATCHING_REMINDER_CTA_URL
+  const preview = 'Complete your Andrel profile to be considered for the first round of matching.'
+  const p = 'color: #334155; font-size: 16px; line-height: 1.6; margin: 0 0 16px 0;'
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: toEmail,
+      subject: 'Your first introductions go out Tuesday',
+      text:
+`Hi ${name},
+
+The first round of curated Andrel introductions goes out this Tuesday, July 21 — and I wanted to make sure you have the opportunity to be considered.
+
+You're on the invite list, but your profile isn't complete yet. Members who finish their profiles before Tuesday can be considered for this first round of matching.
+
+A note on how Andrel works: every introduction is curated for relevance and mutual fit — never cold outreach and never a public directory. Your profile is what allows us to identify the strongest potential matches for you.
+
+Complete your profile: ${url}
+
+It only takes a few minutes, and completing it before Tuesday gives you the opportunity to be included in the first matching round.
+
+Looking forward to welcoming you,
+
+Daniel Abramoff
+Founder, Andrel`,
+      html: `
+        <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${preview}</div>
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <p style="${p}">Hi ${escapeHtml(name)},</p>
+          <p style="${p}">The first round of curated Andrel introductions goes out this <strong>Tuesday, July 21</strong> — and I wanted to make sure you have the opportunity to be considered.</p>
+          <p style="${p}">You're on the invite list, but your profile isn't complete yet. Members who finish their profiles before Tuesday can be considered for this first round of matching.</p>
+          <p style="${p}">A note on how Andrel works: every introduction is curated for relevance and mutual fit — never cold outreach and never a public directory. Your profile is what allows us to identify the strongest potential matches for you.</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 28px 0;">
+            <tr>
+              <td align="center" bgcolor="#1B2850" style="border-radius: 8px;">
+                <a href="${url}" style="display:inline-block; padding: 14px 30px; color:#ffffff; font-size:16px; font-weight:700; text-decoration:none; border-radius:8px; font-family: system-ui, -apple-system, sans-serif;">Complete Your Profile →</a>
+              </td>
+            </tr>
+          </table>
+          <p style="${p}">It only takes a few minutes, and completing it before Tuesday gives you the opportunity to be included in the first matching round.</p>
+          <p style="${p}">Looking forward to welcoming you,</p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin: 0;">
+            Daniel Abramoff<br>
+            <span style="color: #64748b; font-size: 14px;">Founder, Andrel</span>
+          </p>
+          <p style="color: #94a3b8; font-size: 13px; line-height: 1.5; margin: 28px 0 0 0;">
+            If the button doesn't work, copy and paste this link into your browser:<br>
+            <a href="${url}" style="color: #1B2850;">${url}</a>
+          </p>
+        </div>
+      `,
+    })
+    if (error) {
+      console.error('[first-matching-reminder] Resend API error:', error.message)
+      return { success: false, error: error.message }
+    }
+    console.log('[first-matching-reminder] sent, message ID:', data?.id)
+    return { success: true }
+  } catch (err: any) {
+    console.error('[first-matching-reminder] exception:', err?.message)
+    return { success: false, error: err?.message }
+  }
+}
+
 export async function sendAdminAlertEmail(subject: string, htmlBody: string): Promise<{ success: boolean; error?: string }> {
   try {
     const { error } = await resend.emails.send({
