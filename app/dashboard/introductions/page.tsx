@@ -875,7 +875,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                       <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Curating</p>
                       <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated.</h2>
                       <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-xl">
-                        We only make introductions when there&rsquo;s a strong mutual fit. There&rsquo;s nothing you need to do right now — we&rsquo;ll notify you the moment your next introduction is ready.
+                        We reserve introductions for genuine mutual fit. You&rsquo;ll hear from us the moment the right one is ready.
                       </p>
                     </div>
                   </div>
