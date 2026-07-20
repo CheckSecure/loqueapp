@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { computeNetworkCompanies } from '@/lib/company/enrich'
+import { computeNetworkCompanies, ensureCompanyRecord, enrichCompany } from '@/lib/company/enrich'
+import { isEnrichmentEnabled } from '@/lib/company/provider'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -30,34 +31,38 @@ export async function GET(req: Request) {
   const { data: profs } = await admin.from('profiles').select('company').not('company', 'is', null)
   const network = computeNetworkCompanies(profs)
 
-  const existing = await admin.from('companies').select('slug, admin_edited')
+  const existing = await admin.from('companies').select('slug, admin_edited, enrichment_status')
   if (existing.error) {
     // Table not applied yet — nothing to do.
     return NextResponse.json({ ok: false, reason: 'companies_table_absent' }, { status: 200 })
   }
-  const existingSlugs = new Set((existing.data || []).map((r: any) => r.slug))
-  const adminEdited = (existing.data || []).filter((r: any) => r.admin_edited).length
+  const bySlug = new Map((existing.data || []).map((r: any) => [r.slug, r]))
 
-  // Insert canonical records only for companies with no row yet. ignoreDuplicates
-  // + the pre-filter guarantee we never touch existing or admin-edited rows.
-  const toInsert = network
-    .filter(c => !existingSlugs.has(c.slug))
-    .map(c => ({ slug: c.slug, name: c.name, enrichment_source: 'auto:name', enriched_at: new Date().toISOString() }))
+  // Bound provider spend per run; the weekly cadence chips away at the rest.
+  const MAX_PROVIDER_CALLS = 100
+  let created = 0, enriched = 0, skipped = 0, providerCalls = 0
 
-  let created = 0
-  for (let i = 0; i < toInsert.length; i += 200) {
-    const batch = toInsert.slice(i, i + 200)
-    const { error } = await admin.from('companies').upsert(batch, { onConflict: 'slug', ignoreDuplicates: true })
-    if (!error) created += batch.length
-    else console.error('[enrich-companies] insert batch failed:', error.message)
+  for (const c of network) {
+    if (providerCalls >= MAX_PROVIDER_CALLS) break
+    const row = bySlug.get(c.slug)
+    if (row?.admin_edited || row?.enrichment_status === 'enriched') { skipped++; continue }
+    if (!row) { await ensureCompanyRecord(admin, c.slug, c.name); created++ }
+    if (isEnrichmentEnabled()) {
+      const r = await enrichCompany(admin, c.slug, c.name) // atomic claim gates retry + concurrency
+      if (r.status === 'skipped' || r.status === 'disabled') { skipped++ }
+      else { providerCalls++; if (r.status === 'enriched') enriched++ }
+    }
   }
 
-  console.log(`[enrich-companies] network=${network.length} existing=${existingSlugs.size} adminEdited=${adminEdited} created=${created}`)
+  console.log(`[enrich-companies] network=${network.length} existing=${bySlug.size} created=${created} enriched=${enriched} providerCalls=${providerCalls} enabled=${isEnrichmentEnabled()}`)
   return NextResponse.json({
     ok: true,
     networkCompanies: network.length,
-    existing: existingSlugs.size,
-    adminEdited,
+    existing: bySlug.size,
     created,
+    enriched,
+    providerCalls,
+    skipped,
+    enrichmentEnabled: isEnrichmentEnabled(),
   })
 }

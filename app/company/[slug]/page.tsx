@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { ArrowLeft, MapPin, Globe, Building2, Users } from 'lucide-react'
 import CompanyLogo from '@/components/CompanyLogo'
 import { companySlug, isLinkableCompany, titleCaseSlug } from '@/lib/company/slug'
-import { ensureCompanyRecord } from '@/lib/company/enrich'
+import { ensureCompanyRecord, enrichCompany } from '@/lib/company/enrich'
+import { isEnrichmentEnabled } from '@/lib/company/provider'
 import { professionalIdentityLine, professionalIdentity } from '@/lib/professionalIdentity'
 
 export const metadata = { title: 'Company | Andrel' }
@@ -28,7 +29,7 @@ export default async function CompanyPage({ params }: { params: { slug: string }
   // + the viewer's matches and blocks, in parallel.
   const [companyRes, matchRes, blockRes] = await Promise.all([
     admin.from('companies')
-      .select('slug, name, industry, headquarters, website, company_size, description, logo_url')
+      .select('slug, name, industry, headquarters, website, company_size, description, logo_url, admin_edited, enrichment_status')
       .eq('slug', slug).maybeSingle(),
     admin.from('matches')
       .select('user_a_id, user_b_id, status')
@@ -37,7 +38,8 @@ export default async function CompanyPage({ params }: { params: { slug: string }
       .select('user_id, blocked_user_id')
       .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`),
   ])
-  const company = companyRes.data ?? null
+  let company: any = companyRes.data ?? null
+  const COMPANY_COLS = 'slug, name, industry, headquarters, website, company_size, description, logo_url, admin_edited, enrichment_status'
 
   // Visible people = current user + non-blocked connections. Already fully
   // visible on the Network page; filtering by company exposes nobody new.
@@ -65,16 +67,28 @@ export default async function CompanyPage({ params }: { params: { slug: string }
     })
 
   const memberName = members.map((m: any) => (m.company || '').trim()).find(Boolean)
-  const displayName = company?.name || memberName || titleCaseSlug(slug)
 
-  // Self-populate on first encounter: if no record exists yet and we have a
-  // real (member-derived) name, create the canonical record now. Never
-  // overwrites an existing/admin_edited row; deploy-safe; non-blocking beyond a
-  // single cheap upsert. The reconciliation cron backfills any that slip through
-  // (e.g. companies whose page nobody has opened, or where the viewer knew no one).
-  if (!company && memberName) {
-    await ensureCompanyRecord(admin, slug, memberName)
+  // First-encounter self-population + inline enrichment (one-time per company).
+  // Create the canonical record if absent, then — when enrichment is enabled and
+  // the row is eligible — enrich and re-read so REAL metadata shows on this same
+  // visit. enrichCompany's atomic claim enforces the retry interval and prevents
+  // duplicate/concurrent provider calls; admin_edited rows are never touched. All
+  // writes no-op safely if the companies table isn't applied yet.
+  if (memberName) {
+    if (isEnrichmentEnabled()) {
+      const needsWork = !company || (!company.admin_edited && company.enrichment_status !== 'enriched')
+      if (needsWork) {
+        if (!company) await ensureCompanyRecord(admin, slug, memberName)
+        await enrichCompany(admin, slug, company?.name || memberName)
+        const reread = await admin.from('companies').select(COMPANY_COLS).eq('slug', slug).maybeSingle()
+        if (reread.data) company = reread.data
+      }
+    } else if (!company) {
+      await ensureCompanyRecord(admin, slug, memberName)
+    }
   }
+
+  const displayName = company?.name || memberName || titleCaseSlug(slug)
 
   // Header metadata rows — only present fields render (never "Unknown"/"None").
   const rows: { icon: any; value: string }[] = []
