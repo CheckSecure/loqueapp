@@ -1,23 +1,22 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { computeNetworkCompanies, ensureCompanyRecord, enrichCompany } from '@/lib/company/enrich'
-import { isEnrichmentEnabled } from '@/lib/company/provider'
+import { computeNetworkCompanies } from '@/lib/company/enrich'
+import { runEnrichment } from '@/lib/company/enrichment/run'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 300
 
 /**
  * RECONCILIATION / BACKFILL ONLY — not the primary mechanism.
  *
- * Records are created lazily the moment a company is first encountered (see
- * ensureCompanyRecord in lib/company/enrich.ts, called from the company page).
- * This weekly job only catches the gaps: companies whose page nobody has opened
- * yet, or that were seen by viewers who knew no one there. It materializes a
- * canonical record (slug + name) for any still-missing company.
+ * Records are created + enriched lazily the moment a company page is first
+ * opened (a background trigger calls the self-hosted enrichment pipeline). This
+ * weekly job only catches the gaps: companies whose page nobody has opened yet,
+ * or whose earlier enrichment failed and is now past the retry window.
  *
- * It NEVER touches existing or admin_edited rows. A future enrichment provider
- * that fills richer fields (logo/industry/HQ/size/description) plugs in here and
- * must likewise update ONLY admin_edited = false rows.
+ * It runs the SAME pipeline (runEnrichment), so its atomic claim guarantees it
+ * never touches admin_edited rows, never re-runs already-enriched rows, and
+ * never double-runs a company being enriched concurrently by a page view.
  *
  * Deploy-safe: if the companies table isn't applied yet, this no-ops cleanly.
  */
@@ -38,31 +37,32 @@ export async function GET(req: Request) {
   }
   const bySlug = new Map((existing.data || []).map((r: any) => [r.slug, r]))
 
-  // Bound provider spend per run; the weekly cadence chips away at the rest.
-  const MAX_PROVIDER_CALLS = 100
-  let created = 0, enriched = 0, skipped = 0, providerCalls = 0
+  // Bound scrape volume per run; the weekly cadence chips away at the rest.
+  const MAX_ENRICH_CALLS = 60
+  let enriched = 0, notFound = 0, failed = 0, skipped = 0, calls = 0
 
   for (const c of network) {
-    if (providerCalls >= MAX_PROVIDER_CALLS) break
+    if (calls >= MAX_ENRICH_CALLS) break
     const row = bySlug.get(c.slug)
+    // Cheap pre-filter (the pipeline's atomic claim is the real gate).
     if (row?.admin_edited || row?.enrichment_status === 'enriched') { skipped++; continue }
-    if (!row) { await ensureCompanyRecord(admin, c.slug, c.name); created++ }
-    if (isEnrichmentEnabled()) {
-      const r = await enrichCompany(admin, c.slug, c.name) // atomic claim gates retry + concurrency
-      if (r.status === 'skipped' || r.status === 'disabled') { skipped++ }
-      else { providerCalls++; if (r.status === 'enriched') enriched++ }
-    }
+    const r = await runEnrichment(admin, c.slug, c.name)
+    if (r.status === 'skipped' || r.status === 'error') { skipped++; continue }
+    calls++
+    if (r.status === 'enriched') enriched++
+    else if (r.status === 'not_found') notFound++
+    else failed++
   }
 
-  console.log(`[enrich-companies] network=${network.length} existing=${bySlug.size} created=${created} enriched=${enriched} providerCalls=${providerCalls} enabled=${isEnrichmentEnabled()}`)
+  console.log(`[enrich-companies] network=${network.length} existing=${bySlug.size} calls=${calls} enriched=${enriched} notFound=${notFound} failed=${failed} skipped=${skipped}`)
   return NextResponse.json({
     ok: true,
     networkCompanies: network.length,
     existing: bySlug.size,
-    created,
+    calls,
     enriched,
-    providerCalls,
+    notFound,
+    failed,
     skipped,
-    enrichmentEnabled: isEnrichmentEnabled(),
   })
 }

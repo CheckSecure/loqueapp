@@ -17,6 +17,8 @@ import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { validateSelection, validateSelectionWithCaps } from '@/lib/role-taxonomy'
+import { companySlug, isLinkableCompany } from '@/lib/company/slug'
+import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -115,6 +117,14 @@ export async function updateProfile(formData: FormData) {
   })
 
   if (error) return { error: error.message }
+
+  // Company enters the network here → create + enrich its page record in the
+  // background (deduped; never re-runs an already-enriched company).
+  const company = (formData.get('company') as string) || ''
+  if (isLinkableCompany(company)) {
+    scheduleEnrichment(adminClient, companySlug(company), company.trim())
+  }
+
   revalidatePath('/dashboard/profile')
   return { success: true }
 }
@@ -281,6 +291,12 @@ export async function completeOnboarding(formData: FormData) {
   if (error) {
     console.error('[completeOnboarding] error:', error.message)
     return { error: error.message }
+  }
+
+  // Company enters the network here → create + enrich its page record in the
+  // background (deduped; never re-runs an already-enriched company).
+  if (isLinkableCompany(company)) {
+    scheduleEnrichment(adminClient, companySlug(company), company.trim())
   }
 
   // Generate initial recommendations for new user

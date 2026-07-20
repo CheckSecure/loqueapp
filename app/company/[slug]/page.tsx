@@ -5,8 +5,6 @@ import Link from 'next/link'
 import { ArrowLeft, MapPin, Globe, Building2, Users } from 'lucide-react'
 import CompanyLogo from '@/components/CompanyLogo'
 import { companySlug, isLinkableCompany, titleCaseSlug } from '@/lib/company/slug'
-import { ensureCompanyRecord, enrichCompany } from '@/lib/company/enrich'
-import { isEnrichmentEnabled } from '@/lib/company/provider'
 import { professionalIdentityLine, professionalIdentity } from '@/lib/professionalIdentity'
 
 export const metadata = { title: 'Company | Andrel' }
@@ -38,8 +36,7 @@ export default async function CompanyPage({ params }: { params: { slug: string }
       .select('user_id, blocked_user_id')
       .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`),
   ])
-  let company: any = companyRes.data ?? null
-  const COMPANY_COLS = 'slug, name, industry, headquarters, website, company_size, description, logo_url, admin_edited, enrichment_status'
+  const company: any = companyRes.data ?? null
 
   // Visible people = current user + non-blocked connections. Already fully
   // visible on the Network page; filtering by company exposes nobody new.
@@ -68,30 +65,10 @@ export default async function CompanyPage({ params }: { params: { slug: string }
 
   const memberName = members.map((m: any) => (m.company || '').trim()).find(Boolean)
 
-  // First-encounter self-population + inline enrichment (one-time per company).
-  // Create the canonical record if absent, then — when enrichment is enabled and
-  // the row is eligible — enrich and re-read so REAL metadata shows on this same
-  // visit. enrichCompany's atomic claim enforces the retry interval and prevents
-  // duplicate/concurrent provider calls; admin_edited rows are never touched. All
-  // writes no-op safely if the companies table isn't applied yet.
-  if (memberName) {
-    const enrichEnabled = isEnrichmentEnabled()
-    // TEMP diagnostics (remove once enrichment is confirmed live).
-    console.log(JSON.stringify({ event: 'company_enrich_decision', slug, enrichmentEnabled: enrichEnabled, hasRow: !!company, status: company?.enrichment_status ?? null }))
-    if (enrichEnabled) {
-      const needsWork = !company || (!company.admin_edited && company.enrichment_status !== 'enriched')
-      if (needsWork) {
-        if (!company) await ensureCompanyRecord(admin, slug, memberName)
-        const result = await enrichCompany(admin, slug, company?.name || memberName)
-        console.log(JSON.stringify({ event: 'company_enrich_result', slug, status: result.status }))
-        const reread = await admin.from('companies').select(COMPANY_COLS).eq('slug', slug).maybeSingle()
-        if (reread.data) company = reread.data
-      }
-    } else if (!company) {
-      await ensureCompanyRecord(admin, slug, memberName)
-    }
-  }
-
+  // Display only. This page never initiates enrichment — records are created and
+  // enriched in the background the moment a company first enters the network (a
+  // member saves their profile; see scheduleEnrichment in app/actions.ts), with
+  // the weekly cron as backfill. The page simply renders whatever data exists.
   const displayName = company?.name || memberName || titleCaseSlug(slug)
 
   // Header metadata rows — only present fields render (never "Unknown"/"None").
