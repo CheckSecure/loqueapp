@@ -126,7 +126,7 @@ export default async function NetworkPage() {
           <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight">
             Network
             {connections.length > 0 && (
-              <span className="ml-2.5 font-medium text-slate-400 tabular-nums">{connections.length}</span>
+              <span className="ml-2.5 font-medium text-slate-400 tabular-nums">({connections.length})</span>
             )}
           </h1>
           <p className="text-slate-500 text-sm mt-2">Your confirmed introductions — people you've been connected with through Andrel.</p>
