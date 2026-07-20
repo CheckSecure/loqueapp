@@ -29,3 +29,31 @@ export function computeNetworkCompanies(
     (a, b) => b.memberCount - a.memberCount || a.name.localeCompare(b.name),
   )
 }
+
+/**
+ * Materialize a canonical company record the moment a company is first
+ * encountered (e.g. its page is first requested). This is the PRIMARY way rows
+ * are created — the cron is only reconciliation/backfill.
+ *
+ * `ignoreDuplicates` + no updated fields on conflict means this NEVER overwrites
+ * an existing row, so admin_edited rows (and any prior enrichment) are always
+ * preserved. Non-fatal and deploy-safe: if the table isn't applied yet, or the
+ * write fails, the page still renders from derived data.
+ *
+ * The richer-metadata provider (logo/industry/HQ/size/description) plugs in here
+ * later and must likewise update ONLY admin_edited = false rows.
+ */
+export async function ensureCompanyRecord(admin: any, slug: string, name: string): Promise<void> {
+  if (!slug || !name?.trim()) return
+  try {
+    const { error } = await admin.from('companies').upsert(
+      { slug, name: name.trim(), enrichment_source: 'auto:on_view', enriched_at: new Date().toISOString() },
+      { onConflict: 'slug', ignoreDuplicates: true },
+    )
+    if (error && !/PGRST205|schema cache|does not exist/i.test(`${error.message} ${error.code}`)) {
+      console.error('[company] ensureCompanyRecord failed:', error.message)
+    }
+  } catch {
+    /* never block a page render on record materialization */
+  }
+}

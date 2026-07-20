@@ -6,17 +6,17 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 /**
- * Self-population pass for Company Context pages. Runs on a schedule so pages
- * populate themselves over time with NO manual maintenance.
+ * RECONCILIATION / BACKFILL ONLY — not the primary mechanism.
  *
- * STEP 1 (active): materialize a canonical record (slug + display name) for every
- *   company that members actually work at but doesn't have a row yet — so each
- *   company has a persistent, curatable record.
+ * Records are created lazily the moment a company is first encountered (see
+ * ensureCompanyRecord in lib/company/enrich.ts, called from the company page).
+ * This weekly job only catches the gaps: companies whose page nobody has opened
+ * yet, or that were seen by viewers who knew no one there. It materializes a
+ * canonical record (slug + name) for any still-missing company.
  *
- * STEP 2 (seam, not yet wired): an enrichment provider fills the richer fields
- *   (logo_url, industry, headquarters, company_size, description). When added it
- *   MUST update ONLY rows where admin_edited = false, so a human's edits in
- *   /dashboard/admin/companies are authoritative and never overwritten.
+ * It NEVER touches existing or admin_edited rows. A future enrichment provider
+ * that fills richer fields (logo/industry/HQ/size/description) plugs in here and
+ * must likewise update ONLY admin_edited = false rows.
  *
  * Deploy-safe: if the companies table isn't applied yet, this no-ops cleanly.
  */

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, MapPin, Globe, Building2, Users } from 'lucide-react'
 import CompanyLogo from '@/components/CompanyLogo'
 import { companySlug, isLinkableCompany, titleCaseSlug } from '@/lib/company/slug'
+import { ensureCompanyRecord } from '@/lib/company/enrich'
 import { professionalIdentityLine, professionalIdentity } from '@/lib/professionalIdentity'
 
 export const metadata = { title: 'Company | Andrel' }
@@ -63,10 +64,17 @@ export default async function CompanyPage({ params }: { params: { slug: string }
       return (a.full_name || '').localeCompare(b.full_name || '')
     })
 
-  const displayName =
-    company?.name ||
-    members.map((m: any) => (m.company || '').trim()).find(Boolean) ||
-    titleCaseSlug(slug)
+  const memberName = members.map((m: any) => (m.company || '').trim()).find(Boolean)
+  const displayName = company?.name || memberName || titleCaseSlug(slug)
+
+  // Self-populate on first encounter: if no record exists yet and we have a
+  // real (member-derived) name, create the canonical record now. Never
+  // overwrites an existing/admin_edited row; deploy-safe; non-blocking beyond a
+  // single cheap upsert. The reconciliation cron backfills any that slip through
+  // (e.g. companies whose page nobody has opened, or where the viewer knew no one).
+  if (!company && memberName) {
+    await ensureCompanyRecord(admin, slug, memberName)
+  }
 
   // Header metadata rows — only present fields render (never "Unknown"/"None").
   const rows: { icon: any; value: string }[] = []
