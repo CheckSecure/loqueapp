@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles, Calendar } from 'lucide-react'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
 import { professionalIdentity } from '@/lib/professionalIdentity'
+import { isLinkableCompany } from '@/lib/company/slug'
+import CompanyLink from '@/components/CompanyLink'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 
 // Humanizes raw networking-goal values into calmer, reader-facing phrasing.
@@ -203,17 +205,26 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
             <h1 className="text-2xl font-bold text-brand-navy tracking-tight">{name}</h1>
 
-            {(() => { const identity = professionalIdentity(profile); return identity.primary ? (
-              <>
+            {(() => {
+              const identity = professionalIdentity(profile)
+              if (!identity.primary) return null
+              const primaryLine = (
                 <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
                   <Briefcase className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                   {identity.primary}
                 </p>
-                {identity.secondary && (
-                  <p className="text-xs text-slate-500 mt-0.5 ml-5">{identity.secondary}</p>
-                )}
-              </>
-            ) : null })()}
+              )
+              return (
+                <>
+                  {isLinkableCompany(profile.company)
+                    ? <CompanyLink company={profile.company} className="block hover:text-brand-navy transition-colors">{primaryLine}</CompanyLink>
+                    : primaryLine}
+                  {identity.secondary && (
+                    <p className="text-xs text-slate-500 mt-0.5 ml-5">{identity.secondary}</p>
+                  )}
+                </>
+              )
+            })()}
 
             {profile.location && (
               <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
@@ -373,7 +384,9 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                     <div key={i} className="flex items-start justify-between gap-4">
                       <div>
                         <p className="text-sm font-semibold text-brand-navy">{role.title}</p>
-                        <p className="text-xs text-slate-500">{role.company}</p>
+                        <p className="text-xs text-slate-500">
+                          <CompanyLink company={role.company} className="hover:text-brand-navy transition-colors">{role.company}</CompanyLink>
+                        </p>
                       </div>
                       {(role.start_date || role.end_date) && (
                         <p className="text-xs text-slate-400 flex-shrink-0">
