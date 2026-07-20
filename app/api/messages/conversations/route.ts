@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import {
+  pickLatestPerConversation,
+  countUnreadByConversation,
+  assembleConversationList,
+  type MessageRow,
+} from '@/lib/messages/conversationList'
 
 export async function GET() {
   const supabase = createClient()
@@ -12,40 +18,40 @@ export async function GET() {
 
   const adminClient = createAdminClient()
 
-  // 1. Find all matches the user is part of (excluding removed & blocked)
-  const { data: rawMatches, error: matchErr } = await adminClient
-    .from('matches')
-    .select('id, user_a_id, user_b_id, status, admin_facilitated, is_opportunity_initiated, opportunity_id')
-    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
+  // 1. Matches the user is part of + blocks (two independent queries in parallel).
+  const [matchRes, blockRes] = await Promise.all([
+    adminClient
+      .from('matches')
+      .select('id, user_a_id, user_b_id, status, admin_facilitated, is_opportunity_initiated, opportunity_id')
+      .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`),
+    adminClient
+      .from('blocked_users')
+      .select('user_id, blocked_user_id')
+      .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`),
+  ])
 
-  const { data: blockRows } = await adminClient
-    .from('blocked_users')
-    .select('user_id, blocked_user_id')
-    .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`)
-
-  const blockedIds = new Set<string>()
-  for (const row of blockRows || []) {
-    if (row.user_id === user.id) blockedIds.add(row.blocked_user_id)
-    else blockedIds.add(row.user_id)
+  if (matchRes.error) {
+    console.error('[conversations/list] match query error:', matchRes.error)
+    return NextResponse.json({ error: 'Failed to fetch matches' }, { status: 500 })
   }
 
-  const matches = (rawMatches || []).filter(m => {
+  const blockedIds = new Set<string>()
+  for (const row of blockRes.data || []) {
+    blockedIds.add(row.user_id === user.id ? row.blocked_user_id : row.user_id)
+  }
+
+  const matches = (matchRes.data || []).filter(m => {
     if (m.status === 'removed') return false
     const otherId = m.user_a_id === user.id ? m.user_b_id : m.user_a_id
     return !blockedIds.has(otherId)
   })
 
-  if (matchErr) {
-    console.error('[conversations/list] match query error:', matchErr)
-    return NextResponse.json({ error: 'Failed to fetch matches' }, { status: 500 })
-  }
-
-  const matchIds = (matches || []).map(m => m.id)
+  const matchIds = matches.map(m => m.id)
   if (matchIds.length === 0) {
     return NextResponse.json({ conversations: [] })
   }
 
-  // 2. Find conversations for those matches
+  // 2. Conversations for those matches (ordered — this order is preserved).
   const { data: conversations, error: convErr } = await adminClient
     .from('conversations')
     .select('id, match_id, first_message_sent_at, last_message_at, message_count, created_at')
@@ -57,85 +63,79 @@ export async function GET() {
     return NextResponse.json({ error: 'Failed to fetch conversations' }, { status: 500 })
   }
 
-  const matchById = new Map((matches || []).map(m => [m.id, m]))
+  const matchById = new Map(matches.map(m => [m.id, m]))
+  const convList = conversations || []
+  const convIds = convList.map(c => c.id)
 
-  // 3. Enrich with other-user profile, last message, unread count
-  const enriched = await Promise.all(
-    (conversations || []).map(async (conv) => {
-      const match = matchById.get(conv.match_id)
-      if (!match) return null
-
-      const otherUserId = match.user_a_id === user.id ? match.user_b_id : match.user_a_id
-
-      const [profileRes, lastMessageRes, unreadRes] = await Promise.all([
-        adminClient
-          .from('profiles')
-          .select('id, full_name, title, exact_job_title, role_type, company, avatar_url, subscription_tier, account_status')
-          .eq('id', otherUserId)
-          .single(),
-        adminClient
-          .from('messages')
-          .select('id, content, sender_id, is_system, created_at')
-          .eq('conversation_id', conv.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        adminClient
-          .from('messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('conversation_id', conv.id)
-          .neq('sender_id', user.id)
-          .eq('is_system', false)
-          .is('read_at', null)
-      ])
-
-      return {
-        __match_id: conv.match_id,
-        id: conv.id,
-        otherUser: profileRes.data,
-        lastMessage: lastMessageRes.data,
-        unreadCount: unreadRes.count || 0,
-        firstMessageSentAt: conv.first_message_sent_at,
-        lastMessageAt: conv.last_message_at,
-        messageCount: conv.message_count || 0,
-        createdAt: conv.created_at,
-        adminFacilitated: match.admin_facilitated || false
-      }
-    })
-  )
-
-  // Load opportunity titles for any conversations that came from opportunities.
-  const validEnriched = enriched.filter(Boolean) as any[]
-  const oppIds = new Set<string>()
-  for (const conv of validEnriched) {
-    const match = matchById.get(conv.id === null ? '' : conv.__match_id || '')
-  }
-  // Simpler: read opportunity_id straight from the match we already have.
-  const oppIdsList: string[] = []
-  for (const conv of validEnriched) {
-    const match = matchById.get((conv as any).__match_id)
-    if (match?.opportunity_id) oppIdsList.push(match.opportunity_id)
+  if (convIds.length === 0) {
+    return NextResponse.json({ conversations: [] })
   }
 
+  // Other-user ids + opportunity ids, de-duplicated for batched lookups.
+  const otherIds = Array.from(new Set(convList.map(c => {
+    const m = matchById.get(c.match_id)
+    return m ? (m.user_a_id === user.id ? m.user_b_id : m.user_a_id) : null
+  }).filter(Boolean) as string[]))
+  const oppIds = Array.from(new Set(convList.map(c => matchById.get(c.match_id)?.opportunity_id).filter(Boolean) as string[]))
+
+  // 3. Batched enrichment — a FIXED number of queries regardless of how many
+  //    conversations exist (previously 3 queries PER conversation → N+1).
+  const [profilesRes, unreadRes, lastMessages, oppsRes] = await Promise.all([
+    // All other-user profiles in one query.
+    adminClient
+      .from('profiles')
+      .select('id, full_name, title, exact_job_title, role_type, company, avatar_url, subscription_tier, account_status')
+      .in('id', otherIds),
+    // Only UNREAD message rows (typically few), conversation_id only → counted in JS.
+    adminClient
+      .from('messages')
+      .select('conversation_id')
+      .in('conversation_id', convIds)
+      .neq('sender_id', user.id)
+      .eq('is_system', false)
+      .is('read_at', null),
+    // Latest message per conversation.
+    getLatestMessages(adminClient, convIds),
+    oppIds.length > 0
+      ? adminClient.from('opportunities').select('id, title').in('id', oppIds)
+      : Promise.resolve({ data: [] as { id: string; title: string }[] }),
+  ])
+
+  const profileById = new Map((profilesRes.data || []).map((p: any) => [p.id, p]))
+  const unreadByConv = countUnreadByConversation(unreadRes.data)
+  const lastByConv = lastMessages
   const oppTitleById = new Map<string, string>()
-  if (oppIdsList.length > 0) {
-    const { data: opps } = await adminClient
-      .from('opportunities')
-      .select('id, title')
-      .in('id', oppIdsList)
-    for (const o of opps || []) oppTitleById.set(o.id, o.title)
-  }
+  for (const o of oppsRes.data || []) oppTitleById.set(o.id, o.title)
 
-  // Attach opportunity context and strip internal helpers before returning.
-  const finalList = validEnriched.map((conv) => {
-    const match = matchById.get((conv as any).__match_id)
-    const { __match_id, ...rest } = conv as any
-    return {
-      ...rest,
-      isOpportunityInitiated: !!match?.is_opportunity_initiated,
-      opportunityTitle: match?.opportunity_id ? (oppTitleById.get(match.opportunity_id) || null) : null,
-    }
+  const finalList = assembleConversationList({
+    conversations: convList,
+    matchById,
+    userId: user.id,
+    profileById,
+    lastByConv,
+    unreadByConv,
+    oppTitleById,
   })
 
   return NextResponse.json({ conversations: finalList })
+}
+
+/**
+ * Latest message per conversation in ONE round-trip. Prefers a DISTINCT ON
+ * Postgres function (bounded to one row per conversation — migration 013); if
+ * that function is not present yet, falls back to a single batched fetch and
+ * reduces in JS. Both paths yield the same latest-per-conversation map, so the
+ * route is safe to deploy before the migration is applied.
+ */
+async function getLatestMessages(adminClient: any, convIds: string[]): Promise<Map<string, MessageRow>> {
+  const rpc = await adminClient.rpc('latest_messages_for_conversations', { conv_ids: convIds })
+  if (!rpc.error && Array.isArray(rpc.data)) {
+    return pickLatestPerConversation(rpc.data as MessageRow[])
+  }
+  const { data } = await adminClient
+    .from('messages')
+    .select('id, conversation_id, content, sender_id, is_system, created_at')
+    .in('conversation_id', convIds)
+    .order('created_at', { ascending: false })
+  return pickLatestPerConversation((data || []) as MessageRow[])
 }
