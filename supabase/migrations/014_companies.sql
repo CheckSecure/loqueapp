@@ -22,9 +22,23 @@ CREATE TABLE IF NOT EXISTS companies (
   company_size text,
   description  text,
   logo_url     text,
+  -- Self-population / admin-override support:
+  --   admin_edited=true → a human curated this row; automatic enrichment must
+  --     never overwrite it.
+  --   enriched_at / enrichment_source → provenance of the last automatic pass.
+  admin_edited      boolean NOT NULL DEFAULT false,
+  enriched_at       timestamptz,
+  enrichment_source text,
   created_at   timestamptz NOT NULL DEFAULT now(),
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
+
+-- Idempotent add-columns so this migration also upgrades a table that was
+-- created from an earlier version of this file.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS admin_edited boolean NOT NULL DEFAULT false;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS enriched_at timestamptz;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS enrichment_source text;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS company_size text;
 
 CREATE INDEX IF NOT EXISTS companies_slug_idx ON companies (slug);
 

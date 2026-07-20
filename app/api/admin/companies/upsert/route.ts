@@ -29,6 +29,8 @@ export async function POST(req: Request) {
     headquarters: clean(body.headquarters),
     company_size: clean(body.company_size),
     description: clean(body.description),
+    // A human curated this row → automatic enrichment must never overwrite it.
+    admin_edited: true,
     updated_at: new Date().toISOString(),
   }
 
