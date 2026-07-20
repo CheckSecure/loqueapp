@@ -48,6 +48,19 @@ describe('invite email delivers a clean, copy-safe password', () => {
     expect(email).toMatch(/<code[^>]*>\$\{tempPassword\}<\/code>/)
     expect(email).not.toMatch(/<code[^>]*>\s*\n\s*\$\{tempPassword\}/)
   })
+
+  it('sendInviteEmail states the login email, links to the canonical www login, and tells the user to ignore prior links', () => {
+    // Isolate the sendInviteEmail body so assertions target the resend/recovery email.
+    const body = email.slice(email.indexOf('export async function sendInviteEmail'), email.indexOf('export async function sendReferralInviteEmail'))
+    expect(body).toContain('<strong>Email:</strong> ${escapeHtml(toEmail)}') // correct login email
+    expect(body).toContain('https://www.andrel.app/login')                    // canonical www destination
+    expect(body).not.toMatch(/href="https:\/\/andrel\.app\/login"/)           // no bare (non-www) host
+    expect(body).toMatch(/disregard them|ignore/i)                            // disregard prior magic/reset links
+  })
+
+  it('neither invite email links to the bare andrel.app/login host', () => {
+    expect(email).not.toContain('href="https://andrel.app/login"')
+  })
 })
 
 describe('middleware: password_reset_required does NOT block initial authentication', () => {

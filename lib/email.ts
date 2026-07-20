@@ -180,19 +180,20 @@ export async function sendInviteEmail(
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
             You've been invited to join Andrel, a curated platform for high-value professional introductions.
           </p>
-          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            Your temporary password is:
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 8px;">
+            Sign in at <a href="https://www.andrel.app/login" style="color: #1B2850; font-weight: 600;">www.andrel.app/login</a> with:
           </p>
-          <div style="background: #F5F6FB; border: 2px solid #1B2850; padding: 16px; margin: 24px 0; border-radius: 8px; text-align: center;">
-            <code style="color: #1B2850; font-size: 18px; font-weight: 700; letter-spacing: 2px;">${tempPassword}</code>
+          <div style="background: #F5F6FB; border: 2px solid #1B2850; padding: 16px; margin: 12px 0 24px 0; border-radius: 8px;">
+            <p style="margin: 0 0 8px 0; color: #334155; font-size: 15px;"><strong>Email:</strong> ${escapeHtml(toEmail)}</p>
+            <p style="margin: 0; color: #334155; font-size: 15px;"><strong>Temporary password:</strong> <code style="color: #1B2850; font-size: 16px; font-weight: 700; letter-spacing: 1px;">${tempPassword}</code></p>
           </div>
-          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-            Please log in and change your password immediately.
-          </p>
-          <a href="https://andrel.app/login" 
+          <a href="https://www.andrel.app/login"
              style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
             Log In to Andrel
           </a>
+          <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin-top: 24px;">
+            After logging in you'll be prompted to set your own password. If you received any earlier magic sign-in or password-reset links, please disregard them — they may have expired. Just use the email address and temporary password above.
+          </p>
           <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
             — The Andrel Team
           </p>
@@ -241,10 +242,10 @@ export async function sendReferralInviteEmail(
             Your account is ready. Use the credentials below to sign in:
           </p>
           <div style="background: #F5F6FB; border: 2px solid #1B2850; padding: 16px; margin: 24px 0; border-radius: 8px;">
-            <p style="color: #334155; font-size: 15px; margin: 0 0 8px 0;"><strong>Email:</strong> ${toEmail}</p>
+            <p style="color: #334155; font-size: 15px; margin: 0 0 8px 0;"><strong>Email:</strong> ${escapeHtml(toEmail)}</p>
             <p style="color: #334155; font-size: 15px; margin: 0;"><strong>Temporary password:</strong> <code style="color: #1B2850; font-weight: 700; letter-spacing: 1px;">${tempPassword}</code></p>
           </div>
-          <a href="https://andrel.app/login"
+          <a href="https://www.andrel.app/login"
              style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
             Log In to Andrel
           </a>
