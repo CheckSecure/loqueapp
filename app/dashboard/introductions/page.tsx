@@ -94,6 +94,12 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
   const profileRow = profileRows?.[0] ?? null
   const completionFields = computeProfileCompletionFields(profileRow)
+  const isProfileComplete = Object.values(completionFields).every(Boolean)
+  // The "being curated" empty state shows an actionable completion nudge ONLY
+  // when there are real profile gaps beyond the photo (the photo is already
+  // nudged by ProfilePhotoReminder above). A complete member should never be
+  // told to "complete your profile" — they see the calm status card instead.
+  const showCuratedCompletion = !isProfileComplete && !isOnlyPhotoMissing(completionFields)
   const profileId = profileRow?.id ?? user.id
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
   const userTier = (profileRow as any)?.subscription_tier ?? 'free'
@@ -838,34 +844,43 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                 )}
               </section>
             ) : (
-              <section className="rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-8">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-brand-navy/[0.04] text-brand-gold flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Curating</p>
-                    <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated.</h2>
-                    <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-xl">
-                      Andrel surfaces introductions only on a strong, mutual fit. Sharpen your signal — most members see new matches within a week of completing these:
-                    </p>
-                    <div className="mt-4 space-y-0.5">
-                      <Link href="/dashboard/profile" className="flex items-center gap-3 rounded-lg -mx-1 px-3 py-2.5 hover:bg-slate-50 transition-colors group">
-                        <span className="w-1.5 h-1.5 rounded-full bg-brand-gold flex-shrink-0" aria-hidden="true" />
-                        <span className="flex-1 text-sm font-medium text-brand-navy">Complete your profile</span>
-                        <span className="hidden sm:inline text-xs text-slate-400">Title, expertise &amp; bio</span>
-                        <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-brand-navy transition-colors" />
-                      </Link>
-                      <Link href="/dashboard/profile" className="flex items-center gap-3 rounded-lg -mx-1 px-3 py-2.5 hover:bg-slate-50 transition-colors group">
-                        <span className="w-1.5 h-1.5 rounded-full bg-brand-gold flex-shrink-0" aria-hidden="true" />
-                        <span className="flex-1 text-sm font-medium text-brand-navy">Update who you want to meet</span>
-                        <span className="hidden sm:inline text-xs text-slate-400">Desired connections</span>
-                        <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-brand-navy transition-colors" />
+              showCuratedCompletion ? (
+                /* Real profile gaps → one calm, actionable nudge (no checklist). */
+                <section className="rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-7">
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-brand-navy/[0.04] text-brand-gold flex items-center justify-center flex-shrink-0">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Curating</p>
+                      <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated.</h2>
+                      <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-xl">
+                        We introduce you when there&rsquo;s a strong mutual fit. Completing your profile helps us find yours sooner.
+                      </p>
+                      <Link href="/dashboard/profile" className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-navy hover:text-brand-gold transition-colors">
+                        Complete your profile <ArrowRight className="w-4 h-4" />
                       </Link>
                     </div>
                   </div>
-                </div>
-              </section>
+                </section>
+              ) : (
+                /* Complete (or only photo missing, handled above) → calm, passive
+                   status. Andrel is working for you; there is nothing to do. */
+                <section className="rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-7">
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-brand-navy/[0.04] text-brand-gold flex items-center justify-center flex-shrink-0">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Curating</p>
+                      <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated.</h2>
+                      <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-xl">
+                        We only make introductions when there&rsquo;s a strong mutual fit. There&rsquo;s nothing you need to do right now — we&rsquo;ll notify you the moment your next introduction is ready.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              )
             )}
 
             {/* EARLIER */}
