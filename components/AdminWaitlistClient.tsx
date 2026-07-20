@@ -4,6 +4,52 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserPlus, CheckCircle, XCircle, Mail, Clock, Send } from 'lucide-react'
 
+interface EmailLifecycle {
+  state: string
+  label: string
+  lastEmail: 'invite' | 'reminder_1' | 'reminder_2' | null
+  lastEmailAt: string | null
+  nextEmail: 'reminder_1' | 'reminder_2' | null
+  nextDueAt: string | null
+  canSendActivationEmail: boolean
+  receivedFirstMatching: boolean
+  excludedReason: string | null
+}
+
+// Lifecycle sub-filters for the Invited tab.
+type LifecycleFilter = 'all' | 'newly' | 'r1_due' | 'r2_due' | 'seq_done' | 'july_yes' | 'july_no'
+const LIFECYCLE_FILTERS: { key: LifecycleFilter; label: string }[] = [
+  { key: 'all', label: 'All incomplete' },
+  { key: 'newly', label: 'Newly invited / no follow-up' },
+  { key: 'r1_due', label: 'Reminder 1 due' },
+  { key: 'r2_due', label: 'Reminder 2 due' },
+  { key: 'seq_done', label: 'Sequence complete' },
+  { key: 'july_yes', label: 'Received July reminder' },
+  { key: 'july_no', label: 'No July reminder' },
+]
+
+function shortDate(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// Single definition used by both the sub-filter and its per-chip counts. All
+// state comes from the server-computed shared lifecycle module.
+function matchesLifecycleFilter(entry: WaitlistEntry, key: LifecycleFilter): boolean {
+  const lc = entry.lifecycle
+  switch (key) {
+    case 'all': return true
+    // Newly invited / no follow-up: neither reminder sent (July does not disqualify).
+    case 'newly': return !entry.invite_reminder_1_sent_at && !entry.invite_reminder_2_sent_at
+    case 'r1_due': return lc?.state === 'reminder_1_due'
+    case 'r2_due': return lc?.state === 'reminder_2_due'
+    case 'seq_done': return lc?.state === 'reminder_2_sent'
+    case 'july_yes': return !!lc?.receivedFirstMatching
+    case 'july_no': return !lc?.receivedFirstMatching
+    default: return true
+  }
+}
+
 interface WaitlistEntry {
   id: string
   full_name: string | null
@@ -11,9 +57,9 @@ interface WaitlistEntry {
   company: string | null
   title: string | null
   // Pre-existing silent bug: 'role' and 'seniority' don't exist on the waitlist table.
-  // Their values are always undefined. Out of scope for this commit; flagged for cleanup.
-  role: string | null
-  seniority: string | null
+  // Their values are always undefined. Optional so the type is honest; still flagged for cleanup.
+  role?: string | null
+  seniority?: string | null
   linkedin_url: string | null
   referral_source: string | null
   status: string
@@ -21,6 +67,8 @@ interface WaitlistEntry {
   invited_at: string | null
   invite_reminder_1_sent_at: string | null
   invite_reminder_2_sent_at: string | null
+  first_matching_reminder_sent_at: string | null
+  lifecycle?: EmailLifecycle
   referrals?: {
     referral_note: string
     status: string
@@ -37,6 +85,7 @@ export default function AdminWaitlistClient({
 }) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'invited' | 'declined'>('pending')
+  const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleFilter>('all')
   const [processing, setProcessing] = useState<string | null>(null)
   // Per-row "Mark as founding member" toggle. Lives client-side only; the value
   // is read at send-invite time and posted to the API. Resets on page refresh.
@@ -106,7 +155,10 @@ export default function AdminWaitlistClient({
     setProcessing(null)
   }
 
-  const filtered = waitlist.filter(entry => entry.status === activeTab)
+  // Invited tab also honors the lifecycle sub-filter (shared matcher).
+  const filtered = waitlist
+    .filter(entry => entry.status === activeTab)
+    .filter(entry => activeTab !== 'invited' || matchesLifecycleFilter(entry, lifecycleFilter))
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
@@ -186,6 +238,29 @@ export default function AdminWaitlistClient({
             {activeTab === 'approved' && (
               <div className="mb-4 rounded-lg border border-slate-200 bg-slate-100 px-4 py-3 text-xs text-slate-700">
                 <span className="font-semibold">Step 2 · Send Invite.</span> Approved members are ready to invite. Click Send Invite to email login access.
+              </div>
+            )}
+            {activeTab === 'invited' && (
+              <div className="mb-4">
+                <p className="text-xs font-medium text-slate-500 mb-2">Email lifecycle</p>
+                <div className="flex flex-wrap gap-2">
+                  {LIFECYCLE_FILTERS.map(f => {
+                    const count = waitlist.filter(e => e.status === 'invited' && matchesLifecycleFilter(e, f.key)).length
+                    return (
+                      <button
+                        key={f.key}
+                        onClick={() => setLifecycleFilter(f.key)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                          lifecycleFilter === f.key
+                            ? 'bg-[#1B2850] text-white border-[#1B2850]'
+                            : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {f.label} ({count})
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             )}
             {filtered.length === 0 ? (
@@ -294,6 +369,24 @@ export default function AdminWaitlistClient({
                             day: 'numeric'
                           })}`}
                         </p>
+
+                        {activeTab === 'invited' && entry.lifecycle && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                            <span className="font-semibold text-slate-700 bg-slate-200 px-2 py-0.5 rounded-full">
+                              {entry.lifecycle.label}
+                            </span>
+                            <span className="text-slate-500">
+                              Last: {entry.lifecycle.lastEmail ? `${entry.lifecycle.lastEmail.replace('_', ' ')} · ${shortDate(entry.lifecycle.lastEmailAt)}` : 'none'}
+                            </span>
+                            <span className="text-slate-400">•</span>
+                            <span className="text-slate-500">
+                              Next: {entry.lifecycle.nextEmail ? `${entry.lifecycle.nextEmail.replace('_', ' ')} · due ${shortDate(entry.lifecycle.nextDueAt)}` : 'none'}
+                            </span>
+                            {entry.lifecycle.receivedFirstMatching && (
+                              <span className="text-[#C4922A] bg-[#FDF3E3] px-2 py-0.5 rounded-full font-medium">July reminder ✓</span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex gap-2">

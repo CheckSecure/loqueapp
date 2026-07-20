@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import AdminWaitlistClient from '@/components/AdminWaitlistClient'
 import { excludeJoinedFromInvited, toCompletedEmailSet } from '@/lib/waitlist/joined'
+import { normalizeEmail } from '@/lib/auth/normalizeEmail'
+import { computeLifecycle, lifecycleLabel } from '@/lib/waitlist/lifecycle'
 
 export const metadata = { title: 'Waitlist | Admin' }
 
@@ -21,7 +23,7 @@ export default async function AdminWaitlistPage() {
     .select(`
       id, full_name, email, company, title, role_type,
       linkedin_url, referral_source, status, created_at, invited_at,
-      invite_reminder_1_sent_at, invite_reminder_2_sent_at,
+      invite_reminder_1_sent_at, invite_reminder_2_sent_at, first_matching_reminder_sent_at,
       referrals!waitlist_id(
         referral_note, status,
         referrer:profiles!referrer_user_id(id, full_name, account_status)
@@ -51,12 +53,32 @@ export default async function AdminWaitlistPage() {
   const completedEmails = toCompletedEmailSet(completedProfiles)
   const visible = excludeJoinedFromInvited(referralVisible, completedEmails)
 
+  // Compute each row's activation-email lifecycle from the shared module (single
+  // source of truth). completedEmails already excludes joined users from the
+  // Invited tab, so these rows are all incomplete; profileComplete stays false.
+  const nowMs = Date.now()
+  const withLifecycle = visible.map(w => {
+    const lc = computeLifecycle({
+      status: w.status,
+      email: w.email,
+      invited_at: w.invited_at,
+      invite_reminder_1_sent_at: w.invite_reminder_1_sent_at,
+      invite_reminder_2_sent_at: w.invite_reminder_2_sent_at,
+      first_matching_reminder_sent_at: (w as any).first_matching_reminder_sent_at ?? null,
+      profileComplete: completedEmails.has(normalizeEmail(w.email)),
+    }, nowMs)
+    return { ...w, lifecycle: { ...lc, label: lifecycleLabel(lc.state) } }
+  })
+
   const counts = {
-    pending:  visible.filter(w => w.status === 'pending').length,
-    approved: visible.filter(w => w.status === 'approved').length,
-    invited:  visible.filter(w => w.status === 'invited').length,
-    declined: visible.filter(w => w.status === 'declined').length,
+    pending:  withLifecycle.filter(w => w.status === 'pending').length,
+    approved: withLifecycle.filter(w => w.status === 'approved').length,
+    invited:  withLifecycle.filter(w => w.status === 'invited').length,
+    declined: withLifecycle.filter(w => w.status === 'declined').length,
   }
 
-  return <AdminWaitlistClient waitlist={visible} counts={counts} />
+  // Cast at the boundary: PostgREST types the to-one `referrals` join as an
+  // array while it is an object at runtime (handled with `as any` in the filter
+  // above). Consistent with the pre-existing loose typing of this row shape.
+  return <AdminWaitlistClient waitlist={withLifecycle as any} counts={counts} />
 }

@@ -47,19 +47,21 @@ async function processCandidate(
 
   const send = phase === 1 ? sendInviteReminder1 : sendInviteReminder2
   const column = phase === 1 ? 'invite_reminder_1_sent_at' : 'invite_reminder_2_sent_at'
+  const errorColumn = phase === 1 ? 'invite_reminder_1_error' : 'invite_reminder_2_error'
 
   const result = await send(candidate.email, candidate.full_name || 'there')
   if (!result.success) {
-    console.log(JSON.stringify({
-      event: 'activation_reminder_failed',
-      reminder: phase,
-      waitlist_id: candidate.id,
-      email: candidate.email,
-      error: result.error,
-    }))
+    // Durable failure record (migration 012). Its OWN best-effort write, isolated
+    // from any sent_at write and never gating the send decision — a failure just
+    // leaves sent_at null so the recipient stays retryable. Logged by
+    // waitlist_id only (never the email address).
+    await admin.from('waitlist').update({ [errorColumn]: result.error ?? 'unknown error' }).eq('id', candidate.id)
+    console.log(JSON.stringify({ event: 'activation_reminder_failed', reminder: phase, waitlist_id: candidate.id, error: result.error }))
     return 'failed'
   }
 
+  // Idempotency-critical write: ONLY the sent_at column, so it can never depend on
+  // the error column existing (safe even if migration 012 is not yet applied).
   const { error: updateError } = await admin
     .from('waitlist')
     .update({ [column]: new Date().toISOString() })
@@ -68,21 +70,13 @@ async function processCandidate(
   if (updateError) {
     // Email already sent but tracking column failed — log so it can be reconciled.
     // Worst case: the next cron run resends. Mitigated by the 23h floor for reminder 1.
-    console.log(JSON.stringify({
-      event: 'activation_reminder_track_failed',
-      reminder: phase,
-      waitlist_id: candidate.id,
-      email: candidate.email,
-      error: updateError.message,
-    }))
+    console.log(JSON.stringify({ event: 'activation_reminder_track_failed', reminder: phase, waitlist_id: candidate.id, error: updateError.message }))
+  } else {
+    // Best-effort clear of any prior failure marker (separate write; harmless no-op if 012 absent).
+    await admin.from('waitlist').update({ [errorColumn]: null }).eq('id', candidate.id)
   }
 
-  console.log(JSON.stringify({
-    event: 'activation_reminder_sent',
-    reminder: phase,
-    waitlist_id: candidate.id,
-    email: candidate.email,
-  }))
+  console.log(JSON.stringify({ event: 'activation_reminder_sent', reminder: phase, waitlist_id: candidate.id }))
   return 'sent'
 }
 
