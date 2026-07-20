@@ -138,22 +138,11 @@ export async function POST(req: Request) {
     )
   }
 
-  // ── Validation 8: referrer cap ────────────────────────────────────────────
-  // Race condition: two concurrent submissions from the same referrer can both pass
-  // this check before either insert completes. V1 accepted gap — worst case is 4
-  // outstanding referrals instead of 3. No schema change needed to address this.
-  const { count: outstandingCount } = await adminClient
-    .from('referrals')
-    .select('id', { count: 'exact', head: true })
-    .eq('referrer_user_id', referrerProfile.id)
-    .in('status', ['pending', 'invited'])
-
-  if ((outstandingCount ?? 0) >= 3) {
-    return NextResponse.json(
-      { ok: false, error: 'You have reached the maximum of 3 outstanding referrals', code: 'CAP_REACHED' },
-      { status: 409 }
-    )
-  }
+  // NOTE: There is intentionally NO nomination-quantity cap. Members and admins
+  // may submit unlimited nominations (no lifetime or concurrent-pending limit).
+  // Per-email de-duplication (Validations 5–7 above, case-insensitive via ilike)
+  // still prevents the same person being nominated twice; abuse is handled only
+  // by infrastructure-level rate limiting, never a product count.
 
   // ── Insert: waitlist row ──────────────────────────────────────────────────
   const { data: newWaitlistRow, error: waitlistError } = await adminClient

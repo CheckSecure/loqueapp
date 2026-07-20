@@ -13,7 +13,6 @@ const ERROR_COPY: Record<string, string> = {
   EMAIL_ALREADY_MEMBER:         'This person is already a member.',
   EMAIL_ON_WAITLIST:            'This person is already being considered.',
   REFERRAL_PREVIOUSLY_REJECTED: 'This person was previously reviewed and is not eligible for re-nomination.',
-  CAP_REACHED:                  'You can have up to 3 open nominations at a time.',
   UNAUTHORIZED:                 'Your session has expired. Please refresh and try again.',
   REFERRER_INACTIVE:            'Your account is not currently active.',
 }

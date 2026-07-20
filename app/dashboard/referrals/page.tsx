@@ -32,8 +32,6 @@ const STATUS_CLASS: Record<string, string> = {
   rejected:  'bg-red-50 text-red-500',
 }
 
-const SLOTS_TOTAL = 3
-
 export default async function ReferralsPage() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -45,9 +43,9 @@ export default async function ReferralsPage() {
     .eq('referrer_user_id', user.id)
     .order('created_at', { ascending: false })
 
-  const rows = (referrals ?? []) as ReferralRow[]
-  const outstandingCount = rows.filter(r => r.status === 'pending' || r.status === 'invited').length
-  const canRefer = outstandingCount < SLOTS_TOTAL
+  // PostgREST types the to-one `waitlist` join as an array; it is an object at
+  // runtime. Cast through unknown (pre-existing shape quirk, unrelated to cap removal).
+  const rows = (referrals ?? []) as unknown as ReferralRow[]
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 sm:py-12 space-y-8">
@@ -63,13 +61,8 @@ export default async function ReferralsPage() {
           <h2 className="text-sm font-semibold text-slate-900">Nominate someone</h2>
         </div>
         <div className="px-6 py-5">
-          {canRefer ? (
-            <ReferralForm userEmail={user.email ?? ''} />
-          ) : (
-            <p className="text-sm text-slate-500">
-              You can have up to {SLOTS_TOTAL} open nominations at a time. Additional nominations become available as they are reviewed.
-            </p>
-          )}
+          {/* The nomination form is always available — there is no quantity limit. */}
+          <ReferralForm userEmail={user.email ?? ''} />
         </div>
       </div>
 
