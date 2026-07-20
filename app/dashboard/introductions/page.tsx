@@ -737,17 +737,11 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     <div className="relative min-h-screen bg-[#FAF6EE] p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
       <div className="relative max-w-6xl mx-auto">
 
-        {/* HERO — compact context band, supports the featured card */}
-        <div className="mb-6">
+        {/* HERO — quiet page title (dashboard, not landing page) */}
+        <div className="mb-8">
           <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-semibold mb-2">Curated for you, {firstName}</p>
-          <div className="flex items-start gap-3">
-            <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight leading-[1.1]">Your next valuable relationship</h1>
-            {/* Small gold sparkle ornament beside the headline */}
-            <Sparkles className="w-5 h-5 text-brand-gold flex-shrink-0 mt-1.5" aria-hidden="true" />
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight leading-[1.1]">Your next valuable relationship</h1>
           <p className="text-slate-600 text-sm sm:text-[15px] mt-2 leading-snug max-w-2xl">High-signal introductions across the Andrel network. We facilitate when interest is mutual.</p>
-          {/* Slim gold rule below subhead — matches reference's understated decorator */}
-          <div className="mt-3 w-24 h-px bg-gradient-to-r from-brand-gold via-brand-gold/40 to-transparent" />
         </div>
 
         <FoundingMemberWelcomeBanner show={showFoundingWelcome} />
@@ -844,41 +838,30 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                 )}
               </section>
             ) : (
-              <section className="relative overflow-hidden bg-gradient-to-br from-white via-white to-brand-cream/30 border border-brand-navy/10 rounded-2xl p-7 sm:p-10 shadow-lg">
-                {/* Decorative gold ring in corner */}
-                <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full border border-brand-gold/15 pointer-events-none" />
-                <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full border border-brand-gold/20 pointer-events-none" />
-                <div className="relative flex items-start gap-5">
-                  <div className="w-14 h-14 rounded-2xl bg-brand-navy text-brand-gold flex items-center justify-center flex-shrink-0 shadow-md">
-                    <Sparkles className="w-7 h-7" />
+              <section className="rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-8">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-brand-navy/[0.04] text-brand-gold flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-5 h-5" />
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Curating</p>
-                    <h2 className="text-xl sm:text-2xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated.</h2>
-                    <p className="text-sm sm:text-base text-slate-600 mt-3 leading-relaxed max-w-xl">
-                      Andrel surfaces high-signal introductions only when there's a strong, mutual fit. Sharpen your signal in the meantime — most users see new matches within a week of completing these steps.
+                    <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated.</h2>
+                    <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-xl">
+                      Andrel surfaces introductions only on a strong, mutual fit. Sharpen your signal — most members see new matches within a week of completing these:
                     </p>
-
-                    <div className="mt-6 space-y-3">
-                      <Link href="/dashboard/profile" className="flex items-start gap-3 rounded-xl border border-slate-200 hover:border-brand-navy hover:bg-white px-4 py-3.5 transition-colors group">
-                        <div className="flex-1">
-                          <p className="text-sm font-semibold text-brand-navy">Complete your profile</p>
-                          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Exact title, expertise, and bio drive who you match with.</p>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-slate-400 mt-1 group-hover:text-brand-navy transition-colors" />
+                    <div className="mt-4 space-y-0.5">
+                      <Link href="/dashboard/profile" className="flex items-center gap-3 rounded-lg -mx-1 px-3 py-2.5 hover:bg-slate-50 transition-colors group">
+                        <span className="w-1.5 h-1.5 rounded-full bg-brand-gold flex-shrink-0" aria-hidden="true" />
+                        <span className="flex-1 text-sm font-medium text-brand-navy">Complete your profile</span>
+                        <span className="hidden sm:inline text-xs text-slate-400">Title, expertise &amp; bio</span>
+                        <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-brand-navy transition-colors" />
                       </Link>
-                      <Link href="/dashboard/profile" className="flex items-start gap-3 rounded-xl border border-slate-200 hover:border-brand-navy hover:bg-white px-4 py-3.5 transition-colors group">
-                        <div className="flex-1">
-                          <p className="text-sm font-semibold text-brand-navy">Update who you want to meet</p>
-                          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Specify desired connections to focus the matcher.</p>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-slate-400 mt-1 group-hover:text-brand-navy transition-colors" />
+                      <Link href="/dashboard/profile" className="flex items-center gap-3 rounded-lg -mx-1 px-3 py-2.5 hover:bg-slate-50 transition-colors group">
+                        <span className="w-1.5 h-1.5 rounded-full bg-brand-gold flex-shrink-0" aria-hidden="true" />
+                        <span className="flex-1 text-sm font-medium text-brand-navy">Update who you want to meet</span>
+                        <span className="hidden sm:inline text-xs text-slate-400">Desired connections</span>
+                        <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-brand-navy transition-colors" />
                       </Link>
-                      <ConciergeLauncher
-                        canUseConcierge={canUseConcierge}
-                        activeStatus={activeConciergeStatus}
-                        variant="row"
-                      />
                     </div>
                   </div>
                 </div>
@@ -905,48 +888,17 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
           </div>
 
-          {/* RIGHT RAIL */}
-          <aside className="space-y-5 lg:sticky lg:top-8 lg:self-start">
+          {/* RIGHT RAIL — quiet secondaries */}
+          <aside className="space-y-6 lg:sticky lg:top-8 lg:self-start">
 
-            {/* ANDREL CONCIERGE CARD — secondary to featured; lighter visual weight */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-[#162449] via-brand-navy to-[#0A1530] text-white rounded-2xl p-5 shadow-[0_8px_24px_rgba(15,28,58,0.12)] ring-1 ring-brand-gold/8">
-              {/* Subtler gold ambient glow */}
-              <div className="absolute -top-10 -right-10 w-32 h-32 bg-brand-gold/12 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
-              <div className="absolute top-0 left-5 right-5 h-px bg-gradient-to-r from-transparent via-brand-gold/50 to-transparent" />
-              <div className="relative">
-                <div className="flex items-start gap-2.5">
-                  <div className="w-9 h-9 rounded-lg bg-brand-gold text-brand-navy flex items-center justify-center flex-shrink-0">
-                    <Send className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[9px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-0.5">Premium</p>
-                    <h3 className="text-sm font-bold text-white tracking-tight">Andrel Concierge</h3>
-                    <p className="text-[11px] text-white/65 mt-1 leading-relaxed">Need a warm introduction to someone specific? Andrel curates and facilitates the connection.</p>
-                  </div>
+            {/* LIVE OPPORTUNITIES — functional; only when present */}
+            {oppCount > 0 && (
+              <section className="bg-white border border-slate-200/70 rounded-2xl p-5">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h3 className="text-sm font-semibold text-brand-navy tracking-tight">Opportunities for you</h3>
+                  <Pill variant="gold">{oppCount}</Pill>
                 </div>
-                <div className="mt-4 border-t border-white/10 pt-3.5">
-                  <ConciergeLauncher
-                    canUseConcierge={canUseConcierge}
-                    activeStatus={activeConciergeStatus}
-                    variant="primary"
-                  />
-                </div>
-              </div>
-            </section>
-
-            {/* OPPORTUNITIES PANEL */}
-            <section className="relative overflow-hidden bg-white border border-slate-100 rounded-2xl p-6 shadow-md">
-              <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-brand-gold/30 to-transparent" />
-              <div className="flex items-start justify-between gap-3 mb-4">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1">Network signals</p>
-                  <h3 className="text-base font-bold text-brand-navy tracking-tight">Opportunities for you</h3>
-                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Hiring + business signals from across the network.</p>
-                </div>
-                {oppCount > 0 && <Pill variant="gold">{oppCount}</Pill>}
-              </div>
-              {oppCount > 0 ? (
-                <div className="space-y-2.5">
+                <div className="space-y-0.5">
                   {(oppCandidateRows as any[]).map((c: any) => {
                     const opp = c.opportunities
                     const creator = opp?.profiles
@@ -954,11 +906,11 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                       <Link
                         key={c.id}
                         href={`/dashboard/opportunities`}
-                        className="block rounded-xl border border-slate-200 hover:border-brand-navy hover:bg-brand-cream/30 px-3.5 py-3 transition-colors"
+                        className="block rounded-lg -mx-1 px-3 py-2.5 hover:bg-slate-50 transition-colors"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-brand-navy truncate">{opp?.title || 'Untitled'}</p>
+                            <p className="text-sm font-medium text-brand-navy truncate">{opp?.title || 'Untitled'}</p>
                             {(() => { const line = [creator?.full_name, professionalIdentityLine(creator)].filter(Boolean).join(' · '); return line ? (
                               <p className="text-xs text-slate-500 truncate mt-0.5">{line}</p>
                             ) : null })()}
@@ -970,72 +922,52 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                       </Link>
                     )
                   })}
-                  <Link href="/dashboard/opportunities" className="block text-center text-xs font-semibold text-brand-navy hover:text-brand-gold pt-2 transition-colors">
-                    See all opportunities &rarr;
-                  </Link>
                 </div>
-              ) : (
-                <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-brand-cream/40 via-white to-white border border-brand-gold/15 px-4 py-8 text-center">
-                  {/* Concentric gold ring decoration */}
-                  <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full border border-brand-gold/15 pointer-events-none" aria-hidden="true" />
-                  <div className="absolute -top-6 -right-6 w-16 h-16 rounded-full border border-brand-gold/20 pointer-events-none" aria-hidden="true" />
-                  <div className="relative">
-                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-brand-navy text-brand-gold border border-brand-gold/30 mb-4 shadow-md">
-                      <Zap className="w-7 h-7" />
-                    </div>
-                    <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold mb-1.5">Concierge</p>
-                    <p className="text-sm font-bold text-brand-navy tracking-tight">Opportunity Concierge</p>
-                    <p className="text-xs text-slate-500 mt-2 max-w-xs mx-auto leading-relaxed">
-                      Tell us what you&rsquo;re looking for and we&rsquo;ll help surface opportunities through the Andrel network. {canCreateOpportunity
-                        ? 'You can also signal a need directly to source the right people.'
-                        : 'Upgrade to Professional to signal your own opportunities.'}
-                    </p>
-                    <div className="mt-5">
-                      {canCreateOpportunity ? (
-                        <Link
-                          href="/dashboard/opportunities/new"
-                          className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-lg bg-brand-navy text-white hover:bg-brand-navy/90 transition-colors shadow-md"
-                        >
-                          Submit an opportunity
-                          <ArrowRight className="w-3 h-3" />
-                        </Link>
-                      ) : (
-                        <Link
-                          href="/dashboard/billing"
-                          className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-lg bg-white border border-brand-navy text-brand-navy hover:bg-brand-navy hover:text-white transition-colors shadow-sm"
-                        >
-                          Upgrade to signal a need
-                          <ArrowRight className="w-3 h-3" />
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </section>
+                <Link href="/dashboard/opportunities" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-brand-navy hover:text-brand-gold transition-colors">
+                  See all opportunities <ArrowRight className="w-3 h-3" />
+                </Link>
+              </section>
+            )}
 
-            {/* HELP SHAPE ANDREL — member nomination card (reuses Opportunities panel card pattern) */}
-            <section className="relative overflow-hidden bg-white border border-slate-100 rounded-2xl p-6 shadow-md">
-              <div className="absolute top-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-brand-gold/30 to-transparent" />
-              <p className="text-[10px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1">Trusted network</p>
-              <h3 className="text-base font-bold text-brand-navy tracking-tight">Help Shape Andrel</h3>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                Andrel grows through trusted relationships. Nominate leaders you believe would add value to the community.
-              </p>
-              <div className="mt-4">
+            {/* CONCIERGE — one card, three supporting actions (was three separate cards) */}
+            <section className="bg-white border border-slate-200/70 rounded-2xl p-5">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1">Concierge</p>
+              <h3 className="text-base font-bold text-brand-navy tracking-tight">Ask Andrel</h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">Andrel can personally facilitate the right connection, opportunity, or nomination for you.</p>
+              <div className="mt-4 space-y-2">
+                <ConciergeLauncher
+                  canUseConcierge={canUseConcierge}
+                  activeStatus={activeConciergeStatus}
+                  variant="row"
+                />
+                <Link
+                  href={canCreateOpportunity ? '/dashboard/opportunities/new' : '/dashboard/billing'}
+                  className="flex w-full items-start gap-3 rounded-lg border border-slate-200 hover:border-brand-navy hover:bg-slate-50 px-4 py-3 transition-colors text-left group"
+                >
+                  <Zap className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-brand-navy">Signal an opportunity</p>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{canCreateOpportunity
+                      ? 'Tell us what you’re looking for and we’ll source the right people.'
+                      : 'Upgrade to Professional to signal your own opportunities.'}</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 mt-0.5 group-hover:text-brand-navy transition-colors" />
+                </Link>
                 <Link
                   href="/dashboard/referrals"
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-lg bg-brand-navy text-white hover:bg-brand-navy/90 transition-colors shadow-md"
+                  className="flex w-full items-start gap-3 rounded-lg border border-slate-200 hover:border-brand-navy hover:bg-slate-50 px-4 py-3 transition-colors text-left group"
                 >
-                  Nominate Someone
-                  <ArrowRight className="w-3 h-3" />
+                  <Send className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-brand-navy">Nominate someone</p>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">Help shape Andrel — nominate leaders who would add value.</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 mt-0.5 group-hover:text-brand-navy transition-colors" />
                 </Link>
               </div>
             </section>
 
-            {/* Credits are now rendered exclusively in the shared sidebar membership card; the
-                meeting_credits.balance value lives in `const balance` above via the same query, but
-                is no longer rendered here to avoid duplicate display. */}
+            {/* Credits are rendered in the shared sidebar membership card (unchanged). */}
 
           </aside>
 
