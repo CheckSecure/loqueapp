@@ -75,11 +75,15 @@ export default async function CompanyPage({ params }: { params: { slug: string }
   // duplicate/concurrent provider calls; admin_edited rows are never touched. All
   // writes no-op safely if the companies table isn't applied yet.
   if (memberName) {
-    if (isEnrichmentEnabled()) {
+    const enrichEnabled = isEnrichmentEnabled()
+    // TEMP diagnostics (remove once enrichment is confirmed live).
+    console.log(JSON.stringify({ event: 'company_enrich_decision', slug, enrichmentEnabled: enrichEnabled, hasRow: !!company, status: company?.enrichment_status ?? null }))
+    if (enrichEnabled) {
       const needsWork = !company || (!company.admin_edited && company.enrichment_status !== 'enriched')
       if (needsWork) {
         if (!company) await ensureCompanyRecord(admin, slug, memberName)
-        await enrichCompany(admin, slug, company?.name || memberName)
+        const result = await enrichCompany(admin, slug, company?.name || memberName)
+        console.log(JSON.stringify({ event: 'company_enrich_result', slug, status: result.status }))
         const reread = await admin.from('companies').select(COMPANY_COLS).eq('slug', slug).maybeSingle()
         if (reread.data) company = reread.data
       }
