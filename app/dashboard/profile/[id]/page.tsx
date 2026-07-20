@@ -4,9 +4,10 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles, Calendar } from 'lucide-react'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
-import { professionalIdentity, displayTitle } from '@/lib/professionalIdentity'
+import { professionalIdentity } from '@/lib/professionalIdentity'
 import { isLinkableCompany } from '@/lib/company/slug'
 import CompanyLink from '@/components/CompanyLink'
+import IdentityLine from '@/components/IdentityLine'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 
 // Humanizes raw networking-goal values into calmer, reader-facing phrasing.
@@ -207,36 +208,18 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
             {(() => {
               const identity = professionalIdentity(profile)
-              // Real, linkable company → render the COMPANY NAME itself as a clear
-              // link (navy, hover underline). Only the name is clickable, not the
-              // whole line, so the affordance is unambiguous.
-              if (isLinkableCompany(profile.company)) {
-                const title = displayTitle(profile)
-                const companyName = (profile.company || '').trim()
-                return (
-                  <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
-                    <Briefcase className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                    <span className="min-w-0">
-                      {title ? `${title} at ` : ''}
-                      <CompanyLink company={profile.company} className="font-semibold text-brand-navy hover:text-brand-gold hover:underline underline-offset-2 transition-colors">
-                        {companyName}
-                      </CompanyLink>
-                    </span>
-                  </p>
-                )
-              }
-              // Placeholder / no-company situations have no company page.
-              return identity.primary ? (
+              if (!identity.primary && !isLinkableCompany(profile.company)) return null
+              return (
                 <>
                   <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
                     <Briefcase className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                    {identity.primary}
+                    <span className="min-w-0"><IdentityLine profile={profile} /></span>
                   </p>
-                  {identity.secondary && (
+                  {!isLinkableCompany(profile.company) && identity.secondary && (
                     <p className="text-xs text-slate-500 mt-0.5 ml-5">{identity.secondary}</p>
                   )}
                 </>
-              ) : null
+              )
             })()}
 
             {profile.location && (

@@ -2,10 +2,10 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
-import { MapPin, Globe, Building2 } from 'lucide-react'
+import { ArrowLeft, MapPin, Globe, Building2, Users } from 'lucide-react'
 import CompanyLogo from '@/components/CompanyLogo'
 import { companySlug, isLinkableCompany, titleCaseSlug } from '@/lib/company/slug'
-import { professionalIdentity, professionalIdentityLine } from '@/lib/professionalIdentity'
+import { professionalIdentityLine, professionalIdentity } from '@/lib/professionalIdentity'
 
 export const metadata = { title: 'Company | Andrel' }
 
@@ -17,20 +17,17 @@ export default async function CompanyPage({ params }: { params: { slug: string }
   const slug = (params.slug || '').toLowerCase()
   if (!slug) notFound()
 
-  // Auth via the user client; data via admin client with strict in-code
-  // visibility (this page must NEVER become a directory).
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   const admin = createAdminClient()
 
-  // Metadata (deploy-safe: if the companies table isn't applied yet, this
-  // resolves to null and the page still renders name + members), plus the
-  // viewer's matches and blocks — all in parallel.
+  // Metadata (deploy-safe: null if the companies table/row isn't present yet)
+  // + the viewer's matches and blocks, in parallel.
   const [companyRes, matchRes, blockRes] = await Promise.all([
     admin.from('companies')
-      .select('slug, name, industry, headquarters, website, size, description, logo_url')
+      .select('slug, name, industry, headquarters, website, company_size, description, logo_url')
       .eq('slug', slug).maybeSingle(),
     admin.from('matches')
       .select('user_a_id, user_b_id, status')
@@ -41,9 +38,8 @@ export default async function CompanyPage({ params }: { params: { slug: string }
   ])
   const company = companyRes.data ?? null
 
-  // Visible people = the current user + their non-blocked connections. This set
-  // is already fully visible on the Network page, so filtering it by company
-  // exposes nobody new.
+  // Visible people = current user + non-blocked connections. Already fully
+  // visible on the Network page; filtering by company exposes nobody new.
   const blocked = new Set<string>()
   for (const b of blockRes.data || []) {
     blocked.add(b.user_id === user.id ? b.blocked_user_id : b.user_id)
@@ -59,52 +55,62 @@ export default async function CompanyPage({ params }: { params: { slug: string }
     .select('id, full_name, company, title, exact_job_title, role_type, avatar_url, location, account_status')
     .in('id', visibleIds)
 
-  // Members at THIS company = visible profiles whose normalized company matches
-  // the slug (placeholders excluded). Self sorted first, then alphabetical.
   const members = (visibleProfiles || [])
-    .filter((p: any) => isLinkableCompany(p.company) && companySlug(p.company) === slug)
+    .filter((p: any) => isLinkableCompany(p.company) && companySlug(p.company) === slug && p.account_status !== 'deactivated')
     .sort((a: any, b: any) => {
       if (a.id === user.id) return -1
       if (b.id === user.id) return 1
       return (a.full_name || '').localeCompare(b.full_name || '')
     })
 
-  // Display name: curated row → a real member's raw company string → titled slug.
   const displayName =
     company?.name ||
     members.map((m: any) => (m.company || '').trim()).find(Boolean) ||
     titleCaseSlug(slug)
 
-  const metaBits = [company?.industry, company?.headquarters, company?.size].filter(Boolean) as string[]
+  // Header metadata rows — only present fields render (never "Unknown"/"None").
+  const rows: { icon: any; value: string }[] = []
+  if (company?.industry) rows.push({ icon: Building2, value: company.industry })
+  if (company?.headquarters) rows.push({ icon: MapPin, value: company.headquarters })
+  if (company?.company_size) rows.push({ icon: Users, value: `${company.company_size} employees` })
 
   return (
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
       <div className="max-w-2xl mx-auto">
-        <Link href="/dashboard/network" className="text-xs text-slate-400 hover:text-brand-navy transition-colors">&larr; Back</Link>
+        <Link href="/dashboard/network" className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-brand-navy transition-colors">
+          <ArrowLeft className="w-3.5 h-3.5" /> Back
+        </Link>
 
-        {/* Header — context, not a hero */}
-        <div className="mt-4 flex items-start gap-4">
-          <CompanyLogo url={company?.logo_url} name={displayName} size={56} />
+        {/* Identity header */}
+        <div className="mt-5 flex items-start gap-4">
+          <CompanyLogo url={company?.logo_url} name={displayName} size={64} />
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-bold text-brand-navy tracking-tight truncate">{displayName}</h1>
-            {metaBits.length > 0 && (
-              <p className="text-sm text-slate-500 mt-1">{metaBits.join(' · ')}</p>
-            )}
-            {company?.website && (
-              <a
-                href={toHref(company.website)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium text-brand-navy hover:text-brand-gold transition-colors"
-              >
-                <Globe className="w-3.5 h-3.5" />
-                {company.website.replace(/^https?:\/\//i, '')}
-              </a>
+            <h1 className="text-2xl font-bold text-brand-navy tracking-tight break-words">{displayName}</h1>
+            {(rows.length > 0 || company?.website) && (
+              <div className="mt-2 space-y-1">
+                {rows.map((r, i) => (
+                  <p key={i} className="flex items-center gap-1.5 text-sm text-slate-600">
+                    <r.icon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    {r.value}
+                  </p>
+                ))}
+                {company?.website && (
+                  <a
+                    href={toHref(company.website)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-navy hover:text-brand-gold hover:underline underline-offset-2 transition-colors"
+                  >
+                    <Globe className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    {company.website.replace(/^https?:\/\//i, '').replace(/\/$/, '')}
+                  </a>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-        {/* About — only if a curated description exists */}
+        {/* About — only if a real, curated description exists (never fabricated) */}
         {company?.description && (
           <section className="mt-8">
             <h2 className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-2">About</h2>
@@ -112,23 +118,21 @@ export default async function CompanyPage({ params }: { params: { slug: string }
           </section>
         )}
 
-        {/* Members at this company — ONLY the viewer's visible connections + self */}
+        {/* People you know here — ONLY the viewer's visible connections + self */}
         <section className="mt-8">
           <h2 className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-3">
-            In your network here{members.length > 0 && <span className="ml-1.5 font-medium text-slate-400 tabular-nums">({members.length})</span>}
+            People you know here
+            {members.length > 0 && <span className="ml-1.5 font-medium text-slate-400 tabular-nums">({members.length})</span>}
           </h2>
 
           {members.length === 0 ? (
             <div className="rounded-2xl border border-slate-200/70 bg-white p-6">
-              <div className="flex items-start gap-3">
-                <Building2 className="w-4 h-4 text-slate-300 mt-0.5 flex-shrink-0" />
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  No one in your Andrel network is at {displayName} yet.
-                </p>
-              </div>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                You don&rsquo;t currently know anyone at {displayName} through Andrel.
+              </p>
             </div>
           ) : (
-            <div className="rounded-2xl border border-slate-200/70 bg-white divide-y divide-slate-100">
+            <div className="rounded-2xl border border-slate-200/70 bg-white divide-y divide-slate-100 overflow-hidden">
               {members.map((m: any) => {
                 const isSelf = m.id === user.id
                 const line = professionalIdentityLine({ role_type: m.role_type, company: m.company }) || professionalIdentity(m).primary
@@ -137,7 +141,7 @@ export default async function CompanyPage({ params }: { params: { slug: string }
                   <Link
                     key={m.id}
                     href={isSelf ? '/dashboard/profile' : `/dashboard/profile/${m.id}`}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors first:rounded-t-2xl last:rounded-b-2xl"
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
                   >
                     {m.avatar_url ? (
                       // eslint-disable-next-line @next/next/no-img-element

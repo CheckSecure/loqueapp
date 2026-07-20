@@ -9,6 +9,7 @@ import ConnectionDetailModal from '@/components/network/ConnectionDetailModal'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 import { professionalIdentity } from '@/lib/professionalIdentity'
+import IdentityLine from '@/components/IdentityLine'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -124,7 +125,7 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
               <div className="mt-0.5">
                 <div className="flex items-center gap-1 text-xs text-slate-500">
                   <Briefcase className="w-3 h-3 flex-shrink-0" />
-                  <span className="truncate">{identity.primary}</span>
+                  <span className="truncate"><IdentityLine profile={profile} guardCardClick /></span>
                 </div>
                 {identity.secondary && (
                   <p className="ml-4 text-[11px] text-slate-400 truncate">{identity.secondary}</p>

@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { Send, Search, MessageSquare, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { professionalIdentityLine } from '@/lib/professionalIdentity'
+import IdentityLine from '@/components/IdentityLine'
 import { sendMessage } from '@/app/actions'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -234,7 +235,7 @@ export default function MessagesClient({
             <div>
               <p className="text-sm font-semibold text-slate-900">{selected.other?.full_name || 'Unknown'}</p>
               {(() => { const line = professionalIdentityLine({ role_type: selected.other?.role, company: selected.other?.company }); return line ? (
-                <p className="text-xs text-slate-400">{line}</p>
+                <p className="text-xs text-slate-400"><IdentityLine profile={{ role_type: selected.other?.role, company: selected.other?.company }} /></p>
               ) : null })()}
             </div>
           </div>

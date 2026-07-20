@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS companies (
   industry     text,
   headquarters text,
   website      text,
-  size         text,
+  company_size text,
   description  text,
   logo_url     text,
   created_at   timestamptz NOT NULL DEFAULT now(),
