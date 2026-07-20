@@ -94,7 +94,7 @@ export function isPlaceholderCompany(company: string | null | undefined): boolea
   return s !== null && s !== 'employed'
 }
 
-function displayTitle(p: ProfessionalIdentityInput): string {
+export function displayTitle(p: ProfessionalIdentityInput): string {
   return (p.exact_job_title || p.title || p.role_type || '').trim()
 }
 

@@ -4,7 +4,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles, Calendar } from 'lucide-react'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
-import { professionalIdentity } from '@/lib/professionalIdentity'
+import { professionalIdentity, displayTitle } from '@/lib/professionalIdentity'
 import { isLinkableCompany } from '@/lib/company/slug'
 import CompanyLink from '@/components/CompanyLink'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
@@ -207,23 +207,36 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
             {(() => {
               const identity = professionalIdentity(profile)
-              if (!identity.primary) return null
-              const primaryLine = (
-                <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
-                  <Briefcase className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                  {identity.primary}
-                </p>
-              )
-              return (
+              // Real, linkable company → render the COMPANY NAME itself as a clear
+              // link (navy, hover underline). Only the name is clickable, not the
+              // whole line, so the affordance is unambiguous.
+              if (isLinkableCompany(profile.company)) {
+                const title = displayTitle(profile)
+                const companyName = (profile.company || '').trim()
+                return (
+                  <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    <span className="min-w-0">
+                      {title ? `${title} at ` : ''}
+                      <CompanyLink company={profile.company} className="font-semibold text-brand-navy hover:text-brand-gold hover:underline underline-offset-2 transition-colors">
+                        {companyName}
+                      </CompanyLink>
+                    </span>
+                  </p>
+                )
+              }
+              // Placeholder / no-company situations have no company page.
+              return identity.primary ? (
                 <>
-                  {isLinkableCompany(profile.company)
-                    ? <CompanyLink company={profile.company} className="block hover:text-brand-navy transition-colors">{primaryLine}</CompanyLink>
-                    : primaryLine}
+                  <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    {identity.primary}
+                  </p>
                   {identity.secondary && (
                     <p className="text-xs text-slate-500 mt-0.5 ml-5">{identity.secondary}</p>
                   )}
                 </>
-              )
+              ) : null
             })()}
 
             {profile.location && (
@@ -385,7 +398,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                       <div>
                         <p className="text-sm font-semibold text-brand-navy">{role.title}</p>
                         <p className="text-xs text-slate-500">
-                          <CompanyLink company={role.company} className="hover:text-brand-navy transition-colors">{role.company}</CompanyLink>
+                          <CompanyLink company={role.company} className="text-brand-navy/80 hover:text-brand-gold hover:underline underline-offset-2 transition-colors">{role.company}</CompanyLink>
                         </p>
                       </div>
                       {(role.start_date || role.end_date) && (
