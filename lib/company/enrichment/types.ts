@@ -31,6 +31,8 @@ export type DiscoveryResult = {
   domain: string | null
   /** Which provider produced the answer (for logging / observability). */
   via: string
+  /** Canonical company name when resolved from the registry (authoritative). */
+  canonicalName?: string | null
 }
 
 /**
@@ -45,15 +47,29 @@ export interface WebsiteDiscoveryProvider {
 
 /** Terminal outcome of an enrichment run (mirrors the persisted enrichment_status). */
 export type EnrichStatus =
-  | 'enriched'    // found a site and extracted at least one real field
-  | 'not_found'   // no confident website / nothing extractable
+  | 'enriched'    // found a site and extracted real metadata
+  | 'partial'     // canonical identity resolved (name+website+fallback) but homepage metadata unavailable (403/timeout/blocked)
+  | 'not_found'   // no confident website / nothing extractable (unknown company)
   | 'failed'      // a fault occurred (network/parse) — eligible for retry
   | 'skipped'     // not eligible (already enriched / admin_edited / claimed elsewhere)
   | 'error'       // could not even claim the row (e.g. table absent)
+
+/** Per-stage outcome, surfaced by the admin Repair action. */
+export type EnrichStages = {
+  /** How the canonical identity/website was resolved. */
+  identity: 'registry' | 'search' | 'unresolved'
+  /** Whether an authoritative/valid website is now set. */
+  website: boolean
+  /** Where the persisted description came from. */
+  description: 'scraped' | 'fallback' | 'existing' | 'none'
+  /** Where the persisted logo came from. */
+  logo: 'scraped' | 'fallback' | 'existing' | 'none'
+}
 
 export type EnrichResult = {
   status: EnrichStatus
   website?: string | null
   logoStored?: boolean
   fields?: Partial<ExtractedMetadata>
+  stages?: EnrichStages
 }

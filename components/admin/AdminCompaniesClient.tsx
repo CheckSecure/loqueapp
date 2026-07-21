@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
-import { Search, ExternalLink, Loader2, Check } from 'lucide-react'
+import { Search, ExternalLink, Loader2, Check, RefreshCw } from 'lucide-react'
 
 type CompanyRow = {
   slug: string
@@ -36,6 +36,14 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [repairing, setRepairing] = useState(false)
+  const [repairMsg, setRepairMsg] = useState<string | null>(null)
+  const [repairStages, setRepairStages] = useState<Record<string, any> | null>(null)
+  // Fallback metadata (company_metadata) — used only when scraping is blocked.
+  const [fb, setFb] = useState<Record<string, string>>({})
+  const [fbSaving, setFbSaving] = useState(false)
+  const [fbSaved, setFbSaved] = useState(false)
+  const [fbError, setFbError] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -43,9 +51,9 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
     return companies.filter(c => c.name.toLowerCase().includes(q) || c.slug.includes(q))
   }, [companies, query])
 
-  function open(c: CompanyRow) {
+  async function open(c: CompanyRow) {
     setEditing(c)
-    setSaved(false); setError(null)
+    setSaved(false); setError(null); setRepairMsg(null); setRepairStages(null)
     setForm({
       name: c.meta?.name || c.name || '',
       logo_url: c.meta?.logo_url || '',
@@ -55,6 +63,32 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
       company_size: c.meta?.company_size || '',
       description: c.meta?.description || '',
     })
+    // Load the curated fallback layer for this company.
+    setFb({}); setFbSaved(false); setFbError(null)
+    try {
+      const res = await fetch(`/api/admin/companies/metadata?slug=${encodeURIComponent(c.slug)}`)
+      const data = await res.json()
+      const m = data?.metadata || {}
+      setFb({ description: m.description || '', industry: m.industry || '', headquarters: m.headquarters || '', logo_url: m.logo_url || '' })
+    } catch { /* non-fatal */ }
+  }
+
+  async function saveFallback() {
+    if (!editing) return
+    setFbSaving(true); setFbError(null); setFbSaved(false)
+    try {
+      const res = await fetch('/api/admin/companies/metadata', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: editing.slug, ...fb }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) { setFbError(data.error || 'Save failed'); return }
+      setFbSaved(true)
+    } catch {
+      setFbError('Network error')
+    } finally {
+      setFbSaving(false)
+    }
   }
 
   async function save() {
@@ -72,6 +106,34 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
       setError('Network error')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Repair = re-run enrichment for this one company (registry domain-first).
+  // admin-edited values are preserved (the pipeline never overwrites them).
+  async function repair() {
+    if (!editing) return
+    setRepairing(true); setRepairMsg(null); setError(null); setRepairStages(null)
+    try {
+      const res = await fetch('/api/company/enrich', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: editing.slug, refresh: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(data.error || 'Repair failed'); return }
+      setRepairStages(data.stages || null)
+      const s = data.status
+      setRepairMsg(
+        s === 'enriched' ? 'Re-enriched from the authoritative homepage.'
+        : s === 'partial' ? 'Identity set (homepage blocked — description/logo unavailable).'
+        : s === 'not_found' ? 'No canonical domain — company is not in the registry.'
+        : s === 'skipped' ? 'Skipped — admin-edited values are preserved.'
+        : `Done (${s ?? 'unknown'}).`,
+      )
+    } catch {
+      setError('Network error')
+    } finally {
+      setRepairing(false)
     }
   }
 
@@ -151,6 +213,7 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
               </div>
             ))}
             {error && <p className="text-xs text-red-600">{error}</p>}
+            {repairMsg && <p className="text-xs text-emerald-700">{repairMsg}</p>}
             <div className="flex items-center gap-3 pt-1">
               <button
                 onClick={save}
@@ -159,6 +222,50 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
               >
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {saved ? <><Check className="w-4 h-4" /> Saved</> : 'Save'}
+              </button>
+              <button
+                onClick={repair}
+                disabled={repairing}
+                title="Re-run enrichment from the authoritative homepage (preserves admin edits)"
+                className="inline-flex items-center gap-1.5 px-4 py-2 border border-brand-navy/25 text-brand-navy text-sm font-semibold rounded-lg hover:bg-brand-cream/40 disabled:opacity-60"
+              >
+                {repairing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                Repair
+              </button>
+            </div>
+
+            {repairStages && (
+              <div className="grid grid-cols-2 gap-1.5 text-[11px] pt-1">
+                {([['Identity', repairStages.identity], ['Website', repairStages.website ? 'set' : 'none'], ['Description', repairStages.description], ['Logo', repairStages.logo]] as [string, any][]).map(([label, val]) => {
+                  const ok = val && val !== 'none' && val !== 'unresolved' && val !== false
+                  return (
+                    <div key={label} className={`flex items-center justify-between rounded-md px-2 py-1 border ${ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                      <span className="font-medium">{label}</span>
+                      <span>{String(val)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Fallback metadata (company_metadata) */}
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <h4 className="text-xs font-bold text-brand-navy">Fallback metadata</h4>
+              <p className="text-[11px] text-slate-400 mb-2">Used only when scraping is blocked and no value exists. Scraped and admin-override values take precedence.</p>
+              {([{ key: 'description', label: 'Description', textarea: true }, { key: 'industry', label: 'Industry' }, { key: 'headquarters', label: 'Headquarters' }, { key: 'logo_url', label: 'Logo URL' }] as { key: string; label: string; textarea?: boolean }[]).map(f => (
+                <div key={f.key} className="mb-2">
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">{f.label}</label>
+                  {f.textarea ? (
+                    <textarea value={fb[f.key] || ''} onChange={e => { setFb({ ...fb, [f.key]: e.target.value }); setFbSaved(false) }} rows={2} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-brand-navy resize-none" />
+                  ) : (
+                    <input value={fb[f.key] || ''} onChange={e => { setFb({ ...fb, [f.key]: e.target.value }); setFbSaved(false) }} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-brand-navy" />
+                  )}
+                </div>
+              ))}
+              {fbError && <p className="text-xs text-red-600">{fbError}</p>}
+              <button onClick={saveFallback} disabled={fbSaving} className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-brand-navy/25 text-brand-navy text-xs font-semibold rounded-lg hover:bg-brand-cream/40 disabled:opacity-60">
+                {fbSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {fbSaved ? <><Check className="w-3.5 h-3.5" /> Saved</> : 'Save fallback'}
               </button>
             </div>
           </div>

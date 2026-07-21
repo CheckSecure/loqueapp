@@ -4,7 +4,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, MapPin, Globe, Building2, Users } from 'lucide-react'
 import CompanyLogo from '@/components/CompanyLogo'
-import { companySlug, isLinkableCompany, titleCaseSlug } from '@/lib/company/slug'
+import { companySlug, isLinkableCompany, titleCaseSlug, resolveLegacySlug } from '@/lib/company/slug'
 import { professionalIdentityLine, professionalIdentity } from '@/lib/professionalIdentity'
 
 export const metadata = { title: 'Company | Andrel' }
@@ -16,6 +16,12 @@ function toHref(website: string): string {
 export default async function CompanyPage({ params }: { params: { slug: string } }) {
   const slug = (params.slug || '').toLowerCase()
   if (!slug) notFound()
+
+  // Backwards-compat: bookmarked/cached old slugs (e.g. /company/bd,
+  // /company/dentsu-merkle, /company/baker-botts-l-l-p) redirect to the canonical
+  // page rather than 404ing. Registry-derived; extends automatically.
+  const legacyTarget = resolveLegacySlug(slug)
+  if (legacyTarget && legacyTarget !== slug) redirect(`/company/${legacyTarget}`)
 
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -37,6 +43,14 @@ export default async function CompanyPage({ params }: { params: { slug: string }
       .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`),
   ])
   const company: any = companyRes.data ?? null
+
+  // Backwards-compat (general): if this row's stored name now canonicalizes to a
+  // different slug (an orphaned pre-migration row, registry or normalization
+  // change), redirect to the canonical page.
+  if (company?.name) {
+    const canonicalSlug = companySlug(company.name)
+    if (canonicalSlug && canonicalSlug !== slug) redirect(`/company/${canonicalSlug}`)
+  }
 
   // Visible people = current user + non-blocked connections. Already fully
   // visible on the Network page; filtering by company exposes nobody new.

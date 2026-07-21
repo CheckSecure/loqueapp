@@ -50,5 +50,10 @@ export async function POST(req: Request) {
   if (!name) return NextResponse.json({ status: 'skipped', reason: 'unknown_company' }, { status: 200 })
 
   const result = await runEnrichment(admin, slug, name, { force: refresh })
-  return NextResponse.json({ status: result.status, website: result.website ?? null, logoStored: result.logoStored ?? false })
+  return NextResponse.json({
+    status: result.status,
+    website: result.website ?? null,
+    logoStored: result.logoStored ?? false,
+    stages: result.stages ?? null,
+  })
 }
