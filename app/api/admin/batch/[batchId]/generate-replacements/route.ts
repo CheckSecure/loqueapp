@@ -5,6 +5,7 @@ import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
+import { applyMemberEligibility, filterEligible, assertAllEligible } from '@/lib/matching/eligibility'
 
 export const dynamic = 'force-dynamic'
 
@@ -221,16 +222,16 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
       r.needed = Math.max(0, target - group.generated)
     }
 
-    const candidatePoolResult = await admin
-      .from('profiles')
-      .select('*')
-      .eq('account_status', 'active')
-      .eq('profile_complete', true)
-      .not('is_test_account', 'is', true)
+    // Canonical eligibility (previously missing the admin/internal exclusion).
+    const candidatePoolResult = await applyMemberEligibility(
+      admin.from('profiles').select('*')
+    )
     if (candidatePoolResult.error) {
       return NextResponse.json({ error: candidatePoolResult.error.message }, { status: 500 })
     }
+    candidatePoolResult.data = filterEligible(candidatePoolResult.data as any[]) // in-memory defense
     const candidatePool = candidatePoolResult.data || []
+    assertAllEligible(candidatePool, 'generate-replacements') // fail-fast before scoring
 
     const cooldownCutoff = new Date(Date.now() - DROPPED_COOLDOWN_DAYS * 24 * 60 * 60 * 1000).toISOString()
 

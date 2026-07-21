@@ -6,17 +6,15 @@ import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matc
 import { isSameCompany } from '@/lib/matching/same-company'
 import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
+import { buildScoringContext, scoreMatch as scoreMatchV2, exposureAdjustedScore, EXPOSURE_CONFIG, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
+import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 
 export const dynamic = 'force-dynamic'
 
-// MINIMUM RELEVANCE THRESHOLD - pairs below this are not considered
-const MIN_RELEVANCE_SCORE = 40
-
-// MUTUAL MATCHING THRESHOLD - only top X% of pairs get bidirectional
-const MUTUAL_MATCH_PERCENTILE = 0.4 // Top 40% of pairs
-
-// DIVERSITY LIMITS - max % of batch from same role_type
-const MAX_SAME_ROLE_PERCENT = 0.4
+// All batch tuning lives in BATCH_CONFIG (lib/matching/batch-scoring.ts).
+const MIN_RELEVANCE_SCORE = BATCH_CONFIG.minRelevanceScore
+const MAX_SAME_ROLE_PERCENT = BATCH_CONFIG.maxSameRolePercent
+const MUTUAL_MATCH_PERCENTILE = 0.4 // reported in qualityMetrics only
 
 function isCompatiblePair(userA: any, userB: any): boolean {
   // 1. Geographic compatibility
@@ -60,137 +58,10 @@ function isCompatiblePair(userA: any, userB: any): boolean {
   return true
 }
 
-function scoreMatch(recipient: any, candidate: any): number {
-  let score = 0
-    
-    // BOOST SYSTEM: Add boost_score bonus (0-100 range)
-    const boostBonus = (candidate.boost_score || 0) * 2  // Each boost point = 2 score points
-    score += boostBonus
-    
-    // PRIORITY: Priority users get additional 50 points
-    if (candidate.is_priority) {
-      score += 50
-    }
-
-  // 1. Intro preferences match
-  const recipientPrefs: string[] = Array.isArray(recipient.intro_preferences) ? recipient.intro_preferences : []
-  const candidateRole: string = candidate.role_type || ''
-  if (recipientPrefs.some((p: string) => p.toLowerCase() === candidateRole.toLowerCase())) {
-    score += 30
-  }
-
-  // 2. Reverse match
-  const candidatePrefs: string[] = Array.isArray(candidate.intro_preferences) ? candidate.intro_preferences : []
-  const recipientRole: string = recipient.role_type || ''
-  if (candidatePrefs.some((p: string) => p.toLowerCase() === recipientRole.toLowerCase())) {
-    score += 20
-  }
-
-  // 3. Purpose alignment
-  const recipientPurposes: string[] = Array.isArray(recipient.purposes) ? recipient.purposes : []
-  const candidatePurposes: string[] = Array.isArray(candidate.purposes) ? candidate.purposes : []
-  const purposeOverlap = recipientPurposes.filter((p: string) =>
-    candidatePurposes.some((cp: string) => cp.toLowerCase() === p.toLowerCase())
-  ).length
-  score += purposeOverlap * 12
-
-  const recipientExpertise = parseExpertise(recipient.expertise)
-  const candidateExpertise = parseExpertise(candidate.expertise)
-  const expertiseOverlap = recipientExpertise.filter((e: string) =>
-    candidateExpertise.some((ce: string) => ce.toLowerCase() === e.toLowerCase())
-  ).length
-  // Bonus for SOME overlap but not total overlap (complementary is better).
-  // Cap counted overlap at 5 so users with broad expertise lists do not dominate.
-  if (expertiseOverlap > 0 && expertiseOverlap < Math.min(recipientExpertise.length, candidateExpertise.length)) {
-    score += Math.min(5, expertiseOverlap) * 8
-  }
-
-  // 5. Geographic alignment bonus
-  const recipientScope = recipient.geographic_scope || 'us-wide'
-  const sameCity = recipient.city?.toLowerCase().trim() === candidate.city?.toLowerCase().trim()
-  const sameState = recipient.state?.toLowerCase().trim() === candidate.state?.toLowerCase().trim()
-  
-  if (recipientScope === 'local' && (sameCity || sameState)) {
-    score += 15 // Strong bonus for local matches when preferred
-  } else if (sameCity) {
-    score += 8 // Mild bonus for same city even if not required
-  } else if (sameState) {
-    score += 5 // Small bonus for same state
-  }
-
-  // 6. Meeting format alignment bonus
-  const recipientFormat = recipient.meeting_format_preference || 'both'
-  const candidateFormat = candidate.meeting_format_preference || 'both'
-  
-  if (recipientFormat === candidateFormat) {
-    score += 10 // Bonus for exact format match
-  } else if (recipientFormat === 'both' || candidateFormat === 'both') {
-    score += 5 // Small bonus if one is flexible
-  }
-
-  // 7. Seniority strategic pairing
-  const recipientSeniority = recipient.seniority?.toLowerCase()
-  const candidateSeniority = candidate.seniority?.toLowerCase()
-  
-  // Bonus for strategic seniority pairings
-  if (recipientSeniority === 'junior' && ['senior', 'executive', 'c-suite'].includes(candidateSeniority || '')) {
-    score += 12 // Junior benefits from senior
-  } else if (['senior', 'executive', 'c-suite'].includes(recipientSeniority || '') && candidateSeniority === 'junior') {
-    score += 8 // Senior can mentor junior
-  } else if (recipientSeniority === candidateSeniority && recipientSeniority) {
-    score += 5 // Peer connections also valuable
-  }
-
-  // 8. Interests overlap
-  const recipientInterests: string[] = recipient.interests || []
-  const candidateInterests: string[] = candidate.interests || []
-  const interestOverlap = recipientInterests.filter((i: string) =>
-    candidateInterests.some((ci: string) => ci.toLowerCase() === i.toLowerCase())
-  ).length
-  score += interestOverlap * 10
-
-  // 9. Mentorship compatibility
-  const rMentor = recipient.mentorship_role?.toLowerCase()
-  const cMentor = candidate.mentorship_role?.toLowerCase()
-  if ((rMentor === 'mentor' && cMentor === 'mentee') ||
-      (rMentor === 'mentee' && cMentor === 'mentor')) {
-    score += 25
-  }
-
-  // 10. Tier boost
-  const tierBoost: Record<string, number> = { executive: 15, professional: 8, free: 0 }
-  score += tierBoost[candidate.subscription_tier] ?? 0
-
-  // 11. Network scores
-  if (candidate.networkValueScore) {
-    score += Math.round((candidate.networkValueScore / 100) * 15)
-  }
-  if (candidate.responsivenessScore) {
-    score += Math.round((candidate.responsivenessScore / 100) * 5)
-  }
-
-
-  // 12. Verification status boost
-  const verificationBoost: Record<string, number> = {
-    high_confidence: 12,
-    verified: 15,
-    pending: 0,
-    flagged: -20  // Significant penalty for flagged users
-  }
-  score += verificationBoost[candidate.verification_status] ?? 0
-
-  // 13. Trust score weighting
-  if (candidate.trust_score) {
-    score += Math.round((candidate.trust_score / 100) * 10)
-  }
-  // Guarantee a finite, DB-storable integer (NaN/Infinity from an upstream
-  // sub-score would otherwise corrupt the insert).
-  return sanitizeMatchScore(score)
-}
 
 function getScoreBucket(score: number): 'high_score' | 'mid_score' | 'low_score' {
-  if (score >= 70) return 'high_score'
-  if (score >= 50) return 'mid_score'
+  if (score >= BATCH_CONFIG.bucketHighMin) return 'high_score'
+  if (score >= BATCH_CONFIG.bucketMidMin) return 'mid_score'
   return 'low_score'
 }
 
@@ -217,12 +88,7 @@ function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low'
 }
 
 function getTierDistribution(tier: string): { high: number, mid: number, total: number } {
-  const distributions: Record<string, { high: number, mid: number, total: number }> = {
-    free: { high: 1, mid: 2, total: 3 },
-    professional: { high: 3, mid: 2, total: 5 },
-    executive: { high: 5, mid: 3, total: 8 }
-  }
-  return distributions[tier] || distributions.free
+  return BATCH_CONFIG.tierDistribution[tier] || BATCH_CONFIG.tierDistribution.free
 }
   
 
@@ -247,17 +113,28 @@ export async function POST(req: NextRequest) {
 
     const adminClient = createAdminClient()
 
-    const { data: profiles, error: profilesError } = await adminClient
-      .from('profiles')
-      .select('id, full_name, email, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score, current_status, purposes, city, state, geographic_scope, meeting_format_preference, open_to_business_solutions, company')
-      .eq('profile_complete', true)
-      .eq('account_status', 'active')
-      .not('is_test_account', 'is', true)
-      .neq('email', 'bizdev91@gmail.com')
+    // Canonical eligibility at the source (test/admin/suspended/incomplete never
+    // fetched). ELIGIBILITY_COLUMNS are selected so the in-memory re-check below
+    // can enforce the same rule as defense-in-depth.
+    const { data: rawProfiles, error: profilesError } = await applyMemberEligibility(
+      adminClient
+        .from('profiles')
+        .select(`id, full_name, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score, current_status, purposes, city, state, geographic_scope, meeting_format_preference, open_to_business_solutions, company, boost_score, is_priority, ${ELIGIBILITY_COLUMNS}`)
+    )
+
+    // Defense-in-depth: an excluded account can never reach scoring, rarity/IDF,
+    // exposure balancing, or selection even if a query clause is ever dropped.
+    const profiles = filterEligible(rawProfiles as any[])
 
     if (profilesError || !profiles || profiles.length < 2) {
       return NextResponse.json({ error: 'Not enough profiles to match' }, { status: 400 })
     }
+
+    // v2 scoring context (rarity/IDF factors) computed from this cohort — see
+    // lib/matching/batch-scoring.ts. buildScoringContext fails fast if any
+    // excluded account slipped through. Exposure counts balance candidate spread.
+    const scoringCtx: ScoringContext = buildScoringContext(profiles, undefined, 'generate-batch')
+    const exposureCount: Record<string, number> = {}
 
     const { data: lastBatch } = await adminClient
       .from('introduction_batches')
@@ -274,17 +151,29 @@ export async function POST(req: NextRequest) {
     const sunday = new Date(monday)
     sunday.setDate(monday.getDate() + 6)
 
-    const { data: batch, error: batchError } = await adminClient
-      .from('introduction_batches')
-      .insert({
-        batch_number: nextBatchNumber,
-        week_start: monday.toISOString().split('T')[0],
-        week_end: sunday.toISOString().split('T')[0],
-        status: 'pending_review',
-        created_by: user.id,
-      })
-      .select()
-      .single()
+    // Stamp the batch with the recommendation-engine version + config snapshot for
+    // reproducibility (migration 018). Deploy-safe: if those columns aren't applied
+    // yet, retry the insert without them so batch generation never breaks.
+    const baseRow = {
+      batch_number: nextBatchNumber,
+      week_start: monday.toISOString().split('T')[0],
+      week_end: sunday.toISOString().split('T')[0],
+      status: 'pending_review',
+      created_by: user.id,
+    }
+    const versionRow = {
+      algorithm_version: RECOMMENDATION_ALGORITHM_VERSION,
+      scoring_model_version: SCORING_MODEL_VERSION,
+      algorithm_config: algorithmSnapshot(),
+      config_hash: algorithmConfigHash(),
+    }
+    let { data: batch, error: batchError } = await adminClient
+      .from('introduction_batches').insert({ ...baseRow, ...versionRow }).select().single()
+    if (batchError && /column .* does not exist|schema cache|PGRST20[45]/i.test(`${batchError.message} ${(batchError as any).code ?? ''}`)) {
+      console.warn('[generate-batch] version columns absent (apply migration 018); recording batch without version snapshot')
+      ;({ data: batch, error: batchError } = await adminClient
+        .from('introduction_batches').insert(baseRow).select().single())
+    }
 
     if (batchError || !batch) {
       return NextResponse.json({ error: `Failed to create batch: ${batchError?.message || 'no row returned'}` }, { status: 500 })
@@ -385,8 +274,8 @@ export async function POST(req: NextRequest) {
         // Exclude if: hidden, passed, matched, recently shown, or same company
         if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA || isSameCompany(userA, userB)) continue
         
-        const scoreAtoB = scoreMatch(userA, userB)
-        const scoreBtoA = scoreMatch(userB, userA)
+        const scoreAtoB = scoreMatchV2(userA, userB, scoringCtx)
+        const scoreBtoA = scoreMatchV2(userB, userA, scoringCtx)
         const avgScore = (scoreAtoB + scoreBtoA) / 2
         
         if (avgScore < MIN_RELEVANCE_SCORE) continue
@@ -419,7 +308,7 @@ export async function POST(req: NextRequest) {
     const sortedProfiles = [...profiles].sort((a, b) => {
       const aTier = tierPriority[a.subscription_tier || 'free'] || 3
       const bTier = tierPriority[b.subscription_tier || 'free'] || 3
-      return aTier - bTier
+      return aTier - bTier || String(a.id).localeCompare(String(b.id)) // deterministic + repeatable
     })
     const userCandidatePools: Record<string, Array<{
       candidate: any
@@ -471,85 +360,50 @@ export async function POST(req: NextRequest) {
       )
       let bsCount = 0
 
-      // Separate by bucket
-      const highCandidates = pool.filter(c => c.bucket === 'high_score').sort((a, b) => b.score - a.score)
-      const midCandidates = pool.filter(c => c.bucket === 'mid_score').sort((a, b) => b.score - a.score)
-      const lowCandidates = pool.filter(c => c.bucket === 'low_score').sort((a, b) => b.score - a.score)
+      const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
+      // Rank each bucket by exposure-adjusted score (gentle nudge toward
+      // less-exposed candidates among near-equals) then raw score, with a
+      // deterministic id tiebreak. Bucket membership is still by RAW score, so no
+      // weak match is promoted.
+      const rankBucket = (b: 'high_score' | 'mid_score' | 'low_score') =>
+        pool.filter(c => c.bucket === b).sort((x, y) =>
+          exposureAdjustedScore(y.score, exposureCount[y.candidate.id] || 0) - exposureAdjustedScore(x.score, exposureCount[x.candidate.id] || 0)
+          || y.score - x.score
+          || String(x.candidate.id).localeCompare(String(y.candidate.id)))
+      const highCandidates = rankBucket('high_score')
+      const midCandidates = rankBucket('mid_score')
+      const lowCandidates = rankBucket('low_score')
 
       const selected: any[] = []
+      if (!userRoleCounts[profile.id]) userRoleCounts[profile.id] = {}
 
-      // Initialize role counts for this profile
-      if (!userRoleCounts[profile.id]) {
-        userRoleCounts[profile.id] = {}
-      }
-
-      // Select high-score candidates first
-      for (let i = 0; i < Math.min(tierDist.high, highCandidates.length); i++) {
-        const candidate = highCandidates[i]
-
-        // Check role diversity
-        const roleType = candidate.candidate.role_type || 'unknown'
-        const roleCount = userRoleCounts[profile.id][roleType] || 0
-        const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
-        const isBS = isBusinessSolutionProvider(candidate.candidate)
-
-        if (roleCount < maxPerRole && (!isBS || bsCount < bsCap)) {
-          selected.push({
-            suggested: candidate.candidate,
-            score: candidate.score,
-            bucket: candidate.bucket,
-            reason: candidate.reason
-          })
-          userRoleCounts[profile.id][roleType] = roleCount + 1
-          if (isBS) bsCount++
-        }
-      }
-
-      // Select mid-score candidates to fill remaining slots
-      const stillNeed = tierDist.total - selected.length
-      for (let i = 0; i < Math.min(stillNeed, midCandidates.length); i++) {
-        const candidate = midCandidates[i]
-
-        const roleType = candidate.candidate.role_type || 'unknown'
-        const roleCount = userRoleCounts[profile.id][roleType] || 0
-        const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
-        const isBS = isBusinessSolutionProvider(candidate.candidate)
-
-        if (roleCount < maxPerRole && (!isBS || bsCount < bsCap)) {
-          selected.push({
-            suggested: candidate.candidate,
-            score: candidate.score,
-            bucket: candidate.bucket,
-            reason: candidate.reason
-          })
-          userRoleCounts[profile.id][roleType] = roleCount + 1
-          if (isBS) bsCount++
-        }
-      }
-
-      // Fallback: if still need more and have low-score candidates
-      const finalNeed = tierDist.total - selected.length
-      if (finalNeed > 0 && lowCandidates.length > 0) {
-        for (let i = 0; i < Math.min(finalNeed, lowCandidates.length); i++) {
-          const candidate = lowCandidates[i]
-
+      // Greedy fill: iterate the FULL ranked bucket until the phase quota is met
+      // (so exposure re-ordering changes WHICH candidate fills a slot, never the
+      // number filled), honoring the role cap, business-solution cap, and the
+      // bounded per-batch candidate exposure cap (Part 4).
+      const fillPhase = (candidates: any[], quota: number) => {
+        let filled = 0
+        for (const candidate of candidates) {
+          if (filled >= quota) break
+          // Optional hard exposure cap (disabled by default — see EXPOSURE_CONFIG;
+          // validation showed it degrades match quality without improving coverage).
+          if (EXPOSURE_CONFIG.maxPerBatch != null && (exposureCount[candidate.candidate.id] || 0) >= EXPOSURE_CONFIG.maxPerBatch) continue
           const roleType = candidate.candidate.role_type || 'unknown'
           const roleCount = userRoleCounts[profile.id][roleType] || 0
-          const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
           const isBS = isBusinessSolutionProvider(candidate.candidate)
-
           if (roleCount < maxPerRole && (!isBS || bsCount < bsCap)) {
-            selected.push({
-              suggested: candidate.candidate,
-              score: candidate.score,
-              bucket: candidate.bucket,
-              reason: candidate.reason
-            })
+            selected.push({ suggested: candidate.candidate, score: candidate.score, bucket: candidate.bucket, reason: candidate.reason })
             userRoleCounts[profile.id][roleType] = roleCount + 1
             if (isBS) bsCount++
+            exposureCount[candidate.candidate.id] = (exposureCount[candidate.candidate.id] || 0) + 1
+            filled++
           }
         }
       }
+
+      fillPhase(highCandidates, tierDist.high)
+      fillPhase(midCandidates, tierDist.total - selected.length)
+      fillPhase(lowCandidates, tierDist.total - selected.length)
 
       userBatches[profile.id] = selected
     }
@@ -610,6 +464,9 @@ export async function POST(req: NextRequest) {
       success: true,
       batchId: batch.id,
       batchNumber: nextBatchNumber,
+      algorithmVersion: RECOMMENDATION_ALGORITHM_VERSION,
+      scoringModelVersion: SCORING_MODEL_VERSION,
+      configHash: algorithmConfigHash(),
       totalSuggestions: allSuggestions.length,
       usersMatched: profiles.length,
       mutualOpportunities: mutualMatchesCreated,

@@ -7,7 +7,7 @@ import { applyVerticalBoost } from '@/lib/matching/vertical-boost'
 import { getActiveIntroCap } from '@/lib/introductions/limits'
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
-import { excludeTestAccounts } from '@/lib/testAccounts'
+import { applyMemberEligibility, filterEligible, assertAllEligible } from '@/lib/matching/eligibility'
 import { BATCH_EXCLUDING_STATUSES } from '@/lib/introRequests/state'
 
 // Unified scoring model for all tiers
@@ -613,14 +613,15 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   const recommendationCount = getActiveIntroCap(userTier)
   console.log('[generate-recommendations] User tier:', userTier, 'Count:', recommendationCount)
   
-  const { data: allUsers, error: usersError } = await excludeTestAccounts(adminClient
+  // Canonical eligibility (adds internal/admin-flag exclusion); exclude self.
+  const rawUsers = await applyMemberEligibility(adminClient
     .from('profiles')
     .select('*')
-    .eq('account_status', 'active')
-    .eq('profile_complete', true)
-    .neq('id', userId)
-    .neq('email', 'bizdev91@gmail.com'))
-  
+    .neq('id', userId))
+  const allUsers = filterEligible(rawUsers.data as any[]) // in-memory defense
+  assertAllEligible(allUsers, 'generate-recommendations') // fail-fast before scoring
+  const usersError = rawUsers.error
+
   if (usersError || !allUsers) {
     throw new Error('Failed to fetch users')
   }

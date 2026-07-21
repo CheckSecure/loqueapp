@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
+import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS, assertAllEligible } from '@/lib/matching/eligibility'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -70,11 +71,13 @@ export async function POST(request: Request) {
   const adminClient = createAdminClient()
 
   try {
-    // PART 1: Identify stuck users
-    const { data: profiles } = await adminClient
+    // PART 1: Identify stuck users — canonical eligibility (previously only
+    // filtered account_status, leaking test/incomplete/admin into the simulation).
+    const rawProfiles = await applyMemberEligibility(adminClient
       .from('profiles')
-      .select('id, full_name, email, subscription_tier, role_type, seniority, expertise, intro_preferences, location, company')
-      .eq('account_status', 'active')
+      .select(`id, full_name, subscription_tier, role_type, seniority, expertise, intro_preferences, location, company, ${ELIGIBILITY_COLUMNS}`))
+    const profiles = filterEligible(rawProfiles.data as any[])
+    assertAllEligible(profiles, 'simulate-matches') // fail-fast before scoring
 
     if (!profiles) throw new Error('Failed to fetch profiles')
 

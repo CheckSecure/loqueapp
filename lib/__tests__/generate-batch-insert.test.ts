@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { MATCH_SCORE_MAX } from '@/lib/matching/score'
+import { EXPOSURE_CONFIG } from '@/lib/matching/batch-scoring'
 
 /**
  * Integration test for the admin "Generate New Batch" path. Drives the real
@@ -17,6 +18,7 @@ const state = vi.hoisted(() => ({
   batchError: null as any,
   suggestionsError: null as any,
   insertedSuggestions: null as any[] | null,
+  insertedBatch: null as any,
   deletedBatchIds: [] as string[],
 }))
 
@@ -29,7 +31,7 @@ vi.mock('@/lib/supabase/admin', () => {
     if (b._table === 'profiles') return { data: state.profiles, error: null }
     if (b._table === 'matches') return { data: [], error: null }
     if (b._table === 'introduction_batches') {
-      if (b._insert) return { data: state.batch, error: state.batchError }
+      if (b._insert) { state.insertedBatch = b._insert; return { data: state.batch, error: state.batchError } }
       if (b._delete) { const id = (b._eqs.find((e: any) => e[0] === 'id') || [])[1]; state.deletedBatchIds.push(id); return { error: null } }
       return { data: state.lastBatch, error: null }
     }
@@ -65,7 +67,7 @@ function member(id: string): any {
     trust_score: 90, current_status: null, purposes: ['raise capital', 'hire'],
     city: 'NYC', state: 'NY', geographic_scope: 'us-wide', meeting_format_preference: 'both',
     open_to_business_solutions: false, boost_score: 60, is_priority: true, profile_complete: true,
-    account_status: 'active',
+    account_status: 'active', is_test_account: false, is_admin: false,
   }
 }
 
@@ -100,6 +102,14 @@ describe('Generate New Batch — full insert', () => {
     expect(Math.max(...rows.map((r: any) => r.match_score))).toBeGreaterThan(99.99)
     // No orphan cleanup on the happy path.
     expect(state.deletedBatchIds).toEqual([])
+    // Batch is stamped with the algorithm version + config snapshot (reproducibility).
+    expect(state.insertedBatch.algorithm_version).toBe('v2')
+    expect(state.insertedBatch.scoring_model_version).toMatch(/^v\d/)
+    expect(state.insertedBatch.algorithm_config).toBeTruthy()
+    expect(state.insertedBatch.config_hash).toMatch(/^[0-9a-f]{8}$/)
+    // API response surfaces the version to the admin.
+    expect(body.algorithmVersion).toBe('v2')
+    expect(body.configHash).toMatch(/^[0-9a-f]{8}$/)
   })
 
   it('deletes the orphan batch when suggestion insert fails (retry-safe, no partial data)', async () => {
@@ -118,5 +128,55 @@ describe('Generate New Batch — full insert', () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toMatch(/Failed to create batch/)
     expect(state.insertedSuggestions).toBeNull()
+  })
+
+  it('excluded accounts (test / admin / suspended / incomplete) never appear as recipient or candidate', async () => {
+    state.profiles = [
+      member('a'), member('b'), member('c'),
+      { ...member('t'), is_test_account: true },                 // test/demo/seed
+      { ...member('adm'), is_admin: true },                      // internal/admin
+      { ...member('s'), account_status: 'suspended' },           // suspended/disabled
+      { ...member('i'), profile_complete: false },               // incomplete onboarding
+    ]
+    await post()
+    const rows = state.insertedSuggestions || []
+    const banned = new Set(['t', 'adm', 's', 'i'])
+    // Never a recipient, never a candidate.
+    expect(rows.some((r: any) => banned.has(r.recipient_id))).toBe(false)
+    expect(rows.some((r: any) => banned.has(r.suggested_id))).toBe(false)
+    // Only the 3 real members participate.
+    for (const r of rows) { expect(['a', 'b', 'c']).toContain(r.recipient_id); expect(['a', 'b', 'c']).toContain(r.suggested_id) }
+    expect(rows.length).toBeGreaterThan(0)
+  })
+
+  it('is deterministic + repeatable and enforces safety invariants (v2 algorithm)', async () => {
+    // A larger, varied cohort so the exposure cap and role caps actually engage.
+    const roles = ['Founder', 'Investor', 'Operator', 'Advisor']
+    state.profiles = Array.from({ length: 12 }, (_, i) => ({
+      ...member(String.fromCharCode(97 + i)), id: 'm' + i, role_type: roles[i % roles.length],
+      boost_score: 0, is_priority: false, company: 'co' + i,
+      purposes: i % 2 ? ['networking', 'raise capital'] : ['networking', 'hire'],
+    }))
+
+    await post()
+    const run1 = state.insertedSuggestions!.map((r: any) => `${r.recipient_id}|${r.suggested_id}|${r.match_score}|${r.position}`)
+    state.insertedSuggestions = null
+    await post()
+    const run2 = state.insertedSuggestions!.map((r: any) => `${r.recipient_id}|${r.suggested_id}|${r.match_score}|${r.position}`)
+
+    // Deterministic / repeatable
+    expect(run2).toEqual(run1)
+
+    const rows = state.insertedSuggestions!
+    // No duplicates, no self-matches
+    expect(new Set(rows.map((r: any) => r.recipient_id + '|' + r.suggested_id)).size).toBe(rows.length)
+    expect(rows.filter((r: any) => r.recipient_id === r.suggested_id).length).toBe(0)
+    // Optional hard exposure cap is OFF by default (continuous penalty only);
+    // if a cap is ever configured, it must be respected.
+    if (EXPOSURE_CONFIG.maxPerBatch != null) {
+      const exp: Record<string, number> = {}
+      for (const r of rows) exp[r.suggested_id] = (exp[r.suggested_id] || 0) + 1
+      expect(Math.max(...Object.values(exp))).toBeLessThanOrEqual(EXPOSURE_CONFIG.maxPerBatch)
+    }
   })
 })

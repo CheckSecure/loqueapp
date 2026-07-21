@@ -13,7 +13,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { excludeTestAccounts } from '@/lib/testAccounts'
+import { applyMemberEligibility } from '@/lib/matching/eligibility'
 import {
   DELIVERY_CEILING,
   TRANCHE_CEILING,
@@ -417,7 +417,7 @@ export async function selectCandidates(opportunity: OpportunityRow, creatorCompa
     rateLimitedUserIds(opportunity.creator_id),
   ]);
 
-  const { data: pool } = await excludeTestAccounts(admin
+  const { data: pool } = await applyMemberEligibility(admin
     .from('profiles')
     .select(PROFILE_SELECT)
     .eq('open_to_roles', true)
@@ -473,7 +473,7 @@ export async function selectProviders(opportunity: OpportunityRow, creatorCompan
 
   const acceptedRoles = acceptedRoleTypesForNeed(opportunity.criteria.need);
 
-  const { data: pool } = await excludeTestAccounts(admin
+  const { data: pool } = await applyMemberEligibility(admin
     .from('profiles')
     .select(PROFILE_SELECT)
     .eq('open_to_business_solutions', true)

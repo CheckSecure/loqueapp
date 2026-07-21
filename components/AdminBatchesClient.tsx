@@ -15,6 +15,8 @@ interface Batch {
   end_date: string | null
   suggestion_count: number
   member_count: number
+  algorithm_version?: string | null
+  config_hash?: string | null
 }
 
 export default function AdminBatchesClient({ batches }: { batches: Batch[] }) {
@@ -91,6 +93,11 @@ export default function AdminBatchesClient({ batches }: { batches: Batch[] }) {
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">Batch #{activeBatch.batch_number}</h3>
                   <p className="text-sm text-green-700 font-medium">Active</p>
+                  {activeBatch.algorithm_version && (
+                    <p className="text-[11px] text-slate-400 mt-0.5" title={activeBatch.config_hash ? `config ${activeBatch.config_hash}` : undefined}>
+                      Algorithm {activeBatch.algorithm_version}{activeBatch.config_hash ? ` · cfg ${activeBatch.config_hash}` : ''}
+                    </p>
+                  )}
                 </div>
               </div>
               <button
@@ -148,7 +155,10 @@ export default function AdminBatchesClient({ batches }: { batches: Batch[] }) {
                         <Clock className="w-5 h-5 text-white" />
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-slate-900">Batch #{batch.batch_number}</p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          Batch #{batch.batch_number}
+                          {batch.algorithm_version && <span className="ml-2 text-[10px] font-medium text-slate-400 uppercase tracking-wide">algo {batch.algorithm_version}</span>}
+                        </p>
                         <p className="text-xs text-slate-500">
                           {batch.suggestion_count} suggestions • {batch.member_count} members
                         </p>
