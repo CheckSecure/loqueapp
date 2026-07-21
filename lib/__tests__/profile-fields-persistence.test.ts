@@ -36,7 +36,8 @@ describe('every profile-save path PERSISTS goals + interests', () => {
     expect(actions).toContain("...(formData.has('interests') && { interests })")
   })
   it('/api/profile/update never reports a false success (0-row guard)', () => {
-    expect(route).toContain('.select(\'id\')')
+    // Returns the updated row (id[, company]) so the 0-row guard can fire.
+    expect(route).toMatch(/\.select\('id[',]/)
     expect(route).toMatch(/updatedRows.*length === 0|!updatedRows/)
   })
 })
