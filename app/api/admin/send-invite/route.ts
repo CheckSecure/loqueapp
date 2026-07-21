@@ -89,7 +89,7 @@ export async function POST(req: Request) {
     }
     return referrerName
       ? sendReferralInviteEmail(email, entry.full_name || 'there', tempPassword, referrerName)
-      : sendInviteEmail(email, entry.full_name || 'there', tempPassword)
+      : sendInviteEmail(email, entry.full_name || 'there', tempPassword, markAsFounding)
   }
 
   const tempPassword = generateTempPassword()

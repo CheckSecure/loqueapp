@@ -191,7 +191,7 @@ export async function POST(req: Request) {
     const tempPassword = randomBytes(12).toString('base64url')
 
     // Step 1: Send invite email — if this fails, do NOT create the auth user.
-    const emailResult = await sendInviteEmail(email, displayName, tempPassword)
+    const emailResult = await sendInviteEmail(email, displayName, tempPassword, defaults.isFoundingMember)
     if (!emailResult.success) {
       console.error(`[bulk-invite] email failed for ${email}:`, emailResult.error)
       results.push({ email, name, status: 'email_failed', error: emailResult.error })

@@ -164,49 +164,200 @@ export async function sendNewBatchEmail(
 export async function sendInviteEmail(
   toEmail: string,
   toName: string,
-  tempPassword: string
+  tempPassword: string,
+  // Optional (defaults false, so existing callers are unaffected). When true, a
+  // brief founding-member note is rendered. Callers that know the invitee's
+  // founding status pass it through; those that don't get accurate non-founding
+  // copy. This threads EXISTING data into the template — no new required var,
+  // no invitation-logic change.
+  isFoundingMember: boolean = false
 ) {
+  // Personalization from the only name we have (full name) — no new variable.
+  const firstName = ((toName || '').trim().split(/\s+/)[0]) || 'there'
+  const loginUrl = 'https://www.andrel.app/login'
+
+  // Andrel brand palette (tailwind.config.ts): navy #1B2850, gold #C4922A,
+  // cream #F5F6FB, gold-soft #FDF3E3.
+  const bodyFont = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+  const serifFont = "Georgia, 'Times New Roman', Times, serif"
+
+  const steps = [
+    'Complete your profile so we understand your background, expertise, interests, and goals.',
+    'Receive curated introductions to professionals who align with them.',
+    "Review each introduction and decide whether you're interested.",
+    'When both people express interest, Andrel makes the introduction.',
+  ]
+  const stepsHtml = steps.map((s, i) => `
+              <tr>
+                <td valign="top" style="width:30px;padding:6px 14px 6px 0;">
+                  <div style="width:26px;height:26px;line-height:26px;text-align:center;background:#1B2850;color:#ffffff;border-radius:50%;font-family:${serifFont};font-size:13px;font-weight:600;">${i + 1}</div>
+                </td>
+                <td valign="top" style="padding:6px 0;font-family:${bodyFont};font-size:15px;line-height:1.6;color:#3a4356;">${s}</td>
+              </tr>`).join('')
+
+  const foundingBlockHtml = isFoundingMember ? `
+          <tr>
+            <td class="px" style="padding:26px 48px 0 48px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FDF3E3;border:1px solid #F0DEB8;border-radius:12px;">
+                <tr><td style="padding:16px 20px;font-family:${bodyFont};font-size:14px;line-height:1.6;color:#7a5a15;">
+                  <span style="color:#9a6f12;font-weight:700;">As a founding member,</span> you'll receive additional introduction credits and early access to new features as Andrel continues to grow.
+                </td></tr>
+              </table>
+            </td>
+          </tr>` : ''
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Welcome to Andrel</title>
+  <style>
+    @media only screen and (max-width:620px) {
+      .card { width:100% !important; border-radius:0 !important; }
+      .px { padding-left:26px !important; padding-right:26px !important; }
+      .cta a { display:block !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background:#F5F6FB;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#F5F6FB;">A private, invitation-only network for high-value professional introductions.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F6FB;margin:0;padding:0;">
+    <tr>
+      <td align="center" style="padding:36px 16px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" class="card" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #ECEEF6;border-radius:16px;">
+          <!-- Brand mark -->
+          <tr>
+            <td class="px" style="padding:44px 48px 0 48px;">
+              <div style="font-family:${serifFont};font-size:15px;letter-spacing:6px;text-transform:uppercase;color:#1B2850;font-weight:700;">Andrel</div>
+              <div style="width:46px;height:2px;background:#C4922A;margin-top:14px;font-size:0;line-height:0;">&nbsp;</div>
+            </td>
+          </tr>
+          <!-- Headline -->
+          <tr>
+            <td class="px" style="padding:30px 48px 0 48px;">
+              <h1 style="margin:0;font-family:${serifFont};font-size:30px;line-height:1.25;letter-spacing:-0.2px;color:#1B2850;font-weight:600;">Welcome to Andrel</h1>
+            </td>
+          </tr>
+          <!-- Body copy -->
+          <tr>
+            <td class="px" style="padding:22px 48px 0 48px;font-family:${bodyFont};font-size:16px;line-height:1.75;color:#3a4356;">
+              <p style="margin:0 0 18px 0;">Hi ${escapeHtml(firstName)},</p>
+              <p style="margin:0 0 18px 0;">I'm glad you're joining our community.</p>
+              <p style="margin:0 0 18px 0;">Andrel is a private, invitation-only network built around one simple idea: the right introduction at the right time can create enormous value.</p>
+              <p style="margin:0 0 18px 0;">Instead of relying on cold outreach or endless networking, Andrel curates a small number of thoughtful introductions between professionals who are genuinely likely to benefit from knowing one another. Introductions are informed by each member's background, expertise, interests, and goals, with an emphasis on relevance and mutual value.</p>
+              <p style="margin:0;">Our community brings together senior legal professionals—including in-house counsel, law firm attorneys, legal and compliance leaders, government affairs professionals, and other accomplished executives looking to build valuable long-term relationships.</p>
+            </td>
+          </tr>
+          <!-- How it works -->
+          <tr>
+            <td class="px" style="padding:30px 48px 0 48px;">
+              <div style="font-family:${bodyFont};font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#C4922A;font-weight:700;margin-bottom:14px;">How it works</div>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${stepsHtml}
+              </table>
+            </td>
+          </tr>${foundingBlockHtml}
+          <!-- Primary CTA -->
+          <tr>
+            <td class="px cta" align="center" style="padding:38px 48px 6px 48px;">
+              <a href="${loginUrl}" style="display:inline-block;background:#1B2850;color:#ffffff;text-decoration:none;font-family:${bodyFont};font-size:16px;font-weight:600;padding:15px 40px;border-radius:10px;letter-spacing:0.2px;">Log in to Andrel</a>
+            </td>
+          </tr>
+          <!-- Sign-in details -->
+          <tr>
+            <td class="px" style="padding:26px 48px 0 48px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F6FB;border:1px solid #E4E7F2;border-radius:12px;">
+                <tr><td style="padding:20px 22px;font-family:${bodyFont};">
+                  <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#8a93a6;font-weight:700;margin-bottom:14px;">Your sign-in details</div>
+                  <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#8a93a6;margin-bottom:3px;">Email</div>
+                  <div style="font-size:15px;color:#1B2850;font-weight:600;margin-bottom:14px;word-break:break-all;">${escapeHtml(toEmail)}</div>
+                  <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#8a93a6;margin-bottom:3px;">Temporary password</div>
+                  <div style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:17px;color:#1B2850;font-weight:700;letter-spacing:1px;">${escapeHtml(tempPassword)}</div>
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Login guidance (preserved) -->
+          <tr>
+            <td class="px" style="padding:16px 48px 0 48px;font-family:${bodyFont};font-size:13px;line-height:1.6;color:#8a93a6;">
+              After logging in you'll be prompted to set your own password. If you received any earlier magic sign-in or password-reset links, please disregard them — they may have expired. Just use the email address and temporary password above.
+            </td>
+          </tr>
+          <!-- Sign-off -->
+          <tr>
+            <td class="px" style="padding:30px 48px 0 48px;font-family:${bodyFont};font-size:16px;line-height:1.75;color:#3a4356;">
+              <p style="margin:0 0 22px 0;">I'd genuinely value your feedback as you explore Andrel. Your input will help shape where we take the platform from here.</p>
+              <p style="margin:0;">Best,<br>
+                <span style="color:#1B2850;font-weight:600;">Daniel Abramoff</span><br>
+                <span style="color:#8a93a6;font-size:14px;">Founder, Andrel</span>
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td class="px" style="padding:34px 48px 42px 48px;">
+              <div style="height:1px;background:#ECEEF6;font-size:0;line-height:0;margin-bottom:20px;">&nbsp;</div>
+              <div style="font-family:${bodyFont};font-size:12px;line-height:1.6;color:#a8b0c0;">Andrel · A private, invitation-only network for high-value professional introductions.</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+
+  const foundingText = isFoundingMember
+    ? "\nAs a founding member, you'll receive additional introduction credits and early access to new features as Andrel continues to grow.\n"
+    : ''
+
+  const text = `Welcome to Andrel
+
+Hi ${firstName},
+
+I'm glad you're joining our community.
+
+Andrel is a private, invitation-only network built around one simple idea: the right introduction at the right time can create enormous value.
+
+Instead of relying on cold outreach or endless networking, Andrel curates a small number of thoughtful introductions between professionals who are genuinely likely to benefit from knowing one another. Introductions are informed by each member's background, expertise, interests, and goals, with an emphasis on relevance and mutual value.
+
+Our community brings together senior legal professionals—including in-house counsel, law firm attorneys, legal and compliance leaders, government affairs professionals, and other accomplished executives looking to build valuable long-term relationships.
+
+How it works:
+1. ${steps[0]}
+2. ${steps[1]}
+3. ${steps[2]}
+4. ${steps[3]}
+${foundingText}
+YOUR SIGN-IN DETAILS
+Log in: ${loginUrl}
+Email: ${toEmail}
+Temporary password: ${tempPassword}
+
+After logging in you'll be prompted to set your own password. If you received any earlier magic sign-in or password-reset links, please disregard them — they may have expired. Just use the email address and temporary password above.
+
+I'd genuinely value your feedback as you explore Andrel. Your input will help shape where we take the platform from here.
+
+Best,
+Daniel Abramoff
+Founder, Andrel`
+
   try {
     const { data, error } = await resend.emails.send({
       from: 'Andrel <hello@andrel.app>',
       to: toEmail,
       subject: 'Welcome to Andrel',
-      html: `
-        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #1B2850; margin-bottom: 24px;">Welcome to Andrel</h2>
-          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            Hi ${toName},
-          </p>
-          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-            You've been invited to join Andrel, a curated platform for high-value professional introductions.
-          </p>
-          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 8px;">
-            Sign in at <a href="https://www.andrel.app/login" style="color: #1B2850; font-weight: 600;">www.andrel.app/login</a> with:
-          </p>
-          <div style="background: #F5F6FB; border: 2px solid #1B2850; padding: 16px; margin: 12px 0 24px 0; border-radius: 8px;">
-            <p style="margin: 0 0 8px 0; color: #334155; font-size: 15px;"><strong>Email:</strong> ${escapeHtml(toEmail)}</p>
-            <p style="margin: 0; color: #334155; font-size: 15px;"><strong>Temporary password:</strong> <code style="color: #1B2850; font-size: 16px; font-weight: 700; letter-spacing: 1px;">${tempPassword}</code></p>
-          </div>
-          <a href="https://www.andrel.app/login"
-             style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
-            Log In to Andrel
-          </a>
-          <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin-top: 24px;">
-            After logging in you'll be prompted to set your own password. If you received any earlier magic sign-in or password-reset links, please disregard them — they may have expired. Just use the email address and temporary password above.
-          </p>
-          <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
-            — The Andrel Team
-          </p>
-        </div>
-      `,
+      html,
+      text,
     })
-    
+
     if (error) {
       console.error('[sendInviteEmail] Resend API error:', JSON.stringify(error, null, 2))
       console.error('[sendInviteEmail] Error details - name:', error.name, 'message:', error.message)
       return { success: false, error: error.message }
     }
-    
+
     console.log('[sendInviteEmail] Resend success, message ID:', data?.id)
     return { success: true }
   } catch (error: any) {

@@ -843,7 +843,7 @@ export async function adminSendWaitlistInvite(id: string, markAsFounding = false
 
     console.log('[invite] about to send invite email to:', entry.email)
     const { sendInviteEmail } = await import('@/lib/email')
-    const result = await sendInviteEmail(entry.email, entry.full_name ?? 'there', tempPassword)
+    const result = await sendInviteEmail(entry.email, entry.full_name ?? 'there', tempPassword, markAsFounding)
     console.log('[invite] Resend done — success:', result.success, 'error:', result.error ?? 'none')
 
     if (!result.success) return { error: result.error ?? 'Failed to send email' }
