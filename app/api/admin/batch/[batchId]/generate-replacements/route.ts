@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { introReasonText } from '@/lib/match-signals'
+import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 
 export const dynamic = 'force-dynamic'
 
@@ -121,7 +122,7 @@ function scoreMatch(recipient: any, candidate: any): number {
   // Cap counted overlap at 5 so users with broad expertise lists do not dominate.
   score += Math.min(5, expertiseOverlap) * 8
 
-  return score
+  return sanitizeMatchScore(score)
 }
 
 function getScoreBucket(score: number): string {
@@ -300,13 +301,15 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
       const startingPosition = group.generated + group.dropped
       let positionOffset = 1
       for (const { candidate, score } of toInsert) {
+        const safeScore = sanitizeMatchScore(score)
+        assertStorableScore(safeScore, r.recipientId, candidate.id)
         insertRows.push({
           batch_id: batchId,
           recipient_id: r.recipientId,
           suggested_id: candidate.id,
           reason: buildReason(recipient, candidate),
-          match_score: score,
-          score_bucket: getScoreBucket(score),
+          match_score: safeScore,
+          score_bucket: getScoreBucket(safeScore),
           position: startingPosition + positionOffset,
           status: 'generated',
         })

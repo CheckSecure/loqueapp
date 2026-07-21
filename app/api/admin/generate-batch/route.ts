@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { introReasonText } from '@/lib/match-signals'
+import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 
 export const dynamic = 'force-dynamic'
 
@@ -182,7 +183,9 @@ function scoreMatch(recipient: any, candidate: any): number {
   if (candidate.trust_score) {
     score += Math.round((candidate.trust_score / 100) * 10)
   }
-  return score
+  // Guarantee a finite, DB-storable integer (NaN/Infinity from an upstream
+  // sub-score would otherwise corrupt the insert).
+  return sanitizeMatchScore(score)
 }
 
 function getScoreBucket(score: number): 'high_score' | 'mid_score' | 'low_score' {
@@ -282,6 +285,10 @@ export async function POST(req: NextRequest) {
       })
       .select()
       .single()
+
+    if (batchError || !batch) {
+      return NextResponse.json({ error: `Failed to create batch: ${batchError?.message || 'no row returned'}` }, { status: 500 })
+    }
 
     const ninetyDaysAgo = new Date()
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
@@ -560,33 +567,42 @@ export async function POST(req: NextRequest) {
     }
     mutualMatchesCreated = mutualMatchesCreated / 2 // Each mutual counted twice
     const allSuggestions: any[] = []
-    
-    for (const [recipientId, suggestions] of Object.entries(userBatches)) {
-      for (let i = 0; i < suggestions.length; i++) {
-        const { suggested, score, reason } = suggestions[i]
-        allSuggestions.push({
-          batch_id: batch.id,
-          recipient_id: recipientId,
-          suggested_id: suggested.id,
-          reason,
-          match_score: score,
-          score_bucket: getScoreBucket(score),
-          position: i + 1,
-          status: 'generated',
-        })
+
+    // Build + insert suggestions. Any failure here (out-of-range score or a DB
+    // error) triggers a compensating delete of the batch row we created above —
+    // batch creation and suggestion insertion are not in one SQL transaction, so
+    // this keeps a failed attempt from leaving an orphan/empty batch behind.
+    try {
+      for (const [recipientId, suggestions] of Object.entries(userBatches)) {
+        for (let i = 0; i < suggestions.length; i++) {
+          const { suggested, score, reason } = suggestions[i]
+          const safeScore = sanitizeMatchScore(score)
+          assertStorableScore(safeScore, recipientId, suggested.id) // descriptive error, not "numeric field overflow"
+          allSuggestions.push({
+            batch_id: batch.id,
+            recipient_id: recipientId,
+            suggested_id: suggested.id,
+            reason,
+            match_score: safeScore,
+            score_bucket: getScoreBucket(safeScore),
+            position: i + 1,
+            status: 'generated',
+          })
+        }
       }
+
+      if (allSuggestions.length > 0) {
+        const { error: suggestionsError } = await adminClient
+          .from('batch_suggestions')
+          .insert(allSuggestions)
+        if (suggestionsError) throw new Error(`Failed to insert suggestions: ${suggestionsError.message}`)
+      }
+    } catch (insertErr: any) {
+      // Compensating cleanup: remove the just-created (now empty) batch row.
+      await adminClient.from('introduction_batches').delete().eq('id', batch.id)
+      return NextResponse.json({ error: insertErr?.message || 'Failed to insert suggestions' }, { status: 500 })
     }
 
-    if (allSuggestions.length > 0) {
-      const { error: suggestionsError } = await adminClient
-        .from('batch_suggestions')
-        .insert(allSuggestions)
-
-      if (suggestionsError) {
-        return NextResponse.json({ error: `Failed to insert suggestions: ${suggestionsError.message}` }, { status: 500 })
-      }
-    }
-    
     const oneWayMatches = allSuggestions.length - (mutualMatchesCreated * 2)
     const avgBatchSize = allSuggestions.length / profiles.length
 
