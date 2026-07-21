@@ -71,8 +71,23 @@ export async function runEnrichment(
   // Curated fallback layer (DB-backed, admin-editable) — lowest precedence.
   const meta = await getCompanyMetadata(admin, slug)
 
-  const finalize = (patch: Record<string, unknown>) =>
-    admin.from('companies').update({ ...patch, updated_at: new Date().toISOString() }).eq('slug', slug).eq('admin_edited', false)
+  // Resilient finalize: writes the patch (never touching admin_edited rows). If
+  // the DB rejects `partial` because the enrichment_status CHECK constraint
+  // predates it (migration 016 not yet applied), degrade to `enriched` — a
+  // permitted value — so the row still receives its identity + data instead of
+  // getting stuck in `in_progress`. The partial vs full distinction is preserved
+  // in enrichment_source ('registry' vs 'registry:homepage'). Once 016 is applied,
+  // `partial` persists accurately with no code change.
+  const finalize = async (patch: Record<string, unknown>) => {
+    const write = (p: Record<string, unknown>) =>
+      admin.from('companies').update({ ...p, updated_at: new Date().toISOString() }).eq('slug', slug).eq('admin_edited', false)
+    let r = await write(patch)
+    if (r.error && patch.enrichment_status === 'partial' && /enrichment_status/i.test(r.error.message || '')) {
+      console.warn(`[company-enrich] 'partial' rejected by constraint (apply migration 016); degrading to 'enriched' slug=${slug}`)
+      r = await write({ ...patch, enrichment_status: 'enriched' })
+    }
+    return r
+  }
 
   console.log(JSON.stringify({ event: 'company_enrich_start', slug, name, force }))
 
@@ -101,6 +116,16 @@ export async function runEnrichment(
     //    admin override (already filtered) > existing companies value >
     //    scraped homepage metadata > company_metadata fallback > null.
     //    Identity (canonical name + authoritative website) comes from the registry.
+    //
+    //    STALE GUARD: when a FORCE refresh corrects the website to a different
+    //    host, the existing description/logo/HQ/industry were derived from the OLD
+    //    (wrong) site and must NOT be preserved — prefer freshly-scraped, else the
+    //    curated fallback, else clear them. (Non-force organic runs keep existing.)
+    const hostOf = (u: unknown) => { try { return new URL(String(u)).hostname.replace(/^www\./, '').toLowerCase() } catch { return '' } }
+    const websiteChanged = registryResolved && has(cur.website) && hostOf(cur.website) !== hostOf(website)
+    const stale = force && websiteChanged
+    const keep = (v: unknown) => has(v) && !stale
+
     const patch: Record<string, unknown> = { enrichment_error: null, enriched_at: new Date().toISOString() }
 
     if (canonical?.name) patch.name = canonical.name                    // authoritative identity
@@ -108,22 +133,24 @@ export async function runEnrichment(
     else if (!has(cur.website) && has(metadata.website)) patch.website = metadata.website
 
     let descriptionStage: EnrichStages['description'] = 'none'
-    if (has(cur.description)) descriptionStage = 'existing'
+    if (keep(cur.description)) descriptionStage = 'existing'
     else if (has(metadata.description)) { patch.description = metadata.description; descriptionStage = 'scraped' }
     else if (has(meta.description)) { patch.description = meta.description; descriptionStage = 'fallback' }
+    else if (stale) patch.description = null                            // drop wrong-site description
 
     let logoStage: EnrichStages['logo'] = 'none'
-    if (has(cur.logo_url)) logoStage = 'existing'
+    if (keep(cur.logo_url)) logoStage = 'existing'
     else if (storedLogo) { patch.logo_url = storedLogo; logoStage = 'scraped' }
     else if (has(meta.logo_url)) { patch.logo_url = meta.logo_url; logoStage = 'fallback' }
+    else if (stale) patch.logo_url = null                              // drop wrong-site logo
 
-    if (!has(cur.headquarters)) {
-      const h = has(metadata.headquarters) ? metadata.headquarters : (has(meta.headquarters) ? meta.headquarters : undefined)
-      if (has(h)) patch.headquarters = h
+    if (!keep(cur.headquarters)) {
+      const h = has(metadata.headquarters) ? metadata.headquarters : (has(meta.headquarters) ? meta.headquarters : (stale ? null : undefined))
+      if (h !== undefined) patch.headquarters = h
     }
-    if (!has(cur.industry)) {
-      const i = has(metadata.industry) ? metadata.industry : (has(meta.industry) ? meta.industry : undefined)
-      if (has(i)) patch.industry = i
+    if (!keep(cur.industry)) {
+      const i = has(metadata.industry) ? metadata.industry : (has(meta.industry) ? meta.industry : (stale ? null : undefined))
+      if (i !== undefined) patch.industry = i
     }
 
     // Registry/search identity resolved but homepage metadata unavailable →

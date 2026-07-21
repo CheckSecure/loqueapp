@@ -22,17 +22,19 @@ import { runEnrichment } from '@/lib/company/enrichment/run'
 
 // Minimal in-memory admin client that captures the finalize patch. `currentRow`
 // backs the `companies` row; `metaRow` backs the `company_metadata` fallback.
-function makeAdmin(currentRow: Record<string, any> = {}, metaRow: Record<string, any> = {}, claimReturns: any[] = [{ slug: 'x' }]) {
+function makeAdmin(currentRow: Record<string, any> = {}, metaRow: Record<string, any> = {}, claimReturns: any[] = [{ slug: 'x' }], rejectPartial = false) {
   const captured: { finalizePatch: any } = { finalizePatch: null }
   const build = (patch: any) => {
     const isClaim = patch.enrichment_status === 'in_progress'
+    // Simulate the DB CHECK constraint rejecting `partial` (migration 016 absent).
+    const constraintErr = rejectPartial && !isClaim && patch.enrichment_status === 'partial'
     const b: any = {
       eq: () => b,
       or: () => b,
       select: async () => ({ data: claimReturns, error: null }),
       then: (res: any, rej: any) => {
-        if (!isClaim) captured.finalizePatch = { ...(captured.finalizePatch || {}), ...patch }
-        return Promise.resolve({ error: null }).then(res, rej)
+        if (!isClaim && !constraintErr) captured.finalizePatch = { ...(captured.finalizePatch || {}), ...patch }
+        return Promise.resolve({ error: constraintErr ? { message: 'violates check constraint companies_enrichment_status_check' } : null }).then(res, rej)
       },
     }
     return b
@@ -143,6 +145,38 @@ describe('precedence: manual/existing > extracted > registry fallback', () => {
     const r = await runEnrichment(admin, 'davis-wright-tremaine', 'Davis Wright Tremaine', {})
     expect(r.status).toBe('enriched')
     expect(captured.finalizePatch.description).toBe('Freshly extracted homepage description.')
+  })
+})
+
+describe('constraint safety + stale-website correction', () => {
+  it('degrades a rejected `partial` write to `enriched` so the row is never stuck (migration 016 absent)', async () => {
+    state.http = { ok: false, status: 403, url: 'https://fedex.com', contentType: '', text: '', error: undefined }
+    const { admin, captured } = makeAdmin({}, {}, [{ slug: 'x' }], /* rejectPartial */ true)
+    const r = await runEnrichment(admin, 'fedex', 'FedEx', {})
+    expect(r.status).toBe('partial') // result still reports partial semantically
+    // …but the persisted row degraded to a permitted status, with identity intact.
+    expect(captured.finalizePatch.enrichment_status).toBe('enriched')
+    expect(captured.finalizePatch.name).toBe('FedEx Corporation')
+    expect(captured.finalizePatch.website).toBe('https://fedex.com')
+  })
+
+  it('a forced refresh that corrects a wrong website CLEARS stale metadata from the old site', async () => {
+    // Wonder previously scraped from wonder.io (wrong company): stale desc + logo.
+    state.http = { ok: false, status: 403, url: 'https://wonder.com', contentType: '', text: '', error: undefined }
+    const { admin, captured } = makeAdmin({ website: 'https://wonder.io', description: 'Interactive storytelling platform.', logo_url: 'https://wonder.io/logo.png' })
+    const r = await runEnrichment(admin, 'wonder', 'Wonder', { force: true })
+    expect(r.status).toBe('partial')
+    expect(captured.finalizePatch.website).toBe('https://wonder.com')   // corrected
+    expect(captured.finalizePatch.description).toBeNull()               // stale wonder.io desc dropped
+    expect(captured.finalizePatch.logo_url).toBeNull()                  // stale wonder.io logo dropped
+    expect(r.stages?.description).toBe('none')
+  })
+
+  it('a NON-force run keeps existing metadata (no churn) even if website differs', async () => {
+    state.http = { ok: false, status: 403, url: 'https://wonder.com', contentType: '', text: '', error: undefined }
+    const { admin, captured } = makeAdmin({ website: 'https://wonder.io', description: 'Existing desc' })
+    await runEnrichment(admin, 'wonder', 'Wonder', {}) // force = false
+    expect(captured.finalizePatch.description).toBeUndefined() // untouched
   })
 })
 
