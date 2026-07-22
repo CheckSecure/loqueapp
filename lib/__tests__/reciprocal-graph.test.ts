@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { selectReciprocalGraph, reciprocalPairKey, type ReciprocalEdgeInput } from '@/lib/matching/reciprocal-graph'
+import { selectReciprocalGraph, augmentForCoverage, reciprocalPairKey, type ReciprocalEdgeInput } from '@/lib/matching/reciprocal-graph'
 
 // Minimal member factory. role_type drives the role-diversity cap.
 const M = (id: string, extra: Record<string, any> = {}) => ({ id, role_type: 'lawyer', subscription_tier: 'free', ...extra })
@@ -117,6 +117,55 @@ describe('selectReciprocalGraph — role diversity cap', () => {
     const edges = lawyers.map(l => E(a, l, 90))
     const { degree } = selectReciprocalGraph(edges, { capOf: () => 2, maxSameRolePercent: 0.4 })
     expect(degree.get('a')).toBe(1)
+  })
+})
+
+describe('augmentForCoverage — recovers members greedy strands', () => {
+  const weight = (edges: ReciprocalEdgeInput[]) => edges.reduce((s, e) => s + e.mutualScore, 0)
+
+  it('reroutes a saturated hub to cover stranded members, keeping caps and quality', () => {
+    // Greedy fills P with {V,Q} and Q with {P,R}, stranding u (only partner P, full) and
+    // T (only partner Q, full). A length-3 reroute (drop P-Q, add u-P + Q-T) seats both.
+    const u = M('u'), P = M('P'), V = M('V'), Q = M('Q'), R = M('R'), T = M('T')
+    const edges = [E(P, V, 100), E(P, Q, 90), E(Q, R, 80), E(Q, T, 70), E(u, P, 30)]
+    const { selected, degree } = selectReciprocalGraph(edges, { capOf: () => 2, maxSameRolePercent: 1 })
+
+    for (const m of [u, P, V, Q, R, T]) expect(degree.get(m.id) || 0).toBeGreaterThanOrEqual(1) // all covered
+    for (const d of Array.from(degree.values())) expect(d).toBeLessThanOrEqual(2)                // caps intact
+    // still fully reciprocal after augmentation
+    const rows = emitDirected(selected)
+    const set = new Set(rows.map(([x, y]) => `${x}>${y}`))
+    for (const [x, y] of rows) expect(set.has(`${y}>${x}`)).toBe(true)
+  })
+
+  it('never lowers total quality relative to its seed (Pareto-safe)', () => {
+    const u = M('u'), P = M('P'), V = M('V'), Q = M('Q'), R = M('R'), T = M('T')
+    const edges = [E(P, V, 100), E(P, Q, 90), E(Q, R, 80), E(Q, T, 70), E(u, P, 30)]
+    const seed = [E(P, V, 100), E(P, Q, 90), E(Q, R, 80)] // the greedy result
+    const improved = augmentForCoverage(seed, edges, { capOf: () => 2, maxSameRolePercent: 1 })
+    expect(weight(improved)).toBeGreaterThanOrEqual(weight(seed))
+    expect(improved.length).toBeGreaterThan(seed.length) // strictly more introductions
+  })
+
+  it('is a no-op when the greedy matching is already maximal', () => {
+    const a = M('a'), b = M('b') // single pair, both capacity 1
+    const edges = [E(a, b, 50)]
+    const seed = [E(a, b, 50)]
+    const improved = augmentForCoverage(seed, edges, { capOf: () => 1, maxSameRolePercent: 1 })
+    expect(improved).toHaveLength(1)
+  })
+
+  it('will not create an over-cap or role-violating edge to gain coverage', () => {
+    // u's only partner P is a lawyer; P's slots are full of lawyers and u is also a
+    // lawyer — any reroute would break P's role cap, so u stays uncovered (correctly).
+    const u = M('u', { role_type: 'lawyer' })
+    const P = M('P', { role_type: 'founder' })
+    const L1 = M('L1', { role_type: 'lawyer' }), L2 = M('L2', { role_type: 'lawyer' })
+    const edges = [E(P, L1, 100), E(P, L2, 90), E(u, P, 80)]
+    const { degree } = selectReciprocalGraph(edges, { capOf: () => 2, maxSameRolePercent: 0.4 }) // 1 per role
+    // P already has one lawyer (role cap = 1); u (lawyer) cannot be added without breaking it.
+    expect(degree.get('u') || 0).toBe(0)
+    for (const d of Array.from(degree.values())) expect(d).toBeLessThanOrEqual(2)
   })
 })
 
