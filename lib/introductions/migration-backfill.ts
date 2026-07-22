@@ -234,6 +234,11 @@ export async function planBackfill(adminClient: any, sampleSize = 10): Promise<B
 export async function applyBackfill(adminClient: any): Promise<BackfillApplyResult> {
   const { memberSet, irByMember, adminByMember, profileMap } = await collectForApply(adminClient)
 
+  // Throw on any write error so the backfill can NEVER silently half-apply (e.g. a
+  // rejected batch_id write leaving orphan batch metadata). Resume-safety means a
+  // re-run after a throw re-cleans and completes the member from a clean baseline.
+  const chk = (r: any) => { if (r?.error) throw new Error(r.error.message ?? String(r.error)); return r }
+
   const now = new Date().toISOString()
   const res: BackfillApplyResult = { membersProcessed: 0, membersSkipped: 0, activeBatchesCreated: 0, queuedBatchesCreated: 0, recommendationsDiscarded: 0 }
 
@@ -250,10 +255,10 @@ export async function applyBackfill(adminClient: any): Promise<BackfillApplyResu
     // Reset any partial state from a prior interrupted run to a clean baseline:
     // revert half-flipped 'queued' rows to 'suggested' and clear non-active batch
     // metadata. After this, a re-run behaves like a first run — no double-create.
-    await adminClient.from('intro_requests').update({ status: 'suggested', batch_id: null })
-      .eq('requester_id', memberId).eq('status', 'queued')
-    await adminClient.from('recommendation_batches').delete()
-      .eq('member_id', memberId).in('state', ['queued', 'completed', 'discarded'])
+    chk(await adminClient.from('intro_requests').update({ status: 'suggested', batch_id: null })
+      .eq('requester_id', memberId).eq('status', 'queued'))
+    chk(await adminClient.from('recommendation_batches').delete()
+      .eq('member_id', memberId).in('state', ['queued', 'completed', 'discarded']))
 
     // Deterministic Active/Queued/Discard selection (same function planBackfill uses).
     const { active: current, queued: next, discard } = rankMemberItems(profileMap.get(memberId) ?? {}, existing, admin, profileMap)
@@ -265,25 +270,25 @@ export async function applyBackfill(adminClient: any): Promise<BackfillApplyResu
     // Attach the active batch: UPDATE existing rows in place (preserve match_reason /
     // created_at), INSERT only for admin-sourced targets that have no live row yet.
     for (const it of current) {
-      if (it.rowId) await adminClient.from('intro_requests').update({ status: 'suggested', batch_id: batchIdA, updated_at: now }).eq('id', it.rowId)
-      else await adminClient.from('intro_requests').insert({ requester_id: memberId, target_user_id: it.target, status: 'suggested', match_reason: it.reason, batch_id: batchIdA, created_at: now, updated_at: now })
+      if (it.rowId) chk(await adminClient.from('intro_requests').update({ status: 'suggested', batch_id: batchIdA, updated_at: now }).eq('id', it.rowId))
+      else chk(await adminClient.from('intro_requests').insert({ requester_id: memberId, target_user_id: it.target, status: 'suggested', match_reason: it.reason, batch_id: batchIdA, created_at: now, updated_at: now }))
     }
     for (const it of next) {
-      if (it.rowId) await adminClient.from('intro_requests').update({ status: 'queued', batch_id: batchIdQ, updated_at: now }).eq('id', it.rowId)
-      else await adminClient.from('intro_requests').insert({ requester_id: memberId, target_user_id: it.target, status: 'queued', match_reason: it.reason, batch_id: batchIdQ, created_at: now, updated_at: now })
+      if (it.rowId) chk(await adminClient.from('intro_requests').update({ status: 'queued', batch_id: batchIdQ, updated_at: now }).eq('id', it.rowId))
+      else chk(await adminClient.from('intro_requests').insert({ requester_id: memberId, target_user_id: it.target, status: 'queued', match_reason: it.reason, batch_id: batchIdQ, created_at: now, updated_at: now }))
     }
     // Discard genuine excess — delete only these specific old rows (never matches,
     // pending, approved, or history).
-    for (const it of discard) if (it.rowId) await adminClient.from('intro_requests').delete().eq('id', it.rowId)
+    for (const it of discard) if (it.rowId) chk(await adminClient.from('intro_requests').delete().eq('id', it.rowId))
 
     // Batch metadata LAST, queued before active. The active row is the skip sentinel,
     // so if interrupted before it lands, the next run re-cleans and redoes cleanly.
     if (batchIdQ) {
-      await adminClient.from('recommendation_batches').insert({ batch_id: batchIdQ, member_id: memberId, batch_source: 'migration', state: 'queued', reciprocal_batch_id: null, created_at: now, generated_at: now, displayed_at: null, completed_at: null })
+      chk(await adminClient.from('recommendation_batches').insert({ batch_id: batchIdQ, member_id: memberId, batch_source: 'migration', state: 'queued', reciprocal_batch_id: null, created_at: now, generated_at: now, displayed_at: null, completed_at: null }))
       res.queuedBatchesCreated++
     }
     if (current.length > 0) {
-      await adminClient.from('recommendation_batches').insert({ batch_id: batchIdA, member_id: memberId, batch_source: 'migration', state: 'active', reciprocal_batch_id: null, created_at: now, generated_at: now, displayed_at: now, completed_at: null })
+      chk(await adminClient.from('recommendation_batches').insert({ batch_id: batchIdA, member_id: memberId, batch_source: 'migration', state: 'active', reciprocal_batch_id: null, created_at: now, generated_at: now, displayed_at: now, completed_at: null }))
       res.activeBatchesCreated++
     }
     res.membersProcessed++
