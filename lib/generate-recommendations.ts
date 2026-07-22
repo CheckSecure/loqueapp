@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
@@ -416,6 +417,69 @@ function interleaveBusinessSolutions(peers: any[], businessSolutions: any[]): an
 
 
 
+// ==========================================
+// LAW-FIRM COMPOSITION POLICY (onboarding/live path)
+// ==========================================
+// A law-firm lawyer's batch must never be two other law-firm lawyers. Prefer
+// in-house legal leaders, executives, investors, and other credible clients /
+// referral sources. Allow at most ONE law-firm lawyer, and only when the match has
+// a meaningful strategic rationale beyond shared seniority / overlapping expertise:
+// complementary practice (little non-generic overlap) AND a local-referral signal
+// (same metro). This lives here, in the onboarding/live ranker — it is independent
+// of the reciprocal-batch peer exemption in lib/matching/reciprocal-graph.ts.
+
+export function isLawFirmLawyer(profile: any): boolean {
+  return /law firm/i.test(String(profile?.role_type ?? ''))
+}
+
+// "Legal" is a near-universal generic tag; it must not count as complementary-practice signal.
+const GENERIC_EXPERTISE = new Set(['legal'])
+
+function passesPeerStrategicGate(viewer: any, peer: any): boolean {
+  const pe = (e: any): string[] => {
+    if (Array.isArray(e)) return e
+    if (typeof e === 'string') {
+      try { const p = JSON.parse(e); if (Array.isArray(p)) return p } catch {}
+      if (e.startsWith('{') && e.endsWith('}')) return e.slice(1, -1).split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(Boolean)
+    }
+    return []
+  }
+  const ve = pe(viewer.expertise), ce = pe(peer.expertise)
+  const nonGenericOverlap = ve.filter(e => ce.includes(e) && !GENERIC_EXPERTISE.has(String(e).toLowerCase())).length
+  const sameCity = !!(viewer.city && peer.city && viewer.city.toLowerCase().trim() === peer.city.toLowerCase().trim())
+  // Complementary practice (≤1 shared non-generic area) AND a local-referral signal.
+  return nonGenericOverlap <= 1 && sameCity
+}
+
+/**
+ * Reorder a rank-ordered candidate list so a law-firm-lawyer viewer's batch is never
+ * two law-firm lawyers: at most one peer, only if it clears the strategic gate, and
+ * never in the first slot (guaranteeing ≥1 client / referral source). Non-law-firm
+ * viewers are returned unchanged. Members and their scores are unchanged — only order.
+ */
+export function applyLawFirmCompositionPolicy(candidates: any[], viewer: any): any[] {
+  if (!isLawFirmLawyer(viewer)) return candidates
+  const front: any[] = []
+  const deferredPeers: any[] = []
+  let peerUsed = false
+  for (const c of candidates) {
+    if (isLawFirmLawyer(c)) {
+      // allow one strategic peer, but only after at least one client is placed (never slot 1)
+      if (!peerUsed && front.length >= 1 && passesPeerStrategicGate(viewer, c)) {
+        front.push(c)
+        peerUsed = true
+      } else {
+        deferredPeers.push(c)
+      }
+    } else {
+      front.push(c)
+    }
+  }
+  // Deferred peers only fill if clients are exhausted (last resort) — never re-introduce a
+  // second peer into the front N ahead of a client.
+  return [...front, ...deferredPeers]
+}
+
 function calculateFinalScore(userProfile: any, candidate: any, userTier: string = 'free', targetedRequest: any = null): number {
   // All inputs are now 0-100 normalized
   const alignmentNormalized = calculateAlignmentScore(userProfile, candidate) // 0-100
@@ -763,9 +827,14 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   // it cannot pull ineligible candidates into the batch. Flag-gated; no-op
   // when MATCHING_V2_VERTICAL_BOOST !== '1' or the viewer has no preference.
   const boostedCandidates = applyVerticalBoost(rankedCandidates, newUserProfile)
+  // Law-firm composition policy: a law-firm lawyer never gets two other law-firm
+  // lawyers — at most one, only with a strategic (complementary-practice + local)
+  // rationale, and never in the first slot. Reorders BEFORE truncation so excess
+  // peers fall below the batch size.
+  const composed = applyLawFirmCompositionPolicy(boostedCandidates, newUserProfile)
   // Apply throttling to prevent consultant/law firm clustering
   const throttled = applyThrottling(
-    boostedCandidates,
+    composed,
     newUserProfile,
     userTier,
     recommendationCount
@@ -806,12 +875,16 @@ export async function generateOnboardingRecommendations(userId: string, maxCount
     return { count: 0 }
   }
   
-  // Final safety: already handled by exclusion logic above
+  // Every release (onboarding or a weekly release) shares one batch_id so the batch
+  // can be grouped and its completion tracked. Members experience a single curated
+  // cycle — there is no separate onboarding vs recurring shape.
+  const batchId = randomUUID()
   const introRequests = sorted.map(candidate => ({
     requester_id: userId,
     target_user_id: candidate.id,
     status: 'suggested',
     match_reason: candidate.match_reason,
+    batch_id: batchId,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }))
@@ -851,4 +924,52 @@ export async function generateOnboardingRecommendations(userId: string, maxCount
   }
   
   return { count: sorted.length }
+}
+
+// Statuses that mean the member has EXPRESSED INTEREST (resolves a suggestion for
+// batch-completion, even while the request is still pending). createIntroRequest
+// leaves the original 'suggested' row in place and inserts one of these, so
+// completion must cross-reference by target.
+const EXPRESSED_INTEREST_STATUSES = ['pending', 'accepted', 'admin_pending', 'approved']
+
+/**
+ * Count a member's still-UNRESOLVED recommendations. A 'suggested' row is resolved
+ * when the member has acted on it — passed/hidden (the row leaves 'suggested') or
+ * expressed interest (an outbound pending/approved request to that target exists).
+ * The batch is complete when this returns 0.
+ */
+export async function countUnresolvedRecommendations(adminClient: any, userId: string): Promise<number> {
+  const { data: suggested } = await adminClient
+    .from('intro_requests').select('target_user_id')
+    .eq('requester_id', userId).eq('status', 'suggested')
+  const targets: string[] = (suggested ?? []).map((r: any) => r.target_user_id)
+  if (targets.length === 0) return 0
+  const { data: expressed } = await adminClient
+    .from('intro_requests').select('target_user_id')
+    .eq('requester_id', userId)
+    .in('status', EXPRESSED_INTEREST_STATUSES)
+    .in('target_user_id', targets)
+  const expressedSet = new Set((expressed ?? []).map((r: any) => r.target_user_id))
+  return targets.filter((t) => !expressedSet.has(t)).length
+}
+
+/**
+ * The weekly release, per member. Releases the next batch ONLY if the current batch
+ * is complete (every recommendation acted on). On release, the resolved prior
+ * suggestions are archived and the next RECOMMENDATIONS_PER_BATCH suggestions are
+ * generated under a fresh batch_id. If the batch is incomplete, does nothing — so a
+ * member cannot rapidly cycle through and exhaust the network. Completing a batch
+ * never triggers an immediate refill; the next batch arrives at the next release.
+ */
+export async function releaseNextBatchIfComplete(
+  adminClient: any,
+  userId: string,
+): Promise<{ released: boolean; count: number }> {
+  const unresolved = await countUnresolvedRecommendations(adminClient, userId)
+  if (unresolved > 0) return { released: false, count: 0 }
+  // Complete → archive resolved suggestions so 'suggested' holds only the new batch.
+  await adminClient.from('intro_requests').update({ status: 'archived' })
+    .eq('requester_id', userId).eq('status', 'suggested')
+  const result = await generateOnboardingRecommendations(userId) // defaults to RECOMMENDATIONS_PER_BATCH
+  return { released: true, count: result.count }
 }

@@ -1,81 +1,47 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createNotificationSafe } from '@/lib/notifications'
-import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
-import { getEffectiveTier } from '@/lib/tier-override'
-import { getActiveIntroCap } from '@/lib/introductions/limits'
+import { releaseNextBatchIfComplete } from '@/lib/generate-recommendations'
 
+/**
+ * THE weekly recommendation release — the single scheduled cadence for the unified
+ * recommendation cycle (onboarding delivers the first batch; this delivers every
+ * subsequent one). For each active member it releases the next batch
+ * (RECOMMENDATIONS_PER_BATCH) ONLY if their current batch is complete — every
+ * recommendation acted on (interest expressed or passed/dismissed). Members with an
+ * unresolved batch get nothing, so they can't rapidly cycle through the network.
+ * The daily-refill and monthly-batch crons are retired (they no longer produce
+ * recommendations) so this is the only release path.
+ */
 export async function GET(req: Request) {
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  
+
   const adminClient = createAdminClient()
-  
-  console.log('[Weekly Refresh] Starting weekly batch generation...')
-  
+  console.log('[Weekly Release] Starting weekly recommendation release...')
+
   const { data: users } = await adminClient
     .from('profiles')
-    .select('id, email, subscription_tier, is_founding_member, founding_member_expires_at')
+    .select('id, email')
     .eq('account_status', 'active')
     .eq('profile_complete', true)
     .not('is_test_account', 'is', true)
-  
+
   if (!users) return NextResponse.json({ error: 'No users found' }, { status: 500 })
-  
-  let processed = 0
-  
+
+  let released = 0
+  let skippedIncomplete = 0
   for (const user of users) {
     try {
-      const tier = getEffectiveTier(user)
-      const targetSlots = getActiveIntroCap(tier)
-      
-      // Count current visible intros (bidirectional, all active statuses)
-      const { data: activeIntros } = await adminClient
-        .from('intro_requests')
-        .select('id')
-        .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
-        .in('status', ['suggested', 'accepted', 'admin_pending', 'approved'])
-
-      // Archive stale suggestions (>72 hours old)
-      const staleDate = new Date()
-      staleDate.setHours(staleDate.getHours() - 72)
-      
-      const { data: archivedIntros, error: archiveError } = await adminClient
-        .from('intro_requests')
-        .update({ status: 'archived' })
-        .eq('requester_id', user.id)
-        .eq('status', 'suggested')
-        .lt('created_at', staleDate.toISOString())
-        .select()
-      
-      if (archivedIntros && archivedIntros.length > 0) {
-        console.log(`[Weekly Refresh] Archived ${archivedIntros.length} stale intros for ${user.email}`)
-      }
-      
-      // Recount after archiving (bidirectional, all active statuses)
-      const { data: activeAfterArchive } = await adminClient
-        .from('intro_requests')
-        .select('id')
-        .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
-        .in('status', ['suggested', 'accepted', 'admin_pending', 'approved'])
-
-      const currentCountAfterArchive = activeAfterArchive?.length || 0
-      
-      // Generate only the gap to tier cap
-      const slotsToFill = targetSlots - currentCountAfterArchive
-      if (slotsToFill > 0) {
-        await generateOnboardingRecommendations(user.id, slotsToFill)
-        processed++
-      }
-      
+      const result = await releaseNextBatchIfComplete(adminClient, user.id)
+      if (result.released) released++
+      else skippedIncomplete++
     } catch (err) {
-      console.error(`[Weekly Refresh] Error for ${user.email}:`, err)
+      console.error(`[Weekly Release] Error for ${user.email}:`, err)
     }
   }
-  
-  console.log(`[Weekly Refresh] Complete. Processed ${processed} users.`)
-  
-  return NextResponse.json({ success: true, processed })
+
+  console.log(`[Weekly Release] Complete. Released to ${released} members; ${skippedIncomplete} still had an open batch.`)
+  return NextResponse.json({ success: true, released, skippedIncomplete })
 }
