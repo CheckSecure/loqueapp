@@ -6,7 +6,7 @@ import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matc
 import { isSameCompany } from '@/lib/matching/same-company'
 import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
-import { buildScoringContext, scoreMatch as scoreMatchV2, exposureAdjustedScore, EXPOSURE_CONFIG, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
+import { buildScoringContext, scoreMatch as scoreMatchV2, exposureAdjustedScore, EXPOSURE_CONFIG, BATCH_CONFIG, effectiveTierDistribution, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
 
@@ -89,7 +89,7 @@ function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low'
 }
 
 function getTierDistribution(tier: string): { high: number, mid: number, total: number } {
-  return BATCH_CONFIG.tierDistribution[tier] || BATCH_CONFIG.tierDistribution.free
+  return effectiveTierDistribution(tier) // applies the launch-phase per-member cap
 }
   
 

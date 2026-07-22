@@ -12,12 +12,6 @@ export const dynamic = 'force-dynamic'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
-const TIER_TARGETS: Record<string, number> = {
-  free: 3,
-  professional: 5,
-  executive: 8,
-  founding: 5,
-}
 
 const MIN_RELEVANCE_SCORE = 25
 const DROPPED_COOLDOWN_DAYS = 90
@@ -52,9 +46,9 @@ function parseExpertise(value: any): string[] {
 }
 
 function tierTarget(tier: string | null | undefined): number {
-  if (!tier) return 3
-  const t = TIER_TARGETS[tier]
-  return typeof t === 'number' ? t : 3
+  // Respect the launch-phase per-member cap (single source of truth), so
+  // replacements never refill above the current introductions-per-member limit.
+  return perRecipientIntroLimit(tier)
 }
 
 function isCompatiblePair(userA: any, userB: any): boolean {

@@ -1,13 +1,25 @@
 import { describe, it, expect } from 'vitest'
 import { perRecipientIntroLimit, suggestionCountsTowardLimit, enforceRecipientLimits } from '@/lib/matching/batch-limits'
+import { BATCH_CONFIG, effectiveTierDistribution } from '@/lib/matching/batch-scoring'
 
-describe('perRecipientIntroLimit', () => {
-  it('returns the configured per-tier limit', () => {
-    expect(perRecipientIntroLimit('free')).toBe(3)
-    expect(perRecipientIntroLimit('professional')).toBe(5)
-    expect(perRecipientIntroLimit('executive')).toBe(8)
-    expect(perRecipientIntroLimit(undefined)).toBe(3) // defaults to free
-    expect(perRecipientIntroLimit('nonsense')).toBe(3)
+describe('perRecipientIntroLimit (launch-cap aware)', () => {
+  it('equals the tier total after the launch cap, for every tier', () => {
+    for (const tier of ['free', 'professional', 'executive', undefined, 'nonsense']) {
+      expect(perRecipientIntroLimit(tier)).toBe(effectiveTierDistribution(tier).total)
+    }
+  })
+  it('honors the launch cap: no tier exceeds introductionsPerMemberCap when set', () => {
+    const cap = BATCH_CONFIG.introductionsPerMemberCap
+    if (cap != null) {
+      for (const tier of ['free', 'professional', 'executive']) {
+        expect(perRecipientIntroLimit(tier)).toBeLessThanOrEqual(cap)
+      }
+    }
+  })
+  it('launch phase: default is 2 introductions per member (all tiers)', () => {
+    expect(BATCH_CONFIG.introductionsPerMemberCap).toBe(2)
+    expect(perRecipientIntroLimit('free')).toBe(2)
+    expect(perRecipientIntroLimit('executive')).toBe(2)
   })
 })
 

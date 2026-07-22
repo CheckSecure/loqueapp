@@ -17,6 +17,8 @@ import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
+import MatchProfileCompletionCard from '@/components/MatchProfileCompletionCard'
+import { matchProfileCompletion } from '@/lib/matching/profile-completion'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
 import { professionalIdentity, professionalIdentityLine } from '@/lib/professionalIdentity'
@@ -784,6 +786,14 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             batchId={currentBatchId}
           />
         )}
+
+        {/* Empty/low-match experience: a member with few or no introductions AND an
+            incomplete matching profile gets an actionable nudge, not a bare empty
+            state. (The card self-hides once the matching profile is complete.) */}
+        {(allSuggestions.length + adminIntrosVisible.length) <= 1
+          && !matchProfileCompletion(profileRow).complete && (
+            <MatchProfileCompletionCard profile={profileRow} variant="empty" />
+          )}
 
         {/* TWO-COLUMN LAYOUT */}
         <div className="grid lg:grid-cols-3 gap-6 lg:gap-8">

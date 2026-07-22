@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { MATCH_SCORE_MAX } from '@/lib/matching/score'
 import { EXPOSURE_CONFIG } from '@/lib/matching/batch-scoring'
+import { perRecipientIntroLimit } from '@/lib/matching/batch-limits'
 
 /**
  * Integration test for the admin "Generate New Batch" path. Drives the real
@@ -156,8 +157,9 @@ describe('Generate New Batch — full insert', () => {
     await post()
     const counts: Record<string, number> = {}
     for (const r of state.insertedSuggestions || []) counts[r.recipient_id] = (counts[r.recipient_id] || 0) + 1
-    // Free tier limit is 3 — nobody may receive more, no matter how many qualify.
-    expect(Math.max(...Object.values(counts))).toBeLessThanOrEqual(3)
+    // Nobody may receive more than the (launch-capped) free-tier limit, no matter
+    // how many candidates qualify.
+    expect(Math.max(...Object.values(counts))).toBeLessThanOrEqual(perRecipientIntroLimit('free'))
   })
 
   it('is deterministic + repeatable and enforces safety invariants (v2 algorithm)', async () => {

@@ -1,4 +1,4 @@
-import { BATCH_CONFIG } from './batch-scoring'
+import { effectiveTierDistribution } from './batch-scoring'
 
 /**
  * Per-recipient introduction-limit enforcement.
@@ -23,10 +23,9 @@ export function suggestionCountsTowardLimit(status: string | null | undefined): 
   return !NON_COUNTING_STATUSES.has(String(status ?? ''))
 }
 
-/** Configured per-batch introduction limit for a member's subscription tier. */
+/** Configured per-batch introduction limit for a member's tier (after the launch cap). */
 export function perRecipientIntroLimit(tier: string | null | undefined): number {
-  const d = BATCH_CONFIG.tierDistribution[tier || 'free'] || BATCH_CONFIG.tierDistribution.free
-  return d.total
+  return effectiveTierDistribution(tier).total
 }
 
 /**

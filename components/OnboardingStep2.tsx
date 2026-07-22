@@ -54,6 +54,15 @@ export default function OnboardingStep2({ profile }: { profile: Profile | null }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Why these fields matter — they directly drive introduction quality. */}
+      <div className="rounded-2xl border border-brand-gold/30 bg-brand-gold-soft/60 px-5 py-3.5">
+        <p className="text-sm text-brand-navy font-semibold">These answers power your introductions</p>
+        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+          Andrel matches you on your goals, who you want to meet, your expertise, and your interests. The more you
+          share here, the more — and stronger — introductions you&rsquo;ll receive.
+        </p>
+      </div>
+
       {/* Purposes */}
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6">
         <h3 className="text-sm font-semibold text-slate-900 mb-1">Your goals on Andrel</h3>

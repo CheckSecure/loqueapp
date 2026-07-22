@@ -87,6 +87,27 @@ export const BATCH_CONFIG = {
     professional: { high: 3, mid: 2, total: 5 },
     executive: { high: 5, mid: 3, total: 8 },
   } as Record<string, { high: number; mid: number; total: number }>,
+  /**
+   * LAUNCH-PHASE cap on introductions per member across ALL tiers. An intentional
+   * product decision for the small early network: deliver 2 exceptional intros
+   * rather than a possibly-weaker 3rd, preserving inventory while the network
+   * grows. Set to `null` to let each tier use its natural `total` (e.g. once the
+   * network is dense enough to raise it back to 3+). One number to change.
+   */
+  introductionsPerMemberCap: 2 as number | null,
+}
+
+/**
+ * A tier's effective distribution AFTER applying the launch cap. `total` is capped
+ * to `introductionsPerMemberCap`, and `high` can't exceed it; `mid` is advisory
+ * (selection fills mid up to the remaining total). Single source of truth for both
+ * the selection loop and the per-recipient limit invariant.
+ */
+export function effectiveTierDistribution(tier: string | null | undefined): { high: number; mid: number; total: number } {
+  const nat = BATCH_CONFIG.tierDistribution[tier || 'free'] || BATCH_CONFIG.tierDistribution.free
+  const cap = BATCH_CONFIG.introductionsPerMemberCap
+  if (cap == null) return nat
+  return { high: Math.min(nat.high, cap), mid: nat.mid, total: Math.min(nat.total, cap) }
 }
 
 export type Frequencies = Map<string, number>
