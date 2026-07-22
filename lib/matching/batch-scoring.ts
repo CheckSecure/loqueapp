@@ -102,7 +102,9 @@ export const BATCH_CONFIG = {
    * grows. Set to `null` to let each tier use its natural `total` (e.g. once the
    * network is dense enough to raise it back to 3+). One number to change.
    */
-  introductionsPerMemberCap: 2 as number | null,
+  // References the single central constant so onboarding, weekly releases, and the
+  // admin reciprocal batch all deliver the same configured number per member.
+  introductionsPerMemberCap: RECOMMENDATIONS_PER_BATCH as number | null,
 }
 
 /**
@@ -124,6 +126,7 @@ export type RarityMap = Map<string, number>
 export type ScoringContext = { memberCount: number; purposeRarity: RarityMap; interestRarity: RarityMap; config: ScoringConfig }
 
 import { assertAllEligible } from '@/lib/matching/eligibility'
+import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
 
 const low = (s: unknown) => String(s ?? '').toLowerCase().trim()
 const uniqLow = (arr: unknown): string[] => Array.isArray(arr) ? Array.from(new Set(arr.map(low).filter(Boolean))) : []

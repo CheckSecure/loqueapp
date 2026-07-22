@@ -1,81 +1,52 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createNotificationSafe } from '@/lib/notifications'
-import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
-import { getEffectiveTier } from '@/lib/tier-override'
-import { getActiveIntroCap } from '@/lib/introductions/limits'
+import { generateBatchForMember } from '@/lib/generate-recommendations'
+import { weeklyEligibilityCheck } from '@/lib/introductions/queue'
 
+/**
+ * THE weekly recommendation GENERATION cadence for the unified queue.
+ *
+ * Generation and promotion are separate concerns: this cron only GENERATES. It never
+ * promotes — promotion (revealing a queued batch) happens immediately when a member
+ * resolves their active batch (see promoteIfResolved in the pass / express-interest
+ * paths). For each active, profile-complete member it generates ONE new batch, but
+ * only when weeklyEligibilityCheck passes: no queued batch already waiting, and not
+ * sitting behind an incomplete admin reciprocal batch. This bounds the queue to
+ * "current + optional next" — no backlog, no rapid cycling through the network.
+ */
 export async function GET(req: Request) {
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  
+
   const adminClient = createAdminClient()
-  
-  console.log('[Weekly Refresh] Starting weekly batch generation...')
-  
+  console.log('[Weekly Generation] Starting weekly recommendation generation...')
+
   const { data: users } = await adminClient
     .from('profiles')
-    .select('id, email, subscription_tier, is_founding_member, founding_member_expires_at')
+    .select('id, email')
     .eq('account_status', 'active')
     .eq('profile_complete', true)
     .not('is_test_account', 'is', true)
-  
+
   if (!users) return NextResponse.json({ error: 'No users found' }, { status: 500 })
-  
-  let processed = 0
-  
+
+  let generated = 0
+  let skippedIneligible = 0
+  let placedNothing = 0
   for (const user of users) {
     try {
-      const tier = getEffectiveTier(user)
-      const targetSlots = getActiveIntroCap(tier)
-      
-      // Count current visible intros (bidirectional, all active statuses)
-      const { data: activeIntros } = await adminClient
-        .from('intro_requests')
-        .select('id')
-        .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
-        .in('status', ['suggested', 'accepted', 'admin_pending', 'approved'])
-
-      // Archive stale suggestions (>72 hours old)
-      const staleDate = new Date()
-      staleDate.setHours(staleDate.getHours() - 72)
-      
-      const { data: archivedIntros, error: archiveError } = await adminClient
-        .from('intro_requests')
-        .update({ status: 'archived' })
-        .eq('requester_id', user.id)
-        .eq('status', 'suggested')
-        .lt('created_at', staleDate.toISOString())
-        .select()
-      
-      if (archivedIntros && archivedIntros.length > 0) {
-        console.log(`[Weekly Refresh] Archived ${archivedIntros.length} stale intros for ${user.email}`)
-      }
-      
-      // Recount after archiving (bidirectional, all active statuses)
-      const { data: activeAfterArchive } = await adminClient
-        .from('intro_requests')
-        .select('id')
-        .or(`requester_id.eq.${user.id},target_user_id.eq.${user.id}`)
-        .in('status', ['suggested', 'accepted', 'admin_pending', 'approved'])
-
-      const currentCountAfterArchive = activeAfterArchive?.length || 0
-      
-      // Generate only the gap to tier cap
-      const slotsToFill = targetSlots - currentCountAfterArchive
-      if (slotsToFill > 0) {
-        await generateOnboardingRecommendations(user.id, slotsToFill)
-        processed++
-      }
-      
+      const eligible = await weeklyEligibilityCheck(adminClient, user.id)
+      if (!eligible) { skippedIneligible++; continue }
+      const result = await generateBatchForMember(user.id, 'weekly')
+      if (result.placed) generated++
+      else placedNothing++
     } catch (err) {
-      console.error(`[Weekly Refresh] Error for ${user.email}:`, err)
+      console.error(`[Weekly Generation] Error for ${user.email}:`, err)
     }
   }
-  
-  console.log(`[Weekly Refresh] Complete. Processed ${processed} users.`)
-  
-  return NextResponse.json({ success: true, processed })
+
+  console.log(`[Weekly Generation] Complete. Generated for ${generated} members; ${skippedIneligible} ineligible (queued/behind admin); ${placedNothing} had no candidates.`)
+  return NextResponse.json({ success: true, generated, skippedIneligible, placedNothing })
 }

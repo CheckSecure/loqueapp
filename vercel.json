@@ -1,16 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/cron/monthly-batch",
-      "schedule": "0 9 1 * *"
-    },
-    {
       "path": "/api/cron/weekly-refresh",
       "schedule": "0 9 * * 1"
-    },
-    {
-      "path": "/api/cron/daily-refill",
-      "schedule": "0 12 * * *"
     },
     {
       "path": "/api/cron/opportunities-maintain",

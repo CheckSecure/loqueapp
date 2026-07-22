@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Users, GitBranch, UserPlus, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, Briefcase, Zap, ThumbsUp, Sparkles } from 'lucide-react'
+import { getQueueHealthMetrics, type QueueHealthMetrics } from '@/lib/introductions/queue-metrics'
 
 export const metadata = { title: 'Admin Dashboard | Andrel' }
 
@@ -36,6 +37,15 @@ export default async function AdminDashboard() {
     .from('concierge_requests')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'pending')
+
+  // Recommendation-queue health (operational; never shown to members). Resilient to
+  // the recommendation_batches table not existing yet (pre-migration → all zeros).
+  let queueHealth: QueueHealthMetrics | null = null
+  try {
+    queueHealth = await getQueueHealthMetrics(adminClient)
+  } catch (err) {
+    console.warn('[admin] queue health metrics unavailable (apply migration 020):', (err as any)?.message)
+  }
 
   // Shared time windows
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -159,6 +169,27 @@ export default async function AdminDashboard() {
           <h1 className="text-2xl font-bold text-slate-900">Admin Dashboard</h1>
           <p className="text-sm text-slate-500 mt-0.5">Launch operations console</p>
         </div>
+
+        {/* Recommendation queue health — operational, member-invisible */}
+        {queueHealth && (
+          <div>
+            <h2 className="text-sm font-semibold text-slate-700 mb-2">Recommendation queue health</h2>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {[
+                { label: 'No active batch', value: queueHealth.noActiveBatch },
+                { label: 'Active only', value: queueHealth.activeBatchOnly },
+                { label: 'Queued batch waiting', value: queueHealth.withQueuedBatch },
+                { label: 'Awaiting weekly gen', value: queueHealth.waitingForWeeklyGeneration },
+                { label: 'Awaiting admin batch', value: queueHealth.waitingOnAdminBatch },
+              ].map((m) => (
+                <div key={m.label} className="bg-white rounded-xl border border-slate-200 p-4">
+                  <p className="text-2xl font-bold text-slate-900">{m.value}</p>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-tight">{m.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Top metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

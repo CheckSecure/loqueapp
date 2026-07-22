@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { enqueueBatch, type BatchSource, type EnqueueResult, countUnresolvedRecommendations } from '@/lib/introductions/queue'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
@@ -13,7 +14,11 @@ import { BATCH_EXCLUDING_STATUSES } from '@/lib/introRequests/state'
 // Unified scoring model for all tiers
 // Final Score = Alignment (55%) + Network Value (30%) + Responsiveness (15%)
 
-function calculateAlignmentScore(userProfile: any, candidate: any): number {
+// Deterministic (no randomness) alignment score, 0–100. Exported so the one-time
+// migration backfill can rank a member's EXISTING suggested candidates by the same
+// dominant component the live model used, without invoking the random tier jitter.
+// This does not change live generation — rankCandidatesForUser is untouched.
+export function calculateAlignmentScore(userProfile: any, candidate: any): number {
   let alignmentScore = 0
   
   // Goal/preference overlap (30 points)
@@ -416,6 +421,69 @@ function interleaveBusinessSolutions(peers: any[], businessSolutions: any[]): an
 
 
 
+// ==========================================
+// LAW-FIRM COMPOSITION POLICY (onboarding/live path)
+// ==========================================
+// A law-firm lawyer's batch must never be two other law-firm lawyers. Prefer
+// in-house legal leaders, executives, investors, and other credible clients /
+// referral sources. Allow at most ONE law-firm lawyer, and only when the match has
+// a meaningful strategic rationale beyond shared seniority / overlapping expertise:
+// complementary practice (little non-generic overlap) AND a local-referral signal
+// (same metro). This lives here, in the onboarding/live ranker — it is independent
+// of the reciprocal-batch peer exemption in lib/matching/reciprocal-graph.ts.
+
+export function isLawFirmLawyer(profile: any): boolean {
+  return /law firm/i.test(String(profile?.role_type ?? ''))
+}
+
+// "Legal" is a near-universal generic tag; it must not count as complementary-practice signal.
+const GENERIC_EXPERTISE = new Set(['legal'])
+
+function passesPeerStrategicGate(viewer: any, peer: any): boolean {
+  const pe = (e: any): string[] => {
+    if (Array.isArray(e)) return e
+    if (typeof e === 'string') {
+      try { const p = JSON.parse(e); if (Array.isArray(p)) return p } catch {}
+      if (e.startsWith('{') && e.endsWith('}')) return e.slice(1, -1).split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(Boolean)
+    }
+    return []
+  }
+  const ve = pe(viewer.expertise), ce = pe(peer.expertise)
+  const nonGenericOverlap = ve.filter(e => ce.includes(e) && !GENERIC_EXPERTISE.has(String(e).toLowerCase())).length
+  const sameCity = !!(viewer.city && peer.city && viewer.city.toLowerCase().trim() === peer.city.toLowerCase().trim())
+  // Complementary practice (≤1 shared non-generic area) AND a local-referral signal.
+  return nonGenericOverlap <= 1 && sameCity
+}
+
+/**
+ * Reorder a rank-ordered candidate list so a law-firm-lawyer viewer's batch is never
+ * two law-firm lawyers: at most one peer, only if it clears the strategic gate, and
+ * never in the first slot (guaranteeing ≥1 client / referral source). Non-law-firm
+ * viewers are returned unchanged. Members and their scores are unchanged — only order.
+ */
+export function applyLawFirmCompositionPolicy(candidates: any[], viewer: any): any[] {
+  if (!isLawFirmLawyer(viewer)) return candidates
+  const front: any[] = []
+  const deferredPeers: any[] = []
+  let peerUsed = false
+  for (const c of candidates) {
+    if (isLawFirmLawyer(c)) {
+      // allow one strategic peer, but only after at least one client is placed (never slot 1)
+      if (!peerUsed && front.length >= 1 && passesPeerStrategicGate(viewer, c)) {
+        front.push(c)
+        peerUsed = true
+      } else {
+        deferredPeers.push(c)
+      }
+    } else {
+      front.push(c)
+    }
+  }
+  // Deferred peers only fill if clients are exhausted (last resort) — never re-introduce a
+  // second peer into the front N ahead of a client.
+  return [...front, ...deferredPeers]
+}
+
 function calculateFinalScore(userProfile: any, candidate: any, userTier: string = 'free', targetedRequest: any = null): number {
   // All inputs are now 0-100 normalized
   const alignmentNormalized = calculateAlignmentScore(userProfile, candidate) // 0-100
@@ -763,9 +831,14 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   // it cannot pull ineligible candidates into the batch. Flag-gated; no-op
   // when MATCHING_V2_VERTICAL_BOOST !== '1' or the viewer has no preference.
   const boostedCandidates = applyVerticalBoost(rankedCandidates, newUserProfile)
+  // Law-firm composition policy: a law-firm lawyer never gets two other law-firm
+  // lawyers — at most one, only with a strategic (complementary-practice + local)
+  // rationale, and never in the first slot. Reorders BEFORE truncation so excess
+  // peers fall below the batch size.
+  const composed = applyLawFirmCompositionPolicy(boostedCandidates, newUserProfile)
   // Apply throttling to prevent consultant/law firm clustering
   const throttled = applyThrottling(
-    boostedCandidates,
+    composed,
     newUserProfile,
     userTier,
     recommendationCount
@@ -793,62 +866,63 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   return { candidates, newUserProfile, targetedRequest }
 }
 
+// Re-exported from the queue service so existing importers keep resolving to the
+// single source of truth for "how many recommendations are still open."
+export { countUnresolvedRecommendations }
+
 /**
- * Persisting batch generator — UNCHANGED behavior. Ranks via
- * rankCandidatesForUser (no scoring/exclusion changes), then writes the
- * 'suggested' intro_requests and marks any active targeted_request 'applied'.
+ * Rank + ENQUEUE a batch for one member through the unified queue. This is the one
+ * generation entry point shared by every producer (onboarding, the weekly engine,
+ * admin-initiated regeneration). It never writes intro_requests directly — placement
+ * (active vs queued), the active-window cap, and admin precedence are owned by
+ * enqueueBatch. Marks any active targeted_request 'applied' when its recommendations
+ * are actually placed.
  */
-export async function generateOnboardingRecommendations(userId: string, maxCount?: number) {
+export async function generateBatchForMember(
+  userId: string,
+  source: BatchSource,
+  maxCount?: number,
+): Promise<EnqueueResult> {
   const adminClient = createAdminClient()
   const { candidates: sorted, targetedRequest } = await rankCandidatesForUser(userId, maxCount)
-  
-  if (sorted.length === 0) {
-    return { count: 0 }
-  }
-  
-  // Final safety: already handled by exclusion logic above
-  const introRequests = sorted.map(candidate => ({
-    requester_id: userId,
-    target_user_id: candidate.id,
-    status: 'suggested',
-    match_reason: candidate.match_reason,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }))
-  
-  const { error: insertError } = await adminClient
-    .from('intro_requests')
-    .insert(introRequests)
-  
-  if (insertError) {
-    throw new Error(`Failed to create recommendations: ${insertError.message}`)
-  }
-  
-  // Mark targeted request as applied (premium feature)
-  if (targetedRequest) {
+
+  if (sorted.length === 0) return { placed: false, reason: 'empty', count: 0 }
+
+  const result = await enqueueBatch(adminClient, {
+    memberId: userId,
+    source,
+    rows: sorted.map((c: any) => ({ target_user_id: c.id, match_reason: c.match_reason })),
+  })
+
+  // Only mark the targeted request applied when its recommendations were actually
+  // placed into the queue (active or queued) — not when the batch was rejected/empty.
+  if (targetedRequest && result.placed) {
     const { error: updateError } = await adminClient
       .from('targeted_requests')
-      .update({
-        status: 'applied',
-        applied_at: new Date().toISOString()
-      })
+      .update({ status: 'applied', applied_at: new Date().toISOString() })
       .eq('id', targetedRequest.id)
-      .eq('status', 'pending')  // ✅ Guard: only update if still pending
-    
+      .eq('status', 'pending')
     if (updateError) {
       console.error('[generate-recommendations] CRITICAL: Failed to mark request as applied:', {
-        request_id: targetedRequest.id,
-        error: updateError
+        request_id: targetedRequest.id, error: updateError,
       })
       throw new Error(`Failed to mark targeted request as applied: ${updateError.message}`)
-    } else {
-      console.log('[generate-recommendations] Targeted request marked as applied:', {
-        request_id: targetedRequest.id,
-        user_id: userId,
-        role: targetedRequest.role
-      })
     }
+    console.log('[generate-recommendations] Targeted request marked as applied:', {
+      request_id: targetedRequest.id, user_id: userId, role: targetedRequest.role,
+    })
   }
-  
-  return { count: sorted.length }
+
+  return result
+}
+
+/**
+ * Onboarding / manual generation entry point (signature preserved for existing
+ * callers). A newly onboarded member has no active batch, so this places their first
+ * batch as ACTIVE. For members who already hold a batch it enqueues behind them,
+ * upholding the active-window invariant. Returns { count } = recommendations placed.
+ */
+export async function generateOnboardingRecommendations(userId: string, maxCount?: number) {
+  const result = await generateBatchForMember(userId, 'onboarding', maxCount)
+  return { count: result.count ?? 0 }
 }
