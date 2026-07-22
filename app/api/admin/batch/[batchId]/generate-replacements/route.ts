@@ -241,6 +241,26 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
     let recipientsFilled = 0
     const insertRows: any[] = []
 
+    // RECIPROCITY: a replacement is a NEW MUTUAL edge, never a one-way add. A candidate
+    // C can replace a dropped slot for A only if C still has spare capacity, and we
+    // insert BOTH directions (A→C and C→A) atomically. Degree here == a member's live
+    // received count == their visibility, because the batch is reciprocal by
+    // construction — so one degree map bounds both. This is what keeps the invariant
+    // ("if A sees B then B sees A") intact after drops and refills.
+    const liveDegree = new Map<string, number>()
+    for (const [rid, info] of Array.from(recipientGroups.entries())) liveDegree.set(rid, info.live)
+    const pendingDegree = new Map<string, number>()
+    const degreeOf = (id: string) => (liveDegree.get(id) || 0) + (pendingDegree.get(id) || 0)
+    const capOfMember = (m: any) => tierTarget(m?.subscription_tier)
+    // Position cursor per member so appended rows get sensible, non-colliding positions.
+    const positionCursor = new Map<string, number>()
+    for (const [rid, info] of Array.from(recipientGroups.entries())) positionCursor.set(rid, info.generated + info.dropped)
+    const nextPosition = (id: string) => { const n = (positionCursor.get(id) || 0) + 1; positionCursor.set(id, n); return n }
+    const ensureGroup = (id: string) => {
+      if (!recipientGroups.has(id)) recipientGroups.set(id, { generated: 0, dropped: 0, live: 0, suggestedIds: new Set() })
+      return recipientGroups.get(id)!
+    }
+
     for (const r of recipientsNeedingFill) {
       if (r.needed === 0) continue
       const recipient = recipientProfileMap.get(r.recipientId)
@@ -290,36 +310,64 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
         if (referralExclude.has(candidate.id)) continue
         if (isSameCompany(recipient, candidate)) continue
         if (!isCompatiblePair(recipient, candidate)) continue
+        // Reciprocity gate: the candidate must have room for a new mutual edge and must
+        // not already carry this recipient in either direction.
+        if (degreeOf(candidate.id) >= capOfMember(candidate)) continue
+        if (recipientGroups.get(candidate.id)?.suggestedIds.has(r.recipientId)) continue
         const score = scoreMatch(recipient, candidate)
         if (score < MIN_RELEVANCE_SCORE) continue
         scored.push({ candidate, score })
       }
 
-      scored.sort((a, b) => b.score - a.score)
-      const toInsert = scored.slice(0, r.needed)
+      // Deterministic order; id tiebreak so equal scores resolve identically every run.
+      scored.sort((a, b) => b.score - a.score || String(a.candidate.id).localeCompare(String(b.candidate.id)))
 
-      if (toInsert.length === 0) continue
+      // Fill up to the recipient's REMAINING capacity, recomputed live so reciprocal
+      // edges already added to this recipient earlier in the run are accounted for.
+      let filled = 0
+      for (const { candidate, score } of scored) {
+        if (degreeOf(r.recipientId) >= capOfMember(recipient)) break
+        // Re-check the candidate — an earlier recipient in this run may have taken their
+        // last slot (a popular candidate can only be a replacement `cap` times total).
+        if (degreeOf(candidate.id) >= capOfMember(candidate)) continue
 
-      const group = recipientGroups.get(r.recipientId)!
-      const startingPosition = group.generated + group.dropped
-      let positionOffset = 1
-      for (const { candidate, score } of toInsert) {
-        const safeScore = sanitizeMatchScore(score)
-        assertStorableScore(safeScore, r.recipientId, candidate.id)
+        const fwdScore = sanitizeMatchScore(score)
+        assertStorableScore(fwdScore, r.recipientId, candidate.id)
+        const revScore = sanitizeMatchScore(scoreMatch(candidate, recipient))
+        assertStorableScore(revScore, candidate.id, r.recipientId)
+
+        // Forward: recipient sees candidate.
         insertRows.push({
           batch_id: batchId,
           recipient_id: r.recipientId,
           suggested_id: candidate.id,
           reason: buildReason(recipient, candidate),
-          match_score: safeScore,
-          score_bucket: getScoreBucket(safeScore),
-          position: startingPosition + positionOffset,
+          match_score: fwdScore,
+          score_bucket: getScoreBucket(fwdScore),
+          position: nextPosition(r.recipientId),
           status: 'generated',
         })
-        positionOffset++
+        // Reverse: candidate sees recipient — mutual by construction.
+        insertRows.push({
+          batch_id: batchId,
+          recipient_id: candidate.id,
+          suggested_id: r.recipientId,
+          reason: buildReason(candidate, recipient),
+          match_score: revScore,
+          score_bucket: getScoreBucket(revScore),
+          position: nextPosition(candidate.id),
+          status: 'generated',
+        })
+
+        pendingDegree.set(r.recipientId, (pendingDegree.get(r.recipientId) || 0) + 1)
+        pendingDegree.set(candidate.id, (pendingDegree.get(candidate.id) || 0) + 1)
+        r.existingSuggestedIds.add(candidate.id)
+        ensureGroup(r.recipientId).suggestedIds.add(candidate.id)
+        ensureGroup(candidate.id).suggestedIds.add(r.recipientId)
+        totalCreated++
+        filled++
       }
-      totalCreated += toInsert.length
-      recipientsFilled++
+      if (filled > 0) recipientsFilled++
     }
 
     // FINAL INVARIANT (source-independent): never let existing live + new

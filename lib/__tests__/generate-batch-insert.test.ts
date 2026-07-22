@@ -104,12 +104,12 @@ describe('Generate New Batch — full insert', () => {
     // No orphan cleanup on the happy path.
     expect(state.deletedBatchIds).toEqual([])
     // Batch is stamped with the algorithm version + config snapshot (reproducibility).
-    expect(state.insertedBatch.algorithm_version).toBe('v2')
+    expect(state.insertedBatch.algorithm_version).toBe('v3')
     expect(state.insertedBatch.scoring_model_version).toMatch(/^v\d/)
     expect(state.insertedBatch.algorithm_config).toBeTruthy()
     expect(state.insertedBatch.config_hash).toMatch(/^[0-9a-f]{8}$/)
     // API response surfaces the version to the admin.
-    expect(body.algorithmVersion).toBe('v2')
+    expect(body.algorithmVersion).toBe('v3')
     expect(body.configHash).toMatch(/^[0-9a-f]{8}$/)
   })
 
@@ -160,6 +160,39 @@ describe('Generate New Batch — full insert', () => {
     // Nobody may receive more than the (launch-capped) free-tier limit, no matter
     // how many candidates qualify.
     expect(Math.max(...Object.values(counts))).toBeLessThanOrEqual(perRecipientIntroLimit('free'))
+  })
+
+  it('produces a fully RECIPROCAL graph — every edge is mutual, visibility == receipt, both ≤ cap', async () => {
+    // Varied cohort, distinct companies so same-company never removes an edge.
+    const roles = ['Founder', 'Investor', 'Operator', 'Advisor']
+    state.profiles = Array.from({ length: 12 }, (_, i) => ({
+      ...member(String.fromCharCode(97 + i)), id: 'm' + i, role_type: roles[i % roles.length],
+      boost_score: 0, is_priority: false, company: 'co' + i,
+      purposes: i % 2 ? ['networking', 'raise capital'] : ['networking', 'hire'],
+    }))
+    await post()
+    const rows = state.insertedSuggestions!
+    expect(rows.length).toBeGreaterThan(0)
+
+    // Zero one-way recommendations: every directed row has its reverse.
+    const directed = new Set(rows.map((r: any) => `${r.recipient_id}>${r.suggested_id}`))
+    for (const r of rows) {
+      expect(directed.has(`${r.suggested_id}>${r.recipient_id}`)).toBe(true)
+    }
+
+    // Per member: appears-in count (visibility) == receives count, and both ≤ cap.
+    const appears: Record<string, number> = {}
+    const receives: Record<string, number> = {}
+    for (const r of rows) {
+      receives[r.recipient_id] = (receives[r.recipient_id] || 0) + 1
+      appears[r.suggested_id] = (appears[r.suggested_id] || 0) + 1
+    }
+    const cap = perRecipientIntroLimit('free')
+    const ids = Array.from(new Set(Object.keys(appears).concat(Object.keys(receives))))
+    for (const id of ids) {
+      expect(appears[id] || 0).toBe(receives[id] || 0)
+      expect(receives[id] || 0).toBeLessThanOrEqual(cap)
+    }
   })
 
   it('is deterministic + repeatable and enforces safety invariants (v2 algorithm)', async () => {

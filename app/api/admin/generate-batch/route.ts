@@ -6,9 +6,10 @@ import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matc
 import { isSameCompany } from '@/lib/matching/same-company'
 import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
-import { buildScoringContext, scoreMatch as scoreMatchV2, exposureAdjustedScore, EXPOSURE_CONFIG, BATCH_CONFIG, effectiveTierDistribution, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
+import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
+import { selectReciprocalGraph } from '@/lib/matching/reciprocal-graph'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,25 +75,6 @@ function generateReason(recipient: any, candidate: any): string {
   return introReasonText(recipient, candidate)
 }
 
-function getUserTierCategory(user: any, profiles: any[]): 'high' | 'mid' | 'low' {
-
-  const totalScore = (user.networkValueScore || 0) + (user.responsivenessScore || 0)
-  const sortedByScore = profiles
-    .map(p => (p.networkValueScore || 0) + (p.responsivenessScore || 0))
-    .sort((a, b) => b - a)
-  
-  const percentile = sortedByScore.indexOf(totalScore) / sortedByScore.length
-  
-  if (percentile <= 0.33) return 'high'
-  if (percentile <= 0.66) return 'mid'
-  return 'low'
-}
-
-function getTierDistribution(tier: string): { high: number, mid: number, total: number } {
-  return effectiveTierDistribution(tier) // applies the launch-phase per-member cap
-}
-  
-
 interface PairScore {
   userA: any
   userB: any
@@ -135,7 +117,6 @@ export async function POST(req: NextRequest) {
     // lib/matching/batch-scoring.ts. buildScoringContext fails fast if any
     // excluded account slipped through. Exposure counts balance candidate spread.
     const scoringCtx: ScoringContext = buildScoringContext(profiles, undefined, 'generate-batch')
-    const exposureCount: Record<string, number> = {}
 
     const { data: lastBatch } = await adminClient
       .from('introduction_batches')
@@ -249,12 +230,6 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const highTierExposure: Record<string, number> = {}
-    const highTierUsers = profiles.filter(p => getUserTierCategory(p, profiles) === 'high')
-    for (const u of highTierUsers) {
-      highTierExposure[u.id] = 0
-    }
-
     const allPairs: PairScore[] = []
     
     for (let i = 0; i < profiles.length; i++) {
@@ -301,126 +276,33 @@ export async function POST(req: NextRequest) {
       return b.mutualScore - a.mutualScore
     })
     
-    // NEW TIER-FIRST MATCHING FLOW
-    // Step 1: Build candidate pools for each user (no selection yet)
-
-    // CRITICAL: Process users in tier priority order (Executive → Professional → Free)
-    const tierPriority: Record<string, number> = { executive: 1, professional: 2, free: 3 }
-    const sortedProfiles = [...profiles].sort((a, b) => {
-      const aTier = tierPriority[a.subscription_tier || 'free'] || 3
-      const bTier = tierPriority[b.subscription_tier || 'free'] || 3
-      return aTier - bTier || String(a.id).localeCompare(String(b.id)) // deterministic + repeatable
+    // RECIPROCAL GRAPH SELECTION
+    // The graph — not the individual member — is the unit of optimization. `allPairs`
+    // already holds every ELIGIBLE undirected edge (eligibility, same-company,
+    // prior-intro exclusions, and the minimum relevance threshold have all removed
+    // disqualified pairs above). We now choose a maximum-weight set of those edges such
+    // that no member exceeds their intro cap, via greedy b-matching. Because every
+    // selected edge is undirected it is mutual BY CONSTRUCTION — reciprocity and the
+    // two-directional cap are properties of the output, not a post-process. See
+    // lib/matching/reciprocal-graph.ts for the full rationale.
+    const { selected: selectedEdges } = selectReciprocalGraph(allPairs, {
+      capOf: (m) => perRecipientIntroLimit(m.subscription_tier || 'free'),
+      maxSameRolePercent: MAX_SAME_ROLE_PERCENT,
+      isBusinessSolutionProvider,
+      bsCapOf: (m, cap) => maxBusinessSolutionCount(m.open_to_business_solutions || false, m.subscription_tier || 'free', cap),
     })
-    const userCandidatePools: Record<string, Array<{
-      candidate: any
-      score: number
-      bucket: 'high_score' | 'mid_score' | 'low_score'
-      reason: string
-    }>> = {}
-    
-    for (const profile of sortedProfiles) {
-      userCandidatePools[profile.id] = []
-    }
-    
-    // Populate candidate pools from all pairs
-    for (const pair of allPairs) {
-      const { userA, userB, scoreAtoB, scoreBtoA, reasonAtoB, reasonBtoA } = pair
-      
-      // Add B as candidate for A
-      userCandidatePools[userA.id].push({
-        candidate: userB,
-        score: scoreAtoB,
-        bucket: getScoreBucket(scoreAtoB),
-        reason: reasonAtoB
-      })
-      
-      // Add A as candidate for B
-      userCandidatePools[userB.id].push({
-        candidate: userA,
-        score: scoreBtoA,
-        bucket: getScoreBucket(scoreBtoA),
-        reason: reasonBtoA
-      })
-    }
-    
-    // Step 2: Apply tier-based selection for each user
 
+    // Fan each selected edge out into BOTH directions. This is the only place rows are
+    // created, so a one-way recommendation is structurally impossible: an edge that
+    // isn't selected produces zero rows; one that is produces exactly two.
     const userBatches: Record<string, any[]> = {}
-    const userRoleCounts: Record<string, Record<string, number>> = {}
-
-    for (const profile of sortedProfiles) {
-      const tier = profile.subscription_tier || 'free'
-      const tierDist = getTierDistribution(tier)
-      const pool = userCandidatePools[profile.id]
-
-      // Business-solution cap — mirrors live recommendation path throttle
-      const bsCap = maxBusinessSolutionCount(
-        profile.open_to_business_solutions || false,
-        tier,
-        tierDist.total
-      )
-      let bsCount = 0
-
-      const maxPerRole = Math.ceil(tierDist.total * MAX_SAME_ROLE_PERCENT)
-      // Rank each bucket by exposure-adjusted score (gentle nudge toward
-      // less-exposed candidates among near-equals) then raw score, with a
-      // deterministic id tiebreak. Bucket membership is still by RAW score, so no
-      // weak match is promoted.
-      const rankBucket = (b: 'high_score' | 'mid_score' | 'low_score') =>
-        pool.filter(c => c.bucket === b).sort((x, y) =>
-          exposureAdjustedScore(y.score, exposureCount[y.candidate.id] || 0) - exposureAdjustedScore(x.score, exposureCount[x.candidate.id] || 0)
-          || y.score - x.score
-          || String(x.candidate.id).localeCompare(String(y.candidate.id)))
-      const highCandidates = rankBucket('high_score')
-      const midCandidates = rankBucket('mid_score')
-      const lowCandidates = rankBucket('low_score')
-
-      const selected: any[] = []
-      if (!userRoleCounts[profile.id]) userRoleCounts[profile.id] = {}
-
-      // Greedy fill: iterate the FULL ranked bucket until the phase quota is met
-      // (so exposure re-ordering changes WHICH candidate fills a slot, never the
-      // number filled), honoring the role cap, business-solution cap, and the
-      // bounded per-batch candidate exposure cap (Part 4).
-      const fillPhase = (candidates: any[], quota: number) => {
-        let filled = 0
-        for (const candidate of candidates) {
-          if (filled >= quota) break
-          // Optional hard exposure cap (disabled by default — see EXPOSURE_CONFIG;
-          // validation showed it degrades match quality without improving coverage).
-          if (EXPOSURE_CONFIG.maxPerBatch != null && (exposureCount[candidate.candidate.id] || 0) >= EXPOSURE_CONFIG.maxPerBatch) continue
-          const roleType = candidate.candidate.role_type || 'unknown'
-          const roleCount = userRoleCounts[profile.id][roleType] || 0
-          const isBS = isBusinessSolutionProvider(candidate.candidate)
-          if (roleCount < maxPerRole && (!isBS || bsCount < bsCap)) {
-            selected.push({ suggested: candidate.candidate, score: candidate.score, bucket: candidate.bucket, reason: candidate.reason })
-            userRoleCounts[profile.id][roleType] = roleCount + 1
-            if (isBS) bsCount++
-            exposureCount[candidate.candidate.id] = (exposureCount[candidate.candidate.id] || 0) + 1
-            filled++
-          }
-        }
-      }
-
-      fillPhase(highCandidates, tierDist.high)
-      fillPhase(midCandidates, tierDist.total - selected.length)
-      fillPhase(lowCandidates, tierDist.total - selected.length)
-
-      userBatches[profile.id] = selected
+    for (const e of selectedEdges) {
+      ;(userBatches[e.userA.id] ||= []).push({ suggested: e.userB, score: e.scoreAtoB, reason: e.reasonAtoB })
+      ;(userBatches[e.userB.id] ||= []).push({ suggested: e.userA, score: e.scoreBtoA, reason: e.reasonBtoA })
     }
-    
-    // Step 3: Detect mutual matches AFTER selection (for reporting only)
-    let mutualMatchesCreated = 0
-    for (const userAId of Object.keys(userBatches)) {
-      for (const match of userBatches[userAId]) {
-        const userBId = match.suggested.id
-        const bHasA = userBatches[userBId]?.some(m => m.suggested.id === userAId)
-        if (bHasA) {
-          mutualMatchesCreated++
-        }
-      }
-    }
-    mutualMatchesCreated = mutualMatchesCreated / 2 // Each mutual counted twice
+
+    // Every edge is a mutual introduction by construction.
+    const mutualMatchesCreated = selectedEdges.length
     const allSuggestions: any[] = []
 
     // Build + insert suggestions. Any failure here (out-of-range score or a DB
@@ -429,6 +311,9 @@ export async function POST(req: NextRequest) {
     // this keeps a failed attempt from leaving an orphan/empty batch behind.
     try {
       for (const [recipientId, suggestions] of Object.entries(userBatches)) {
+        // Position by each recipient's OWN directional score (their strongest match
+        // first), deterministic id tiebreak. Never drops or reorders across recipients.
+        suggestions.sort((a, b) => b.score - a.score || String(a.suggested.id).localeCompare(String(b.suggested.id)))
         for (let i = 0; i < suggestions.length; i++) {
           const { suggested, score, reason } = suggestions[i]
           const safeScore = sanitizeMatchScore(score)

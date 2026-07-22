@@ -18,7 +18,7 @@ const ctx = buildScoringContext(cohort)
 
 describe('algorithm versioning + config snapshot (reproducibility)', () => {
   it('exposes a stable version identifier', () => {
-    expect(RECOMMENDATION_ALGORITHM_VERSION).toBe('v2')
+    expect(RECOMMENDATION_ALGORITHM_VERSION).toBe('v3')
     expect(SCORING_MODEL_VERSION).toMatch(/^v\d/)
   })
   it('snapshot captures the version + every tuning config', () => {
