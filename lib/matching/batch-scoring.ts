@@ -35,16 +35,15 @@
  * can compare historical batches, know exactly which algorithm produced one, and
  * evolve safely. `scoringModelVersion` tracks the scoreMatch model specifically.
  */
-// v3.1: reciprocal-graph selection WITH augmenting-path coverage phase. The pairwise
-// scoring model (scoreMatch / rarity / decay) is unchanged — SCORING_MODEL_VERSION stays
-// v2.0.0 — but SELECTION moved from independent per-member top-K lists to a maximum-weight
-// degree-bounded b-matching over undirected edges (every recommendation mutual by
-// construction), and v3.1 adds a Pareto-safe augmenting-path phase that alters which
-// suggestions a batch produces (it covers members greedy would strand). Bumped from v3
-// per the versioning contract below so the stamp uniquely identifies the augmented engine
-// — v3 (reciprocal, greedy-only) and v3.1 (reciprocal + augmentation) are distinguishable.
-// See lib/matching/reciprocal-graph.ts.
-export const RECOMMENDATION_ALGORITHM_VERSION = 'v3.1'
+// v3.2: reciprocal graph + augmenting-path coverage phase + corrected business-solution
+// throttle. The pairwise scoring model (scoreMatch / rarity / decay) is unchanged —
+// SCORING_MODEL_VERSION stays v2.0.0. Lineage: v3 (reciprocal, greedy-only) → v3.1 (adds
+// Pareto-safe augmenting-path phase) → v3.2 (business-solution throttle fixed: provider↔
+// provider peer edges exempted, and opted-in buyers guaranteed ≥1 provider at any cap, so
+// providers are no longer mathematically unmatchable at the launch cap of 2). v3.2 alters
+// which suggestions a batch produces, so it is bumped per the versioning contract below.
+// See lib/matching/reciprocal-graph.ts and lib/matching/business-solutions.ts.
+export const RECOMMENDATION_ALGORITHM_VERSION = 'v3.2'
 export const SCORING_MODEL_VERSION = 'v2.0.0'
 
 export type ScoringConfig = {

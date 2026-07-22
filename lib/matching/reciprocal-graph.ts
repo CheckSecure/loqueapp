@@ -141,11 +141,17 @@ export function selectReciprocalGraph<E extends ReciprocalEdgeInput>(
     if ((roleCount.get(a.id)!.get(roleB) || 0) >= maxRole.get(a.id)!) continue
     if ((roleCount.get(b.id)!.get(roleA) || 0) >= maxRole.get(b.id)!) continue
 
-    // Business-solution throttle: cap how many BS providers each member is shown.
+    // Business-solution throttle — buyer↔provider ONLY. Two providers meeting is PEER
+    // networking (not vendor exposure), so it is exempt and never counts against any
+    // quota. The quota bounds how many providers a NON-provider buyer is shown. See
+    // lib/matching/business-solutions.ts.
     const bIsBS = isBS(b)
     const aIsBS = isBS(a)
-    if (bIsBS && bsCount.get(a.id)! >= bsCap.get(a.id)!) continue
-    if (aIsBS && bsCount.get(b.id)! >= bsCap.get(b.id)!) continue
+    const peer = aIsBS && bIsBS
+    if (!peer) {
+      if (bIsBS && bsCount.get(a.id)! >= bsCap.get(a.id)!) continue // provider b shown to buyer a
+      if (aIsBS && bsCount.get(b.id)! >= bsCap.get(b.id)!) continue // provider a shown to buyer b
+    }
 
     // Accept — update both endpoints symmetrically.
     selected.push(e)
@@ -153,8 +159,10 @@ export function selectReciprocalGraph<E extends ReciprocalEdgeInput>(
     degree.set(b.id, degree.get(b.id)! + 1)
     roleCount.get(a.id)!.set(roleB, (roleCount.get(a.id)!.get(roleB) || 0) + 1)
     roleCount.get(b.id)!.set(roleA, (roleCount.get(b.id)!.get(roleA) || 0) + 1)
-    if (bIsBS) bsCount.set(a.id, bsCount.get(a.id)! + 1)
-    if (aIsBS) bsCount.set(b.id, bsCount.get(b.id)! + 1)
+    if (!peer) { // peer edges do not consume either member's provider quota
+      if (bIsBS) bsCount.set(a.id, bsCount.get(a.id)! + 1)
+      if (aIsBS) bsCount.set(b.id, bsCount.get(b.id)! + 1)
+    }
   }
 
   // PHASE 2 — augmenting-path improvement.
@@ -249,8 +257,12 @@ export function augmentForCoverage<E extends ReciprocalEdgeInput>(
       const ra = roleOf(memberById.get(a))
       rc.get(a)!.set(rb, (rc.get(a)!.get(rb) || 0) + 1)
       rc.get(b)!.set(ra, (rc.get(b)!.get(ra) || 0) + 1)
-      if (isBS(memberById.get(b))) bc.set(a, (bc.get(a) || 0) + 1)
-      if (isBS(memberById.get(a))) bc.set(b, (bc.get(b) || 0) + 1)
+      const aBS = isBS(memberById.get(a))
+      const bBS = isBS(memberById.get(b))
+      if (!(aBS && bBS)) { // provider↔provider peer edges are exempt from the quota
+        if (bBS) bc.set(a, (bc.get(a) || 0) + 1)
+        if (aBS) bc.set(b, (bc.get(b) || 0) + 1)
+      }
     }
     for (const [id, dg] of Array.from(d.entries())) {
       if (dg > capOf(id)) return false

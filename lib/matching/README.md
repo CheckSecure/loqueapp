@@ -9,7 +9,8 @@ scoring, eligibility, or batch-generation code.
 |---|---|
 | `eligibility.ts` | Canonical "who may participate" filter + fail-fast guard. |
 | `batch-scoring.ts` | v2 pairwise scoring (rarity + diminishing returns), exposure balancing, and all tuning config (`SCORING_CONFIG`, `EXPOSURE_CONFIG`, `BATCH_CONFIG`). |
-| `business-solutions.ts` | Consultant/law-firm throttle caps. |
+| `business-solutions.ts` | Consultant/law-firm throttle: buyer↔provider quota (peer↔peer exempt). |
+| `reciprocal-graph.ts` | Reciprocal graph b-matching + augmenting-path coverage phase. |
 | `same-company.ts` | Same-employer exclusion. |
 | `scoring.ts` | *Separate* onboarding recommendation model (55/30/15) — not the batch model. |
 | `score.ts` | `match_score` DB bounds + `sanitizeMatchScore` / `assertStorableScore`. |
@@ -94,14 +95,53 @@ is never displaced. An **optional hard cap** (`maxPerBatch`) exists but is **off
 default**: a validation simulation showed a cap replaced genuinely superior
 introductions (avg −9.4 pts) without improving candidate coverage. Quality-first.
 
-## 3. Selection (in `generate-batch/route.ts`)
+## 3. Selection — the reciprocal graph (`reciprocal-graph.ts`, v3+)
 
-Per member (processed in a deterministic tier→id order): candidates are bucketed
-by raw score (`BATCH_CONFIG.bucketHighMin/MidMin`), ranked by exposure-adjusted
-score, then greedily filled to the tier quota (`BATCH_CONFIG.tierDistribution`),
-honoring the same-role cap (`maxSameRolePercent`) and business-solution cap. All
-ties break by id → deterministic, repeatable output. Batch row + suggestions are
-written with compensating cleanup (no orphan batch on failure).
+The **graph is the unit of optimization**, not the individual member's list.
+Recommendations are modeled as an **undirected graph**: every eligible pair is an
+edge, weighted by mutual quality (`scoreAtoB + scoreBtoA`). Selection is a
+**maximum-weight, degree-bounded b-matching**:
+
+1. **Greedy b-matching** — take edges highest-mutual-quality first, accepting each
+   while both endpoints have spare capacity (`perRecipientIntroLimit`) and the
+   per-member role (`maxSameRolePercent`) and business-solution constraints allow.
+2. **Augmenting-path phase** (`augmentForCoverage`) — greedy is only *locally*
+   optimal, so a Pareto-safe augmenting pass reroutes edges through saturated hubs to
+   seat members greedy would strand (processed **most-constrained-first**), applied
+   only when it raises coverage without lowering total quality.
+
+Every selected edge emits **both directions**, so **reciprocity is guaranteed by
+construction**: if A is recommended to B then B is recommended to A, and each
+member's *appears-in* count equals their *receives* count equals their degree ≤ cap.
+One-way recommendations are structurally impossible. All ties break by id →
+deterministic, repeatable output. Batch row + suggestions are written with
+compensating cleanup (no orphan batch on failure).
+
+### Business-solution throttle — peer vs buyer↔provider (v3.2)
+
+Business-solution providers (law firms, consultants — `isBusinessSolutionProvider`)
+are throttled to prevent members from feeling overwhelmed by vendors. The throttle
+governs **one relationship only**:
+
+- **Buyer ↔ Provider** (a non-provider shown a provider): **throttled.**
+  `maxBusinessSolutionCount` is the *buyer's* quota. A member who has **not** opted in
+  (`open_to_business_solutions`) receives **zero** providers; a member who **has**
+  opted in is guaranteed **at least one** provider at any cap (including the launch
+  cap of 2).
+- **Provider ↔ Provider** (two providers meeting): **peer networking — exempt.**
+  Two law firms, two consultants, an eDiscovery vendor meeting a forensics vendor —
+  this is peers building their network, not vendor exposure. These edges are scored
+  and optimized normally and **never** count against any quota.
+
+**Why the peer exemption exists:** the quota's purpose is to stop a *buyer* being
+flooded with *sellers*. Applying it to seller↔seller edges is a category error that,
+combined with reciprocity (a quota of 0 blocks the edge from existing at all, not
+just from one member's list) and the launch cap of 2 (where the raw percentage floors
+to 0 for everyone), made **every** provider mathematically unmatchable. v3.2 fixes
+both: peer edges are exempt, and opted-in buyers are guaranteed ≥1 provider at any
+cap. The exemption is enforced at the **edge level** in `selectReciprocalGraph` /
+`applyThrottling` (it depends on *both* endpoints); the per-member quota arithmetic
+lives in `business-solutions.ts`.
 
 ## 4. Configuration (all tuning lives in `batch-scoring.ts`)
 
@@ -123,7 +163,7 @@ written with compensating cleanup (no orphan batch on failure).
 Every generated batch is stamped (columns on `introduction_batches`, migration 018)
 with:
 
-- `algorithm_version` (`RECOMMENDATION_ALGORITHM_VERSION`, e.g. `"v2"`),
+- `algorithm_version` (`RECOMMENDATION_ALGORITHM_VERSION`, e.g. `"v3.2"`),
 - `scoring_model_version` (`SCORING_MODEL_VERSION`),
 - `algorithm_config` — a full JSON snapshot of `SCORING_CONFIG` + `EXPOSURE_CONFIG` + `BATCH_CONFIG` (`algorithmSnapshot()`),
 - `config_hash` — a deterministic FNV-1a hash of that snapshot (`algorithmConfigHash()`),

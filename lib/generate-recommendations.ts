@@ -343,10 +343,15 @@ function applyThrottling(
 ): any[] {
   if (candidates.length === 0) return []
   
-  // 1. Separate business solutions from peers
-  const businessSolutions = candidates.filter(c => isBusinessSolutionProvider(c))
-  const peers = candidates.filter(c => !isBusinessSolutionProvider(c))
-  
+  // 1. Separate business solutions from peers.
+  // PEER EXEMPTION (v3.2): if the recipient is themselves a provider, every candidate —
+  // including other providers — is PEER networking (provider↔provider) and is NOT
+  // throttled. The quota only limits how many providers a NON-provider (potential buyer)
+  // is shown. See lib/matching/business-solutions.ts.
+  const recipientIsProvider = isBusinessSolutionProvider(userProfile)
+  const businessSolutions = recipientIsProvider ? [] : candidates.filter(c => isBusinessSolutionProvider(c))
+  const peers = recipientIsProvider ? candidates : candidates.filter(c => !isBusinessSolutionProvider(c))
+
   // 2. Calculate max allowed business solutions (shared helper — see lib/matching/business-solutions.ts)
   const userOpenToSolutions = userProfile.open_to_business_solutions || false
   const maxBusinessSolutions = maxBusinessSolutionCount(userOpenToSolutions, userTier, targetCount)

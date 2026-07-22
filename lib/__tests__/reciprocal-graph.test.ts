@@ -169,6 +169,44 @@ describe('augmentForCoverage — recovers members greedy strands', () => {
   })
 })
 
+describe('selectReciprocalGraph — business-solution peer exemption (v3.2)', () => {
+  // Models Design C: providers are marked with { provider: true }; a member's buyer quota
+  // is 1 if opted in ({ openBS: true }), else 0.
+  const cfgC = {
+    capOf: () => 2,
+    maxSameRolePercent: 1,
+    isBusinessSolutionProvider: (m: any) => !!m.provider,
+    bsCapOf: (m: any) => (m.openBS ? 1 : 0),
+  }
+
+  it('provider ↔ provider is PEER networking — matched even when neither has any buyer quota', () => {
+    const p1 = M('p1', { provider: true, openBS: false })
+    const p2 = M('p2', { provider: true, openBS: false })
+    const { selected, degree } = selectReciprocalGraph([E(p1, p2, 100)], cfgC)
+    expect(selected).toHaveLength(1) // exempt from the quota
+    expect(degree.get('p1')).toBe(1)
+    expect(degree.get('p2')).toBe(1)
+  })
+
+  it('provider → non-opted buyer is blocked, provider → opted-in buyer is allowed', () => {
+    const prov = M('prov', { provider: true, role_type: 'lawyer' })
+    const closed = M('closed', { provider: false, openBS: false, role_type: 'founder' })
+    const open = M('open', { provider: false, openBS: true, role_type: 'operator' })
+    const { degree } = selectReciprocalGraph([E(prov, closed, 90), E(prov, open, 80)], cfgC)
+    expect(degree.get('open') || 0).toBe(1)   // opted-in buyer gets the provider
+    expect(degree.get('closed') || 0).toBe(0) // non-opted buyer shielded (quota 0)
+  })
+
+  it('a buyer is never shown more providers than their quota, but peer edges are unlimited', () => {
+    // One opted-in buyer (quota 1) with three provider suitors → only 1 provider edge.
+    const buyer = M('buyer', { provider: false, openBS: true, role_type: 'founder' })
+    const provs = Array.from({ length: 3 }, (_, i) => M('pr' + i, { provider: true, role_type: 'r' + i }))
+    const edges = provs.map((p) => E(buyer, p, 90 - 0))
+    const { degree } = selectReciprocalGraph(edges, cfgC)
+    expect(degree.get('buyer')).toBe(1) // quota respected — not flooded with vendors
+  })
+})
+
 describe('selectReciprocalGraph — business-solution throttle', () => {
   it('caps how many business-solution providers a member is shown', () => {
     const a = M('a', { role_type: 'founder' })
