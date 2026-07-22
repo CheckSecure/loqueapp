@@ -104,12 +104,12 @@ describe('Generate New Batch — full insert', () => {
     // No orphan cleanup on the happy path.
     expect(state.deletedBatchIds).toEqual([])
     // Batch is stamped with the algorithm version + config snapshot (reproducibility).
-    expect(state.insertedBatch.algorithm_version).toBe('v3')
+    expect(state.insertedBatch.algorithm_version).toBe('v3.1')
     expect(state.insertedBatch.scoring_model_version).toMatch(/^v\d/)
     expect(state.insertedBatch.algorithm_config).toBeTruthy()
     expect(state.insertedBatch.config_hash).toMatch(/^[0-9a-f]{8}$/)
     // API response surfaces the version to the admin.
-    expect(body.algorithmVersion).toBe('v3')
+    expect(body.algorithmVersion).toBe('v3.1')
     expect(body.configHash).toMatch(/^[0-9a-f]{8}$/)
   })
 

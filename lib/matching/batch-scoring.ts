@@ -35,12 +35,16 @@
  * can compare historical batches, know exactly which algorithm produced one, and
  * evolve safely. `scoringModelVersion` tracks the scoreMatch model specifically.
  */
-// v3: reciprocal-graph selection. The pairwise scoring model (scoreMatch / rarity /
-// decay) is unchanged — SCORING_MODEL_VERSION stays v2.0.0 — but SELECTION moved from
-// independent per-member top-K lists to a maximum-weight degree-bounded b-matching over
-// undirected edges, so every recommendation is now mutual by construction. See
-// lib/matching/reciprocal-graph.ts.
-export const RECOMMENDATION_ALGORITHM_VERSION = 'v3'
+// v3.1: reciprocal-graph selection WITH augmenting-path coverage phase. The pairwise
+// scoring model (scoreMatch / rarity / decay) is unchanged — SCORING_MODEL_VERSION stays
+// v2.0.0 — but SELECTION moved from independent per-member top-K lists to a maximum-weight
+// degree-bounded b-matching over undirected edges (every recommendation mutual by
+// construction), and v3.1 adds a Pareto-safe augmenting-path phase that alters which
+// suggestions a batch produces (it covers members greedy would strand). Bumped from v3
+// per the versioning contract below so the stamp uniquely identifies the augmented engine
+// — v3 (reciprocal, greedy-only) and v3.1 (reciprocal + augmentation) are distinguishable.
+// See lib/matching/reciprocal-graph.ts.
+export const RECOMMENDATION_ALGORITHM_VERSION = 'v3.1'
 export const SCORING_MODEL_VERSION = 'v2.0.0'
 
 export type ScoringConfig = {
