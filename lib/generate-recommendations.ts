@@ -14,7 +14,11 @@ import { BATCH_EXCLUDING_STATUSES } from '@/lib/introRequests/state'
 // Unified scoring model for all tiers
 // Final Score = Alignment (55%) + Network Value (30%) + Responsiveness (15%)
 
-function calculateAlignmentScore(userProfile: any, candidate: any): number {
+// Deterministic (no randomness) alignment score, 0–100. Exported so the one-time
+// migration backfill can rank a member's EXISTING suggested candidates by the same
+// dominant component the live model used, without invoking the random tier jitter.
+// This does not change live generation — rankCandidatesForUser is untouched.
+export function calculateAlignmentScore(userProfile: any, candidate: any): number {
   let alignmentScore = 0
   
   // Goal/preference overlap (30 points)

@@ -25,6 +25,16 @@
  */
 import { randomUUID } from 'node:crypto'
 import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
+import { calculateAlignmentScore, applyLawFirmCompositionPolicy } from '@/lib/generate-recommendations'
+
+// Profile fields needed to deterministically re-rank a member's existing suggested
+// candidates (viewer + candidate) and to apply the law-firm composition policy.
+const RANK_PROFILE_COLS = 'id, role_type, seniority, expertise, intro_preferences, city, state'
+
+/** match_reason signal strength = number of reason bullets (higher = stronger). */
+function signalStrength(reason: string | null | undefined): number {
+  return typeof reason === 'string' ? reason.split('\n').map((l) => l.trim()).filter(Boolean).length : 0
+}
 
 const N = RECOMMENDATIONS_PER_BATCH
 const KEEP = 2 * N // Current (N) + Next (N)
@@ -106,24 +116,123 @@ export interface BackfillApplyResult {
 
 interface QueueItem { rowId?: string; target: string; reason: string | null }
 
+interface ApplyInputs {
+  memberSet: Set<string>
+  irByMember: Map<string, any[]>
+  adminByMember: Map<string, { target: string; reason: string | null }[]>
+  profileMap: Map<string, any>
+}
+
+/** READ-ONLY collection shared by planBackfill (dry) and applyBackfill (write). */
+async function collectForApply(adminClient: any): Promise<ApplyInputs> {
+  const memberSet = await activeMemberIds(adminClient)
+  // Existing queue-candidate rows (suggested OR a partial 'queued' from a prior
+  // interrupted run) + sent admin suggestions, grouped per member.
+  const irRows = await pageAll(adminClient, 'intro_requests', 'id, requester_id, target_user_id, status, match_reason, created_at',
+    (q) => q.in('status', ['suggested', 'queued']))
+  const shown = await pageAll(adminClient, 'batch_suggestions', 'recipient_id, suggested_id, reason', (q) => q.eq('status', 'shown'))
+  const irByMember = new Map<string, any[]>()
+  for (const r of irRows) { if (!memberSet.has(r.requester_id)) continue; (irByMember.get(r.requester_id) ?? irByMember.set(r.requester_id, []).get(r.requester_id)!).push(r) }
+  const adminByMember = new Map<string, { target: string; reason: string | null }[]>()
+  for (const r of shown) { if (!memberSet.has(r.recipient_id)) continue; (adminByMember.get(r.recipient_id) ?? adminByMember.set(r.recipient_id, []).get(r.recipient_id)!).push({ target: r.suggested_id, reason: r.reason ?? null }) }
+
+  // Bulk-load every viewer + candidate profile once (alignment scoring + composition).
+  const profileIds = new Set<string>([...Array.from(memberSet)])
+  for (const r of irRows) profileIds.add(r.target_user_id)
+  for (const r of shown) profileIds.add(r.suggested_id)
+  const profileMap = new Map<string, any>()
+  const idList = Array.from(profileIds)
+  for (let i = 0; i < idList.length; i += 500) {
+    const chunk = idList.slice(i, i + 500)
+    const rows = await pageAll(adminClient, 'profiles', RANK_PROFILE_COLS, (q) => q.in('id', chunk))
+    for (const p of rows) profileMap.set(p.id, p)
+  }
+  return { memberSet, irByMember, adminByMember, profileMap }
+}
+
+/**
+ * PURE, deterministic selection — the single source of truth for Active/Queued/Discard,
+ * shared by the dry-run plan and the write. Ranks a member's existing candidates by
+ * alignment desc → match_reason signal strength desc → created_at desc → target_user_id
+ * asc, then applies the law-firm composition policy (reorders only), then splits.
+ */
+function rankMemberItems(
+  viewer: any,
+  existing: any[],
+  admin: { target: string; reason: string | null }[],
+  profileMap: Map<string, any>,
+): { active: QueueItem[]; queued: QueueItem[]; discard: QueueItem[] } {
+  const seen = new Set<string>()
+  const cands: any[] = []
+  const pushCand = (target: string, reason: string | null, rowId: string | undefined, createdAt: string | null) => {
+    if (seen.has(target)) return
+    seen.add(target)
+    const p = profileMap.get(target) ?? { id: target }
+    cands.push({
+      ...p,
+      __item: { rowId, target, reason } as QueueItem,
+      __alignment: calculateAlignmentScore(viewer, p),
+      __signal: signalStrength(reason),
+      __created: createdAt ?? '',
+      __target: target,
+    })
+  }
+  for (const r of existing) pushCand(r.target_user_id, r.match_reason ?? null, r.id, r.created_at ?? null)
+  for (const a of admin) pushCand(a.target, a.reason, undefined, null)
+
+  cands.sort((a, b) =>
+    b.__alignment - a.__alignment
+    || b.__signal - a.__signal
+    || String(b.__created).localeCompare(String(a.__created))
+    || String(a.__target).localeCompare(String(b.__target)))
+
+  const composed = applyLawFirmCompositionPolicy(cands, viewer)
+  const items: QueueItem[] = composed.map((c: any) => c.__item)
+  return { active: items.slice(0, N), queued: items.slice(N, KEEP), discard: items.slice(KEEP) }
+}
+
+export interface BackfillPlan {
+  members: number
+  activeRecommendations: number
+  queuedRecommendations: number
+  recommendationsToMove: number       // existing rows changing suggested → queued
+  recommendationsToDiscard: number
+  adminMaterializations: number       // admin-sourced targets with no live row yet
+  perMemberSample: Array<{ member: string; active: string[]; queued: string[]; discard: string[] }>
+}
+
+/**
+ * READ-ONLY. The exact Active/Queued/Discard plan applyBackfill will execute, with no
+ * writes — so the dry-run assignment is provably identical to the write (both call
+ * rankMemberItems). Use this to review the ranking outcome before approving the write.
+ */
+export async function planBackfill(adminClient: any, sampleSize = 10): Promise<BackfillPlan> {
+  const { memberSet, irByMember, adminByMember, profileMap } = await collectForApply(adminClient)
+  let members = 0, active = 0, queued = 0, discard = 0, toMove = 0, adminMat = 0
+  const sample: BackfillPlan['perMemberSample'] = []
+  for (const memberId of Array.from(memberSet)) {
+    const existing = irByMember.get(memberId) ?? []
+    const admin = adminByMember.get(memberId) ?? []
+    if (existing.length === 0 && admin.length === 0) continue
+    members++
+    const plan = rankMemberItems(profileMap.get(memberId) ?? {}, existing, admin, profileMap)
+    active += plan.active.length
+    queued += plan.queued.length
+    discard += plan.discard.length
+    toMove += plan.queued.filter((it) => it.rowId).length
+    adminMat += [...plan.active, ...plan.queued].filter((it) => !it.rowId).length
+    if (sample.length < sampleSize) sample.push({ member: memberId.slice(0, 8), active: plan.active.map((i) => i.target), queued: plan.queued.map((i) => i.target), discard: plan.discard.map((i) => i.target) })
+  }
+  return { members, activeRecommendations: active, queuedRecommendations: queued, recommendationsToMove: toMove, recommendationsToDiscard: discard, adminMaterializations: adminMat, perMemberSample: sample }
+}
+
 /**
  * WRITES. Collapse every member to Current (≤ N active) + Next (≤ N queued), discard
  * the rest. HELD — invoke only after explicit approval. See file header for the
  * idempotency / resume-safety contract.
  */
 export async function applyBackfill(adminClient: any): Promise<BackfillApplyResult> {
-  const memberSet = await activeMemberIds(adminClient)
-
-  // Bulk-read existing queue-candidate rows (suggested OR a partial 'queued' from a
-  // prior interrupted run) and sent admin suggestions, grouped per member.
-  const irRows = await pageAll(adminClient, 'intro_requests', 'id, requester_id, target_user_id, status, match_reason, created_at',
-    (q) => q.in('status', ['suggested', 'queued']))
-  const shown = await pageAll(adminClient, 'batch_suggestions', 'recipient_id, suggested_id, reason', (q) => q.eq('status', 'shown'))
-
-  const irByMember = new Map<string, any[]>()
-  for (const r of irRows) { if (!memberSet.has(r.requester_id)) continue; (irByMember.get(r.requester_id) ?? irByMember.set(r.requester_id, []).get(r.requester_id)!).push(r) }
-  const adminByMember = new Map<string, { target: string; reason: string | null }[]>()
-  for (const r of shown) { if (!memberSet.has(r.recipient_id)) continue; (adminByMember.get(r.recipient_id) ?? adminByMember.set(r.recipient_id, []).get(r.recipient_id)!).push({ target: r.suggested_id, reason: r.reason ?? null }) }
+  const { memberSet, irByMember, adminByMember, profileMap } = await collectForApply(adminClient)
 
   const now = new Date().toISOString()
   const res: BackfillApplyResult = { membersProcessed: 0, membersSkipped: 0, activeBatchesCreated: 0, queuedBatchesCreated: 0, recommendationsDiscarded: 0 }
@@ -146,17 +255,8 @@ export async function applyBackfill(adminClient: any): Promise<BackfillApplyResu
     await adminClient.from('recommendation_batches').delete()
       .eq('member_id', memberId).in('state', ['queued', 'completed', 'discarded'])
 
-    // Ordered visible union: live rows first (most recent first — matches the page's
-    // created_at DESC display order), then any sent admin targets, deduped by target.
-    const liveSorted = existing.slice().sort((a: any, b: any) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
-    const items: QueueItem[] = []
-    const seen = new Set<string>()
-    for (const r of liveSorted) if (!seen.has(r.target_user_id)) { seen.add(r.target_user_id); items.push({ rowId: r.id, target: r.target_user_id, reason: r.match_reason ?? null }) }
-    for (const a of admin) if (!seen.has(a.target)) { seen.add(a.target); items.push({ target: a.target, reason: a.reason }) }
-
-    const current = items.slice(0, N)
-    const next = items.slice(N, KEEP)
-    const discard = items.slice(KEEP)
+    // Deterministic Active/Queued/Discard selection (same function planBackfill uses).
+    const { active: current, queued: next, discard } = rankMemberItems(profileMap.get(memberId) ?? {}, existing, admin, profileMap)
     res.recommendationsDiscarded += discard.length
 
     const batchIdA = randomUUID()

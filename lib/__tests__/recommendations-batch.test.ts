@@ -393,3 +393,135 @@ describe('migration apply — preserves rows, splits current/next, idempotent & 
     expect(irOf(c)).toHaveLength(3)                    // no rows lost
   })
 })
+
+describe('migration ranking — alignment-based Active/Queued selection', () => {
+  const activeTargets = (c: any, m = 'MEM') => suggestedOf(c, m).map((r: any) => r.target_user_id).sort()
+  const queuedTargets = (c: any, m = 'MEM') => queuedOf(c, m).map((r: any) => r.target_user_id).sort()
+
+  it('strongest alignment becomes Active; weakest is Queued', async () => {
+    const c = makeClient({
+      profiles: [
+        { id: 'MEM', account_status: 'active', profile_complete: true, intro_preferences: ['General Counsel'], seniority: 'Senior', expertise: ['Litigation'], city: 'NYC', state: 'NY' },
+        { id: 'S', role_type: 'General Counsel', seniority: 'Senior', expertise: ['Litigation'], city: 'NYC', state: 'NY' },   // strongest
+        { id: 'Mid', role_type: 'COO', seniority: 'Senior', expertise: ['Finance'], city: 'NYC', state: 'NY' },               // mid
+        { id: 'W', role_type: 'Consultant', seniority: 'Junior', expertise: ['Marketing'], city: 'LA', state: 'CA' },         // weakest
+      ],
+      intro_requests: [
+        { id: 'r1', requester_id: 'MEM', target_user_id: 'S', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { id: 'r2', requester_id: 'MEM', target_user_id: 'Mid', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { id: 'r3', requester_id: 'MEM', target_user_id: 'W', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+      ],
+    })
+    await applyBackfill(c)
+    expect(activeTargets(c)).toEqual(['Mid', 'S'])   // two highest-alignment
+    expect(queuedTargets(c)).toEqual(['W'])          // weakest queued
+  })
+
+  it('is deterministic — identical inputs produce identical Active/Queued twice', async () => {
+    const seed = () => ({
+      profiles: [
+        { id: 'MEM', account_status: 'active', profile_complete: true, intro_preferences: ['General Counsel'], seniority: 'Senior', expertise: ['Litigation'], city: 'NYC' },
+        { id: 'S', role_type: 'General Counsel', seniority: 'Senior', expertise: ['Litigation'], city: 'NYC' },
+        { id: 'Mid', role_type: 'COO', seniority: 'Senior', expertise: ['Finance'], city: 'NYC' },
+        { id: 'W', role_type: 'Consultant', seniority: 'Junior', expertise: ['Marketing'], city: 'LA' },
+      ],
+      intro_requests: [
+        { id: 'r1', requester_id: 'MEM', target_user_id: 'S', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { id: 'r2', requester_id: 'MEM', target_user_id: 'Mid', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { id: 'r3', requester_id: 'MEM', target_user_id: 'W', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+      ],
+    })
+    const a = makeClient(seed()); await applyBackfill(a)
+    const b = makeClient(seed()); await applyBackfill(b)
+    expect(activeTargets(a)).toEqual(activeTargets(b))
+    expect(queuedTargets(a)).toEqual(queuedTargets(b))
+  })
+
+  // Tie-break chain (no profiles → uniform alignment, so lower keys decide).
+  it('tie-break 1: match_reason signal strength — fewer bullets is queued', async () => {
+    const c = makeClient({
+      profiles: [{ id: 'MEM', account_status: 'active', profile_complete: true }],
+      intro_requests: [
+        { id: 'r1', requester_id: 'MEM', target_user_id: 'A', status: 'suggested', match_reason: 'a\nb\nc', created_at: '2026-03-01' },
+        { id: 'r2', requester_id: 'MEM', target_user_id: 'B', status: 'suggested', match_reason: 'a\nb', created_at: '2026-03-01' },
+        { id: 'r3', requester_id: 'MEM', target_user_id: 'C', status: 'suggested', match_reason: 'a', created_at: '2026-03-01' },
+      ],
+    })
+    await applyBackfill(c)
+    expect(queuedTargets(c)).toEqual(['C'])   // weakest signal
+  })
+
+  it('tie-break 2: created_at descending — oldest is queued', async () => {
+    const c = makeClient({
+      profiles: [{ id: 'MEM', account_status: 'active', profile_complete: true }],
+      intro_requests: [
+        { id: 'r1', requester_id: 'MEM', target_user_id: 'A', status: 'suggested', match_reason: 'x', created_at: '2026-03-03' },
+        { id: 'r2', requester_id: 'MEM', target_user_id: 'B', status: 'suggested', match_reason: 'x', created_at: '2026-03-02' },
+        { id: 'r3', requester_id: 'MEM', target_user_id: 'C', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+      ],
+    })
+    await applyBackfill(c)
+    expect(queuedTargets(c)).toEqual(['C'])   // oldest
+  })
+
+  it('tie-break 3: final target_user_id ascending — highest id is queued', async () => {
+    const c = makeClient({
+      profiles: [{ id: 'MEM', account_status: 'active', profile_complete: true }],
+      intro_requests: [
+        { id: 'r1', requester_id: 'MEM', target_user_id: 'aaa', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { id: 'r2', requester_id: 'MEM', target_user_id: 'bbb', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { id: 'r3', requester_id: 'MEM', target_user_id: 'ccc', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+      ],
+    })
+    await applyBackfill(c)
+    expect(activeTargets(c)).toEqual(['aaa', 'bbb'])   // two lowest ids
+    expect(queuedTargets(c)).toEqual(['ccc'])
+  })
+
+  it('law-firm composition: two law-firm candidates never both occupy the Active batch', async () => {
+    const c = makeClient({
+      profiles: [
+        { id: 'LFV', account_status: 'active', profile_complete: true, role_type: 'Law Firm Partner', city: 'DC', expertise: ['Litigation'] },
+        { id: 'lfA', role_type: 'Law Firm Partner', city: 'DC', expertise: ['Litigation'] },   // highest alignment law-firm
+        { id: 'lfB', role_type: 'Law Firm Attorney', city: 'DC', expertise: ['Regulatory'] },  // strategic peer
+        { id: 'gc', role_type: 'General Counsel', city: 'DC', expertise: ['Compliance'] },      // client
+      ],
+      intro_requests: [
+        { id: 'r1', requester_id: 'LFV', target_user_id: 'lfA', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { id: 'r2', requester_id: 'LFV', target_user_id: 'lfB', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { id: 'r3', requester_id: 'LFV', target_user_id: 'gc', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+      ],
+    })
+    await applyBackfill(c)
+    const activeRoles = suggestedOf(c, 'LFV').map((r: any) => r.target_user_id)
+    const lawFirmInActive = activeRoles.filter((id: string) => id === 'lfA' || id === 'lfB').length
+    expect(lawFirmInActive).toBeLessThanOrEqual(1)               // never two law-firm in Active
+    expect(activeRoles).toContain('gc')                          // a client is Active
+  })
+
+  it('migration safety: pending / approved / matched / history rows are untouched', async () => {
+    const c = makeClient({
+      profiles: [{ id: 'MEM', account_status: 'active', profile_complete: true }],
+      intro_requests: [
+        { id: 's1', requester_id: 'MEM', target_user_id: 'X', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { id: 's2', requester_id: 'MEM', target_user_id: 'Y', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { id: 'p1', requester_id: 'MEM', target_user_id: 'Z', status: 'pending', match_reason: 'keep' },
+        { id: 'a1', requester_id: 'MEM', target_user_id: 'W', status: 'approved', match_reason: 'keep' },
+        { id: 'h1', requester_id: 'MEM', target_user_id: 'H', status: 'archived', match_reason: 'keep' },
+      ],
+      matches: [{ user_a_id: 'MEM', user_b_id: 'V', status: 'active' }],
+    })
+    const beforeRows = c.__tables.intro_requests.length
+    await applyBackfill(c)
+    const pending = c.__tables.intro_requests.find((r: any) => r.id === 'p1')
+    const approved = c.__tables.intro_requests.find((r: any) => r.id === 'a1')
+    const archived = c.__tables.intro_requests.find((r: any) => r.id === 'h1')
+    expect(pending.status).toBe('pending')                       // unchanged
+    expect(approved.status).toBe('approved')                     // unchanged
+    expect(archived.status).toBe('archived')                     // unchanged
+    expect(pending.match_reason).toBe('keep')
+    expect(c.__tables.matches).toHaveLength(1)                   // matches untouched
+    expect(c.__tables.intro_requests.length).toBe(beforeRows)   // no unexpected deletes (2 suggested ≤ Active)
+    expect(suggestedOf(c, 'MEM').map((r: any) => r.target_user_id).sort()).toEqual(['X', 'Y'])
+  })
+})
