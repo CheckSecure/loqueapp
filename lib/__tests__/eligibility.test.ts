@@ -17,6 +17,7 @@ describe('isEligibleMember — canonical predicate', () => {
     expect(isEligibleMember({ ...realMember, account_status: 'deactivated' })).toBe(false)
     expect(isEligibleMember({ ...realMember, account_status: 'deleted' })).toBe(false)
     expect(isEligibleMember({ ...realMember, profile_complete: false })).toBe(false)  // incomplete onboarding
+    expect(isEligibleMember({ ...realMember, matching_paused: true })).toBe(false)    // participation paused (migration 019)
     expect(isEligibleMember(null)).toBe(false)
     expect(isEligibleMember(undefined)).toBe(false)
   })
@@ -58,6 +59,7 @@ describe('applyMemberEligibility — DB query filter', () => {
     expect(calls).toContain('eq:profile_complete=true')
     expect(calls).toContain('not:is_test_account is true')
     expect(calls).toContain('not:is_admin is true')
+    expect(calls).toContain('not:matching_paused is true')
     expect(calls).toContain(`neq:email!=${ADMIN_EMAIL}`)
   })
   it('ELIGIBILITY_COLUMNS lists the columns the in-memory re-check needs', () => {
@@ -74,6 +76,7 @@ describe('fail-fast: excluded account reaching scoring aborts loudly', () => {
     expect(eligibilityExclusionReason({ id: 'x', is_test_account: true })).toBe('test_account')
     expect(eligibilityExclusionReason({ id: 'x', is_admin: true })).toBe('admin_account')
     expect(eligibilityExclusionReason({ id: 'x', email: ADMIN_EMAIL })).toBe('admin_email')
+    expect(eligibilityExclusionReason({ id: 'x', matching_paused: true })).toBe('matching_paused')
     expect(eligibilityExclusionReason({ id: 'x', account_status: 'suspended' })).toBe('inactive_status:suspended')
     expect(eligibilityExclusionReason({ id: 'x', profile_complete: false })).toBe('incomplete_onboarding')
     expect(eligibilityExclusionReason({ id: 'x', account_status: 'active', profile_complete: true })).toBeNull()

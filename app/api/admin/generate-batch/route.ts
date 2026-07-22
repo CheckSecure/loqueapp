@@ -8,6 +8,7 @@ import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 import { buildScoringContext, scoreMatch as scoreMatchV2, exposureAdjustedScore, EXPOSURE_CONFIG, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
+import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
 
 export const dynamic = 'force-dynamic'
 
@@ -445,12 +446,26 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      if (allSuggestions.length > 0) {
+      // FINAL INVARIANT: guarantee no recipient exceeds their tier limit, even if
+      // an upstream selection bug produced excess. Fresh batch → no existing live
+      // suggestions. Rows are in priority order, so the best ones are kept.
+      const tierByRecipient = new Map(profiles.map((p: any) => [p.id, p.subscription_tier || 'free']))
+      const { kept, dropped } = enforceRecipientLimits(
+        allSuggestions,
+        (rid) => perRecipientIntroLimit(tierByRecipient.get(rid)),
+      )
+      if (Object.keys(dropped).length > 0) {
+        console.warn('[generate-batch] per-recipient limit invariant trimmed excess (investigate upstream):', JSON.stringify(dropped))
+      }
+
+      if (kept.length > 0) {
         const { error: suggestionsError } = await adminClient
           .from('batch_suggestions')
-          .insert(allSuggestions)
+          .insert(kept)
         if (suggestionsError) throw new Error(`Failed to insert suggestions: ${suggestionsError.message}`)
       }
+      allSuggestions.length = 0
+      allSuggestions.push(...kept) // downstream metrics reflect what was actually persisted
     } catch (insertErr: any) {
       // Compensating cleanup: remove the just-created (now empty) batch row.
       await adminClient.from('introduction_batches').delete().eq('id', batch.id)

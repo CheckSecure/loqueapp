@@ -6,6 +6,7 @@ import { isSameCompany } from '@/lib/matching/same-company'
 import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 import { applyMemberEligibility, filterEligible, assertAllEligible } from '@/lib/matching/eligibility'
+import { enforceRecipientLimits, perRecipientIntroLimit, suggestionCountsTowardLimit } from '@/lib/matching/batch-limits'
 
 export const dynamic = 'force-dynamic'
 
@@ -172,15 +173,20 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
       return NextResponse.json({ error: allInBatch.error.message }, { status: 500 })
     }
 
-    const recipientGroups = new Map<string, { generated: number; dropped: number; suggestedIds: Set<string> }>()
+    const recipientGroups = new Map<string, { generated: number; dropped: number; live: number; suggestedIds: Set<string> }>()
     for (const row of allInBatch.data || []) {
       if (!row.recipient_id) continue
       if (!recipientGroups.has(row.recipient_id)) {
-        recipientGroups.set(row.recipient_id, { generated: 0, dropped: 0, suggestedIds: new Set() })
+        recipientGroups.set(row.recipient_id, { generated: 0, dropped: 0, live: 0, suggestedIds: new Set() })
       }
       const g = recipientGroups.get(row.recipient_id)!
       if (row.status === 'generated') g.generated++
       if (row.status === 'dropped') g.dropped++
+      // `live` = every suggestion still counting toward the recipient's limit
+      // (all statuses except dropped/hidden_permanent). The prior code sized fills
+      // against `generated` ONLY, so once suggestions moved to shown/active/etc.
+      // the recipient was refilled past their tier limit — this is the fix.
+      if (suggestionCountsTowardLimit(row.status)) g.live++
       if (row.suggested_id) g.suggestedIds.add(row.suggested_id)
     }
 
@@ -219,7 +225,9 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
       }
       const target = tierTarget(profile.subscription_tier)
       const group = recipientGroups.get(r.recipientId)!
-      r.needed = Math.max(0, target - group.generated)
+      // Fill only up to the tier limit counting ALL live suggestions (not just
+      // 'generated'), so a member can never end up above their configured limit.
+      r.needed = Math.max(0, target - group.live)
     }
 
     // Canonical eligibility (previously missing the admin/internal exclusion).
@@ -320,10 +328,21 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
       recipientsFilled++
     }
 
-    if (insertRows.length > 0) {
+    // FINAL INVARIANT (source-independent): never let existing live + new
+    // replacements exceed a recipient's tier limit, even if `needed` were wrong.
+    const { kept: keptRows, dropped: trimmed } = enforceRecipientLimits(
+      insertRows,
+      (rid) => perRecipientIntroLimit(recipientProfileMap.get(rid)?.subscription_tier),
+      (rid) => recipientGroups.get(rid)?.live ?? 0,
+    )
+    if (Object.keys(trimmed).length > 0) {
+      console.warn('[generate-replacements] per-recipient limit invariant trimmed excess (investigate upstream):', JSON.stringify(trimmed))
+    }
+
+    if (keptRows.length > 0) {
       const insertResult = await admin
         .from('batch_suggestions')
-        .insert(insertRows)
+        .insert(keptRows)
       if (insertResult.error) {
         return NextResponse.json({ error: insertResult.error.message }, { status: 500 })
       }

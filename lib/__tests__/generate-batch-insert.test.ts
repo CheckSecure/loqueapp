@@ -67,7 +67,7 @@ function member(id: string): any {
     trust_score: 90, current_status: null, purposes: ['raise capital', 'hire'],
     city: 'NYC', state: 'NY', geographic_scope: 'us-wide', meeting_format_preference: 'both',
     open_to_business_solutions: false, boost_score: 60, is_priority: true, profile_complete: true,
-    account_status: 'active', is_test_account: false, is_admin: false,
+    account_status: 'active', is_test_account: false, is_admin: false, matching_paused: false,
   }
 }
 
@@ -137,16 +137,27 @@ describe('Generate New Batch — full insert', () => {
       { ...member('adm'), is_admin: true },                      // internal/admin
       { ...member('s'), account_status: 'suspended' },           // suspended/disabled
       { ...member('i'), profile_complete: false },               // incomplete onboarding
+      { ...member('p'), matching_paused: true },                 // participation paused (migration 019)
     ]
     await post()
     const rows = state.insertedSuggestions || []
-    const banned = new Set(['t', 'adm', 's', 'i'])
+    const banned = new Set(['t', 'adm', 's', 'i', 'p'])
     // Never a recipient, never a candidate.
     expect(rows.some((r: any) => banned.has(r.recipient_id))).toBe(false)
     expect(rows.some((r: any) => banned.has(r.suggested_id))).toBe(false)
     // Only the 3 real members participate.
     for (const r of rows) { expect(['a', 'b', 'c']).toContain(r.recipient_id); expect(['a', 'b', 'c']).toContain(r.suggested_id) }
     expect(rows.length).toBeGreaterThan(0)
+  })
+
+  it('no recipient ever exceeds their per-batch tier limit (final invariant)', async () => {
+    // A larger free-tier cohort so many candidates qualify for each recipient.
+    state.profiles = Array.from({ length: 10 }, (_, i) => ({ ...member('m' + i), subscription_tier: 'free', company: 'co' + i }))
+    await post()
+    const counts: Record<string, number> = {}
+    for (const r of state.insertedSuggestions || []) counts[r.recipient_id] = (counts[r.recipient_id] || 0) + 1
+    // Free tier limit is 3 — nobody may receive more, no matter how many qualify.
+    expect(Math.max(...Object.values(counts))).toBeLessThanOrEqual(3)
   })
 
   it('is deterministic + repeatable and enforces safety invariants (v2 algorithm)', async () => {

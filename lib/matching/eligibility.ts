@@ -17,6 +17,8 @@
  *   - email = ADMIN_EMAIL      → belt-and-suspenders for the admin account
  *   - account_status != active → suspended / disabled / deactivated / deleted
  *   - profile_complete != true → incomplete onboarding
+ *   - matching_paused = true   → admin paused this member from matching (participation
+ *                                flag; account otherwise active) — migration 019
  *
  * Deliberately NOT used: is_approved (only the admin has it set → would exclude
  * everyone) and onboarding_complete (always false in prod → profile_complete is
@@ -33,7 +35,7 @@
 export const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
 /** Columns every candidate/recipient query must select so isEligibleMember can re-check. */
-export const ELIGIBILITY_COLUMNS = 'account_status, profile_complete, is_test_account, is_admin, email'
+export const ELIGIBILITY_COLUMNS = 'account_status, profile_complete, is_test_account, is_admin, email, matching_paused'
 
 export type EligibilityFields = {
   account_status?: string | null
@@ -41,6 +43,7 @@ export type EligibilityFields = {
   is_test_account?: boolean | null
   is_admin?: boolean | null
   email?: string | null
+  matching_paused?: boolean | null
 }
 
 /**
@@ -54,6 +57,7 @@ export function applyMemberEligibility<T>(query: T): T {
     .eq('profile_complete', true)
     .not('is_test_account', 'is', true)
     .not('is_admin', 'is', true)
+    .not('matching_paused', 'is', true)
     .neq('email', ADMIN_EMAIL)
 }
 
@@ -64,6 +68,7 @@ export function isEligibleMember(p: EligibilityFields | null | undefined): boole
     && p.profile_complete === true
     && p.is_test_account !== true
     && p.is_admin !== true
+    && p.matching_paused !== true
     && (p.email ?? '') !== ADMIN_EMAIL
 }
 
@@ -87,6 +92,7 @@ export function eligibilityExclusionReason(p: (EligibilityFields & { id?: string
   if (p.is_test_account === true) return 'test_account'
   if (p.is_admin === true) return 'admin_account'
   if ((p.email ?? '') === ADMIN_EMAIL) return 'admin_email'
+  if (p.matching_paused === true) return 'matching_paused'
   if (p.account_status != null && p.account_status !== 'active') return `inactive_status:${p.account_status}`
   if (p.profile_complete === false) return 'incomplete_onboarding'
   return null
