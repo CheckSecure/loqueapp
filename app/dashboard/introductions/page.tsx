@@ -18,7 +18,9 @@ import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
 import MatchProfileCompletionCard from '@/components/MatchProfileCompletionCard'
+import BroadenPreferencesNotice from '@/components/BroadenPreferencesNotice'
 import { matchProfileCompletion } from '@/lib/matching/profile-completion'
+import { perRecipientIntroLimit } from '@/lib/matching/batch-limits'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
 import { professionalIdentity, professionalIdentityLine } from '@/lib/professionalIdentity'
@@ -90,7 +92,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
   const { data: profileRows } = await supabase
     .from('profiles')
-    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, created_at, role_type, seniority, interests, mentorship_role, location, expertise, purposes, avatar_url, company, bio, linkedin_url')
+    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, created_at, role_type, seniority, interests, intro_preferences, mentorship_role, location, expertise, purposes, avatar_url, company, bio, linkedin_url')
     .or(`id.eq.${user.id},email.eq.${user.email}`)
     .limit(1)
 
@@ -787,13 +789,25 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
           />
         )}
 
-        {/* Empty/low-match experience: a member with few or no introductions AND an
-            incomplete matching profile gets an actionable nudge, not a bare empty
-            state. (The card self-hides once the matching profile is complete.) */}
-        {(allSuggestions.length + adminIntrosVisible.length) <= 1
-          && !matchProfileCompletion(profileRow).complete && (
-            <MatchProfileCompletionCard profile={profileRow} variant="empty" />
-          )}
+        {/* Under-served experience. A member who received FEWER than their max
+            introductions gets a targeted, actionable explanation instead of a bare
+            gap — and the RIGHT one for their situation:
+              • hasn't said who they want to meet (no intro_preferences) → complete
+                their matching profile;
+              • has stated preferences but they're too narrow → broaden them.
+            Members at their max, or with a complete-and-broad profile, see nothing. */}
+        {(() => {
+          const introCount = allSuggestions.length + adminIntrosVisible.length
+          const underServed = introCount < perRecipientIntroLimit(userTier)
+          if (!underServed) return null
+          const mc = matchProfileCompletion(profileRow)
+          const hasPreferences = mc.fields.find(f => f.key === 'intro_preferences')?.done
+          // Has preferences → the shortfall is restrictiveness → broaden.
+          if (hasPreferences) return <BroadenPreferencesNotice />
+          // No preferences / incomplete matching profile → complete it first.
+          if (!mc.complete) return <MatchProfileCompletionCard profile={profileRow} variant="empty" />
+          return null
+        })()}
 
         {/* TWO-COLUMN LAYOUT */}
         <div className="grid lg:grid-cols-3 gap-6 lg:gap-8">
