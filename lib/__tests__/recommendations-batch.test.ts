@@ -9,7 +9,7 @@ import {
   enqueueBatch, promoteIfResolved, getActiveBatch, getQueuedBatch,
   countUnresolvedRecommendations, weeklyEligibilityCheck,
 } from '@/lib/introductions/queue'
-import { buildBackfillReport } from '@/lib/introductions/migration-backfill'
+import { buildBackfillReport, applyBackfill } from '@/lib/introductions/migration-backfill'
 
 // ── In-memory Supabase mock ───────────────────────────────────────────────────
 // Supports the query surface the queue service / metrics / backfill use:
@@ -28,6 +28,8 @@ function makeClient(seed: Record<string, any[]> = {}) {
     let op: 'select' | 'insert' | 'update' | 'delete' = 'select'
     let payload: any = null
     let limitN = Infinity
+    let rangeFrom = 0
+    let rangeTo = Infinity
     const b: any = {
       select() { op = 'select'; return b },
       insert(v: any) { op = 'insert'; payload = v; return b },
@@ -40,6 +42,7 @@ function makeClient(seed: Record<string, any[]> = {}) {
       gte(k: string, v: any) { filters.push((r) => r[k] >= v); return b },
       order() { return b },
       limit(n: number) { limitN = n; return b },
+      range(a: number, z: number) { rangeFrom = a; rangeTo = z; return run() },
       maybeSingle() { return run().then((x: any) => ({ data: x.data[0] ?? null, error: null })) },
       single() { return run().then((x: any) => ({ data: x.data[0] ?? null, error: null })) },
       then(res: any, rej: any) { return run().then(res, rej) },
@@ -54,7 +57,8 @@ function makeClient(seed: Record<string, any[]> = {}) {
       const m = matches()
       if (op === 'update') { for (const r of m) Object.assign(r, payload); return { data: null, error: null } }
       if (op === 'delete') { tables[table] = tables[table].filter((r) => !filters.every((f) => f(r))); return { data: null, error: null } }
-      return { data: m.slice(0, limitN).map((r) => ({ ...r })), error: null }
+      const sliced = Number.isFinite(rangeTo) ? m.slice(rangeFrom, rangeTo + 1) : m.slice(0, limitN)
+      return { data: sliced.map((r) => ({ ...r })), error: null }
     }
     return b
   }
@@ -332,5 +336,60 @@ describe('migration dry-run report', () => {
     expect(report.visibleDistribution['0']).toBe(1)        // M3
     expect(report.recommendationsToDiscard).toBe(1)        // M2: 5 − (Current2+Next2)=1
     expect(report.adminSuggestionBatchesToMaterialize).toBe(1)
+  })
+})
+
+describe('migration apply — preserves rows, splits current/next, idempotent & resume-safe', () => {
+  const seed = () => ({
+    profiles: [{ id: 'M', account_status: 'active', profile_complete: true }],
+    intro_requests: [
+      { id: 'r1', requester_id: 'M', target_user_id: 'A', status: 'suggested', match_reason: 'reason-A', created_at: '2026-03-03' },
+      { id: 'r2', requester_id: 'M', target_user_id: 'B', status: 'suggested', match_reason: 'reason-B', created_at: '2026-03-02' },
+      { id: 'r3', requester_id: 'M', target_user_id: 'C', status: 'suggested', match_reason: 'reason-C', created_at: '2026-03-01' },
+    ],
+  })
+
+  it('a 3-suggested member becomes 2 active + 1 queued, match_reason preserved, nothing deleted', async () => {
+    const c = makeClient(seed())
+    const res = await applyBackfill(c)
+    expect(res.membersProcessed).toBe(1)
+    expect(res.activeBatchesCreated).toBe(1)
+    expect(res.queuedBatchesCreated).toBe(1)
+    expect(res.recommendationsDiscarded).toBe(0)         // 3 ≤ Current2+Next2
+    // most-recent two stay visible (A,B); oldest (C) is queued
+    expect(suggestedOf(c).map((r: any) => r.target_user_id).sort()).toEqual(['A', 'B'])
+    expect(queuedOf(c).map((r: any) => r.target_user_id)).toEqual(['C'])
+    // rows preserved in place — match_reason intact, no rows deleted (still 3)
+    expect(irOf(c)).toHaveLength(3)
+    expect(irOf(c).find((r: any) => r.target_user_id === 'C').match_reason).toBe('reason-C')
+    // exactly one active + one queued batch
+    expect(batchesOf(c, 'active')).toHaveLength(1)
+    expect(batchesOf(c, 'queued')).toHaveLength(1)
+  })
+
+  it('re-running is idempotent — the already-migrated member is skipped, no duplication', async () => {
+    const c = makeClient(seed())
+    await applyBackfill(c)
+    const res2 = await applyBackfill(c)
+    expect(res2.membersProcessed).toBe(0)
+    expect(res2.membersSkipped).toBe(1)
+    expect(irOf(c)).toHaveLength(3)
+    expect(batchesOf(c, 'active')).toHaveLength(1)
+    expect(batchesOf(c, 'queued')).toHaveLength(1)
+  })
+
+  it('resumes cleanly after an interruption that flipped a row to queued but wrote no active batch', async () => {
+    const c = makeClient(seed())
+    // simulate a partial prior run: r3 flipped to 'queued' + orphan queued metadata, no ACTIVE batch
+    c.__tables.intro_requests.find((r: any) => r.id === 'r3').status = 'queued'
+    c.__tables.recommendation_batches.push({ batch_id: 'partial-q', member_id: 'M', state: 'queued', batch_source: 'migration' })
+    const res = await applyBackfill(c)
+    expect(res.membersProcessed).toBe(1)              // not skipped — no active batch existed
+    // recovered to a consistent 2 active + 1 queued with a single queued batch row
+    expect(suggestedOf(c).map((r: any) => r.target_user_id).sort()).toEqual(['A', 'B'])
+    expect(queuedOf(c).map((r: any) => r.target_user_id)).toEqual(['C'])
+    expect(batchesOf(c, 'active')).toHaveLength(1)
+    expect(batchesOf(c, 'queued')).toHaveLength(1)     // stale partial-q metadata cleared, not duplicated
+    expect(irOf(c)).toHaveLength(3)                    // no rows lost
   })
 })
