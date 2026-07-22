@@ -49,7 +49,7 @@ export function findReusableOutboundIntro<T extends { status: string; created_at
  * (applied bidirectionally). A pending or connected pair can therefore never be
  * re-introduced as a fresh suggestion. Consumed by lib/generate-recommendations.ts.
  */
-export const BATCH_EXCLUDING_STATUSES = ['suggested', 'pending', 'accepted', 'admin_pending', 'approved'] as const
+export const BATCH_EXCLUDING_STATUSES = ['suggested', 'queued', 'pending', 'accepted', 'admin_pending', 'approved'] as const
 
 export function isBatchExcludingStatus(status: string | null | undefined): boolean {
   return (BATCH_EXCLUDING_STATUSES as readonly string[]).includes(status ?? '')

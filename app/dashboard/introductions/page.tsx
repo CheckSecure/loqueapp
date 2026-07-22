@@ -8,7 +8,6 @@ import WithdrawInterestButton from '@/components/WithdrawInterestButton'
 import IntroductionCard from '@/components/IntroductionCard'
 import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
-import EarlierIntroductionsBanner from '@/components/EarlierIntroductionsBanner'
 import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
 import ProfileCompletionCard from '@/components/ProfileCompletionCard'
 import ProfilePhotoReminder from '@/components/ProfilePhotoReminder'
@@ -21,6 +20,7 @@ import MatchProfileCompletionCard from '@/components/MatchProfileCompletionCard'
 import BroadenPreferencesNotice from '@/components/BroadenPreferencesNotice'
 import { matchProfileCompletion } from '@/lib/matching/profile-completion'
 import { perRecipientIntroLimit } from '@/lib/matching/batch-limits'
+import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
 import { professionalIdentity, professionalIdentityLine } from '@/lib/professionalIdentity'
@@ -32,9 +32,6 @@ import DemoCardHider from '@/components/DemoCardHider'
 import { DEMO_FEATURED, DEMO_ADDITIONAL } from './_demo-data'
 
 export const metadata = { title: 'Introductions | Andrel' }
-
-// Days after which a quiet in-app banner surfaces for untouched earlier introductions.
-const STALE_INTRODUCTION_THRESHOLD_DAYS = 14
 
 function Tag({ children, color = 'slate' }: { children: React.ReactNode; color?: string }) {
   const styles: Record<string, string> = {
@@ -120,12 +117,6 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   const showFoundingWelcome = Boolean(
     isFoundingMember && accountAgeMs !== null && accountAgeMs < THIRTY_DAYS_MS
   )
-  const tierCap = (profileRow as any)?.is_founding_member ? 3
-    : userTier === 'executive' ? 8
-    : userTier === 'professional' ? 5
-    : userTier === 'free' ? 3
-    : 3
-
   // Fetch all profile-scoped queries in parallel — all reads use the
   // user-scoped supabase client so RLS applies to the dashboard's reads
   // uniformly. opportunity_candidates appears RLS-protected (no policy file
@@ -137,7 +128,6 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     { data: existingMatches },
     { data: suggestedIntros },
     { data: adminIntrosRaw },
-    { data: userBatchRows },
     { data: existingRequests },
     { data: creditRow },
     { data: pendingTargetedRequest },
@@ -162,12 +152,6 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       .eq('is_admin_initiated', true)
       .in('status', ['admin_pending', 'approved'])
       .order('created_at', { ascending: false }),
-    supabase
-      .from('batch_suggestions')
-      .select('batch_id, created_at')
-      .eq('recipient_id', profileId)
-      .order('created_at', { ascending: false })
-      .limit(50),
     supabase
       .from('intro_requests')
       .select('target_user_id, status, created_at')
@@ -220,38 +204,10 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   const activeConciergeStatus =
     ((activeConciergeRequest as any)?.status as 'pending' | 'reviewing' | 'match_found' | undefined) ?? null
 
-  // Distinct batch_ids in DESC order — current is [0], prior is [1].
-  const orderedBatchIds: string[] = []
-  for (const row of userBatchRows || []) {
-    if (row.batch_id && !orderedBatchIds.includes(row.batch_id)) {
-      orderedBatchIds.push(row.batch_id)
-      if (orderedBatchIds.length === 2) break
-    }
-  }
-  const currentBatchId = orderedBatchIds[0] ?? null
-  const priorBatchId = orderedBatchIds[1] ?? null
-
-  // Untouched suggestions from the current + prior batch only.
-  const visibleBatchIds = orderedBatchIds.filter(Boolean)
-  const { data: visibleBatchRows } = visibleBatchIds.length > 0
-    ? await supabase
-        .from('batch_suggestions')
-        .select('id, suggested_id, reason, batch_id, created_at')
-        .in('batch_id', visibleBatchIds)
-        .eq('recipient_id', profileId)
-        .not('status', 'in', '(passed,hidden_permanent)')
-    : { data: [] as any[] }
-
-  let bannerDismissed = false
-  if (currentBatchId) {
-    const { data: dismissalRow } = await supabase
-      .from('introduction_banner_dismissals')
-      .select('batch_id')
-      .eq('user_id', profileId)
-      .eq('batch_id', currentBatchId)
-      .maybeSingle()
-    bannerDismissed = !!dismissalRow
-  }
+  // Unified queue: the member's ACTIVE batch is exactly their intro_requests rows
+  // with status 'suggested' (read as `suggestedIntros` above). There is no second
+  // member-facing source and no visible "prior/earlier" batch — only the active
+  // batch is shown, and it holds at most RECOMMENDATIONS_PER_BATCH recommendations.
 
   const matchedUserIds = new Set(
     (existingMatches || []).flatMap((m: any) =>
@@ -287,23 +243,11 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   const requestedIds = expressedTargetIdSet(existingRequests as any)
 
   // Split visible batch suggestions into current vs prior, excluding matched users.
-  const currentBatchRows = (visibleBatchRows || []).filter(
-    (r: any) => r.batch_id === currentBatchId && r.suggested_id && !matchedUserIds.has(r.suggested_id)
-  )
-  const priorBatchRows = (visibleBatchRows || []).filter(
-    (r: any) => r.batch_id === priorBatchId && r.suggested_id && !matchedUserIds.has(r.suggested_id)
-  )
-
-  const currentSuggestionIds = currentBatchRows.map((r: any) => r.suggested_id)
-  const priorSuggestionIds = priorBatchRows.map((r: any) => r.suggested_id)
-
   // Read-side deactivated filter — drop targets whose account_status !== 'active'.
   // Operates on the joined-target profile in memory; NEVER mutates intro_requests rows.
   const allOtherPartyIds = Array.from(new Set([
     ...(adminIntrosRaw || []).map((i: any) => i.requester_id),
     ...(suggestedIntros || []).map((i: any) => i.target_user_id),
-    ...currentSuggestionIds,
-    ...priorSuggestionIds,
   ]))
   const deactivatedIds = new Set<string>()
   if (allOtherPartyIds.length > 0) {
@@ -319,25 +263,11 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     (intro: any) => !deactivatedIds.has(intro.requester_id)
   )
 
-  // Fetch all profiles needed for the batch rendering
-  const allBatchProfileIds = Array.from(new Set([...currentSuggestionIds, ...priorSuggestionIds]))
-    .filter((id: string) => !deactivatedIds.has(id))
-  let profileMap: Record<string, any> = {}
-  if (allBatchProfileIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, full_name, title, exact_job_title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes')
-      .in('id', allBatchProfileIds)
-    for (const p of profiles || []) profileMap[p.id] = p
-  }
-
-  const currentRowMap: Record<string, any> = {}
-  for (const r of currentBatchRows) currentRowMap[r.suggested_id] = r
-  const priorRowMap: Record<string, any> = {}
-  for (const r of priorBatchRows) priorRowMap[r.suggested_id] = r
-
+  // The ACTIVE batch — the ONLY member-facing recommendations. Sourced solely from
+  // intro_requests status='suggested' (onboarding, weekly, and materialized admin
+  // reciprocal batches all land here). Deactivated / matched targets are dropped in
+  // memory; the DB rows are untouched.
   const suggestedProfiles = (suggestedIntros || [])
-    // Read-side filter: drop targets that are deactivated. The intro_requests row stays in DB.
     .filter((intro: any) => intro.target && !matchedUserIds.has(intro.target.id) && !deactivatedIds.has(intro.target.id))
     .map((intro: any) => ({
       rowId: intro.id,
@@ -349,17 +279,6 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       alreadyRequested: requestedIds.has(intro.target.id),
       fromOnboarding: true,
     }))
-
-  const currentBatchEntries = currentSuggestionIds
-    .filter((id: string) => !deactivatedIds.has(id))
-    .map((id: string) => ({
-      rowId: currentRowMap[id]?.id,
-      profile: profileMap[id],
-      matchReason: currentRowMap[id]?.reason || null,
-      alreadyRequested: requestedIds.has(id),
-      fromOnboarding: false,
-    }))
-    .filter((r: any) => r.profile)
 
   // Pending / interest-expressed: OUTBOUND pending or approved requests that
   // have NOT become a match. Deduped by target so duplicate rows (or a suggested
@@ -377,15 +296,18 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   const pendingProfiles = Array.from(pendingByTarget.values())
   const pendingTargetIds = new Set<string>(pendingProfiles.map((p: any) => p.profile.id))
 
+  // Never more than RECOMMENDATIONS_PER_BATCH visible. The active batch already
+  // holds at most that many 'suggested' rows by construction; the slice is a
+  // belt-and-suspenders guard so the invariant holds even if stray rows exist.
   const allSuggestions = Array.from(
     new Map(
-      [...suggestedProfiles, ...currentBatchEntries]
+      suggestedProfiles
         // Never show a pair as a fresh suggestion once interest is expressed —
         // it belongs in the Pending section (no duplicate cards across sections).
         .filter((item: any) => item?.profile?.id && !pendingTargetIds.has(item.profile.id))
         .map((item: any) => [item.profile.id, item])
     ).values()
-  ).slice(0, tierCap)
+  ).slice(0, RECOMMENDATIONS_PER_BATCH)
 
   // Featured = first; additional = rest. If allSuggestions is empty, neither renders.
   const featuredSuggestion = allSuggestions[0] ?? null
@@ -397,31 +319,6 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // pre-gate path.
   const effectiveFeatured: any = isDevReview ? DEMO_FEATURED : featuredSuggestion
   const effectiveAdditional: any[] = isDevReview ? DEMO_ADDITIONAL : additionalSuggestions
-
-  // Earlier (prior batch, untouched, minus current)
-  const currentIds = new Set(allSuggestions.map((s: any) => s.profile.id))
-  const earlierSuggestions = priorSuggestionIds
-    .filter((id: string) => !deactivatedIds.has(id) && !currentIds.has(id) && !pendingTargetIds.has(id))
-    .map((id: string) => ({
-      rowId: priorRowMap[id]?.id,
-      profile: profileMap[id],
-      matchReason: priorRowMap[id]?.reason || null,
-      alreadyRequested: requestedIds.has(id),
-      fromOnboarding: false,
-      createdAt: priorRowMap[id]?.created_at,
-    }))
-    .filter((r: any) => r.profile)
-
-  const staleThresholdMs = STALE_INTRODUCTION_THRESHOLD_DAYS * 24 * 60 * 60 * 1000
-  const oldestEarlierMs = earlierSuggestions.length > 0
-    ? Math.min(...earlierSuggestions.map((s: any) => new Date(s.createdAt).getTime()))
-    : Infinity
-  const showBanner = Boolean(
-    currentBatchId
-    && !bannerDismissed
-    && earlierSuggestions.length > 0
-    && Date.now() - oldestEarlierMs > staleThresholdMs
-  )
 
   // Reason render: prefer stored match_reason (rich prose from generateIntroReason),
   // fall back to computeMatchSignals at render, fall back to generic.
@@ -782,12 +679,6 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
           </div>
         )}
 
-        {showBanner && currentBatchId && (
-          <EarlierIntroductionsBanner
-            count={earlierSuggestions.length}
-            batchId={currentBatchId}
-          />
-        )}
 
         {/* Under-served experience. A member who received FEWER than their max
             introductions gets a targeted, actionable explanation instead of a bare
@@ -896,33 +787,15 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                       <Sparkles className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Curating</p>
-                      <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated.</h2>
+                      <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">All caught up</p>
+                      <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">You&rsquo;re all caught up.</h2>
                       <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-xl">
-                        We reserve introductions for genuine mutual fit. You&rsquo;ll hear from us the moment the right one is ready.
+                        Your next introductions will appear when your next batch is available. We reserve introductions for genuine mutual fit.
                       </p>
                     </div>
                   </div>
                 </section>
               )
-            )}
-
-            {/* EARLIER */}
-            {earlierSuggestions.length > 0 && (
-              <details id="earlier-introductions" className="group border-t border-slate-100 pt-6">
-                <summary className="cursor-pointer flex items-center justify-between gap-4 list-none [&::-webkit-details-marker]:hidden">
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-900">
-                      Earlier introductions ({earlierSuggestions.length})
-                    </h2>
-                    <p className="text-sm text-slate-500 mt-1">Still waiting for a response. Review when you have a moment.</p>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0 transition-transform group-open:rotate-180" />
-                </summary>
-                <div className="grid sm:grid-cols-2 gap-4 mt-5">
-                  {earlierSuggestions.map(renderAdditional)}
-                </div>
-              </details>
             )}
 
           </div>

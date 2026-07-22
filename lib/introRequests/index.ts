@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { EXPRESSED_STATUSES, findReusableOutboundIntro } from '@/lib/introRequests/state'
+import { promoteIfResolved } from '@/lib/introductions/queue'
 
 async function resolveProfileId(supabase: ReturnType<typeof createClient>, authUserId: string, authUserEmail?: string) {
   const orClause = authUserEmail
@@ -124,6 +125,15 @@ export async function createIntroRequest(
 
   if (reverseRequest?.id) {
     console.log('[createIntroRequest] mutual interest detected — ready for admin review')
+  }
+
+  // Expressing interest resolves this recommendation. If it was the active batch's
+  // last open recommendation, promote the queued batch (reveal only). Never blocks
+  // the interest result on a promotion hiccup.
+  try {
+    await promoteIfResolved(supabase, authUserId)
+  } catch (promoteErr) {
+    console.error('[createIntroRequest] promoteIfResolved failed (non-fatal):', promoteErr)
   }
 
   return { success: true, introRequestId: newIntroRequestId }

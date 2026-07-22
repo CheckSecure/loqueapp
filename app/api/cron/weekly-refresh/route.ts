@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { releaseNextBatchIfComplete } from '@/lib/generate-recommendations'
+import { generateBatchForMember } from '@/lib/generate-recommendations'
+import { weeklyEligibilityCheck } from '@/lib/introductions/queue'
 
 /**
- * THE weekly recommendation release — the single scheduled cadence for the unified
- * recommendation cycle (onboarding delivers the first batch; this delivers every
- * subsequent one). For each active member it releases the next batch
- * (RECOMMENDATIONS_PER_BATCH) ONLY if their current batch is complete — every
- * recommendation acted on (interest expressed or passed/dismissed). Members with an
- * unresolved batch get nothing, so they can't rapidly cycle through the network.
- * The daily-refill and monthly-batch crons are retired (they no longer produce
- * recommendations) so this is the only release path.
+ * THE weekly recommendation GENERATION cadence for the unified queue.
+ *
+ * Generation and promotion are separate concerns: this cron only GENERATES. It never
+ * promotes — promotion (revealing a queued batch) happens immediately when a member
+ * resolves their active batch (see promoteIfResolved in the pass / express-interest
+ * paths). For each active, profile-complete member it generates ONE new batch, but
+ * only when weeklyEligibilityCheck passes: no queued batch already waiting, and not
+ * sitting behind an incomplete admin reciprocal batch. This bounds the queue to
+ * "current + optional next" — no backlog, no rapid cycling through the network.
  */
 export async function GET(req: Request) {
   const authHeader = req.headers.get('authorization')
@@ -19,7 +21,7 @@ export async function GET(req: Request) {
   }
 
   const adminClient = createAdminClient()
-  console.log('[Weekly Release] Starting weekly recommendation release...')
+  console.log('[Weekly Generation] Starting weekly recommendation generation...')
 
   const { data: users } = await adminClient
     .from('profiles')
@@ -30,18 +32,21 @@ export async function GET(req: Request) {
 
   if (!users) return NextResponse.json({ error: 'No users found' }, { status: 500 })
 
-  let released = 0
-  let skippedIncomplete = 0
+  let generated = 0
+  let skippedIneligible = 0
+  let placedNothing = 0
   for (const user of users) {
     try {
-      const result = await releaseNextBatchIfComplete(adminClient, user.id)
-      if (result.released) released++
-      else skippedIncomplete++
+      const eligible = await weeklyEligibilityCheck(adminClient, user.id)
+      if (!eligible) { skippedIneligible++; continue }
+      const result = await generateBatchForMember(user.id, 'weekly')
+      if (result.placed) generated++
+      else placedNothing++
     } catch (err) {
-      console.error(`[Weekly Release] Error for ${user.email}:`, err)
+      console.error(`[Weekly Generation] Error for ${user.email}:`, err)
     }
   }
 
-  console.log(`[Weekly Release] Complete. Released to ${released} members; ${skippedIncomplete} still had an open batch.`)
-  return NextResponse.json({ success: true, released, skippedIncomplete })
+  console.log(`[Weekly Generation] Complete. Generated for ${generated} members; ${skippedIneligible} ineligible (queued/behind admin); ${placedNothing} had no candidates.`)
+  return NextResponse.json({ success: true, generated, skippedIneligible, placedNothing })
 }

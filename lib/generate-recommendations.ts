@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { enqueueBatch, type BatchSource, type EnqueueResult, countUnresolvedRecommendations } from '@/lib/introductions/queue'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
@@ -862,114 +862,63 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   return { candidates, newUserProfile, targetedRequest }
 }
 
+// Re-exported from the queue service so existing importers keep resolving to the
+// single source of truth for "how many recommendations are still open."
+export { countUnresolvedRecommendations }
+
 /**
- * Persisting batch generator — UNCHANGED behavior. Ranks via
- * rankCandidatesForUser (no scoring/exclusion changes), then writes the
- * 'suggested' intro_requests and marks any active targeted_request 'applied'.
+ * Rank + ENQUEUE a batch for one member through the unified queue. This is the one
+ * generation entry point shared by every producer (onboarding, the weekly engine,
+ * admin-initiated regeneration). It never writes intro_requests directly — placement
+ * (active vs queued), the active-window cap, and admin precedence are owned by
+ * enqueueBatch. Marks any active targeted_request 'applied' when its recommendations
+ * are actually placed.
  */
-export async function generateOnboardingRecommendations(userId: string, maxCount?: number) {
+export async function generateBatchForMember(
+  userId: string,
+  source: BatchSource,
+  maxCount?: number,
+): Promise<EnqueueResult> {
   const adminClient = createAdminClient()
   const { candidates: sorted, targetedRequest } = await rankCandidatesForUser(userId, maxCount)
-  
-  if (sorted.length === 0) {
-    return { count: 0 }
-  }
-  
-  // Every release (onboarding or a weekly release) shares one batch_id so the batch
-  // can be grouped and its completion tracked. Members experience a single curated
-  // cycle — there is no separate onboarding vs recurring shape.
-  const batchId = randomUUID()
-  const introRequests = sorted.map(candidate => ({
-    requester_id: userId,
-    target_user_id: candidate.id,
-    status: 'suggested',
-    match_reason: candidate.match_reason,
-    batch_id: batchId,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }))
-  
-  const { error: insertError } = await adminClient
-    .from('intro_requests')
-    .insert(introRequests)
-  
-  if (insertError) {
-    throw new Error(`Failed to create recommendations: ${insertError.message}`)
-  }
-  
-  // Mark targeted request as applied (premium feature)
-  if (targetedRequest) {
+
+  if (sorted.length === 0) return { placed: false, reason: 'empty', count: 0 }
+
+  const result = await enqueueBatch(adminClient, {
+    memberId: userId,
+    source,
+    rows: sorted.map((c: any) => ({ target_user_id: c.id, match_reason: c.match_reason })),
+  })
+
+  // Only mark the targeted request applied when its recommendations were actually
+  // placed into the queue (active or queued) — not when the batch was rejected/empty.
+  if (targetedRequest && result.placed) {
     const { error: updateError } = await adminClient
       .from('targeted_requests')
-      .update({
-        status: 'applied',
-        applied_at: new Date().toISOString()
-      })
+      .update({ status: 'applied', applied_at: new Date().toISOString() })
       .eq('id', targetedRequest.id)
-      .eq('status', 'pending')  // ✅ Guard: only update if still pending
-    
+      .eq('status', 'pending')
     if (updateError) {
       console.error('[generate-recommendations] CRITICAL: Failed to mark request as applied:', {
-        request_id: targetedRequest.id,
-        error: updateError
+        request_id: targetedRequest.id, error: updateError,
       })
       throw new Error(`Failed to mark targeted request as applied: ${updateError.message}`)
-    } else {
-      console.log('[generate-recommendations] Targeted request marked as applied:', {
-        request_id: targetedRequest.id,
-        user_id: userId,
-        role: targetedRequest.role
-      })
     }
+    console.log('[generate-recommendations] Targeted request marked as applied:', {
+      request_id: targetedRequest.id, user_id: userId, role: targetedRequest.role,
+    })
   }
-  
-  return { count: sorted.length }
-}
 
-// Statuses that mean the member has EXPRESSED INTEREST (resolves a suggestion for
-// batch-completion, even while the request is still pending). createIntroRequest
-// leaves the original 'suggested' row in place and inserts one of these, so
-// completion must cross-reference by target.
-const EXPRESSED_INTEREST_STATUSES = ['pending', 'accepted', 'admin_pending', 'approved']
-
-/**
- * Count a member's still-UNRESOLVED recommendations. A 'suggested' row is resolved
- * when the member has acted on it — passed/hidden (the row leaves 'suggested') or
- * expressed interest (an outbound pending/approved request to that target exists).
- * The batch is complete when this returns 0.
- */
-export async function countUnresolvedRecommendations(adminClient: any, userId: string): Promise<number> {
-  const { data: suggested } = await adminClient
-    .from('intro_requests').select('target_user_id')
-    .eq('requester_id', userId).eq('status', 'suggested')
-  const targets: string[] = (suggested ?? []).map((r: any) => r.target_user_id)
-  if (targets.length === 0) return 0
-  const { data: expressed } = await adminClient
-    .from('intro_requests').select('target_user_id')
-    .eq('requester_id', userId)
-    .in('status', EXPRESSED_INTEREST_STATUSES)
-    .in('target_user_id', targets)
-  const expressedSet = new Set((expressed ?? []).map((r: any) => r.target_user_id))
-  return targets.filter((t) => !expressedSet.has(t)).length
+  return result
 }
 
 /**
- * The weekly release, per member. Releases the next batch ONLY if the current batch
- * is complete (every recommendation acted on). On release, the resolved prior
- * suggestions are archived and the next RECOMMENDATIONS_PER_BATCH suggestions are
- * generated under a fresh batch_id. If the batch is incomplete, does nothing — so a
- * member cannot rapidly cycle through and exhaust the network. Completing a batch
- * never triggers an immediate refill; the next batch arrives at the next release.
+ * Onboarding / manual generation entry point (signature preserved for existing
+ * callers). A newly onboarded member has no active batch, so this places their first
+ * batch as ACTIVE. For members who already hold a batch it enqueues behind them,
+ * upholding the active-window invariant. Returns { count } = recommendations placed.
  */
-export async function releaseNextBatchIfComplete(
-  adminClient: any,
-  userId: string,
-): Promise<{ released: boolean; count: number }> {
-  const unresolved = await countUnresolvedRecommendations(adminClient, userId)
-  if (unresolved > 0) return { released: false, count: 0 }
-  // Complete → archive resolved suggestions so 'suggested' holds only the new batch.
-  await adminClient.from('intro_requests').update({ status: 'archived' })
-    .eq('requester_id', userId).eq('status', 'suggested')
-  const result = await generateOnboardingRecommendations(userId) // defaults to RECOMMENDATIONS_PER_BATCH
-  return { released: true, count: result.count }
+export async function generateOnboardingRecommendations(userId: string, maxCount?: number) {
+  const result = await generateBatchForMember(userId, 'onboarding', maxCount)
+  return { count: result.count ?? 0 }
 }

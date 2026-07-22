@@ -13,6 +13,7 @@ import {
 } from '@/lib/introRequests'
 import { sendNewMessageEmail } from '@/lib/email'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
+import { promoteIfResolved } from '@/lib/introductions/queue'
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
@@ -967,15 +968,25 @@ export async function scheduleMeeting(formData: FormData) {
 }
 
 export async function passOnSuggestion(rowId: string, permanent: boolean) {
-  const { supabase, user } = await getSupabaseAndUser()
+  const { user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  await supabase
-    .from('batch_suggestions')
-    .update({ status: permanent ? 'hidden_permanent' : 'passed' })
+  // Recommendations live in the unified queue (intro_requests). Pass = 'passed'
+  // (75-day cooldown); permanent = 'hidden_permanent'. Ownership-scoped to the
+  // member's own still-visible ('suggested') row.
+  const admin = createAdminClient()
+  await admin
+    .from('intro_requests')
+    .update({ status: permanent ? 'hidden_permanent' : 'passed', updated_at: new Date().toISOString() })
     .eq('id', rowId)
-    .eq('recipient_id', user.id)
+    .eq('requester_id', user.id)
+    .eq('status', 'suggested')
 
+  // Resolving the active batch's last open recommendation promotes the queued
+  // batch (if one is waiting) — reveal only, never generation.
+  await promoteIfResolved(admin, user.id)
+
+  revalidatePath('/dashboard/introductions')
   return { success: true }
 }
 
