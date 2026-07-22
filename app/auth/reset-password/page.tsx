@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { emitMetric } from '@/lib/metrics'
 import { Loader2, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -72,6 +73,7 @@ export default function ResetPasswordPage() {
       return
     }
 
+    emitMetric('recovery_password_changed')
     setPhase('success')
     setTimeout(() => router.push('/dashboard/introductions'), 2500)
   }

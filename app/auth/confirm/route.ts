@@ -4,8 +4,9 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function GET(request: NextRequest) {
+  // NOTE: never log request.url here — it can carry a token_hash query param, which must
+  // not appear in server/platform logs. Log only non-secret facts (presence + type).
   console.log('[auth/confirm] GET called')
-  console.log('[auth/confirm] url:', request.url)
 
   try {
     const { searchParams } = new URL(request.url)

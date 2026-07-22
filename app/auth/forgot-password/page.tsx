@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { emitMetric } from '@/lib/metrics'
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -18,9 +19,13 @@ export default function ForgotPasswordPage() {
     setError(null)
     setPhase('submitting')
 
+    // Land on the scanner-resistant intermediate page (/auth/recover), which verifies the
+    // token only on an explicit click — never on the email scanner's prefetch GET. NOTE:
+    // full prefetch-resistance also requires the Supabase email template to use a
+    // {{ .TokenHash }} link to /auth/recover (see lib/matching README / deploy notes).
     const redirectTo = process.env.NEXT_PUBLIC_SITE_URL
-      ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/reset-password`
-      : `${window.location.origin}/auth/reset-password`
+      ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/recover`
+      : `${window.location.origin}/auth/recover`
 
     const supabase = createClient()
     // Magic-link sign-in: bypasses the broken Supabase password-recovery flow.
@@ -43,6 +48,7 @@ export default function ForgotPasswordPage() {
     }
 
     // Always show the same confirmation regardless of whether the email exists.
+    emitMetric('recovery_email_requested')
     setPhase('sent')
   }
 

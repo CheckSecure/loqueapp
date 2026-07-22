@@ -19,6 +19,7 @@ import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { validateSelection, validateSelectionWithCaps } from '@/lib/role-taxonomy'
 import { companySlug, isLinkableCompany } from '@/lib/company/slug'
 import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
+import { provisionMemberRecords } from '@/lib/provisioning'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -756,6 +757,8 @@ export async function adminSendWaitlistInvite(id: string, markAsFounding = false
     try {
       const adminClient = createAdminClient()
 
+      // Create the Auth user. Idempotent: if they already exist, resolve their id and reset pw.
+      let userId: string | undefined
       const { data: createdUser, error: createError } = await adminClient.auth.admin.createUser({
         email: entry.email,
         password: tempPassword,
@@ -766,76 +769,45 @@ export async function adminSendWaitlistInvite(id: string, markAsFounding = false
         const alreadyExists =
           createError.message.toLowerCase().includes('already been registered') ||
           createError.message.toLowerCase().includes('already exists')
-
-        if (alreadyExists) {
-          // User exists — find their auth UUID via profiles table and reset their password
-          console.log('[invite] user already exists, resetting password...')
-          const { data: profileRow } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('email', entry.email)
-            .single()
-
-          if (!profileRow?.id) {
-            console.error('[invite] could not find existing user in profiles by email')
-            return { error: 'User already exists but could not be found — contact support' }
-          }
-
-          const { error: updateError } = await adminClient.auth.admin.updateUserById(
-            profileRow.id,
-            { password: tempPassword }
-          )
-          if (updateError) {
-            console.error('[invite] updateUserById error:', updateError.message)
-            return { error: `Could not reset user password: ${updateError.message}` }
-          }
-          console.log('[invite] password reset for existing user:', entry.email)
-        } else {
-          console.error('[invite] createUser FULL error:', JSON.stringify(createError, null, 2))
+        if (!alreadyExists) {
+          console.error('[invite] createUser error:', createError.message)
           return { error: `Could not create user account: ${createError.message}` }
         }
+        // Existing account — resolve the Auth id directly (NOT via profiles: a prior
+        // provisioning failure may have left no profile at all — the Matt Boucher case).
+        console.log('[invite] user already exists, resolving auth id + resetting password...')
+        let page = 1
+        while (!userId) {
+          const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 1000 })
+          if (error) return { error: `Could not look up existing user: ${error.message}` }
+          const match = (data.users || []).find(u => (u.email || '').toLowerCase() === entry.email.toLowerCase())
+          if (match) { userId = match.id; break }
+          if ((data.users || []).length < 1000) break
+          page++
+        }
+        if (!userId) return { error: 'User already exists but could not be resolved — contact support' }
+        const { error: pwErr } = await adminClient.auth.admin.updateUserById(userId, { password: tempPassword })
+        if (pwErr) return { error: `Could not reset user password: ${pwErr.message}` }
       } else {
-        console.log('[invite] new user created:', entry.email)
-
-        const newUserId = createdUser?.user?.id
-
-        // Tier-aware: if invited as founding, stamp the flag + seed founding floor.
-        const profileSeed: Record<string, unknown> = {
-          id: newUserId,
-          password_reset_required: true,
-          email: entry.email,
-          full_name: entry.full_name,
-          email_verified: true,
-          email_verified_at: new Date().toISOString(),
-          verification_status: 'pending',
-          trust_score: 50,
-        }
-        if (markAsFounding) {
-          profileSeed.is_founding_member = true
-          profileSeed.founding_member_expires_at = null
-        }
-        await adminClient.from('profiles').insert(profileSeed)
-        console.log('[invite] created profile for:', entry.email, { markAsFounding })
-
-        if (newUserId) {
-          const tier = markAsFounding ? 'founding' : 'free'
-          const creditFloor = getMonthlyCredits(tier)
-          await adminClient.from('meeting_credits').upsert({
-            user_id: newUserId,
-            free_credits: creditFloor,
-            premium_credits: 0,
-            balance: creditFloor,
-            lifetime_earned: creditFloor,
-          })
-          await adminClient.from('credit_transactions').insert({
-            user_id: newUserId,
-            amount: creditFloor,
-            type: 'credit',
-            note: markAsFounding ? 'founding_signup_bonus' : 'signup_bonus',
-          })
-          console.log('[invite] seeded credits for:', entry.email, { tier, amount: creditFloor })
-        }
+        userId = createdUser?.user?.id
       }
+
+      if (!userId) return { error: 'Could not determine user id after account creation' }
+
+      // Idempotent, retryable, error-CHECKED provisioning of profile + credits + transaction.
+      // Replaces the old fire-and-forget inserts whose silent transient failures orphaned
+      // dozens of accounts (the incident root cause). On failure the Auth user is left in a
+      // RECOVERABLE state — never emailed a half-built account — for the reconciler/retry.
+      const provision = await provisionMemberRecords(adminClient, {
+        userId,
+        email: entry.email,
+        fullName: entry.full_name ?? null,
+        markAsFounding,
+      })
+      if (!provision.ok) {
+        return { error: `Account created but provisioning incomplete (${provision.errors.map(e => e.step).join(', ')}). Re-run the invite or the reconciler to complete it.` }
+      }
+      console.log('[invite] provisioned records for:', entry.email, { created: provision.created, existed: provision.existed })
     } catch (err: any) {
       console.error('[invite] admin operation threw:', err.message)
       return { error: `Could not set up user account: ${err.message}` }
