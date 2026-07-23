@@ -47,7 +47,7 @@ History of the constant lives in its doc comment.
 | Column | Meaning |
 | --- | --- |
 | `enrichment_status` | `enriched` / `partial` / `not_found` / `failed` / `in_progress` (≈ complete / incomplete / not found / failed / pending) |
-| `enrichment_version` | version stamped on last successful enrich (migration 017) |
+| `enrichment_version` | version stamped on last successful enrich (migration 024) |
 | `enrichment_attempted_at` | last attempt (drives the retry cooldown) |
 | `enriched_at` | last successful enrich |
 | `enrichment_error` | last failure reason |
@@ -71,7 +71,7 @@ is configured) — the next post-cooldown run picks them up automatically.
 
 ## Migration
 
-`supabase/migrations/017_enrichment_version.sql` adds `enrichment_version` and
+`supabase/migrations/024_enrichment_version.sql` adds `enrichment_version` and
 backfills existing `enriched` rows to `1`. The code **degrades gracefully** if
-017 hasn't been applied (persists without the stamp; `versioningEnabled: false`),
+024 hasn't been applied (persists without the stamp; `versioningEnabled: false`),
 so code and migration can deploy in either order.

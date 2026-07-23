@@ -32,7 +32,7 @@ export async function GET(req: Request) {
   const { data: profs } = await admin.from('profiles').select('company').not('company', 'is', null)
   const network = computeNetworkCompanies(profs)
 
-  // Select enrichment_version too; transparently degrade if migration 017 isn't
+  // Select enrichment_version too; transparently degrade if migration 024 isn't
   // applied yet (column absent) — versioning goes inert, everything else works.
   let existing = await admin.from('companies').select('slug, admin_edited, enrichment_status, enrichment_attempted_at, enrichment_version')
   let versioningEnabled = true

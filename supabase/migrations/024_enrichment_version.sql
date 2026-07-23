@@ -1,4 +1,4 @@
--- 017_enrichment_version.sql
+-- 024_enrichment_version.sql
 -- Persistent enrichment version stamp — makes the enrichment pipeline fully
 -- incremental and idempotent across future changes.
 --

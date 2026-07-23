@@ -84,11 +84,11 @@ export async function runEnrichment(
       admin.from('companies').update({ ...p, updated_at: new Date().toISOString() }).eq('slug', slug).eq('admin_edited', false)
     let p = patch
     let r = await write(p)
-    // Degrade if the enrichment_version column isn't applied yet (migration 017):
-    // drop the version stamp and retry, so enrichment still persists. Once 017 is
+    // Degrade if the enrichment_version column isn't applied yet (migration 024):
+    // drop the version stamp and retry, so enrichment still persists. Once 024 is
     // applied, the stamp writes normally with no code change.
     if (r.error && 'enrichment_version' in p && /enrichment_version/i.test(r.error.message || '')) {
-      console.warn(`[company-enrich] enrichment_version column absent (apply migration 017); persisting without stamp slug=${slug}`)
+      console.warn(`[company-enrich] enrichment_version column absent (apply migration 024); persisting without stamp slug=${slug}`)
       const { enrichment_version: _drop, ...rest } = p
       p = rest
       r = await write(p)

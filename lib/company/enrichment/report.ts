@@ -74,7 +74,7 @@ export function buildEnrichmentReport(
 /**
  * DB-backed report loader shared by the cron runner and the admin diagnostic.
  * Read-only. Transparently degrades if the `enrichment_version` column isn't
- * applied yet (migration 017): it re-selects without the column and reports
+ * applied yet (migration 024): it re-selects without the column and reports
  * `versioningEnabled: false`, so the endpoint works before and after the migration.
  */
 export async function loadEnrichmentReport(admin: any, retryMs: number = ENRICH_RETRY_MS): Promise<EnrichmentReport> {

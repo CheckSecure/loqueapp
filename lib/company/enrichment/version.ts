@@ -38,7 +38,7 @@ export interface ClassifyOptions {
   retryMs?: number
   version?: number
   /**
-   * Whether the `enrichment_version` column is live (migration 017 applied).
+   * Whether the `enrichment_version` column is live (migration 024 applied).
    * When false, versioning is inert: an `enriched` row is `up_to_date`
    * regardless of its (absent) stamp, so pre-migration behavior is unchanged.
    */
