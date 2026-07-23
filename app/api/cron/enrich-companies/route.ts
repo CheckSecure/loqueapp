@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { computeNetworkCompanies } from '@/lib/company/enrich'
+import { computeNetworkCompanies, ENRICH_RETRY_MS } from '@/lib/company/enrich'
 import { runEnrichment } from '@/lib/company/enrichment/run'
+import { needsEnrichment, requiresForce, ENRICHMENT_VERSION } from '@/lib/company/enrichment/version'
+import { buildEnrichmentReport } from '@/lib/company/enrichment/report'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -30,12 +32,23 @@ export async function GET(req: Request) {
   const { data: profs } = await admin.from('profiles').select('company').not('company', 'is', null)
   const network = computeNetworkCompanies(profs)
 
-  const existing = await admin.from('companies').select('slug, admin_edited, enrichment_status')
+  // Select enrichment_version too; transparently degrade if migration 017 isn't
+  // applied yet (column absent) — versioning goes inert, everything else works.
+  let existing = await admin.from('companies').select('slug, admin_edited, enrichment_status, enrichment_attempted_at, enrichment_version')
+  let versioningEnabled = true
+  if (existing.error && /enrichment_version/i.test(existing.error.message || '')) {
+    existing = await admin.from('companies').select('slug, admin_edited, enrichment_status, enrichment_attempted_at')
+    versioningEnabled = false
+  }
   if (existing.error) {
     // Table not applied yet — nothing to do.
     return NextResponse.json({ ok: false, reason: 'companies_table_absent' }, { status: 200 })
   }
   const bySlug = new Map((existing.data || []).map((r: any) => [r.slug, r]))
+  const opts = { versioningEnabled, retryMs: ENRICH_RETRY_MS }
+
+  // Census BEFORE processing — the incremental report (auto-detected, no manual list).
+  const report = buildEnrichmentReport(network.map((c) => c.slug), bySlug, (existing.data || []).length, opts)
 
   // Bound scrape volume per run; the weekly cadence chips away at the rest.
   const MAX_ENRICH_CALLS = 60
@@ -44,9 +57,11 @@ export async function GET(req: Request) {
   for (const c of network) {
     if (calls >= MAX_ENRICH_CALLS) break
     const row = bySlug.get(c.slug)
-    // Cheap pre-filter (the pipeline's atomic claim is the real gate).
-    if (row?.admin_edited || row?.enrichment_status === 'enriched') { skipped++; continue }
-    const r = await runEnrichment(admin, c.slug, c.name)
+    // Single source of truth for "needs work" (missing / never / failed /
+    // not_found / partial past retry / stale / outdated version). Outdated
+    // enriched rows need force to bypass runEnrichment's enriched-skip.
+    if (!needsEnrichment(row, opts)) { skipped++; continue }
+    const r = await runEnrichment(admin, c.slug, c.name, { force: requiresForce(row, opts) })
     if (r.status === 'skipped' || r.status === 'error') { skipped++; continue }
     calls++
     if (r.status === 'enriched') enriched++
@@ -54,9 +69,12 @@ export async function GET(req: Request) {
     else failed++
   }
 
-  console.log(`[enrich-companies] network=${network.length} existing=${bySlug.size} calls=${calls} enriched=${enriched} notFound=${notFound} failed=${failed} skipped=${skipped}`)
+  console.log(`[enrich-companies] v=${ENRICHMENT_VERSION} network=${network.length} existing=${bySlug.size} calls=${calls} enriched=${enriched} notFound=${notFound} failed=${failed} skipped=${skipped}`)
   return NextResponse.json({
     ok: true,
+    enrichmentVersion: ENRICHMENT_VERSION,
+    versioningEnabled,
+    report,
     networkCompanies: network.length,
     existing: bySlug.size,
     calls,

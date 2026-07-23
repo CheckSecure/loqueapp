@@ -1,4 +1,5 @@
 import { ensureCompanyRecord, ENRICH_RETRY_MS } from '@/lib/company/enrich'
+import { ENRICHMENT_VERSION } from './version'
 import { resolveCanonicalCompany } from '@/lib/company/slug'
 import { getCompanyMetadata } from '@/lib/company/metadata'
 import { discoveryProvider } from './discovery'
@@ -81,10 +82,22 @@ export async function runEnrichment(
   const finalize = async (patch: Record<string, unknown>) => {
     const write = (p: Record<string, unknown>) =>
       admin.from('companies').update({ ...p, updated_at: new Date().toISOString() }).eq('slug', slug).eq('admin_edited', false)
-    let r = await write(patch)
-    if (r.error && patch.enrichment_status === 'partial' && /enrichment_status/i.test(r.error.message || '')) {
+    let p = patch
+    let r = await write(p)
+    // Degrade if the enrichment_version column isn't applied yet (migration 017):
+    // drop the version stamp and retry, so enrichment still persists. Once 017 is
+    // applied, the stamp writes normally with no code change.
+    if (r.error && 'enrichment_version' in p && /enrichment_version/i.test(r.error.message || '')) {
+      console.warn(`[company-enrich] enrichment_version column absent (apply migration 017); persisting without stamp slug=${slug}`)
+      const { enrichment_version: _drop, ...rest } = p
+      p = rest
+      r = await write(p)
+    }
+    // Degrade if the enrichment_status CHECK constraint predates 'partial'
+    // (migration 016 not yet applied): 'partial' → 'enriched' (a permitted value).
+    if (r.error && p.enrichment_status === 'partial' && /enrichment_status/i.test(r.error.message || '')) {
       console.warn(`[company-enrich] 'partial' rejected by constraint (apply migration 016); degrading to 'enriched' slug=${slug}`)
-      r = await write({ ...patch, enrichment_status: 'enriched' })
+      r = await write({ ...p, enrichment_status: 'enriched' })
     }
     return r
   }
@@ -126,7 +139,9 @@ export async function runEnrichment(
     const stale = force && websiteChanged
     const keep = (v: unknown) => has(v) && !stale
 
-    const patch: Record<string, unknown> = { enrichment_error: null, enriched_at: new Date().toISOString() }
+    // Stamp the version on every successful (enriched/partial) persist so future
+    // runs can detect outdated pages after ENRICHMENT_VERSION is bumped.
+    const patch: Record<string, unknown> = { enrichment_error: null, enriched_at: new Date().toISOString(), enrichment_version: ENRICHMENT_VERSION }
 
     if (canonical?.name) patch.name = canonical.name                    // authoritative identity
     if (registryResolved) patch.website = website                       // authoritative domain
@@ -183,6 +198,7 @@ export async function runEnrichment(
     if (canonical?.domain) {
       recover.enrichment_status = 'partial'
       recover.enrichment_source = 'registry'
+      recover.enrichment_version = ENRICHMENT_VERSION // registry identity is a versioned success
       recover.name = canonical.name
       recover.website = `https://${canonical.domain}`
       // Apply the curated fallback layer even on fault, so the page isn't bare.
