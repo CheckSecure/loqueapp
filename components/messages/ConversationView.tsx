@@ -1,10 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState, Fragment } from 'react'
+import { useEffect, useLayoutEffect, useCallback, useRef, useState, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatMessageTime, formatDaySeparator, shouldShowDaySeparator } from '@/lib/messageTime'
 import { canEditMessage } from '@/lib/messaging/editWindow'
+import { clampComposerHeight, COMPOSER_MIN_HEIGHT, COMPOSER_MAX_HEIGHT, COMPOSER_MIN_ROWS } from '@/lib/messaging/composerHeight'
+
+// useLayoutEffect runs before paint (no resize flicker) but warns during SSR;
+// fall back to useEffect on the server.
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
 interface Message {
   id: string
@@ -48,6 +53,7 @@ export default function ConversationView({ conversationId, isDeactivated }: Conv
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     const supabase = createClient()
@@ -86,6 +92,31 @@ export default function ConversationView({ conversationId, isDeactivated }: Conv
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages.length])
+
+  // Auto-resize the composer to fit its content, clamped between the 5-line
+  // default and the ~12-line max (after which it scrolls internally). Reset to
+  // 'auto' first so the textarea can shrink as well as grow.
+  const applyAutosize = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    const { height, overflowY } = clampComposerHeight(el.scrollHeight)
+    el.style.height = `${height}px`
+    el.style.overflowY = overflowY
+  }, [])
+
+  // Runs before paint so the height is correct on the first frame (no flicker),
+  // on every draft change (typing, clearing after send, prompt clicks).
+  useIsomorphicLayoutEffect(() => {
+    applyAutosize()
+  }, [input, applyAutosize])
+
+  // Re-measure when the viewport width changes — text re-wraps, so the number of
+  // lines (and thus the height) can change without the draft changing.
+  useEffect(() => {
+    window.addEventListener('resize', applyAutosize)
+    return () => window.removeEventListener('resize', applyAutosize)
+  }, [applyAutosize])
 
   async function fetchMessages(showLoading: boolean) {
     if (showLoading) setLoading(true)
@@ -360,32 +391,36 @@ export default function ConversationView({ conversationId, isDeactivated }: Conv
         <div className="border-t border-gray-200 p-3">
           <textarea
             placeholder=""
-            rows={1}
+            rows={COMPOSER_MIN_ROWS}
             disabled
-            className="w-full resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-400 cursor-not-allowed"
+            className="w-full resize-none border border-gray-200 rounded-2xl px-4 py-2 text-sm leading-5 bg-slate-50 text-slate-400 cursor-not-allowed"
+            style={{ minHeight: COMPOSER_MIN_HEIGHT }}
           />
           <p className="text-xs text-slate-400 mt-2">This member is no longer active. You can no longer send messages.</p>
         </div>
       ) : (
-        <div className="border-t border-gray-200 p-3 flex gap-2 items-end">
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Write a message..."
-            rows={1}
-            className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent"
-            style={{ maxHeight: 120 }}
-            disabled={sending}
-          />
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            className="px-4 py-2 bg-[#1B2850] text-white text-sm font-medium rounded-lg hover:bg-[#2E4080] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {sending ? 'Sending…' : 'Send'}
-          </button>
+        <div className="border-t border-gray-200 p-3">
+          <div className="flex items-end gap-2 rounded-2xl border border-gray-300 bg-white px-3 py-2 transition-colors focus-within:border-transparent focus-within:ring-2 focus-within:ring-[#1B2850]">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Write a message..."
+              rows={COMPOSER_MIN_ROWS}
+              className="flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:outline-none"
+              style={{ minHeight: COMPOSER_MIN_HEIGHT, maxHeight: COMPOSER_MAX_HEIGHT }}
+              disabled={sending}
+            />
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={!input.trim() || sending}
+              className="mb-0.5 shrink-0 px-4 py-2 bg-[#1B2850] text-white text-sm font-medium rounded-lg hover:bg-[#2E4080] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {sending ? 'Sending…' : 'Send'}
+            </button>
+          </div>
         </div>
       )}
     </div>
