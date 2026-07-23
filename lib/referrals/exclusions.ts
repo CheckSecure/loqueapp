@@ -3,6 +3,17 @@ import { createAdminClient } from '@/lib/supabase/admin'
 const EXCLUDED_STATUSES = ['pending', 'invited', 'activated'] as const
 
 /**
+ * Normalize a PostgREST embedded relationship to an array. An embedded
+ * to-many relationship can come back as an array (multiple rows), a single
+ * object (one row, when the relationship is detected as to-one), or null/
+ * undefined (no rows). Callers need an array to .filter/.map over. This only
+ * shapes the input — it does not change which rows are considered.
+ */
+export function toReferralArray<T>(raw: T | T[] | null | undefined): T[] {
+  return Array.isArray(raw) ? raw : raw ? [raw] : []
+}
+
+/**
  * Returns the set of profile IDs that share a non-rejected referral relationship
  * with userId — bidirectional (as referrer OR as the referred person).
  *
@@ -84,10 +95,11 @@ export async function getReferralExclusionsForUser(userId: string): Promise<Set<
     .ilike('email', userEmail)
     .maybeSingle()
 
-  const inboundReferrals = ((waitlistRow as any)?.referrals ?? []) as Array<{
-    referrer_user_id: string
-    status: string
-  }>
+  // The embedded referrals relationship may arrive as an array, a single object,
+  // or null — normalize to an array before filtering (fixes the "inboundReferrals
+  // .filter is not a function" crash for waitlist-origin members). Exclusion
+  // behavior is unchanged: the same rows are filtered by the same statuses.
+  const inboundReferrals = toReferralArray<{ referrer_user_id: string; status: string }>((waitlistRow as any)?.referrals)
 
   inboundReferrals
     .filter(r => (EXCLUDED_STATUSES as readonly string[]).includes(r.status))
