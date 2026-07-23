@@ -5,6 +5,7 @@ import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions'
 import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { applyVerticalBoost } from '@/lib/matching/vertical-boost'
+import { applyExposureBalancing, exposureBalancingEnabled } from '@/lib/matching/exposure-balancing'
 import { getActiveIntroCap } from '@/lib/introductions/limits'
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
@@ -631,6 +632,33 @@ function generateIntroReason(userProfile: any, candidate: any): string {
  * not a scoring/matching change. generateOnboardingRecommendations (below) wraps
  * this and adds the persistence (intro_requests insert + targeted_requests mark).
  */
+/**
+ * Current active inbound recommendation counts, keyed by target user id — how many
+ * members currently hold each person in their active window (status 'suggested',
+ * in an active-state batch). Feeds exposure balancing so recommendations don't
+ * over-concentrate on a few popular members. Only called when the balancing flag
+ * is on, so it adds no cost to the default generation path.
+ */
+async function getActiveInboundExposure(adminClient: ReturnType<typeof createAdminClient>): Promise<Map<string, number>> {
+  const exposure = new Map<string, number>()
+  const { data: activeBatches } = await adminClient
+    .from('recommendation_batches')
+    .select('batch_id')
+    .eq('state', 'active')
+  const activeIds = new Set((activeBatches ?? []).map((b: any) => b.batch_id))
+  if (activeIds.size === 0) return exposure
+  const { data: rows } = await adminClient
+    .from('intro_requests')
+    .select('target_user_id, batch_id')
+    .eq('status', 'suggested')
+  for (const r of rows ?? []) {
+    if (r.batch_id && activeIds.has(r.batch_id)) {
+      exposure.set(r.target_user_id, (exposure.get(r.target_user_id) ?? 0) + 1)
+    }
+  }
+  return exposure
+}
+
 export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   const adminClient = createAdminClient()
 
@@ -831,11 +859,20 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   // it cannot pull ineligible candidates into the batch. Flag-gated; no-op
   // when MATCHING_V2_VERTICAL_BOOST !== '1' or the viewer has no preference.
   const boostedCandidates = applyVerticalBoost(rankedCandidates, newUserProfile)
+  // Exposure balancing — rank-only, flag-gated (RECOMMENDATION_EXPOSURE_BALANCING).
+  // Subtracts a small capped penalty from candidates who already hold many active
+  // inbound recommendations, so near-ties break toward under-exposed members and
+  // no handful of people absorbs the network's introductions. Deterministic
+  // alignment core is untouched; the cap keeps meaningfully-higher-fit candidates
+  // ahead. Runs BEFORE law-firm composition so hard composition rules still win.
+  const exposureBalanced = exposureBalancingEnabled()
+    ? applyExposureBalancing(boostedCandidates, await getActiveInboundExposure(adminClient))
+    : boostedCandidates
   // Law-firm composition policy: a law-firm lawyer never gets two other law-firm
   // lawyers — at most one, only with a strategic (complementary-practice + local)
   // rationale, and never in the first slot. Reorders BEFORE truncation so excess
   // peers fall below the batch size.
-  const composed = applyLawFirmCompositionPolicy(boostedCandidates, newUserProfile)
+  const composed = applyLawFirmCompositionPolicy(exposureBalanced, newUserProfile)
   // Apply throttling to prevent consultant/law firm clustering
   const throttled = applyThrottling(
     composed,
