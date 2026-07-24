@@ -56,6 +56,44 @@ Guidelines:
 - **Fail safe.** A probe that errors for a non-schema reason (network/auth) is
   treated as *present* so the dashboard never shows a false migration warning.
 
+## Deployment gate (enforceable, not just a dashboard notice)
+
+`scripts/check-migrations.ts` invokes the **same** `checkMigrationHealth` against
+the target database and **exits non-zero** when a required migration is missing —
+so a deploy that outran its schema is blocked, not merely visible in the
+dashboard.
+
+```bash
+npm run check:migrations   # exit 1 if required migrations are missing
+```
+
+Env:
+
+| Var | Purpose |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_URL` | target DB |
+| `SUPABASE_SERVICE_ROLE_KEY` | service-role key (read-only usage) |
+| `ALLOW_COMPATIBILITY_MODE` | escape hatch — `all` (waive every pending migration) or a comma-separated list of migration filenames to waive only those |
+| `ENFORCE_MIGRATIONS` | build-hook opt-in (see below) |
+
+Fail-safe: with **no** DB credentials, or on an unexpected gate error, it exits 0
+(never blocks a deploy on a gate bug). It fails **only** on a *confirmed* missing
+migration that isn't waived.
+
+### Two ways to enforce a production deploy
+
+1. **CI status check** — `.github/workflows/migration-health.yml` runs the gate on
+   push/PR to `main` (needs `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`
+   repo secrets). Make it a *required* status check and have Vercel wait for
+   required checks so a red gate blocks the deploy.
+2. **Vercel build hook** — the `prebuild` script runs the gate during `next build`
+   but only when `ENFORCE_MIGRATIONS` is truthy. Set `ENFORCE_MIGRATIONS=1` in the
+   Vercel **Production** environment; a missing migration then fails the build and
+   the deploy. Preview/local builds are unaffected (the hook self-skips).
+
+To ship knowingly in compatibility mode, declare it: set
+`ALLOW_COMPATIBILITY_MODE` to `all` or to the specific migration filename(s).
+
 ## Currently registered
 
 | Migration | Checks | Feature |

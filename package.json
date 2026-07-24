@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
+    "prebuild": "tsx scripts/check-migrations.ts --require-enforce-flag",
     "build": "next build",
     "start": "next start -p 5000",
     "lint": "next lint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:migrations": "tsx scripts/check-migrations.ts"
   },
   "dependencies": {
     "@stripe/stripe-js": "^8.11.0",
@@ -37,6 +39,7 @@
     "eslint-config-next": "^14.2.29",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.19",
+    "tsx": "^4.23.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }

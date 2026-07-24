@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   checkMigrationHealth,
+  evaluateMigrationGate,
   migrationWarningMessage,
   probeExpectation,
   SCHEMA_EXPECTATIONS,
+  type MigrationWarning,
   type SchemaExpectation,
 } from '@/lib/db/migrationHealth'
 
@@ -85,5 +87,52 @@ describe('checkMigrationHealth', () => {
     })
     const h = await checkMigrationHealth(admin)
     expect(h.pending).toHaveLength(2)
+  })
+})
+
+describe('evaluateMigrationGate (deployment gate)', () => {
+  const w = (migration: string): MigrationWarning => ({
+    migration, kind: 'column', table: 't', feature: 'f', impact: 'i',
+    message: migrationWarningMessage({ migration, kind: 'column', table: 't', feature: 'f', impact: 'i' }),
+  })
+
+  it('passes when nothing is pending', () => {
+    const d = evaluateMigrationGate([], '')
+    expect(d.pass).toBe(true)
+    expect(d.blocking).toHaveLength(0)
+  })
+
+  it('blocks pending migrations when no compatibility mode is declared', () => {
+    const d = evaluateMigrationGate([w('024_enrichment_version.sql')], undefined)
+    expect(d.pass).toBe(false)
+    expect(d.blocking.map((b) => b.migration)).toEqual(['024_enrichment_version.sql'])
+  })
+
+  it('waives everything when compatibility mode = all/1/true', () => {
+    for (const spec of ['all', '1', 'true', 'ON']) {
+      const d = evaluateMigrationGate([w('024_enrichment_version.sql'), w('015_company_metadata.sql')], spec)
+      expect(d.pass).toBe(true)
+      expect(d.waived).toHaveLength(2)
+      expect(d.blocking).toHaveLength(0)
+    }
+  })
+
+  it('waives only the explicitly listed migrations; others still block', () => {
+    const d = evaluateMigrationGate(
+      [w('024_enrichment_version.sql'), w('099_unexpected.sql')],
+      '024_enrichment_version.sql',
+    )
+    expect(d.pass).toBe(false)
+    expect(d.waived.map((x) => x.migration)).toEqual(['024_enrichment_version.sql'])
+    expect(d.blocking.map((x) => x.migration)).toEqual(['099_unexpected.sql'])
+  })
+
+  it('passes when every pending migration is in the allow-list', () => {
+    const d = evaluateMigrationGate(
+      [w('024_enrichment_version.sql'), w('015_company_metadata.sql')],
+      '024_enrichment_version.sql, 015_company_metadata.sql',
+    )
+    expect(d.pass).toBe(true)
+    expect(d.blocking).toHaveLength(0)
   })
 })

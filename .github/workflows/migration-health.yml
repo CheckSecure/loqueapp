@@ -1,0 +1,37 @@
+name: Migration health gate
+
+# Fails if the code on this branch expects a database migration that has not been
+# applied to the target database — unless compatibility mode is explicitly
+# declared via the ALLOW_COMPATIBILITY_MODE repository variable. Runs the same
+# check as GET /api/admin/migration-health (scripts/check-migrations.ts).
+#
+# To make this ENFORCE production deploys, either:
+#   (a) mark this job as a required status check on the deploy branch, and enable
+#       Vercel Git "required checks" so Vercel waits for it; or
+#   (b) set ENFORCE_MIGRATIONS=1 in the Vercel Production environment so the
+#       prebuild hook runs the same gate during `next build` and fails the build.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  migration-health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Verify required migrations are applied
+        run: npm run check:migrations
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Optional escape hatch: `all` or a comma-separated list of migration filenames.
+          ALLOW_COMPATIBILITY_MODE: ${{ vars.ALLOW_COMPATIBILITY_MODE }}

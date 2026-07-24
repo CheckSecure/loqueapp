@@ -94,3 +94,37 @@ export async function checkMigrationHealth(
   }
   return { ok: pending.length === 0, checked: expectations.length, pending }
 }
+
+export interface GateDecision {
+  /** Pending migrations that BLOCK the deployment (not covered by compat mode). */
+  blocking: MigrationWarning[]
+  /** Pending migrations explicitly waived by the declared compatibility mode. */
+  waived: MigrationWarning[]
+  /** True when the deployment may proceed (nothing blocking). */
+  pass: boolean
+}
+
+/**
+ * Decide a deployment gate from pending migrations + a declared compatibility
+ * spec. `allowCompatibility` accepts `1`/`true`/`all` (waive every pending
+ * migration) or a comma-separated list of migration filenames (waive only
+ * those). Anything pending and not waived is blocking. Pure — used by the CLI
+ * gate (scripts/check-migrations.ts) and unit-tested.
+ */
+export function evaluateMigrationGate(
+  pending: MigrationWarning[],
+  allowCompatibility: string | null | undefined,
+): GateDecision {
+  const raw = (allowCompatibility || '').trim()
+  const allowAll = /^(1|true|yes|on|all)$/i.test(raw)
+  const allowList = new Set(
+    raw.split(',').map((s) => s.trim()).filter((s) => s && !/^(1|true|yes|on|all)$/i.test(s)),
+  )
+  const blocking: MigrationWarning[] = []
+  const waived: MigrationWarning[] = []
+  for (const p of pending) {
+    if (allowAll || allowList.has(p.migration)) waived.push(p)
+    else blocking.push(p)
+  }
+  return { blocking, waived, pass: blocking.length === 0 }
+}
