@@ -2,8 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, GitBranch, UserPlus, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, Briefcase, Zap, ThumbsUp, Sparkles } from 'lucide-react'
+import { Users, GitBranch, UserPlus, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, AlertTriangle, Briefcase, Zap, ThumbsUp, Sparkles } from 'lucide-react'
 import { getQueueHealthMetrics, type QueueHealthMetrics } from '@/lib/introductions/queue-metrics'
+import { checkMigrationHealth, type MigrationHealth } from '@/lib/db/migrationHealth'
 
 export const metadata = { title: 'Admin Dashboard | Andrel' }
 
@@ -45,6 +46,19 @@ export default async function AdminDashboard() {
     queueHealth = await getQueueHealthMetrics(adminClient)
   } catch (err) {
     console.warn('[admin] queue health metrics unavailable (apply migration 020):', (err as any)?.message)
+  }
+
+  // Schema/migration health — warns when the deployed code expects a migration
+  // that hasn't been applied yet (compatibility mode). Read-only + resilient;
+  // never blocks the dashboard. Also logged so it's visible in server logs.
+  let migrationHealth: MigrationHealth | null = null
+  try {
+    migrationHealth = await checkMigrationHealth(adminClient)
+    if (migrationHealth && !migrationHealth.ok) {
+      console.warn(`[admin] pending migrations: ${migrationHealth.pending.map((p) => p.migration).join(', ')}`)
+    }
+  } catch (err) {
+    console.warn('[admin] migration health check failed:', (err as any)?.message)
   }
 
   // Shared time windows
@@ -169,6 +183,32 @@ export default async function AdminDashboard() {
           <h1 className="text-2xl font-bold text-slate-900">Admin Dashboard</h1>
           <p className="text-sm text-slate-500 mt-0.5">Launch operations console</p>
         </div>
+
+        {/* Pending-migration warning — deployed code expects a migration that
+            hasn't been applied to this database (running in compatibility mode). */}
+        {migrationHealth && migrationHealth.pending.length > 0 && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-amber-900">
+                  Pending database migration{migrationHealth.pending.length === 1 ? '' : 's'}
+                </h2>
+                <ul className="mt-1.5 space-y-2">
+                  {migrationHealth.pending.map((w) => (
+                    <li key={w.migration}>
+                      <p className="text-sm font-medium text-amber-900">{w.message}</p>
+                      <p className="text-xs text-amber-700">{w.impact}</p>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs text-amber-700/90">
+                  Apply the migration in Supabase (SQL editor) to exit compatibility mode.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Recommendation queue health — operational, member-invisible */}
         {queueHealth && (
