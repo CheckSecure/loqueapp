@@ -10,7 +10,7 @@ import { getActiveIntroCap } from '@/lib/introductions/limits'
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { applyMemberEligibility, filterEligible, assertAllEligible } from '@/lib/matching/eligibility'
-import { BATCH_EXCLUDING_STATUSES } from '@/lib/introRequests/state'
+import { classifyIntroHistory, exhaustionThreshold } from '@/lib/introRequests/history'
 
 // Unified scoring model for all tiers
 // Final Score = Alignment (55%) + Network Value (30%) + Responsiveness (15%)
@@ -768,77 +768,44 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   // 2b. Referral pairs — bidirectional: referrer cannot appear in referred's batch and vice versa
   const referralExcludedIds = await getReferralExclusionsForUser(userId)
 
-  // 2. Users hidden or passed (bidirectional with cooldown)
-  const cooldownDate = new Date()
-  cooldownDate.setDate(cooldownDate.getDate() - 75) // 75 day cooldown
-  
-  const { data: hiddenOrPassed } = await adminClient
+  // 2 + 3. Introduction history — tiered & bidirectional (see lib/introRequests/history.ts).
+  //   HARD (permanent): active window (suggested/queued) + engagement/commitment/
+  //     explicit-signal statuses (pending/accepted/admin_pending/approved/declined/
+  //     rejected/hidden/hidden_permanent). matches/blocked/referrals merged in below.
+  //   SOFT (releasable by the exhaustion valve): passed, expired, and archived rows
+  //     from a real displayed batch (genuinely shown, no commitment).
+  //   ARTIFACT (not history): archived rows with no batch_id — the migration/backfill
+  //     mass-archive, never genuinely presented → never blocks a pair.
+  // A discarded-before-shown queued batch is DELETEd, so it isn't present here.
+  const { data: introHistory } = await adminClient
     .from('intro_requests')
-    .select('requester_id, target_user_id, status, updated_at')
+    .select('requester_id, target_user_id, status, batch_id')
     .or(`requester_id.eq.${userId},target_user_id.eq.${userId}`)
-    .in('status', ['hidden', 'hidden_permanent', 'passed'])
-  
-  const excludedUserIds = new Set<string>()
-  hiddenOrPassed?.forEach(req => {
-    // Hidden = permanent exclusion
-    if (req.status === 'hidden' || req.status === 'hidden_permanent') {
-      const otherId = req.requester_id === userId ? req.target_user_id : req.requester_id
-      excludedUserIds.add(otherId)
-    }
-    
-    // Passed = temporary exclusion (75 day cooldown)
-    if (req.status === 'passed') {
-      const passedAt = new Date(req.updated_at)
-      if (passedAt > cooldownDate) {
-        const otherId = req.requester_id === userId ? req.target_user_id : req.requester_id
-        excludedUserIds.add(otherId)
-      }
-    }
-  })
-  
-  // 3. Users with existing intro requests
-  const { data: existingIntros } = await adminClient
-    .from('intro_requests')
-    .select('target_user_id, requester_id')
-    .or(`requester_id.eq.${userId},target_user_id.eq.${userId}`)
-    .in('status', BATCH_EXCLUDING_STATUSES as unknown as string[])
-  
-  existingIntros?.forEach(req => {
-    const otherId = req.requester_id === userId ? req.target_user_id : req.requester_id
-    excludedUserIds.add(otherId)
-  })
-  
+
+  const { hardExcluded, softExcluded } = classifyIntroHistory(userId, introHistory)
+  // matches / blocked / referrals are HARD (permanent) too — merge them in.
+  for (const id of Array.from(matchedUserIds)) hardExcluded.add(id)
+  for (const id of Array.from(blockedUserIds)) hardExcluded.add(id)
+  for (const id of Array.from(referralExcludedIds)) hardExcluded.add(id)
+  for (const id of Array.from(softExcluded)) if (hardExcluded.has(id)) softExcluded.delete(id) // keep disjoint
+
+  const dataValid = (u: any) =>
+    !!u.full_name && !!u.role_type && parseExpertise(u.expertise).length > 0
+  // HARD + same-company are always excluded; SOFT is excluded unless the exhaustion
+  // safety valve engages for this member (fresh pool below the configured threshold).
+  const base = allUsers.filter((u: any) => !hardExcluded.has(u.id) && !isSameCompany(newUserProfile, u) && dataValid(u))
+  const afterSoft = base.filter((u: any) => !softExcluded.has(u.id))
+  const threshold = exhaustionThreshold()
+  const valveActive = threshold > 0 && afterSoft.length < threshold
+  const usersWithData = valveActive ? base : afterSoft
+
   console.log('[generate-recommendations] Excluded users:', {
-    matched: matchedUserIds.size,
-    hidden_or_passed: excludedUserIds.size,
-    total_excluded: new Set([...Array.from(matchedUserIds), ...Array.from(excludedUserIds)]).size
+    hard: hardExcluded.size,
+    soft: softExcluded.size,
+    poolAfterSoft: afterSoft.length,
+    exhaustionValve: valveActive ? `ACTIVE (< ${threshold})` : (threshold > 0 ? 'armed' : 'disabled'),
+    usersWithData: usersWithData.length,
   })
-  
-  const usersWithData = allUsers
-    .filter(u => {
-      // Exclude matched users (with removed-cooldown logic applied above)
-      if (matchedUserIds.has(u.id)) return false
-      // Exclude hidden/passed/suggested users
-      if (excludedUserIds.has(u.id)) return false
-      // Exclude blocked users in either direction
-      if (blockedUserIds.has(u.id)) return false
-      // Exclude referral pairs (bidirectional)
-      if (referralExcludedIds.has(u.id)) return false
-      // Exclude same-company candidates
-      if (isSameCompany(newUserProfile, u)) return false
-      // Continue with existing data validation
-      return true
-    })
-    .filter(u => {
-    const hasName = !!u.full_name
-    const hasRole = !!u.role_type
-    if (!hasName || !hasRole) return false
-    // Canonical parse so string-stored expertise (JSON string / CSV / PG-array)
-    // is measured by real item count, not treated as absent (or always-present).
-    return parseExpertise(u.expertise).length > 0
-  })
-  
-  console.log('[generate-recommendations] Users after filter:', usersWithData.length)
   
   const scoredCandidates = usersWithData.map(candidate => ({
     ...candidate,

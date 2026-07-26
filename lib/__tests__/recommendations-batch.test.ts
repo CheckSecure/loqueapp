@@ -10,6 +10,7 @@ import {
   countUnresolvedRecommendations, weeklyEligibilityCheck,
 } from '@/lib/introductions/queue'
 import { buildBackfillReport, applyBackfill } from '@/lib/introductions/migration-backfill'
+import { classifyIntroHistory } from '@/lib/introRequests/history'
 
 // ── In-memory Supabase mock ───────────────────────────────────────────────────
 // Supports the query surface the queue service / metrics / backfill use:
@@ -523,5 +524,39 @@ describe('migration ranking — alignment-based Active/Queued selection', () => 
     expect(c.__tables.matches).toHaveLength(1)                   // matches untouched
     expect(c.__tables.intro_requests.length).toBe(beforeRows)   // no unexpected deletes (2 suggested ≤ Active)
     expect(suggestedOf(c, 'MEM').map((r: any) => r.target_user_id).sort()).toEqual(['X', 'Y'])
+  })
+})
+
+describe('tiered introduction-history model (queue lifecycle ↔ exclusion)', () => {
+  it('discarded-before-visible pair leaves NO history → eligible; shown/queued pairs are HARD-excluded', async () => {
+    const c = makeClient()
+    // A,B shown (active). C,D organic queued (unseen). Admin displaces → C,D discarded (deleted).
+    await enqueueBatch(c, { memberId: 'M', source: 'onboarding', rows: [{ target_user_id: 'A' }, { target_user_id: 'B' }] })
+    await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'C' }, { target_user_id: 'D' }] })
+    await enqueueBatch(c, { memberId: 'M', source: 'admin_reciprocal', rows: [{ target_user_id: 'E' }, { target_user_id: 'F' }] })
+    const rows = c.__tables.intro_requests.filter((r: any) => r.requester_id === 'M' || r.target_user_id === 'M')
+    const { hardExcluded } = classifyIntroHistory('M', rows)
+    for (const id of ['A', 'B', 'E', 'F']) expect(hardExcluded.has(id)).toBe(true) // suggested/queued = active window = HARD
+    expect(hardExcluded.has('C')).toBe(false) // discarded before visible → deleted → eligible
+    expect(hardExcluded.has('D')).toBe(false)
+  })
+
+  it('regeneration: committed pairs HARD, shown-no-commitment SOFT, artifact eligible, fresh candidate eligible', () => {
+    const c = makeClient({
+      intro_requests: [
+        { requester_id: 'M', target_user_id: 'P', status: 'pending' },            // HARD
+        { requester_id: 'M', target_user_id: 'S', status: 'archived', batch_id: 'b1' }, // SOFT (shown)
+        { requester_id: 'M', target_user_id: 'A', status: 'archived', batch_id: null }, // ARTIFACT → eligible
+        { requester_id: 'Q', target_user_id: 'M', status: 'declined' },           // inbound HARD (bidirectional)
+      ],
+    })
+    const rows = c.__tables.intro_requests.filter((r: any) => r.requester_id === 'M' || r.target_user_id === 'M')
+    const { hardExcluded, softExcluded } = classifyIntroHistory('M', rows)
+    expect(hardExcluded.has('P')).toBe(true)   // pending committed
+    expect(hardExcluded.has('Q')).toBe(true)   // inbound declined — bidirectional
+    expect(softExcluded.has('S')).toBe(true)   // shown archived — releasable
+    expect(hardExcluded.has('A')).toBe(false)  // backfill artifact — eligible
+    expect(softExcluded.has('A')).toBe(false)
+    expect(hardExcluded.has('FRESH')).toBe(false) // fresh candidate stays eligible
   })
 })
