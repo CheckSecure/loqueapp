@@ -98,7 +98,7 @@ export default function NetworkList({ connections }: { connections: Connection[]
           <p className="text-sm text-slate-500">No connections match &ldquo;{query}&rdquo;.</p>
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid sm:grid-cols-2 2xl:grid-cols-3 gap-4">
           {visible.map(({ matchId, profile, connectedAt, isNew, matchInsights, conversationId }) => (
             <NetworkCard
               key={matchId}

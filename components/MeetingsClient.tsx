@@ -219,7 +219,7 @@ export default function MeetingsClient({
 
   return (
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
-      <div className="max-w-3xl">
+      <div className="max-w-content mx-auto w-full">
         <div className="flex items-center justify-between mb-10">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight">Meetings</h1>

@@ -18,7 +18,7 @@ export default async function ProfilePage() {
 
   return (
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
-      <div className="max-w-2xl">
+      <div className="max-w-content-narrow mx-auto w-full">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-slate-900">Profile</h1>
           <p className="text-slate-500 text-sm mt-0.5">How you appear to other professionals on Andrel.</p>

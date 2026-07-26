@@ -174,7 +174,7 @@ function BillingInner() {
     : effectiveTier.charAt(0).toUpperCase() + effectiveTier.slice(1)
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 space-y-10">
+    <div className="max-w-content-narrow mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Membership</h1>
         <p className="text-slate-500 text-sm mt-2">Your membership determines the quality, priority, and frequency of your introductions.</p>

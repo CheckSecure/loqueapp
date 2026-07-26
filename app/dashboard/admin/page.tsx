@@ -175,8 +175,8 @@ export default async function AdminDashboard() {
   const iconCls = 'w-5 h-5 text-[#1B2850] group-hover:text-white transition-colors'
 
   return (
-    <div className="min-h-screen bg-slate-50 p-5 sm:p-6">
-      <div className="max-w-7xl mx-auto space-y-5">
+    <div className="min-h-screen bg-slate-50 p-5 sm:p-6 lg:px-8">
+      <div className="max-w-content mx-auto space-y-5">
 
         {/* Header */}
         <div>

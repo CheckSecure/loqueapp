@@ -121,7 +121,7 @@ export default async function NetworkPage() {
   return (
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
       <MarkNetworkNotificationsRead userId={profileId} />
-      <div className="max-w-4xl">
+      <div className="max-w-content mx-auto w-full">
         <div className="mb-10">
           <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight">
             Network

@@ -8,6 +8,15 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // Shared authenticated content widths. `content` frames dense/grid/table
+      // pages (dashboards, Network, Meetings, Admin) on wide desktops without
+      // going edge-to-edge; `content-narrow` keeps reading/form pages (Profile,
+      // Billing, Settings, Opportunities) comfortably readable. Single source of
+      // truth — pages reference these tokens instead of scattering max-w values.
+      maxWidth: {
+        content: '1600px',
+        'content-narrow': '60rem', // 960px
+      },
       colors: {
         cadre: {
           50: '#f0f4ff',

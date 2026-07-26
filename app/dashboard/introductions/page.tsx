@@ -642,7 +642,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
   return (
     <div className="relative min-h-screen bg-[#FAF6EE] p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
-      <div className="relative max-w-6xl mx-auto">
+      <div className="relative max-w-content mx-auto">
 
         {/* HERO — quiet page title (dashboard, not landing page) */}
         <div className="mb-8">
