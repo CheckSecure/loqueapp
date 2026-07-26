@@ -28,8 +28,10 @@
  */
 
 // Engagement / commitment / explicit signal — permanent, valve never releases.
+// `accepted_pending_payment` is a committed acceptance mid-payment: it must NEVER
+// be re-recommended while the transaction settles.
 export const HARD_HISTORY_STATUSES = new Set<string>([
-  'pending', 'accepted', 'admin_pending', 'approved', 'declined', 'rejected', 'hidden', 'hidden_permanent',
+  'pending', 'accepted', 'accepted_pending_payment', 'admin_pending', 'approved', 'declined', 'rejected', 'hidden', 'hidden_permanent',
 ])
 // Live rows occupying the member's window — always excluded (never a duplicate).
 export const ACTIVE_STATUSES = new Set<string>(['suggested', 'queued'])

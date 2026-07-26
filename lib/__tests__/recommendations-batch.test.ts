@@ -560,3 +560,51 @@ describe('tiered introduction-history model (queue lifecycle ↔ exclusion)', ()
     expect(hardExcluded.has('FRESH')).toBe(false) // fresh candidate stays eligible
   })
 })
+
+describe('Express Interest → promoteIfResolved (queue advances only on FINAL resolution)', () => {
+  async function setup() {
+    const c = makeClient()
+    await enqueueBatch(c, { memberId: 'M', source: 'onboarding', rows: [{ target_user_id: 'A' }, { target_user_id: 'B' }] }) // ACTIVE
+    await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'C' }, { target_user_id: 'D' }] })       // QUEUED
+    return c
+  }
+  // Express Interest updates the suggested row in place to 'approved' (per the route).
+  const express = (c: any, target: string) =>
+    c.from('intro_requests').update({ status: 'approved' }).eq('requester_id', 'M').eq('target_user_id', target)
+
+  it('expressing interest in the FINAL remaining introduction promotes the queued batch', async () => {
+    const c = await setup()
+    await express(c, 'A')
+    const r1 = await promoteIfResolved(c, 'M') // fix runs after each express
+    expect(r1.promoted).toBe(false) // B still open → no promotion
+
+    await express(c, 'B')
+    const r2 = await promoteIfResolved(c, 'M')
+    expect(r2.promoted).toBe(true)
+    expect(suggestedOf(c).map((x: any) => x.target_user_id).sort()).toEqual(['C', 'D']) // queued revealed
+    expect(queuedOf(c)).toHaveLength(0)
+    expect(batchesOf(c, 'active')).toHaveLength(1) // invariant: exactly one active batch
+  })
+
+  it('expressing interest in ONLY ONE of two introductions does NOT promote the queued batch', async () => {
+    const c = await setup()
+    await express(c, 'A')
+    const r = await promoteIfResolved(c, 'M')
+    expect(r.promoted).toBe(false)
+    expect((r as any).reason).toBe('incomplete')
+    expect(suggestedOf(c).map((x: any) => x.target_user_id).sort()).toEqual(['B']) // B stays visible
+    expect(queuedOf(c).map((x: any) => x.target_user_id).sort()).toEqual(['C', 'D']) // queued NOT revealed
+    expect(batchesOf(c, 'active')).toHaveLength(1)
+  })
+
+  it('accepted_pending_payment occupies the slot — a new batch never re-introduces that pair', async () => {
+    const c = makeClient({ intro_requests: [{ requester_id: 'M', target_user_id: 'X', status: 'accepted_pending_payment', batch_id: 'old' }] })
+    const r = await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'X' }, { target_user_id: 'Y' }] })
+    expect(r.placed).toBe(true)
+    const placed = c.__tables.intro_requests
+      .filter((row: any) => row.requester_id === 'M' && row.status !== 'accepted_pending_payment')
+      .map((row: any) => row.target_user_id)
+    expect(placed).toContain('Y')     // fresh target placed
+    expect(placed).not.toContain('X') // mid-payment pair deduped away
+  })
+})

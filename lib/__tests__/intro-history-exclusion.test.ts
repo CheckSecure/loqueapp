@@ -18,6 +18,14 @@ describe('classifyIntroHistory — tiered permanent-history exclusion', () => {
     }
   })
 
+  it('accepted_pending_payment is HARD — a mid-payment pair is never recommended again', () => {
+    const { hardExcluded, softExcluded } = classifyIntroHistory(ME, [row(ME, 'x', 'accepted_pending_payment')])
+    expect(hardExcluded.has('x')).toBe(true)
+    expect(softExcluded.has('x')).toBe(false)
+    // bidirectional: inbound row excludes too
+    expect(classifyIntroHistory(ME, [row('other', ME, 'accepted_pending_payment')]).hardExcluded.has('other')).toBe(true)
+  })
+
   it('accepted/approved/pending/declined/rejected/hidden are HARD (regardless of the safety valve)', () => {
     const rows = ['accepted', 'approved', 'pending', 'declined', 'rejected', 'hidden', 'hidden_permanent']
       .map((s, i) => row(ME, `t${i}`, s))

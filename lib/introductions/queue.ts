@@ -67,10 +67,11 @@ export interface PromoteResult {
  * createIntroRequest inserts one of these and LEAVES the 'suggested' row in place,
  * so completion is measured by cross-referencing the target, not by row deletion.
  */
-export const EXPRESSED_INTEREST_STATUSES = ['pending', 'accepted', 'admin_pending', 'approved'] as const
+export const EXPRESSED_INTEREST_STATUSES = ['pending', 'accepted', 'accepted_pending_payment', 'admin_pending', 'approved'] as const
 
-/** Statuses that occupy a member's target (they should not be re-suggested). */
-const OCCUPYING_STATUSES = ['suggested', 'queued', 'pending', 'accepted', 'admin_pending', 'approved'] as const
+/** Statuses that occupy a member's target (they should not be re-suggested).
+ *  `accepted_pending_payment` is included so a mid-payment pair is never re-enqueued. */
+const OCCUPYING_STATUSES = ['suggested', 'queued', 'pending', 'accepted', 'accepted_pending_payment', 'admin_pending', 'approved'] as const
 
 // ── Slot reads ──────────────────────────────────────────────────────────────
 
