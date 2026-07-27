@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { TERMS_VERSION, TERMS_EFFECTIVE_DATE } from '@/lib/legal/terms'
+import { TERMS_VERSION_LABEL, TERMS_EFFECTIVE_DATE } from '@/lib/legal/terms'
 
 export const metadata = { title: 'Terms of Service | Andrel' }
 
@@ -10,15 +10,14 @@ export default function TermsPage() {
         <div className="text-center mb-12">
           <Link href="/" className="text-xl font-bold text-[#1B2850] tracking-tight block mb-8">Andrel</Link>
           <h1 className="text-3xl font-bold text-slate-900 mb-3">Terms of Service</h1>
-          <p className="text-slate-500 text-sm">Effective date: {TERMS_EFFECTIVE_DATE}</p>
-          <p className="text-slate-400 text-xs mt-1">Version {TERMS_VERSION}</p>
+          <p className="text-slate-500 text-sm">Version {TERMS_VERSION_LABEL} · Effective: {TERMS_EFFECTIVE_DATE}</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8 space-y-8 text-sm text-slate-600 leading-relaxed">
 
           <section>
             <h2 className="text-base font-bold text-slate-900 mb-3">1. Acceptance of Terms</h2>
-            <p>By accessing or using Andrel ("the platform"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, you may not use the platform. These Terms are governed by the laws of the State of Delaware, USA. The platform and its features may evolve over time at our discretion.</p>
+            <p>By accessing or using Andrel ("the platform"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, you may not use the platform. These Terms are governed by the laws of the Commonwealth of Virginia, USA. The platform and its features may evolve over time at our discretion.</p>
           </section>
 
           <section>
@@ -84,7 +83,7 @@ export default function TermsPage() {
 
           <section>
             <h2 className="text-base font-bold text-slate-900 mb-3">12. Dispute Resolution</h2>
-            <p>Any dispute arising out of or relating to these Terms or your use of Andrel shall be resolved through binding arbitration administered by the American Arbitration Association under its applicable rules, with the arbitration seated in the Commonwealth of Virginia. These Terms and any such dispute shall continue to be governed by the laws of the State of Delaware, without regard to its conflict-of-laws principles. You waive any right to a jury trial or to participate in a class action. Nothing in this section prevents either party from seeking injunctive relief in a court of competent jurisdiction.</p>
+            <p>Any dispute arising out of or relating to these Terms or your use of Andrel shall be resolved through binding arbitration administered by the American Arbitration Association under its applicable rules, with the arbitration seated in the Commonwealth of Virginia. These Terms and any such dispute shall continue to be governed by the laws of the Commonwealth of Virginia, without regard to its conflict-of-laws principles. You waive any right to a jury trial or to participate in a class action. Nothing in this section prevents either party from seeking injunctive relief in a court of competent jurisdiction.</p>
           </section>
 
           <section>

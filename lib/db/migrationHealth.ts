@@ -40,6 +40,14 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Curated company-metadata fallback',
     impact: 'Admin-curated company descriptions/logos fallback is unavailable.',
   },
+  {
+    migration: '025_profiles_legal_acceptance.sql',
+    kind: 'column',
+    table: 'profiles',
+    column: 'terms_version_accepted',
+    feature: 'Clickwrap legal acceptance tracking',
+    impact: 'The Terms/Privacy acceptance gate self-disables (compatibility mode) — access is not blocked on acceptance until applied.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {

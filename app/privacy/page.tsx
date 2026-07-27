@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { PRIVACY_VERSION_LABEL, PRIVACY_EFFECTIVE_DATE } from '@/lib/legal/terms'
 
 export const metadata = { title: 'Privacy Policy | Andrel' }
 
@@ -9,7 +10,7 @@ export default function PrivacyPage() {
         <div className="text-center mb-12">
           <Link href="/" className="text-xl font-bold text-[#1B2850] tracking-tight block mb-8">Andrel</Link>
           <h1 className="text-3xl font-bold text-slate-900 mb-3">Privacy Policy</h1>
-          <p className="text-slate-500 text-sm">Effective date: March 24, 2026</p>
+          <p className="text-slate-500 text-sm">Version {PRIVACY_VERSION_LABEL} · Effective: {PRIVACY_EFFECTIVE_DATE}</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8 space-y-8 text-sm text-slate-600 leading-relaxed">

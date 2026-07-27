@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getOpportunityBadgeCount } from '@/lib/opportunities/unreadCount'
+import { needsReacceptance } from '@/lib/legal/terms'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import MobileNav from '@/components/MobileNav'
@@ -39,6 +40,28 @@ export default async function DashboardLayout({ children }: { children: React.Re
       redirect('/onboarding')
     }
   }
+
+  // Clickwrap gate: every member must have affirmatively accepted the CURRENT
+  // Terms of Service and Privacy Policy versions before using the platform. If
+  // their accepted version is missing or stale, send them to the acceptance page
+  // (outside /dashboard, so no redirect loop). Fails OPEN when the acceptance
+  // columns aren't migrated yet — see migration 025 / lib/db/migrationHealth.ts.
+  // NB: the redirect() call MUST stay outside the try/catch, or its internal
+  // NEXT_REDIRECT signal would be swallowed as an error.
+  let mustAcceptLegal = false
+  try {
+    const { data: acc, error } = await supabase
+      .from('profiles')
+      .select('terms_version_accepted, privacy_version_accepted')
+      .eq('id', user.id)
+      .single()
+    if (!error && acc) {
+      mustAcceptLegal = needsReacceptance(acc.terms_version_accepted, acc.privacy_version_accepted)
+    }
+  } catch {
+    mustAcceptLegal = false // compatibility mode — never block on a missing column
+  }
+  if (mustAcceptLegal) redirect('/legal/accept')
 
   // Everything below depends only on user.id and is independent of the other
   // badge/count queries, so it runs as a single concurrent wave. Each badge
