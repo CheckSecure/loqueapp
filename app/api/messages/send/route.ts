@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createNotificationSafe } from '@/lib/notifications'
+import { shouldEmailNewMessage } from '@/lib/notifications/engagement'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
@@ -51,10 +52,11 @@ export async function POST(request: Request) {
       ? match.user_b_id
       : match.user_a_id
 
-    // Block sends to deactivated recipients
+    // Block sends to deactivated recipients. Also pull the fields the new-message
+    // email needs (email, name, last_active_at) so no extra round-trip is added.
     const { data: recipientProfile } = await adminClient
       .from('profiles')
-      .select('account_status')
+      .select('account_status, email, full_name, last_active_at')
       .eq('id', recipientId)
       .single()
 
@@ -95,7 +97,7 @@ export async function POST(request: Request) {
 
     // Send notification to recipient. dedupeKey = message id → one notification
     // per message (retries are idempotent); link opens this exact conversation.
-    await createNotificationSafe({
+    const createdNotif = await createNotificationSafe({
       userId: recipientId,
       type: 'message_received',
       data: {
@@ -113,6 +115,50 @@ export async function POST(request: Request) {
       recipientId,
       isFirstMessage
     })
+
+    // New-message email — best-effort, never blocks the send response.
+    //  • Only on a NEWLY-created notification (createNotificationSafe returns null
+    //    on a duplicate message id) → one email per message, race-safe across workers.
+    //  • Throttled by shouldEmailNewMessage: skip if the recipient is currently active
+    //    (touched the app within MESSAGE_EMAIL_ACTIVE_WINDOW_MS) OR already has another
+    //    UNREAD message nudge for this conversation (they haven't caught up yet).
+    //  • Preference-aware: sendNewMessageEmail is gated by email_messages (fail-open
+    //    until notification_preferences ships).
+    try {
+      if (createdNotif && process.env.RESEND_API_KEY && recipientProfile?.email) {
+        // Unread message_received nudges for THIS conversation. The just-created one
+        // is unread too, so >1 means a prior unread nudge already exists → throttle.
+        const { data: unreadNudges } = await adminClient
+          .from('notifications')
+          .select('id')
+          .eq('user_id', recipientId)
+          .eq('type', 'message_received')
+          .eq('data->>conversationId', conversationId)
+          .is('read_at', null)
+        const hasOtherUnreadInConversation = (unreadNudges ?? []).length > 1
+
+        if (shouldEmailNewMessage({
+          recipientLastActiveAt: recipientProfile.last_active_at,
+          hasOtherUnreadInConversation,
+        })) {
+          const { data: senderProfile } = await adminClient
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .single()
+          console.log(`[Email] type=new_message conversationId=${conversationId} recipientId=${recipientId}`)
+          const { sendNewMessageEmail } = await import('@/lib/email')
+          await sendNewMessageEmail(
+            recipientProfile.email,
+            recipientProfile.full_name || 'there',
+            senderProfile?.full_name || 'A member',
+            content.trim(),
+          )
+        }
+      }
+    } catch (emailErr: any) {
+      console.error('[Message email] non-fatal:', emailErr?.message)
+    }
 
     return NextResponse.json({
       success: true,

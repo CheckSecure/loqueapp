@@ -7,6 +7,7 @@ import { generateIcebreakers, generateSystemIntroMessage } from '@/lib/messaging
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { promoteIfResolved } from '@/lib/introductions/queue'
+import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 
 export async function POST(request: Request) {
   const supabase = createClient()
@@ -80,8 +81,13 @@ export async function POST(request: Request) {
     // active batch, complete it and reveal any waiting queued batch. Gated by the
     // whole-batch unresolved check inside promoteIfResolved (it no-ops while any
     // card is still open), and idempotent. Non-fatal — mirror createIntroRequest.
-    await promoteIfResolved(adminClient, expresserId).catch((e) =>
-      console.error('[Express Interest] promoteIfResolved failed (non-fatal):', e))
+    await promoteIfResolved(adminClient, expresserId)
+      .then((promo) => {
+        // A newly-revealed queued batch is a new visible batch → announce it.
+        if (promo.promoted && promo.newActive) return notifyNewVisibleBatch(expresserId, promo.newActive)
+      })
+      .catch((e) =>
+        console.error('[Express Interest] promoteIfResolved failed (non-fatal):', e))
 
     // Notify the other user that someone expressed interest
     const { data: expresserProfile } = await supabase

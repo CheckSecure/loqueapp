@@ -4,6 +4,7 @@ import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { EXPRESSED_STATUSES, findReusableOutboundIntro } from '@/lib/introRequests/state'
 import { promoteIfResolved } from '@/lib/introductions/queue'
+import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 
 async function resolveProfileId(supabase: ReturnType<typeof createClient>, authUserId: string, authUserEmail?: string) {
   const orClause = authUserEmail
@@ -131,7 +132,11 @@ export async function createIntroRequest(
   // last open recommendation, promote the queued batch (reveal only). Never blocks
   // the interest result on a promotion hiccup.
   try {
-    await promoteIfResolved(supabase, authUserId)
+    const promo = await promoteIfResolved(supabase, authUserId)
+    // Revealing a queued batch surfaces new visible introductions → announce it.
+    if (promo.promoted && promo.newActive) {
+      await notifyNewVisibleBatch(authUserId, promo.newActive)
+    }
   } catch (promoteErr) {
     console.error('[createIntroRequest] promoteIfResolved failed (non-fatal):', promoteErr)
   }

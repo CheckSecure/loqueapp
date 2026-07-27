@@ -1,0 +1,103 @@
+import { createAdminClient } from '@/lib/supabase/admin'
+import { createNotificationSafe } from '@/lib/notifications'
+
+/**
+ * Engagement email helpers built on the EXISTING notification/email/cron stack.
+ *
+ * Design notes:
+ *  - Idempotency reuses `createNotificationSafe`'s dedupeKey (backed by the
+ *    partial-unique index notifications_user_type_dedupe_key_uniq, migration 006):
+ *    it returns the row only when NEWLY created and null on a duplicate, so we get
+ *    "one email per event" and multi-worker safety for free.
+ *  - Preferences: the underlying send* functions call isPrefEnabled, which
+ *    FAIL-OPENS today because notification_preferences isn't applied in prod yet
+ *    (migration 002). Once that migration lands, every email here automatically
+ *    starts respecting the user's category preference — no change needed here.
+ *  - The actual Resend call is gated on RESEND_API_KEY so unit tests never hit
+ *    the network; the pure decision functions below carry the testable logic.
+ */
+
+// ── Pure decision helpers (unit-tested) ───────────────────────────────────────
+
+/** A batch is emailable only when it becomes VISIBLE (placed as the active batch),
+ *  never for a hidden queued batch. Covers weekly, onboarding, and promotions. */
+export function shouldNotifyVisibleBatch(result: { placed?: boolean; state?: string } | null | undefined): boolean {
+  return !!result && result.placed === true && result.state === 'active'
+}
+
+/** Recipient is "currently active" if they touched the app within this window. */
+export const MESSAGE_EMAIL_ACTIVE_WINDOW_MS = 15 * 60 * 1000
+
+/** Email a new message only when the recipient is away AND they don't already
+ *  have an unread nudge for this conversation (avoids per-message spam). */
+export function shouldEmailNewMessage(args: {
+  recipientLastActiveAt: string | null | undefined
+  hasOtherUnreadInConversation: boolean
+  now?: number
+}): boolean {
+  if (args.hasOtherUnreadInConversation) return false
+  const now = args.now ?? Date.now()
+  const last = args.recipientLastActiveAt ? new Date(args.recipientLastActiveAt).getTime() : 0
+  return !last || now - last > MESSAGE_EMAIL_ACTIVE_WINDOW_MS
+}
+
+/** "Someone is waiting on your response" fires 48h after interest was expressed. */
+export const WAITING_RESPONSE_THRESHOLD_MS = 48 * 60 * 60 * 1000
+
+/** Only an outstanding expressed-interest row (`approved`) past the threshold and
+ *  not yet connected qualifies. matched/declined/passed/expired/hidden are excluded
+ *  by never being `approved` here (matched pairs are filtered by the caller). */
+export function shouldRemindWaiting(args: { status: string; createdAt: string; alreadyMatched?: boolean; now?: number }): boolean {
+  if (args.status !== 'approved') return false
+  if (args.alreadyMatched) return false
+  const now = args.now ?? Date.now()
+  return now - new Date(args.createdAt).getTime() >= WAITING_RESPONSE_THRESHOLD_MS
+}
+
+/** Intro reminder: the member still has unresolved visible introductions and hasn't
+ *  already been reminded for this batch (one reminder per weekly batch). */
+export function shouldSendIntroReminder(unresolvedCount: number, alreadyReminded: boolean): boolean {
+  return unresolvedCount > 0 && !alreadyReminded
+}
+
+// ── Wiring (best-effort; used by producers) ───────────────────────────────────
+
+/**
+ * Notify a member that a batch just became visible: one in-app `new_batch`
+ * notification + one `sendNewBatchEmail` per batch (idempotent via dedupeKey).
+ * Best-effort — never throws, so it can't break generation/promotion.
+ */
+export async function notifyNewVisibleBatch(memberId: string, batchId: string, count?: number): Promise<void> {
+  try {
+    const admin = createAdminClient()
+    let n = count
+    if (n == null) {
+      const { count: c } = await admin
+        .from('intro_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('requester_id', memberId)
+        .eq('batch_id', batchId)
+        .eq('status', 'suggested')
+      n = c ?? 0
+    }
+    if (!n) return // nothing visible → nothing to announce
+
+    // Idempotent: one notification + email per batch (dedupeKey), race-safe.
+    const created = await createNotificationSafe({
+      userId: memberId,
+      type: 'new_batch',
+      data: { batchId, count: n },
+      dedupeKey: `batch:${batchId}`,
+    })
+    if (!created) return // duplicate → this batch was already announced
+
+    const { data: p } = await admin.from('profiles').select('email, full_name').eq('id', memberId).maybeSingle()
+    if (p?.email && process.env.RESEND_API_KEY) {
+      console.log(`[Email] type=new_introductions memberId=${memberId} batchId=${batchId} count=${n}`)
+      const { sendNewBatchEmail } = await import('@/lib/email')
+      await sendNewBatchEmail(p.email, p.full_name || 'there', n)
+    }
+  } catch (e: any) {
+    console.error('[engagement] notifyNewVisibleBatch failed (non-fatal):', e?.message)
+  }
+}

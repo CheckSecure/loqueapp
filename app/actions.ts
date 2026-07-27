@@ -14,6 +14,7 @@ import {
 import { sendNewMessageEmail } from '@/lib/email'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { promoteIfResolved } from '@/lib/introductions/queue'
+import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
@@ -983,8 +984,12 @@ export async function passOnSuggestion(rowId: string, permanent: boolean) {
     .eq('status', 'suggested')
 
   // Resolving the active batch's last open recommendation promotes the queued
-  // batch (if one is waiting) — reveal only, never generation.
-  await promoteIfResolved(admin, user.id)
+  // batch (if one is waiting) — reveal only, never generation. When a queued
+  // batch becomes visible, announce it (in-app + email), same as a fresh batch.
+  const promo = await promoteIfResolved(admin, user.id)
+  if (promo.promoted && promo.newActive) {
+    await notifyNewVisibleBatch(user.id, promo.newActive)
+  }
 
   revalidatePath('/dashboard/introductions')
   return { success: true }

@@ -161,6 +161,75 @@ export async function sendNewBatchEmail(
   })
 }
 
+// Weekly reminder that a member still has unresolved introductions to review.
+// Same category as new-introduction emails (email_new_introductions), so it is
+// automatically suppressed once a member opts out of introduction emails.
+export async function sendIntroductionReminderEmail(
+  toEmail: string,
+  toName: string,
+  introCount: number
+) {
+  if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
+  await resend.emails.send({
+    from: 'Andrel <hello@andrel.app>',
+    to: toEmail,
+    subject: 'You still have introductions waiting',
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2850; margin-bottom: 24px;">Your introductions are waiting</h2>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          Hi ${toName},
+        </p>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+          You have ${introCount} curated ${introCount === 1 ? 'introduction' : 'introductions'} you haven't reviewed yet.
+          Take a moment to see who we've matched you with — express interest in the people worth knowing,
+          and pass on the rest. Each decision helps us make your future introductions even more relevant.
+        </p>
+        <a href="https://andrel.app/dashboard/introductions"
+           style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+          Review Introductions
+        </a>
+        <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+          — The Andrel Team
+        </p>
+      </div>
+    `,
+  })
+}
+
+// Nudge for a member whose counterpart already expressed interest and is now
+// awaiting their response. Introduction-class email (email_new_introductions).
+export async function sendWaitingResponseEmail(
+  toEmail: string,
+  toName: string
+) {
+  if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
+  await resend.emails.send({
+    from: 'Andrel <hello@andrel.app>',
+    to: toEmail,
+    subject: 'Someone is waiting on your response',
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2850; margin-bottom: 24px;">Someone is waiting on your response</h2>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          Hi ${toName},
+        </p>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+          One of your introductions has expressed interest in connecting with you and is waiting to hear back.
+          When you both express interest, Andrel makes the introduction. Take a look and let us know if it's a fit.
+        </p>
+        <a href="https://andrel.app/dashboard/introductions"
+           style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+          Review Introductions
+        </a>
+        <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+          — The Andrel Team
+        </p>
+      </div>
+    `,
+  })
+}
+
 export async function sendInviteEmail(
   toEmail: string,
   toName: string,

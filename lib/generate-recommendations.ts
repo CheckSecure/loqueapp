@@ -11,6 +11,7 @@ import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { applyMemberEligibility, filterEligible, assertAllEligible } from '@/lib/matching/eligibility'
 import { classifyIntroHistory, exhaustionThreshold } from '@/lib/introRequests/history'
+import { shouldNotifyVisibleBatch, notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 
 // Unified scoring model for all tiers
 // Final Score = Alignment (55%) + Network Value (30%) + Responsiveness (15%)
@@ -915,6 +916,13 @@ export async function generateBatchForMember(
     console.log('[generate-recommendations] Targeted request marked as applied:', {
       request_id: targetedRequest.id, user_id: userId, role: targetedRequest.role,
     })
+  }
+
+  // Announce the batch (in-app + email) only when it lands VISIBLE (placed as the
+  // active batch). A queued batch is hidden, so it is intentionally silent until
+  // promotion (see promoteIfResolved callers). Idempotent + best-effort.
+  if (shouldNotifyVisibleBatch(result) && result.batchId) {
+    await notifyNewVisibleBatch(userId, result.batchId, result.count)
   }
 
   return result

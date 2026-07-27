@@ -22,6 +22,8 @@ export type NotificationType =
   | 'meeting_declined'
   | 'new_connection'
   | 'intro_accepted'
+  | 'introduction_reminder'
+  | 'waiting_response'
 
 export interface NotificationData {
   matchId?: string
@@ -109,6 +111,14 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
   opportunity_closed: {
     title: 'Opportunity closed',
     message: 'A signal you responded to is no longer active.'
+  },
+  introduction_reminder: {
+    title: 'Introductions waiting',
+    message: 'You still have curated introductions to review.'
+  },
+  waiting_response: {
+    title: 'Someone is waiting on you',
+    message: 'A connection expressed interest and is awaiting your response.'
   }
 }
 
@@ -128,7 +138,9 @@ const LINK_BY_TYPE: Partial<Record<string, string>> = {
   opportunity_response: '/dashboard/opportunities/signals',
   opportunity_nudge_creator: '/dashboard/opportunities/signals',
   opportunity_nudge_receiver: '/dashboard/opportunities',
-  opportunity_closed: '/dashboard/opportunities/responses'
+  opportunity_closed: '/dashboard/opportunities/responses',
+  introduction_reminder: '/dashboard/introductions',
+  waiting_response: '/dashboard/introductions'
 }
 
 export async function createNotificationSafe({
