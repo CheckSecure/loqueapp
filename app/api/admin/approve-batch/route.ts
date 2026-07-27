@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createNotificationSafe } from '@/lib/notifications'
-import { sendNewBatchEmail } from '@/lib/email'
 import { enqueueBatch } from '@/lib/introductions/queue'
+import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,8 +16,12 @@ export const dynamic = 'force-dynamic'
  *   • queued organic batch present → the organic batch is discarded, admin takes the slot
  *   • queued admin batch already present → this recipient is REJECTED (no stacking)
  * batch_suggestions is marked shown (preserving the 90-day re-suggestion cooldown)
- * and materialized_at is stamped. Notifications fire only for recipients actually
- * placed (active or queued).
+ * and materialized_at is stamped. Member notification fires ONLY for a batch that
+ * is VISIBLE now (placed ACTIVE). A queued admin batch is hidden, so it stays
+ * silent here — it is announced later, once promoteIfResolved promotes it, by the
+ * SAME shared helper (notifyNewVisibleBatch, dedupeKey batch:<batchId>). That
+ * shared dedupe guarantees a member is emailed exactly once, when the batch first
+ * becomes visible — never a premature email at approval nor a duplicate at promotion.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Materialize into the unified queue, per recipient.
-    const placed: { recipientId: string; state: string; count: number }[] = []
+    const placed: { recipientId: string; state: string; count: number; batchId: string }[] = []
     const rejected: { recipientId: string; reason: string }[] = []
     for (const [recipientId, rows] of Array.from(byRecipient.entries())) {
       // Keep each recipient's admin batch within the sort order the graph produced.
@@ -76,35 +79,36 @@ export async function POST(req: NextRequest) {
           rows: ordered,
           reciprocalBatchId: batchId,
         })
-        if (result.placed) placed.push({ recipientId, state: result.state ?? 'queued', count: result.count ?? ordered.length })
-        else rejected.push({ recipientId, reason: result.reason ?? 'not_placed' })
+        if (result.placed && result.batchId) {
+          placed.push({ recipientId, state: result.state ?? 'queued', count: result.count ?? ordered.length, batchId: result.batchId })
+        } else {
+          rejected.push({ recipientId, reason: result.reason ?? 'not_placed' })
+        }
       } catch (err: any) {
         console.error('[approve-batch] materialize failed for', recipientId, err?.message)
         rejected.push({ recipientId, reason: 'error' })
       }
     }
 
-    // Notify only recipients whose recommendations were actually placed.
-    const recipientProfiles = placed.length > 0
-      ? (await adminClient.from('profiles').select('id, full_name, email').in('id', placed.map((p) => p.recipientId))).data
-      : []
-    const profileMap = new Map((recipientProfiles || []).map((p) => [p.id, p]))
-
-    let emailsAttempted = 0
+    // Member notification/email — ONE authoritative path, shared with organic
+    // generation and queue promotion. Announce ONLY batches that are visible now
+    // (placed ACTIVE). A queued admin batch is hidden and stays silent; it will be
+    // announced by the SAME helper when promoteIfResolved later promotes it. The
+    // shared dedupeKey (batch:<batchId>) makes approval and promotion deduplicate
+    // against each other, so a member is emailed exactly once — when visible.
+    let notified = 0
+    let skippedQueued = 0
     for (const p of placed) {
-      await createNotificationSafe({ userId: p.recipientId, type: 'new_batch' })
-      const profile = profileMap.get(p.recipientId)
-      if (profile?.email) {
-        try {
-          await sendNewBatchEmail(profile.email, profile.full_name || 'there', p.count)
-          emailsAttempted++
-        } catch (err) {
-          console.error('[approve-batch] sendNewBatchEmail failed for', p.recipientId, err)
-        }
+      if (p.state === 'active') {
+        await notifyNewVisibleBatch(p.recipientId, p.batchId, p.count)
+        notified++
+      } else {
+        console.log(`[Email] type=new_introductions skipped=hidden_queued_batch memberId=${p.recipientId} batchId=${p.batchId}`)
+        skippedQueued++
       }
     }
 
-    console.log(`[approve-batch] materialized: ${placed.length} placed, ${rejected.length} rejected; ${emailsAttempted} email attempts`)
+    console.log(`[approve-batch] materialized: ${placed.length} placed, ${rejected.length} rejected; ${notified} announced (active), ${skippedQueued} silent (queued)`)
     if (rejected.length > 0) {
       console.warn('[approve-batch] rejected recipients (already had a queued admin batch or no candidates):', JSON.stringify(rejected))
     }
@@ -114,7 +118,8 @@ export async function POST(req: NextRequest) {
       placed: placed.length,
       rejected: rejected.length,
       rejectedDetail: rejected,
-      emailsAttempted,
+      notified,
+      skippedQueued,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
