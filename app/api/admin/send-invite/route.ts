@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { sendInviteEmail, sendReferralInviteEmail } from '@/lib/email'
+import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
 import {
   normalizeEmail,
   generateTempPassword,
@@ -119,6 +120,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invite sent but status update failed. Please refresh.' }, { status: 500 })
     }
     await admin.from('referrals').update({ status: 'invited' }).eq('waitlist_id', entryId)
+    if (entry.referral_source === 'referral') {
+      logRecommendationEvent('recommendation_invite_sent', { entryId })
+    }
     return NextResponse.json({ success: true, state: 'invited' })
   }
 

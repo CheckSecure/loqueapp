@@ -3,6 +3,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
 
 // Basic email format check. Does NOT normalize Unicode lookalikes or punycode — V1 accepted gap.
 // A determined user could submit visually similar addresses that bypass this check.
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
     )
   }
 
-  const { full_name, email, title, company, referral_note } = body
+  const { full_name, email, title, company, linkedin_url, referral_note } = body
 
   // ── Validation 1: required fields ─────────────────────────────────────────
   if (!full_name?.trim() || !email?.trim() || !referral_note?.trim()) {
@@ -152,6 +153,7 @@ export async function POST(req: Request) {
       email:               targetEmail,
       title:               title?.trim() || null,
       company:             company?.trim() || null,
+      linkedin_url:        linkedin_url?.trim() || null,
       referral_source:     'referral',
       status:              'pending',
       verification_status: 'pending_review',
@@ -203,6 +205,12 @@ export async function POST(req: Request) {
       { status: 500 }
     )
   }
+
+  logRecommendationEvent('recommendation_submitted', {
+    referralId: newReferralRow.id,
+    waitlistId: newWaitlistRow.id,
+    referrerUserId: referrerProfile.id,
+  })
 
   return NextResponse.json({
     ok:         true,

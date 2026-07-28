@@ -71,10 +71,11 @@ export default async function AdminWaitlistPage() {
   })
 
   const counts = {
-    pending:  withLifecycle.filter(w => w.status === 'pending').length,
-    approved: withLifecycle.filter(w => w.status === 'approved').length,
-    invited:  withLifecycle.filter(w => w.status === 'invited').length,
-    declined: withLifecycle.filter(w => w.status === 'declined').length,
+    pending:   withLifecycle.filter(w => w.status === 'pending').length,
+    approved:  withLifecycle.filter(w => w.status === 'approved').length,
+    contacted: withLifecycle.filter(w => w.status === 'contacted').length,
+    invited:   withLifecycle.filter(w => w.status === 'invited').length,
+    declined:  withLifecycle.filter(w => w.status === 'declined').length,
   }
 
   // Cast at the boundary: PostgREST types the to-one `referrals` join as an

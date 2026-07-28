@@ -64,6 +64,14 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Persisted meeting timezone for email local-time display',
     impact: 'Meeting timezone is not stored (writes fall back to omitting it); acceptance emails show date + UTC only until applied.',
   },
+  {
+    migration: '028_waitlist_recommendation_contact.sql',
+    kind: 'column',
+    table: 'waitlist',
+    column: 'recommendation_email_sent_at',
+    feature: 'Warm recommendation "Contacted" tracking',
+    impact: 'Contacted timestamps are not stored (send-recommendation sets status only); the Contacted state still works but loses its date until applied.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {

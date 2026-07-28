@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
+import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -20,6 +21,8 @@ export async function POST(request: Request) {
     .eq('id', entryId)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  logRecommendationEvent('recommendation_approved', { entryId })
 
   revalidatePath('/dashboard', 'layout')
   return NextResponse.json({ success: true })

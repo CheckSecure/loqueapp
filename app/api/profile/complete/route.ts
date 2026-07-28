@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
+import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
 
 export async function POST() {
   const supabase = createClient()
@@ -176,6 +177,7 @@ export async function POST() {
             .from('referrals')
             .update({ status: 'activated', activated_at: new Date().toISOString() })
             .eq('id', referralRow.id)
+          logRecommendationEvent('recommendation_joined', { referralId: referralRow.id, userId: user.id })
           console.log('[profile/complete] referral activated but credit skipped — referrer not active', { referrerId, userId: user.id })
         } else {
           // Step 4: mark referral activated
@@ -183,6 +185,7 @@ export async function POST() {
             .from('referrals')
             .update({ status: 'activated', activated_at: new Date().toISOString() })
             .eq('id', referralRow.id)
+          logRecommendationEvent('recommendation_joined', { referralId: referralRow.id, userId: user.id })
 
           // Step 5: check monthly cap (5 credits awarded this calendar month)
           const monthStart = new Date()

@@ -1,5 +1,6 @@
 import { Resend } from 'resend'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { buildRecommendationIntroEmail } from '@/lib/email/recommendationIntro'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -432,6 +433,43 @@ Founder, Andrel`
   } catch (error: any) {
     console.error('[sendInviteEmail] exception:', error)
     return { success: false, error: error.message }
+  }
+}
+
+// Warm recommendation-introduction email — sent by the founder BEFORE any account
+// is provisioned, to start the relationship. Deliberately plain-text with NO
+// password, login button, credentials, or signup CTA — reply-based only, plus a
+// privacy-management link. The account-provisioning invite (sendReferralInviteEmail
+// below) is a SEPARATE, later step and is unchanged. Not preference-gated: the
+// nominee has no account/preferences yet.
+export async function sendRecommendationIntroductionEmail(
+  toEmail: string,
+  toName: string,
+  recommenderName: string,
+  manageUrl: string,
+): Promise<{ success: boolean; error?: string }> {
+  const { subject, text } = buildRecommendationIntroEmail({
+    recommenderName,
+    nomineeName: toName,
+    manageUrl,
+  })
+  try {
+    const { data, error } = await resend.emails.send({
+      // Personal "from" (still a monitored address) so a reply reaches us.
+      from: 'Daniel Abramoff <hello@andrel.app>',
+      to: toEmail,
+      subject,
+      text, // plain-text only — no html, no marketing design
+    })
+    if (error) {
+      console.error('[sendRecommendationIntroductionEmail] Resend API error:', error.message)
+      return { success: false, error: error.message }
+    }
+    console.log('[sendRecommendationIntroductionEmail] sent, message ID:', data?.id)
+    return { success: true }
+  } catch (err: any) {
+    console.error('[sendRecommendationIntroductionEmail] exception:', err?.message)
+    return { success: false, error: err?.message }
   }
 }
 

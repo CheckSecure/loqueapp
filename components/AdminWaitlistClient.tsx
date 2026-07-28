@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserPlus, CheckCircle, XCircle, Mail, Clock, Send } from 'lucide-react'
+import { UserPlus, CheckCircle, XCircle, Mail, Clock, Send, MessageSquare } from 'lucide-react'
+import { buildRecommendationIntroEmail } from '@/lib/email/recommendationIntro'
 
 interface EmailLifecycle {
   state: string
@@ -81,12 +82,18 @@ export default function AdminWaitlistClient({
   counts 
 }: { 
   waitlist: WaitlistEntry[]
-  counts: { pending: number; approved: number; invited: number; declined: number }
+  counts: { pending: number; approved: number; contacted: number; invited: number; declined: number }
 }) {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'invited' | 'declined'>('pending')
+  const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'contacted' | 'invited' | 'declined'>('pending')
   const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleFilter>('all')
   const [processing, setProcessing] = useState<string | null>(null)
+
+  // Warm recommendation-email preview/confirm modal state.
+  const [previewEntry, setPreviewEntry] = useState<WaitlistEntry | null>(null)
+  const [sending, setSending] = useState(false)
+  const [block, setBlock] = useState<{ reason: string; requiresReason?: boolean; overridable?: boolean } | null>(null)
+  const [overrideReason, setOverrideReason] = useState('')
   // Per-row "Mark as founding member" toggle. Lives client-side only; the value
   // is read at send-invite time and posted to the API. Resets on page refresh.
   const [markFounding, setMarkFounding] = useState<Record<string, boolean>>({})
@@ -155,6 +162,44 @@ export default function AdminWaitlistClient({
     setProcessing(null)
   }
 
+  const openPreview = (entry: WaitlistEntry) => {
+    setBlock(null)
+    setOverrideReason('')
+    setPreviewEntry(entry)
+  }
+
+  // Send the warm recommendation email (with optional founder override).
+  const sendRecommendation = async (override: boolean) => {
+    if (!previewEntry) return
+    setSending(true)
+    try {
+      const res = await fetch('/api/admin/send-recommendation-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryId: previewEntry.id, override, overrideReason: overrideReason.trim() || undefined }),
+      })
+      const data = await res.json()
+      if (res.status === 409 || (res.status === 400 && data.requiresReason) || res.status === 403) {
+        // Duplicate protection blocked the send — surface the reason, offer override.
+        setBlock({ reason: data.reason || 'This nominee may be a duplicate.', requiresReason: data.requiresReason, overridable: data.overridable })
+        setSending(false)
+        return
+      }
+      if (!res.ok || !data.ok) {
+        alert(data.error || 'Could not send the recommendation email.')
+        setSending(false)
+        return
+      }
+      setPreviewEntry(null)
+      setBlock(null)
+      setOverrideReason('')
+      router.refresh()
+    } catch {
+      alert('Network error. Please try again.')
+    }
+    setSending(false)
+  }
+
   // Invited tab also honors the lifecycle sub-filter (shared matcher).
   const filtered = waitlist
     .filter(entry => entry.status === activeTab)
@@ -200,6 +245,19 @@ export default function AdminWaitlistClient({
               </div>
             </button>
             <button
+              onClick={() => setActiveTab('contacted')}
+              className={`flex-1 px-6 py-3 text-sm font-semibold transition-colors ${
+                activeTab === 'contacted'
+                  ? 'bg-[#1B2850] text-white'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <MessageSquare className="w-4 h-4" />
+                Contacted ({counts.contacted})
+              </div>
+            </button>
+            <button
               onClick={() => setActiveTab('invited')}
               className={`flex-1 px-6 py-3 text-sm font-semibold transition-colors ${
                 activeTab === 'invited'
@@ -237,7 +295,12 @@ export default function AdminWaitlistClient({
             )}
             {activeTab === 'approved' && (
               <div className="mb-4 rounded-lg border border-slate-200 bg-slate-100 px-4 py-3 text-xs text-slate-700">
-                <span className="font-semibold">Step 2 · Send Invite.</span> Approved members are ready to invite. Click Send Invite to email login access.
+                <span className="font-semibold">Step 2 · Send Recommendation Email.</span> Send a warm, personal introduction (no login/credentials) to start the relationship — you&apos;ll preview and confirm it first. Send the official access invite later, once they&apos;re interested.
+              </div>
+            )}
+            {activeTab === 'contacted' && (
+              <div className="mb-4 rounded-lg border border-slate-200 bg-slate-100 px-4 py-3 text-xs text-slate-700">
+                <span className="font-semibold">Step 3 · Send Invite.</span> These nominees have received the warm recommendation email. Once they&apos;re interested, click Send Invite to email official login access.
               </div>
             )}
             {activeTab === 'invited' && (
@@ -411,6 +474,52 @@ export default function AdminWaitlistClient({
 
                         {activeTab === 'approved' && (
                           <div className="flex flex-col items-end gap-2">
+                            {/* Primary next step: warm recommendation email (preview + confirm). */}
+                            <button
+                              onClick={() => openPreview(entry)}
+                              disabled={processing === entry.id}
+                              className="flex items-center gap-2 px-4 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040] disabled:opacity-50"
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                              Send Recommendation Email
+                            </button>
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900 select-none">
+                              <input
+                                type="checkbox"
+                                checked={!!markFounding[entry.id]}
+                                onChange={() => toggleMarkFounding(entry.id)}
+                                className="w-4 h-4 rounded border-slate-400 accent-brand-navy focus:ring-2 focus:ring-brand-gold"
+                              />
+                              Mark as founding member
+                            </label>
+                            <button
+                              onClick={() => handleSendInvite(entry.id)}
+                              disabled={processing === entry.id}
+                              className="flex items-center gap-2 px-4 py-1.5 bg-white text-[#1B2850] border border-slate-300 text-xs font-medium rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              {processing === entry.id ? 'Sending...' : 'Skip to Send Invite'}
+                            </button>
+                            {/* Secondary destructive action — reuses the existing handleDecline path
+                                (POST /api/admin/waitlist/decline). No new route or decline logic;
+                                confirm-gated. Sends the row to Declined, no email, referral synced. */}
+                            <button
+                              onClick={() => {
+                                if (window.confirm('Remove this approved nomination? No email will be sent.')) {
+                                  handleDecline(entry.id)
+                                }
+                              }}
+                              disabled={processing === entry.id}
+                              className="flex items-center gap-1.5 px-4 py-1.5 bg-white text-red-600 border border-red-200 text-xs font-medium rounded-lg hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              Remove
+                            </button>
+                          </div>
+                        )}
+
+                        {activeTab === 'contacted' && (
+                          <div className="flex flex-col items-end gap-2">
                             <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900 select-none">
                               <input
                                 type="checkbox"
@@ -428,20 +537,13 @@ export default function AdminWaitlistClient({
                               <Send className="w-4 h-4" />
                               {processing === entry.id ? 'Sending...' : 'Send Invite'}
                             </button>
-                            {/* Secondary destructive action — reuses the existing handleDecline path
-                                (POST /api/admin/waitlist/decline). No new route or decline logic;
-                                confirm-gated. Sends the row to Declined, no email, referral synced. */}
                             <button
-                              onClick={() => {
-                                if (window.confirm('Remove this approved nomination? No email will be sent.')) {
-                                  handleDecline(entry.id)
-                                }
-                              }}
+                              onClick={() => openPreview(entry)}
                               disabled={processing === entry.id}
-                              className="flex items-center gap-1.5 px-4 py-1.5 bg-white text-red-600 border border-red-200 text-xs font-medium rounded-lg hover:bg-red-50 disabled:opacity-50"
+                              className="flex items-center gap-1.5 px-4 py-1.5 bg-white text-[#1B2850] border border-slate-300 text-xs font-medium rounded-lg hover:bg-slate-50 disabled:opacity-50"
                             >
-                              <XCircle className="w-3.5 h-3.5" />
-                              Remove
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              Resend Recommendation
                             </button>
                           </div>
                         )}
@@ -465,6 +567,82 @@ export default function AdminWaitlistClient({
           </div>
         </div>
       </div>
+
+      {previewEntry && (() => {
+        const recommender = previewEntry.referrals?.referrer?.full_name || 'A founding member'
+        const { subject, text } = buildRecommendationIntroEmail({
+          recommenderName: recommender,
+          nomineeName: previewEntry.full_name || 'there',
+          manageUrl: 'https://www.andrel.app/manage-information',
+        })
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/50" onClick={() => !sending && setPreviewEntry(null)} />
+            <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              <div className="px-6 py-4 border-b border-slate-100">
+                <h3 className="text-sm font-bold text-slate-900">Preview recommendation email</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Review, then confirm to send. Nothing sends automatically.</p>
+              </div>
+              <div className="px-6 py-4 space-y-3">
+                <div className="grid grid-cols-[90px_1fr] gap-1 text-xs">
+                  <span className="text-slate-400">Recipient</span>
+                  <span className="text-slate-800">{previewEntry.full_name || '—'} · {previewEntry.email}</span>
+                  <span className="text-slate-400">Recommender</span>
+                  <span className="text-slate-800">{recommender}</span>
+                  <span className="text-slate-400">Subject</span>
+                  <span className="text-slate-800 font-medium">{subject}</span>
+                </div>
+                <pre className="whitespace-pre-wrap font-sans text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-4">{text}</pre>
+                {block && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 space-y-2">
+                    <p><span className="font-semibold">Duplicate check:</span> {block.reason}</p>
+                    {block.requiresReason && (
+                      <input
+                        value={overrideReason}
+                        onChange={e => setOverrideReason(e.target.value)}
+                        placeholder="Reason to re-engage (required)"
+                        className="w-full px-2 py-1.5 text-xs border border-amber-300 rounded"
+                      />
+                    )}
+                    {block.overridable === false && (
+                      <p className="text-red-600">This cannot be overridden.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+                <button
+                  onClick={() => setPreviewEntry(null)}
+                  disabled={sending}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                {block ? (
+                  block.overridable !== false && (
+                    <button
+                      onClick={() => sendRecommendation(true)}
+                      disabled={sending || (!!block.requiresReason && !overrideReason.trim())}
+                      className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      {sending ? 'Sending…' : 'Override & send'}
+                    </button>
+                  )
+                ) : (
+                  <button
+                    onClick={() => sendRecommendation(false)}
+                    disabled={sending}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-[#1B2850] rounded-lg hover:bg-[#162040] disabled:opacity-50"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    {sending ? 'Sending…' : 'Confirm & send'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

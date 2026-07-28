@@ -50,15 +50,15 @@ export default async function ReferralsPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 sm:py-12 space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Nominations</h1>
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Recommend Someone</h1>
         <p className="text-slate-500 text-sm mt-2">
-          Andrel grows through trusted relationships. Nominate exceptional executives, founders, investors, attorneys, and leaders you believe would strengthen the community.
+          As a founding member, you can put your name behind someone you&apos;d personally vouch for. Every recommendation is reviewed individually before any outreach is made.
         </p>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-900">Nominate someone</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Recommend someone</h2>
         </div>
         <div className="px-6 py-5">
           {/* The nomination form is always available — there is no quantity limit. */}

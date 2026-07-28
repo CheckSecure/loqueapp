@@ -22,6 +22,7 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
   const [email, setEmail]               = useState('')
   const [title, setTitle]               = useState('')
   const [company, setCompany]           = useState('')
+  const [linkedinUrl, setLinkedinUrl]   = useState('')
   const [referralNote, setReferralNote] = useState('')
   const [state, setState]               = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [errorMsg, setErrorMsg]         = useState('')
@@ -63,6 +64,7 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
         email:         trimmedEmail,
         title:         title.trim() || undefined,
         company:       company.trim() || undefined,
+        linkedin_url:  linkedinUrl.trim() || undefined,
         referral_note: referralNote.trim(),
       }),
     })
@@ -79,6 +81,7 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
     setEmail('')
     setTitle('')
     setCompany('')
+    setLinkedinUrl('')
     setReferralNote('')
     setState('done')
   }
@@ -149,15 +152,29 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
 
       <div>
         <label className="block text-xs font-medium text-slate-700 mb-1">
-          Why do you believe this person belongs in Andrel? <span className="text-red-500">*</span>
+          LinkedIn URL <span className="text-slate-400 font-normal">(optional)</span>
+        </label>
+        <input
+          type="url"
+          value={linkedinUrl}
+          onChange={e => setLinkedinUrl(e.target.value)}
+          placeholder="https://www.linkedin.com/in/…"
+          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850] placeholder:text-slate-300"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-slate-700 mb-1">
+          Why are you comfortable personally recommending this person? <span className="text-red-500">*</span>
         </label>
         <textarea
           value={referralNote}
           onChange={e => { setReferralNote(e.target.value); if (state === 'error') setState('idle') }}
-          placeholder="Tell us how you know them and why they belong in the Andrel community."
+          placeholder="Tell us how you know them and why you'd personally vouch for them."
           rows={4}
           className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850] placeholder:text-slate-300 resize-none"
         />
+        <p className="text-xs text-slate-400 mt-1">Visible only to the Andrel team. Do not share this text with nominees.</p>
         <p className={`text-xs mt-1 text-right ${noteLength > 2000 ? 'text-red-500' : noteLength > 1800 ? 'text-amber-500' : 'text-slate-400'}`}>
           {noteLength} / 2,000
         </p>
