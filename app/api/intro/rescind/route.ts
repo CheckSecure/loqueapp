@@ -10,16 +10,43 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
     const { targetId } = await req.json()
-    
-    // Delete intro_request - RLS policy allows users to delete their own requests
+
+    // Withdraw removes ONLY the viewer's expression of interest — never the
+    // recommendation itself. Scope the delete to the expressed-interest statuses
+    // so the underlying 'suggested' recommendation row survives (and reappears as a
+    // suggestion), and so a 'queued', 'passed', 'archived', or 'hidden_permanent'
+    // row is never destroyed. (RLS allows users to delete their own rows.)
     const { data, error } = await supabase
       .from('intro_requests')
       .delete()
       .eq('requester_id', user.id)
       .eq('target_user_id', targetId)
+      .in('status', ['pending', 'approved'])
       .select()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Archived-recommendation edge case: if this pair's recommendation was archived
+    // when its batch completed (status 'archived' + batch_id), that row would keep
+    // the pair SOFT-excluded from future recommendations — effectively permanent
+    // while the exhaustion valve is off (lib/introRequests/history.ts). Withdrawing
+    // must not permanently exclude the person. Neutralize it by clearing batch_id,
+    // which reclassifies the row as a non-history ARTIFACT (archived + no batch_id →
+    // not excluded). This does NOT delete the row and does NOT touch
+    // recommendation_batches / promoteIfResolved / batch completion: the row stays
+    // 'archived' (never rendered), so the visible-suggestion cap is unaffected and
+    // no old batch is restored. Best-effort — never fails the withdrawal.
+    const { error: neutralizeErr } = await supabase
+      .from('intro_requests')
+      .update({ batch_id: null, updated_at: new Date().toISOString() })
+      .eq('requester_id', user.id)
+      .eq('target_user_id', targetId)
+      .eq('status', 'archived')
+      .not('batch_id', 'is', null)
+    if (neutralizeErr) {
+      console.error('[intro/rescind] archived neutralize failed (non-fatal):', neutralizeErr.message)
+    }
+
     return NextResponse.json({ success: true, deleted: data?.length || 0 })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
