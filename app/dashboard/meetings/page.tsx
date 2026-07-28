@@ -41,7 +41,7 @@ export default async function MeetingsPage() {
   // ── Phase 2: one batched profiles read + mark meeting notifs read (parallel) ──
   const [{ data: profiles }] = await Promise.all([
     profileIds.length > 0
-      ? supabase.from('profiles').select('id, full_name, title, company, avatar_url').in('id', profileIds)
+      ? supabase.from('profiles').select('id, full_name, email, title, company, avatar_url').in('id', profileIds)
       : Promise.resolve({ data: [] as any[] }),
     // Clears the Meetings unread badge. Independent of the read above; runs in
     // parallel so it is not an extra sequential round-trip on the render path.

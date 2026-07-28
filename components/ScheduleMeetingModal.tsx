@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { X, Loader2 } from 'lucide-react'
 import { scheduleMeeting } from '@/app/actions'
 import { professionalIdentityLine } from '@/lib/professionalIdentity'
+import { sortContactsByName } from '@/lib/meetings/sortContacts'
 import { useRouter } from 'next/navigation'
 
 const PURPOSES = ['Networking', 'Business development', 'Mentorship', 'Referral', 'Collaboration']
@@ -11,6 +12,7 @@ const PURPOSES = ['Networking', 'Business development', 'Mentorship', 'Referral'
 interface MatchedUser {
   id: string
   full_name: string
+  email?: string
   title?: string
   company?: string
 }
@@ -27,6 +29,11 @@ export default function ScheduleMeetingModal({
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Alphabetize the recipient list A→Z by display name (case-insensitive), email
+  // as the tie-break — sorted before render so the dropdown is always alphabetical.
+  // Native <select> type-ahead search is unaffected.
+  const sortedUsers = useMemo(() => sortContactsByName(matchedUsers), [matchedUsers])
 
   const tomorrow = new Date(Date.now() + 86400000)
   const defaultDate = tomorrow.toISOString().slice(0, 10)
@@ -69,6 +76,9 @@ export default function ScheduleMeetingModal({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <input type="hidden" name="timezone_offset" value={new Date().getTimezoneOffset().toString()} />
+          {/* IANA timezone (e.g. America/New_York) — lets the email show the same
+              local time this screen used, with the real abbreviation (EDT/PDT/…). */}
+          <input type="hidden" name="timezone" value={Intl.DateTimeFormat().resolvedOptions().timeZone} />
           {error && (
             <p className="text-sm text-red-700 bg-red-50 border border-red-100 px-3 py-2.5 rounded-lg">
               {error}
@@ -81,7 +91,7 @@ export default function ScheduleMeetingModal({
             </label>
             <select name="recipient_id" required defaultValue={initialRecipientId || ""} className={fieldClass}>
               <option value="">Select a connection…</option>
-              {matchedUsers.map((u) => (
+              {sortedUsers.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.full_name}
                   {(() => { const line = professionalIdentityLine(u); return line ? ` — ${line}` : '' })()}

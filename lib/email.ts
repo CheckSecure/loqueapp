@@ -621,12 +621,31 @@ export async function sendFoundingMemberEmail(toEmail: string, toName: string): 
   }
 }
 
+// Shared date/time block for meeting emails. Shows the recipient's/scheduler's
+// LOCAL time (with the real timezone abbreviation, e.g. EDT) AND the canonical
+// UTC time, so the reader instantly sees their local time while still seeing UTC.
+// When no distinct local time is available, only the UTC line renders (no
+// regression from the prior single line). `datePrefix` lets the reschedule email
+// prepend "Proposed: ". Labels are produced by lib/meetings/formatMeetingTime.
+function meetingTimeBlockHtml(
+  dateLabel: string,
+  localLabel: string | null,
+  utcLabel: string,
+  datePrefix = '',
+): string {
+  return `
+          <p style="color: #1B2850; font-weight: 600; margin: 0 0 6px 0;">📅 ${datePrefix}${dateLabel}</p>
+          ${localLabel ? `<p style="color: #1B2850; font-weight: 600; margin: 0 0 4px 0;">🕕 ${localLabel} <span style="color:#64748b; font-weight:500;">(Local)</span></p>` : ''}
+          <p style="color: #334155; font-weight: 600; margin: 0;">🌍 ${utcLabel}</p>`
+}
+
 export async function sendMeetingRequestEmail(
   toEmail: string,
   toName: string,
   fromName: string,
-  meetingDate: string,
-  meetingTime: string,
+  dateLabel: string,
+  localLabel: string | null,
+  utcLabel: string,
   meetingPurpose?: string
 ) {
   if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
@@ -644,8 +663,8 @@ export async function sendMeetingRequestEmail(
           <strong>${fromName}</strong> would like to meet with you.
         </p>
         <div style="background: #F5F6FB; border-left: 3px solid #1B2850; padding: 16px; margin: 24px 0; border-radius: 4px;">
-          <p style="color: #1B2850; font-weight: 600; margin: 0 0 8px 0;">📅 ${meetingDate} at ${meetingTime}</p>
-          ${meetingPurpose ? `<p style="color: #334155; margin: 0;"><strong>Purpose:</strong> ${meetingPurpose}</p>` : ''}
+          ${meetingTimeBlockHtml(dateLabel, localLabel, utcLabel)}
+          ${meetingPurpose ? `<p style="color: #334155; margin: 12px 0 0 0;"><strong>Purpose:</strong> ${meetingPurpose}</p>` : ''}
         </div>
         <a href="https://andrel.app/dashboard/meetings"
            style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
@@ -663,8 +682,9 @@ export async function sendMeetingAcceptedEmail(
   toEmail: string,
   toName: string,
   acceptedByName: string,
-  meetingDate: string,
-  meetingTime: string
+  dateLabel: string,
+  localLabel: string | null,
+  utcLabel: string
 ) {
   if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
   await resend.emails.send({
@@ -681,7 +701,7 @@ export async function sendMeetingAcceptedEmail(
           <strong>${acceptedByName}</strong> has confirmed your meeting.
         </p>
         <div style="background: #F5F6FB; border-left: 3px solid #1B2850; padding: 16px; margin: 24px 0; border-radius: 4px;">
-          <p style="color: #1B2850; font-weight: 600; margin: 0;">📅 ${meetingDate} at ${meetingTime}</p>
+          ${meetingTimeBlockHtml(dateLabel, localLabel, utcLabel)}
         </div>
         <a href="https://andrel.app/dashboard/meetings"
            style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
@@ -730,8 +750,9 @@ export async function sendMeetingRescheduledEmail(
   toEmail: string,
   toName: string,
   reschedulerName: string,
-  newDate: string,
-  newTime: string,
+  dateLabel: string,
+  localLabel: string | null,
+  utcLabel: string,
   meetingPurpose?: string
 ) {
   if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
@@ -749,8 +770,8 @@ export async function sendMeetingRescheduledEmail(
           <strong>${reschedulerName}</strong> has proposed a new time for your meeting.
         </p>
         <div style="background: #F5F6FB; border-left: 3px solid #1B2850; padding: 16px; margin: 24px 0; border-radius: 4px;">
-          <p style="color: #1B2850; font-weight: 600; margin: 0 0 8px 0;">📅 Proposed: ${newDate} at ${newTime}</p>
-          ${meetingPurpose ? `<p style="color: #334155; margin: 0;"><strong>Meeting:</strong> ${meetingPurpose}</p>` : ''}
+          ${meetingTimeBlockHtml(dateLabel, localLabel, utcLabel, 'Proposed: ')}
+          ${meetingPurpose ? `<p style="color: #334155; margin: 12px 0 0 0;"><strong>Meeting:</strong> ${meetingPurpose}</p>` : ''}
         </div>
         <a href="https://andrel.app/dashboard/meetings"
            style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">

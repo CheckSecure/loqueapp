@@ -63,6 +63,8 @@ export default function RescheduleMeetingModal({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <input type="hidden" name="timezone_offset" value={new Date().getTimezoneOffset().toString()} />
+          {/* IANA timezone so the reschedule email shows local time + abbreviation. */}
+          <input type="hidden" name="timezone" value={Intl.DateTimeFormat().resolvedOptions().timeZone} />
           {error && (
             <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-sm text-red-700">
               {error}

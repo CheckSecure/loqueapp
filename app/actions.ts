@@ -6,6 +6,7 @@ import { normalizeEmail, findAuthUserByEmail, registrationExistingState } from '
 import { parseMultiSelectField } from '@/lib/profile/multiSelect'
 import { revalidatePath } from 'next/cache'
 import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail, sendAdminAlertEmail, sendWaitlistConfirmationEmail, escapeHtml } from '@/lib/email'
+import { formatMeetingTimes } from '@/lib/meetings/formatMeetingTime'
 import {
   createIntroRequest,
   approveIntroRequest,
@@ -938,24 +939,21 @@ export async function scheduleMeeting(formData: FormData) {
 
   console.log('[scheduleMeeting] Recipient profile:', recipientProfile)
   if (recipientProfile?.email) {
-    const meetingDate = new Date(scheduled_at).toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      month: 'long', 
-      day: 'numeric' 
-    })
-    const meetingTime = new Date(scheduled_at).toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
-      minute: '2-digit',
-      timeZoneName: 'short'
-    })
-    
+    // UTC is stored/scheduled unchanged; this only formats the email to show the
+    // scheduler's local time (same IANA zone the request screen used) AND UTC.
+    const { dateLabel, localLabel, utcLabel } = formatMeetingTimes(
+      scheduled_at,
+      (formData.get('timezone') as string) || null,
+    )
+
     try {
       await sendMeetingRequestEmail(
         recipientProfile.email,
         recipientProfile.full_name || 'there',
         requesterName,
-        meetingDate,
-        meetingTime,
+        dateLabel,
+        localLabel,
+        utcLabel,
         (formData.get('title') as string || '').trim() || (formData.get('purpose') as string) || undefined
       )
       console.log('[scheduleMeeting] Email sent successfully to:', recipientProfile.email)
@@ -1066,24 +1064,19 @@ export async function acceptMeeting(meetingId: string) {
         .single()
 
       if (updatedMeeting) {
-        const meetingDate = new Date(updatedMeeting.scheduled_at).toLocaleDateString('en-US', { 
-          weekday: 'long', 
-          month: 'long', 
-          day: 'numeric' 
-        })
-        const meetingTime = new Date(updatedMeeting.scheduled_at).toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
-          minute: '2-digit',
-          timeZoneName: 'short'
-        })
+        // No scheduler-timezone is available in the accept flow (no form, and the
+        // meeting's original zone isn't stored — no DB migration), so this shows
+        // the canonical date + UTC. Same info as before, in the new layout.
+        const { dateLabel, localLabel, utcLabel } = formatMeetingTimes(updatedMeeting.scheduled_at, null)
 
         try {
           await sendMeetingAcceptedEmail(
             otherProfile.email,
             otherProfile.full_name || 'there',
             accepterProfile.full_name || user.email || 'Someone',
-            meetingDate,
-            meetingTime
+            dateLabel,
+            localLabel,
+            utcLabel
           )
         } catch (emailError) {
           console.error('[acceptMeeting] Email error:', emailError)
@@ -1264,19 +1257,20 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
   const otherProfile = profiles?.find(p => p.id === otherUserId)
 
   if (otherProfile?.email && reschedulerProfile && scheduled_at) {
-    const newDate = new Date(scheduled_at).toLocaleDateString('en-US', {
-      weekday: 'long', month: 'long', day: 'numeric'
-    })
-    const newTime = new Date(scheduled_at).toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
-    })
+    // UTC stays canonical; format the rescheduler's local time (same IANA zone the
+    // reschedule screen used) alongside UTC.
+    const { dateLabel, localLabel, utcLabel } = formatMeetingTimes(
+      scheduled_at,
+      (formData.get('timezone') as string) || null,
+    )
     try {
       await sendMeetingRescheduledEmail(
         otherProfile.email,
         otherProfile.full_name || 'there',
         reschedulerProfile.full_name || user.email || 'Someone',
-        newDate,
-        newTime,
+        dateLabel,
+        localLabel,
+        utcLabel,
         (formData.get('notes') as string) || undefined
       )
     } catch (emailError) {
