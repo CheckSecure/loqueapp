@@ -15,6 +15,8 @@
  *                                        an explicit founder reason (not "time passed")
  */
 
+import { findAuthUserByEmail } from '@/lib/invitations'
+
 export type DuplicateCode =
   | 'ALREADY_MEMBER'
   | 'ALREADY_INVITED'
@@ -65,17 +67,17 @@ export async function checkNomineeDuplicates(
     return { blocked: true, code: 'ALREADY_MEMBER', reason: 'Already an Andrel member', overridable: false }
   }
 
-  // 2) Already an auth user (has an account even if profile is incomplete). Never overridable.
+  // 2) Already an auth user (has an account even if profile is incomplete). Never
+  //    overridable. Uses findAuthUserByEmail, which paginates ALL auth users
+  //    (perPage 1000, looping) — reliable regardless of account count, unlike a
+  //    single listUsers() page.
   try {
-    const { data: authList } = await admin.auth.admin.listUsers()
-    const hasAuth = (authList?.users ?? []).some(
-      (u: any) => (u.email || '').toLowerCase() === target.toLowerCase(),
-    )
-    if (hasAuth) {
+    const authUser = await findAuthUserByEmail(admin, target)
+    if (authUser) {
       return { blocked: true, code: 'ALREADY_MEMBER', reason: 'Already has an Andrel account', overridable: false }
     }
   } catch {
-    // Auth listing is best-effort; the profiles + waitlist checks are the primary gate.
+    // Auth lookup is best-effort; the profiles + waitlist checks are the primary gate.
   }
 
   // 3) Other waitlist rows for this email (invited / contacted). Overridable (stale outreach).

@@ -96,10 +96,11 @@ export default async function AdminDashboard() {
     .select('status')
   const waitlistTotal = allWaitlistEntries?.length || 0
   const waitlistByStatus = {
-    pending:  allWaitlistEntries?.filter(w => w.status === 'pending').length  || 0,
-    approved: allWaitlistEntries?.filter(w => w.status === 'approved').length || 0,
-    invited:  allWaitlistEntries?.filter(w => w.status === 'invited').length  || 0,
-    declined: allWaitlistEntries?.filter(w => w.status === 'declined').length || 0,
+    pending:   allWaitlistEntries?.filter(w => w.status === 'pending').length   || 0,
+    approved:  allWaitlistEntries?.filter(w => w.status === 'approved').length  || 0,
+    contacted: allWaitlistEntries?.filter(w => w.status === 'contacted').length || 0,
+    invited:   allWaitlistEntries?.filter(w => w.status === 'invited').length   || 0,
+    declined:  allWaitlistEntries?.filter(w => w.status === 'declined').length  || 0,
   }
 
   // Card 5: Intros Suggested (7d)
@@ -268,6 +269,7 @@ export default async function AdminDashboard() {
             <p className="text-xs text-slate-500 mt-1">Waitlist · awaiting review</p>
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
               <span>{waitlistByStatus.approved} approved</span>
+              <span>{waitlistByStatus.contacted} contacted</span>
               <span>{waitlistByStatus.invited} invited</span>
               <span>{waitlistByStatus.declined} declined</span>
             </div>

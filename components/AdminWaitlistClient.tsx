@@ -569,11 +569,12 @@ export default function AdminWaitlistClient({
       </div>
 
       {previewEntry && (() => {
-        const recommender = previewEntry.referrals?.referrer?.full_name || 'A founding member'
+        const recommender = previewEntry.referrals?.referrer?.full_name || ''
         const { subject, text } = buildRecommendationIntroEmail({
           recommenderName: recommender,
-          nomineeName: previewEntry.full_name || 'there',
-          manageUrl: 'https://www.andrel.app/manage-information',
+          nomineeName: previewEntry.full_name || '',
+          // Preview only — the real email embeds a unique, signed per-nominee link.
+          manageUrl: '[personalized privacy-management link]',
         })
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -588,11 +589,14 @@ export default function AdminWaitlistClient({
                   <span className="text-slate-400">Recipient</span>
                   <span className="text-slate-800">{previewEntry.full_name || '—'} · {previewEntry.email}</span>
                   <span className="text-slate-400">Recommender</span>
-                  <span className="text-slate-800">{recommender}</span>
+                  <span className="text-slate-800">{recommender || 'A founding member'}</span>
                   <span className="text-slate-400">Subject</span>
                   <span className="text-slate-800 font-medium">{subject}</span>
                 </div>
                 <pre className="whitespace-pre-wrap font-sans text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-4">{text}</pre>
+                <p className="text-[11px] text-slate-400">
+                  The sent email replaces <span className="font-mono">[personalized privacy-management link]</span> with a unique, signed link for this nominee.
+                </p>
                 {block && (
                   <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 space-y-2">
                     <p><span className="font-semibold">Duplicate check:</span> {block.reason}</p>

@@ -10,6 +10,7 @@ import {
   resolveInviteAction,
   type InviteAction,
 } from '@/lib/invitations'
+import { isBlockedTransition, invalidTransitionMessage } from '@/lib/referrals/statusTransitions'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -33,6 +34,16 @@ export async function POST(req: Request) {
     .single()
   if (entryErr || !entry) {
     return NextResponse.json({ error: 'Entry not found' }, { status: 404 })
+  }
+
+  // Enforce the lifecycle server-side: an invite/resend/reset is only valid from
+  // approved / contacted / invited — never from pending (not yet approved) or
+  // declined. Preserves the existing create/resend/password-reset sub-flows.
+  if (isBlockedTransition(entry.status, 'invited')) {
+    return NextResponse.json(
+      { error: invalidTransitionMessage(entry.status, 'invited') },
+      { status: 409 },
+    )
   }
 
   const email = normalizeEmail(entry.email)

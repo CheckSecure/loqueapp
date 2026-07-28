@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
+import { isBlockedTransition, invalidTransitionMessage } from '@/lib/referrals/statusTransitions'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -14,6 +15,13 @@ export async function POST(request: Request) {
   }
 
   const { entryId } = await request.json()
+
+  // Enforce the lifecycle server-side: decline only from pending / approved / contacted.
+  const { data: current } = await supabase.from('waitlist').select('status').eq('id', entryId).maybeSingle()
+  if (!current) return NextResponse.json({ error: 'Entry not found' }, { status: 404 })
+  if (isBlockedTransition(current.status, 'declined')) {
+    return NextResponse.json({ error: invalidTransitionMessage(current.status, 'declined') }, { status: 409 })
+  }
 
   const { error } = await supabase
     .from('waitlist')

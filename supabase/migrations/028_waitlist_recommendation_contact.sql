@@ -8,6 +8,15 @@
 -- the app (waitlist.status is free-text — 'approved'/'invited'/'declined' are all
 -- set by app code with no CHECK), so no enum/constraint change is needed.
 --
+-- OPERATOR VERIFICATION (one-time, before enabling the Contacted flow): the base
+-- waitlist table is managed in the Supabase Dashboard, so the repo cannot prove
+-- the absence of a CHECK. Confirm there is none on `status` (else 'contacted'
+-- writes would fail). Quick check in the SQL editor:
+--   SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
+--   WHERE conrelid = 'public.waitlist'::regclass AND contype = 'c';
+-- Expect zero rows constraining `status` (the app already writes pending/approved/
+-- invited/declined freely, so this is expected to be clean).
+--
 -- Additive + nullable + idempotent: ADD COLUMN IF NOT EXISTS. Existing rows keep
 -- NULL and are unaffected. Production-safe: no rewrite, no destructive operation.
 

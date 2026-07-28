@@ -7,6 +7,7 @@ import { checkNomineeDuplicates } from '@/lib/referrals/duplicateCheck'
 import { makeManageToken } from '@/lib/referrals/manageToken'
 import { isMissingColumnError } from '@/lib/db/isMissingColumn'
 import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
+import { isBlockedTransition, invalidTransitionMessage } from '@/lib/referrals/statusTransitions'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -33,11 +34,20 @@ export async function POST(request: Request) {
 
   const { data: entry } = await admin
     .from('waitlist')
-    .select('id, full_name, email, referral_source')
+    .select('id, full_name, email, referral_source, status')
     .eq('id', entryId)
     .maybeSingle()
   if (!entry) return NextResponse.json({ error: 'Entry not found' }, { status: 404 })
   if (!entry.email) return NextResponse.json({ error: 'Entry has no email' }, { status: 400 })
+
+  // Enforce the lifecycle server-side: warm email only from approved (first send)
+  // or contacted (resend). Never from pending / invited / declined.
+  if (isBlockedTransition(entry.status, 'contacted')) {
+    return NextResponse.json(
+      { ok: false, error: invalidTransitionMessage(entry.status, 'contacted') },
+      { status: 409 },
+    )
+  }
 
   // Resolve the recommender's name from the linked referral.
   const { data: referralRow } = await admin
@@ -45,7 +55,9 @@ export async function POST(request: Request) {
     .select('referrer:profiles!referrer_user_id(full_name)')
     .eq('waitlist_id', entryId)
     .maybeSingle()
-  const recommenderName = (referralRow?.referrer as any)?.full_name || 'A founding member'
+  // Raw recommender name ('' when none) — the email builder renders the natural
+  // "A founding member of Andrel…" phrasing for the blank case (no doubling).
+  const recommenderName = (referralRow?.referrer as any)?.full_name || ''
 
   // ── Duplicate protection (before any send) ────────────────────────────────
   const dup = await checkNomineeDuplicates(admin, entry.email, entryId)
@@ -75,19 +87,11 @@ export async function POST(request: Request) {
     })
   }
 
-  // ── Send the warm email ───────────────────────────────────────────────────
-  const manageUrl = `${BASE_URL}/manage-information?token=${encodeURIComponent(makeManageToken(entryId))}`
-  const result = await sendRecommendationIntroductionEmail(
-    entry.email,
-    entry.full_name || 'there',
-    recommenderName,
-    manageUrl,
-  )
-  if (!result.success) {
-    return NextResponse.json({ ok: false, error: `Email failed: ${result.error}` }, { status: 500 })
-  }
-
-  // ── Mark contacted (resilient to migration 028 not yet applied) ───────────
+  // ── Idempotency: MARK first, THEN send ────────────────────────────────────
+  // Persist the 'contacted' state (+ timestamps) BEFORE sending. If this write
+  // fails we return WITHOUT sending, so a founder retry can never produce a
+  // duplicate warm email from a "email sent → status write failed" partial
+  // failure. Resilient to migration 028 not being applied yet (status-only).
   const now = new Date().toISOString()
   let { error: updErr } = await admin
     .from('waitlist')
@@ -98,7 +102,22 @@ export async function POST(request: Request) {
     ;({ error: updErr } = await admin.from('waitlist').update({ status: 'contacted' }).eq('id', entryId))
   }
   if (updErr) {
-    return NextResponse.json({ ok: false, error: 'Email sent but status update failed. Please refresh.' }, { status: 500 })
+    // Nothing was emailed — safe to retry.
+    return NextResponse.json({ ok: false, error: 'Could not update the nomination status — no email was sent. Please try again.' }, { status: 500 })
+  }
+
+  // ── Send the warm email ───────────────────────────────────────────────────
+  const manageUrl = `${BASE_URL}/manage-information?token=${encodeURIComponent(makeManageToken(entryId))}`
+  const result = await sendRecommendationIntroductionEmail(
+    entry.email,
+    entry.full_name || '', // blank → builder greets "Hello," (no "Hello there,")
+    recommenderName,
+    manageUrl,
+  )
+  if (!result.success) {
+    // Status is already 'contacted'; the row is in the Contacted tab where the
+    // founder can explicitly "Resend Recommendation" — no silent duplicate.
+    return NextResponse.json({ ok: false, error: `Marked contacted, but the email failed to send (${result.error}). Use Resend Recommendation.` }, { status: 500 })
   }
 
   logRecommendationEvent('recommendation_email_sent', { entryId, recommender: recommenderName })

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { buildRecommendationIntroEmail, firstNameOf } from '@/lib/email/recommendationIntro'
 import { checkNomineeDuplicates } from '@/lib/referrals/duplicateCheck'
 import { makeManageToken, verifyManageToken } from '@/lib/referrals/manageToken'
+import { canTransition, isBlockedTransition } from '@/lib/referrals/statusTransitions'
 
 // ── Delete-route mock (hoisted) ───────────────────────────────────────────────
 const h = vi.hoisted(() => ({ deletes: [] as { table: string; col: string; val: string }[], failTable: '' as string }))
@@ -38,7 +39,7 @@ describe('recommendation introduction email', () => {
   it('greets the nominee by first name', () => {
     expect(email.text).toContain('Hello Sarah,')
     expect(firstNameOf('Sarah Okafor')).toBe('Sarah')
-    expect(firstNameOf('')).toBe('there')
+    expect(firstNameOf('')).toBe('')
   })
   it('names the recommender in the body', () => {
     expect(email.text).toContain('Jane Chen, a founding member of Andrel')
@@ -60,9 +61,18 @@ describe('recommendation introduction email', () => {
     expect(email.text).toContain('Manage your information here:')
     expect(email.text).toContain('https://www.andrel.app/manage-information?token=abc')
   })
-  it('falls back gracefully when the recommender name is blank', () => {
+  it('renders naturally with a blank recommender — no doubled phrase, natural subject', () => {
     const e = buildRecommendationIntroEmail({ recommenderName: '', nomineeName: 'Sarah', manageUrl: 'x' })
-    expect(e.subject).toBe('A founding member recommended you')
+    expect(e.subject).toBe('A founding member of Andrel recommended you')
+    expect(e.text).toContain('A founding member of Andrel recommended you for consideration')
+    expect(e.text).not.toContain('a founding member of Andrel, recommended') // no ", a founding member of Andrel," doubling
+    expect(e.text).not.toContain(', a founding member of Andrel, recommended')
+  })
+
+  it('uses a plain "Hello," when the nominee has no usable first name', () => {
+    const e = buildRecommendationIntroEmail({ recommenderName: 'Jane Chen', nomineeName: '', manageUrl: 'x' })
+    expect(e.text.startsWith('Hello,\n')).toBe(true)
+    expect(e.text).not.toContain('Hello there,')
   })
 })
 
@@ -187,6 +197,78 @@ describe('nominee removal is POST-only and actually deletes', () => {
 // ==============================================================================
 // 4. Status flow: Pending → Approved → Contacted → Invited → Activated
 // ==============================================================================
+describe('server-side transition guard (canTransition)', () => {
+  it('allows the intended lifecycle transitions', () => {
+    expect(canTransition('pending', 'approved')).toBe(true)
+    expect(canTransition('pending', 'declined')).toBe(true)
+    expect(canTransition('approved', 'contacted')).toBe(true)
+    expect(canTransition('approved', 'invited')).toBe(true)
+    expect(canTransition('approved', 'declined')).toBe(true)
+    expect(canTransition('contacted', 'invited')).toBe(true)
+    expect(canTransition('contacted', 'contacted')).toBe(true) // resend
+    expect(canTransition('contacted', 'declined')).toBe(true)
+    expect(canTransition('invited', 'invited')).toBe(true) // resend / reset
+  })
+  it('rejects impossible transitions', () => {
+    expect(canTransition('invited', 'contacted')).toBe(false)
+    expect(canTransition('declined', 'approved')).toBe(false)
+    expect(canTransition('declined', 'contacted')).toBe(false)
+    expect(canTransition('pending', 'contacted')).toBe(false)
+    expect(canTransition('pending', 'invited')).toBe(false)
+    expect(canTransition('invited', 'declined')).toBe(false)
+    expect(canTransition('activated', 'contacted')).toBe(false) // unknown source → false
+    expect(canTransition(null, 'approved')).toBe(false)
+  })
+})
+
+describe('isBlockedTransition — route guard, permissive for unknown/legacy status', () => {
+  it('blocks the known-invalid transitions', () => {
+    expect(isBlockedTransition('pending', 'invited')).toBe(true)
+    expect(isBlockedTransition('declined', 'invited')).toBe(true)
+    expect(isBlockedTransition('declined', 'approved')).toBe(true)
+    expect(isBlockedTransition('invited', 'contacted')).toBe(true)
+  })
+  it('does NOT block valid transitions', () => {
+    expect(isBlockedTransition('approved', 'contacted')).toBe(false)
+    expect(isBlockedTransition('contacted', 'invited')).toBe(false)
+    expect(isBlockedTransition('invited', 'invited')).toBe(false)
+  })
+  it('does NOT block an unknown / null / legacy status (never breaks a pre-existing row)', () => {
+    expect(isBlockedTransition(null, 'invited')).toBe(false)
+    expect(isBlockedTransition(undefined, 'invited')).toBe(false)
+    expect(isBlockedTransition('', 'approved')).toBe(false)
+    expect(isBlockedTransition('some_legacy_value', 'invited')).toBe(false)
+  })
+})
+
+describe('hardening: routes enforce guards + idempotent send + paginated auth check', () => {
+  it('approve/decline/send-invite/send-recommendation all return 409 on an invalid transition', () => {
+    for (const f of [
+      'app/api/admin/waitlist/approve/route.ts',
+      'app/api/admin/waitlist/decline/route.ts',
+      'app/api/admin/send-invite/route.ts',
+      'app/api/admin/send-recommendation-email/route.ts',
+    ]) {
+      const src = readFileSync(f, 'utf8')
+      expect(src).toContain('isBlockedTransition')
+      expect(src).toMatch(/status:\s*409/)
+    }
+  })
+  it('send-recommendation marks contacted BEFORE sending the email (idempotent on retry)', () => {
+    const src = readFileSync('app/api/admin/send-recommendation-email/route.ts', 'utf8')
+    const markIdx = src.indexOf("update({ status: 'contacted'")
+    const sendIdx = src.indexOf('sendRecommendationIntroductionEmail(')
+    expect(markIdx).toBeGreaterThan(-1)
+    expect(sendIdx).toBeGreaterThan(-1)
+    expect(markIdx).toBeLessThan(sendIdx) // mark-then-send
+  })
+  it('duplicate check uses paginated findAuthUserByEmail, not a single listUsers() page', () => {
+    const src = readFileSync('lib/referrals/duplicateCheck.ts', 'utf8')
+    expect(src).toContain('findAuthUserByEmail')
+    expect(src).not.toMatch(/admin\.auth\.admin\.listUsers\(\)/)
+  })
+})
+
 describe('status pipeline stages exist across the flow', () => {
   it('approve sets approved', () => {
     expect(readFileSync('app/api/admin/waitlist/approve/route.ts', 'utf8')).toMatch(/status:\s*'approved'/)
