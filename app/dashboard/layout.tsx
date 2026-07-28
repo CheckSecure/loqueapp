@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getAuthUser } from '@/lib/supabase/authUser'
 import { getOpportunityBadgeCount } from '@/lib/opportunities/unreadCount'
 import { needsReacceptance } from '@/lib/legal/terms'
 import { redirect } from 'next/navigation'
@@ -20,62 +21,33 @@ function pickColor(id: string) {
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Deduped, server-validated auth — shares ONE getUser() network round-trip with
+  // the page this layout renders (React cache), instead of each calling getUser.
+  const user = await getAuthUser()
   if (!user) redirect('/login')
 
   const ADMIN_EMAIL = 'bizdev91@gmail.com'
   const isAdmin = user.email === ADMIN_EMAIL
 
-  // Authorization gate (non-admin): kept as its own wave — a redirect guard
-  // must resolve before we render or fan out any other work.
-  if (!isAdmin) {
-    const { data: profileCheck } = await supabase
-      .from('profiles')
-      .select('profile_complete, full_name')
-      .eq('id', user.id)
-      .single()
+  const perfLog = process.env.PERF_LOG === '1'
+  const tData = perfLog ? Date.now() : 0
 
-    const needsOnboarding = !profileCheck || (!profileCheck.profile_complete && !profileCheck.full_name)
-    if (needsOnboarding) {
-      redirect('/onboarding')
-    }
-  }
-
-  // Clickwrap gate: every member must have affirmatively accepted the CURRENT
-  // Terms of Service and Privacy Policy versions before using the platform. If
-  // their accepted version is missing or stale, send them to the acceptance page
-  // (outside /dashboard, so no redirect loop). Fails OPEN when the acceptance
-  // columns aren't migrated yet — see migration 025 / lib/db/migrationHealth.ts.
-  // NB: the redirect() call MUST stay outside the try/catch, or its internal
-  // NEXT_REDIRECT signal would be swallowed as an error.
-  let mustAcceptLegal = false
-  try {
-    const { data: acc, error } = await supabase
-      .from('profiles')
-      .select('terms_version_accepted, privacy_version_accepted, terms_grandfathered_through_version, privacy_grandfathered_through_version')
-      .eq('id', user.id)
-      .single()
-    if (!error && acc) {
-      mustAcceptLegal = needsReacceptance({
-        acceptedTermsVersion: acc.terms_version_accepted,
-        acceptedPrivacyVersion: acc.privacy_version_accepted,
-        grandfatheredTermsVersion: acc.terms_grandfathered_through_version,
-        grandfatheredPrivacyVersion: acc.privacy_grandfathered_through_version,
-      })
-    }
-  } catch {
-    mustAcceptLegal = false // compatibility mode — never block on a missing column
-  }
-  if (mustAcceptLegal) redirect('/legal/accept')
-
-  // Everything below depends only on user.id and is independent of the other
-  // badge/count queries, so it runs as a single concurrent wave. Each badge
-  // keeps its own error isolation (fallback to 0) exactly as before; only the
-  // sequential chains that are genuinely dependent stay ordered internally
-  // (the unread-message match → conversation → message chain, and the internal
-  // steps of getOpportunityBadgeCount).
+  // ONE concurrent fan-out for EVERYTHING the shell needs: the gate reads
+  // (onboarding + clickwrap), display fields, credits, and every badge run
+  // together, so the common (no-redirect) path costs a single round-trip of depth
+  // instead of three serial `profiles` reads followed by a separate badge wave.
+  // Gate decisions are evaluated AFTER the fan-out (redirects must run outside any
+  // try/catch so their NEXT_REDIRECT signal isn't swallowed); the handful of
+  // read-only queries a to-be-redirected user triggers are harmless.
+  //
+  // The clickwrap read is its OWN query that resolves to null on any error, so an
+  // unapplied acceptance migration fails open without breaking the onboarding gate
+  // or the display fields. Each badge keeps its own error isolation (→ 0); only the
+  // genuinely dependent chains stay ordered internally (the unread-message
+  // match → conversation → message chain, and getOpportunityBadgeCount).
   const [
     { data: profile },
+    acceptance,
     { data: creditRow },
     unreadCount,
     networkNotifCount,
@@ -83,7 +55,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
     opportunityBadgeCount,
     adminBadgeCount,
   ] = await Promise.all([
-    supabase.from('profiles').select('full_name, avatar_url, last_active_at').eq('id', user.id).single(),
+    supabase.from('profiles').select('profile_complete, full_name, avatar_url, last_active_at').eq('id', user.id).single(),
+    supabase
+      .from('profiles')
+      .select('terms_version_accepted, privacy_version_accepted, terms_grandfathered_through_version, privacy_grandfathered_through_version')
+      .eq('id', user.id)
+      .single()
+      .then((r) => r.data as any, () => null),
     supabase.from('meeting_credits').select('balance').eq('user_id', user.id).single(),
 
     // Unread message count — dependent 3-hop chain, isolated so a failure
@@ -189,22 +167,49 @@ export default async function DashboardLayout({ children }: { children: React.Re
     })(),
   ])
 
+  if (perfLog) {
+    // eslint-disable-next-line no-console
+    console.log(`[perf] dashboard layout data (getUser + fan-out) = ${Date.now() - tData}ms`)
+  }
+
+  // Redirect gates — evaluated after the fan-out, OUTSIDE any try/catch so the
+  // NEXT_REDIRECT signal from redirect() propagates.
+  //
+  // Onboarding gate (non-admin): a member with no profile / an unstarted profile
+  // goes to onboarding.
+  if (!isAdmin) {
+    const needsOnboarding = !profile || (!profile.profile_complete && !profile.full_name)
+    if (needsOnboarding) redirect('/onboarding')
+  }
+
+  // Clickwrap gate: accepted or grandfathered through the CURRENT versions, else
+  // to /legal/accept (outside /dashboard → no loop). `acceptance` is null when the
+  // migration is unapplied, which fails open.
+  if (acceptance && needsReacceptance({
+    acceptedTermsVersion: acceptance.terms_version_accepted,
+    acceptedPrivacyVersion: acceptance.privacy_version_accepted,
+    grandfatheredTermsVersion: acceptance.terms_grandfathered_through_version,
+    grandfatheredPrivacyVersion: acceptance.privacy_grandfathered_through_version,
+  })) redirect('/legal/accept')
+
   const displayName = profile?.full_name || user.email?.split('@')[0] || 'You'
   const initials = displayName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
   const avatarColor = pickColor(user.id)
   const avatarUrl: string | null = (profile as any)?.avatar_url ?? null
   const credits: number = creditRow?.balance ?? 0
 
-  // Throttled activity tracking — at most one write per 5 minutes per user
+  // Throttled activity tracking — at most one write per 5 minutes per user.
+  // Fire-and-forget: this write must never block the render (and therefore the
+  // login navigation). The 5-minute throttle makes an occasional dropped write
+  // self-correcting on the next request.
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
   const lastActiveAt = (profile as any)?.last_active_at
   if (!lastActiveAt || new Date(lastActiveAt) < fiveMinAgo) {
-    try {
-      await supabase
-        .from('profiles')
-        .update({ last_active_at: new Date().toISOString() })
-        .eq('id', user.id)
-    } catch { /* best-effort */ }
+    void supabase
+      .from('profiles')
+      .update({ last_active_at: new Date().toISOString() })
+      .eq('id', user.id)
+      .then(() => {}, () => {})
   }
 
   return (

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/supabase/authUser'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Briefcase, MapPin, Inbox, Star, Sparkles, ChevronDown, ArrowRight, Send, Zap } from 'lucide-react'
@@ -70,7 +71,9 @@ function displayTitle(p: any): string | null {
 
 export default async function IntroductionsPage({ searchParams }: { searchParams?: { demo?: string } }) {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Shares the layout's server-validated getUser() via React cache — no extra
+  // auth round-trip for this page during the login navigation.
+  const user = await getAuthUser()
   if (!user) redirect('/login')
 
   // UI Review Mode — triple gate (ALL required):

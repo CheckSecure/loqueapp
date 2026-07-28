@@ -19,7 +19,17 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError(null)
+
+    // Step instrumentation — timings for the client-side login phases. Dev-only so
+    // it never runs in production. (session creation + auth-cookie writes happen
+    // inside signInWithPassword; getSession/getUser/profile lookup happen server-side
+    // on the destination and are timed there, gated by PERF_LOG.)
+    const perf = process.env.NODE_ENV !== 'production'
+    const t0 = perf ? performance.now() : 0
+
     const supabase = createClient()
+    const tClient = perf ? performance.now() : 0
+
     // Normalize exactly as the invite/reset side does, so trailing spaces or
     // mixed casing pasted from the invite email can't miss the account. The
     // password is intentionally NOT trimmed (spaces can be significant).
@@ -27,13 +37,27 @@ export default function LoginPage() {
       email: normalizeEmail(email),
       password,
     })
+    const tSignIn = perf ? performance.now() : 0
+
     if (error) {
       setError(error.message)
       setLoading(false)
       return
     }
+
+    if (perf) {
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[login] createClient=${(tClient - t0).toFixed(0)}ms signInWithPassword=${(tSignIn - tClient).toFixed(0)}ms → navigating`,
+      )
+    }
+
+    // Navigate immediately on success. We deliberately do NOT trigger a second
+    // client refresh: the push already fetches the destination with the freshly-set
+    // auth cookies, so an extra refresh would only cause a redundant RSC round-trip
+    // of the same route. We also do not re-check the session here — none of that is
+    // required to authenticate; it runs server-side on the destination.
     router.push('/dashboard/introductions')
-    router.refresh()
   }
 
   return (
