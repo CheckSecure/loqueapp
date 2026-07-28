@@ -6,7 +6,8 @@ import { normalizeEmail, findAuthUserByEmail, registrationExistingState } from '
 import { parseMultiSelectField } from '@/lib/profile/multiSelect'
 import { revalidatePath } from 'next/cache'
 import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail, sendAdminAlertEmail, sendWaitlistConfirmationEmail, escapeHtml } from '@/lib/email'
-import { formatMeetingTimes } from '@/lib/meetings/formatMeetingTime'
+import { formatMeetingTimes, normalizeIanaTimeZone } from '@/lib/meetings/formatMeetingTime'
+import { isMissingColumnError } from '@/lib/db/isMissingColumn'
 import {
   createIntroRequest,
   approveIntroRequest,
@@ -888,7 +889,11 @@ export async function scheduleMeeting(formData: FormData) {
   console.log('[scheduleMeeting] purpose from formData:', formData.get('purpose'))
   console.log('[scheduleMeeting] title from formData:', formData.get('title'))
 
-  const { error } = await supabase.from('meetings').insert({
+  // Validate the browser IANA timezone (already submitted by the modal) and store
+  // it so later emails — the accept/confirmation email in particular — can show the
+  // correct local time. scheduled_at is unchanged (canonical UTC); blank/invalid → NULL.
+  const scheduledTimezone = normalizeIanaTimeZone(formData.get('timezone') as string)
+  const meetingRow = {
     requester_id: user.id,
     recipient_id: recipientId,
     purpose: (formData.get('title') as string || '').trim() || (formData.get('purpose') as string),
@@ -900,7 +905,15 @@ export async function scheduleMeeting(formData: FormData) {
     location: (formData.get('location') as string) || null,
     notes: (formData.get('notes') as string) || null,
     zoom_link: (formData.get('zoom_link') as string) || null,
-  })
+  }
+
+  let { error } = await supabase.from('meetings').insert({ ...meetingRow, scheduled_timezone: scheduledTimezone })
+  if (error && isMissingColumnError(error)) {
+    // Compatibility: the scheduled_timezone migration (027) isn't applied yet —
+    // insert without it so meeting creation still works. Apply 027 to enable.
+    console.warn('[scheduleMeeting] scheduled_timezone column missing; inserting without it (apply migration 027)')
+    ;({ error } = await supabase.from('meetings').insert(meetingRow))
+  }
 
   if (error) return { error: error.message }
   
@@ -1057,17 +1070,28 @@ export async function acceptMeeting(meetingId: string) {
     const otherProfile = profiles?.find(p => p.id === otherUserId)
 
     if (otherProfile?.email && accepterProfile) {
-      const { data: updatedMeeting } = await supabase
+      // Read the stored scheduling timezone so the confirmation email shows the
+      // meeting's local time + UTC. Falls back to a scheduled_at-only read (→ UTC
+      // only) if migration 027 isn't applied yet or the row predates it (NULL).
+      let updatedMeeting: { scheduled_at: string; scheduled_timezone?: string | null } | null = null
+      const enriched = await supabase
         .from('meetings')
-        .select('scheduled_at')
+        .select('scheduled_at, scheduled_timezone')
         .eq('id', meetingId)
         .single()
+      if (!enriched.error) {
+        updatedMeeting = enriched.data as any
+      } else {
+        const basic = await supabase.from('meetings').select('scheduled_at').eq('id', meetingId).single()
+        updatedMeeting = basic.data as any
+      }
 
       if (updatedMeeting) {
-        // No scheduler-timezone is available in the accept flow (no form, and the
-        // meeting's original zone isn't stored — no DB migration), so this shows
-        // the canonical date + UTC. Same info as before, in the new layout.
-        const { dateLabel, localLabel, utcLabel } = formatMeetingTimes(updatedMeeting.scheduled_at, null)
+        // Local time from the meeting's stored IANA zone (null → UTC-only fallback).
+        const { dateLabel, localLabel, utcLabel } = formatMeetingTimes(
+          updatedMeeting.scheduled_at,
+          updatedMeeting.scheduled_timezone ?? null,
+        )
 
         try {
           await sendMeetingAcceptedEmail(
@@ -1220,18 +1244,27 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
 
   if (!scheduled_at) return { error: 'Please provide a valid date and time.' }
 
-  const { error } = await supabase
-    .from('meetings')
-    .update({
-      proposed_scheduled_at: scheduled_at,
-      proposed_duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
-      proposed_format: formData.get('format') as string || 'virtual',
-      proposed_location: (formData.get('location') as string) || null,
-      proposed_zoom_link: (formData.get('zoom_link') as string) || null,
-      proposed_notes: (formData.get('notes') as string) || null,
-      status: 'reschedule_requested',
-    })
-    .eq('id', meetingId)
+  const rescheduleUpdate: Record<string, any> = {
+    proposed_scheduled_at: scheduled_at,
+    proposed_duration_minutes: parseInt(formData.get('duration_minutes') as string || '30'),
+    proposed_format: formData.get('format') as string || 'virtual',
+    proposed_location: (formData.get('location') as string) || null,
+    proposed_zoom_link: (formData.get('zoom_link') as string) || null,
+    proposed_notes: (formData.get('notes') as string) || null,
+    status: 'reschedule_requested',
+  }
+  // Update the stored timezone to the rescheduler's zone. If the submitted value is
+  // missing/invalid, omit the field entirely so the prior stored timezone is preserved.
+  const rescheduleTimezone = normalizeIanaTimeZone(formData.get('timezone') as string)
+  if (rescheduleTimezone) rescheduleUpdate.scheduled_timezone = rescheduleTimezone
+
+  let { error } = await supabase.from('meetings').update(rescheduleUpdate).eq('id', meetingId)
+  if (error && rescheduleTimezone && isMissingColumnError(error)) {
+    // Compatibility: migration 027 not applied yet — retry without the timezone.
+    console.warn('[rescheduleMeeting] scheduled_timezone column missing; updating without it (apply migration 027)')
+    const { scheduled_timezone, ...withoutTz } = rescheduleUpdate
+    ;({ error } = await supabase.from('meetings').update(withoutTz).eq('id', meetingId))
+  }
 
   if (error) return { error: error.message }
 

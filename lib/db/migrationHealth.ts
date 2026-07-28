@@ -56,6 +56,14 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Version 1.0 legal grandfathering (access exemption)',
     impact: 'The acceptance gate self-disables (compatibility mode) — existing members are not yet grandfathered and access is not gated until applied.',
   },
+  {
+    migration: '027_meetings_scheduled_timezone.sql',
+    kind: 'column',
+    table: 'meetings',
+    column: 'scheduled_timezone',
+    feature: 'Persisted meeting timezone for email local-time display',
+    impact: 'Meeting timezone is not stored (writes fall back to omitting it); acceptance emails show date + UTC only until applied.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {

@@ -27,6 +27,24 @@ function isUsableZone(tz: string): boolean {
   return z !== '' && z.toUpperCase() !== 'UTC' && z.toLowerCase() !== 'etc/utc'
 }
 
+/**
+ * Validate + normalize an IANA timezone for storage on the meeting record.
+ * Returns the trimmed zone when it is a real IANA name (Intl accepts it), or null
+ * when blank or invalid — so callers store NULL rather than a bogus value and the
+ * email display falls back to UTC-only.
+ */
+export function normalizeIanaTimeZone(input: string | null | undefined): string | null {
+  const tz = (input || '').trim()
+  if (!tz) return null
+  try {
+    // Throws RangeError for an unknown/invalid IANA zone.
+    Intl.DateTimeFormat('en-US', { timeZone: tz })
+    return tz
+  } catch {
+    return null
+  }
+}
+
 export function formatMeetingTimes(isoUtc: string, timeZone?: string | null): MeetingTimeDisplay {
   const d = new Date(isoUtc)
 
