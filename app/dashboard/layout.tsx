@@ -52,11 +52,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   try {
     const { data: acc, error } = await supabase
       .from('profiles')
-      .select('terms_version_accepted, privacy_version_accepted')
+      .select('terms_version_accepted, privacy_version_accepted, terms_grandfathered_through_version, privacy_grandfathered_through_version')
       .eq('id', user.id)
       .single()
     if (!error && acc) {
-      mustAcceptLegal = needsReacceptance(acc.terms_version_accepted, acc.privacy_version_accepted)
+      mustAcceptLegal = needsReacceptance({
+        acceptedTermsVersion: acc.terms_version_accepted,
+        acceptedPrivacyVersion: acc.privacy_version_accepted,
+        grandfatheredTermsVersion: acc.terms_grandfathered_through_version,
+        grandfatheredPrivacyVersion: acc.privacy_grandfathered_through_version,
+      })
     }
   } catch {
     mustAcceptLegal = false // compatibility mode — never block on a missing column

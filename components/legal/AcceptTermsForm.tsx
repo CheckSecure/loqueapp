@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import {
   TERMS_VERSION_LABEL,
   TERMS_EFFECTIVE_DATE,
@@ -22,7 +23,17 @@ export default function AcceptTermsForm({ redirectTo = '/dashboard' }: { redirec
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const [signingOut, setSigningOut] = useState(false)
   const bothChecked = acceptTerms && acceptPrivacy
+
+  async function handleSignOut() {
+    if (signingOut) return
+    setSigningOut(true)
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/')
+    router.refresh()
+  }
 
   async function handleSubmit() {
     if (!bothChecked || loading) return
@@ -86,8 +97,31 @@ export default function AcceptTermsForm({ redirectTo = '/dashboard' }: { redirec
         disabled={!bothChecked || loading}
         className="w-full rounded-lg bg-[#1B2850] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#141d3a] disabled:cursor-not-allowed disabled:opacity-40"
       >
-        {loading ? 'Saving…' : 'Accept and Continue'}
+        {loading ? 'Saving…' : 'Continue'}
       </button>
+
+      <p className="text-xs text-slate-400 text-center">
+        Accepting is required to continue using Andrel. You can sign out below, and you&apos;re
+        welcome to{' '}
+        <a
+          href="mailto:support@andrel.app?subject=Account%20question"
+          className="text-slate-500 underline hover:text-[#1B2850]"
+        >
+          contact us
+        </a>{' '}
+        with any account questions or deletion requests.
+      </p>
+
+      <div className="text-center">
+        <button
+          type="button"
+          onClick={handleSignOut}
+          disabled={signingOut}
+          className="text-sm text-slate-500 underline hover:text-[#1B2850] disabled:opacity-50"
+        >
+          {signingOut ? 'Signing out…' : 'Sign out'}
+        </button>
+      </div>
     </div>
   )
 }

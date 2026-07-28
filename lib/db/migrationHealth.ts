@@ -48,6 +48,14 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Clickwrap legal acceptance tracking',
     impact: 'The Terms/Privacy acceptance gate self-disables (compatibility mode) — access is not blocked on acceptance until applied.',
   },
+  {
+    migration: '026_profiles_legal_grandfathering.sql',
+    kind: 'column',
+    table: 'profiles',
+    column: 'terms_grandfathered_through_version',
+    feature: 'Version 1.0 legal grandfathering (access exemption)',
+    impact: 'The acceptance gate self-disables (compatibility mode) — existing members are not yet grandfathered and access is not gated until applied.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {

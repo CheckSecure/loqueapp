@@ -19,16 +19,22 @@ export default async function LegalAcceptPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Already current? Don't force acceptance again. Fail open on missing columns.
+  // Already satisfied (accepted OR grandfathered through the current version)?
+  // Don't force acceptance again. Fail open on missing columns.
   let mustAccept = true
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('terms_version_accepted, privacy_version_accepted')
+      .select('terms_version_accepted, privacy_version_accepted, terms_grandfathered_through_version, privacy_grandfathered_through_version')
       .eq('id', user.id)
       .single()
     if (error) mustAccept = false // columns absent / query failed → don't block
-    else mustAccept = needsReacceptance(data?.terms_version_accepted, data?.privacy_version_accepted)
+    else mustAccept = needsReacceptance({
+      acceptedTermsVersion: data?.terms_version_accepted,
+      acceptedPrivacyVersion: data?.privacy_version_accepted,
+      grandfatheredTermsVersion: data?.terms_grandfathered_through_version,
+      grandfatheredPrivacyVersion: data?.privacy_grandfathered_through_version,
+    })
   } catch {
     mustAccept = false
   }
@@ -39,9 +45,9 @@ export default async function LegalAcceptPage() {
       <div className="max-w-md mx-auto">
         <div className="text-center mb-8">
           <Link href="/" className="text-xl font-bold text-[#1B2850] tracking-tight block mb-6">Andrel</Link>
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">Before you continue</h1>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Review our Terms &amp; Privacy Policy</h1>
           <p className="text-slate-500 text-sm">
-            We&apos;ve updated our legal terms. Please review and accept them to continue using Andrel.
+            Accepting the current Terms of Service and Privacy Policy is required to continue using Andrel.
           </p>
         </div>
 

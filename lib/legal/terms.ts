@@ -25,13 +25,52 @@ export const PRIVACY_VERSION_LABEL = '1.0'
 export const PRIVACY_EFFECTIVE_DATE = 'March 24, 2026'
 
 /**
- * True when the user has already accepted the current Terms AND Privacy versions.
- * A null/undefined (never accepted) or lower accepted version means they must
- * (re)accept before continuing. Pure — safe to use on client and server.
+ * A member's legal-standing inputs. Two independent ways a document can be
+ * satisfied:
+ *   • accepted*Version    — they affirmatively clicked-through this version.
+ *   • grandfathered*Version — they existed before grandfathering and are EXEMPTED
+ *     from the gate through this version (an access exemption, NOT acceptance).
+ * All fields are nullable; a null means "no signal" (treated as version 0).
  */
-export function needsReacceptance(
-  acceptedTermsVersion: number | null | undefined,
-  acceptedPrivacyVersion: number | null | undefined,
+export interface LegalAcceptanceState {
+  acceptedTermsVersion?: number | null
+  acceptedPrivacyVersion?: number | null
+  grandfatheredTermsVersion?: number | null
+  grandfatheredPrivacyVersion?: number | null
+}
+
+/**
+ * Version-parameterized core: does the member still owe acceptance, given the
+ * supplied CURRENT versions? A document is satisfied when the accepted version OR
+ * the grandfathered-through version is at least the current version. Pure and
+ * null-safe. Exposed separately so tests can simulate a future version bump
+ * without mutating the shipped constants.
+ */
+export function needsReacceptanceAt(
+  currentTermsVersion: number,
+  currentPrivacyVersion: number,
+  state: LegalAcceptanceState,
 ): boolean {
-  return (acceptedTermsVersion ?? 0) < TERMS_VERSION || (acceptedPrivacyVersion ?? 0) < PRIVACY_VERSION
+  const acceptedTerms = state.acceptedTermsVersion ?? 0
+  const acceptedPrivacy = state.acceptedPrivacyVersion ?? 0
+  const grandfatheredTerms = state.grandfatheredTermsVersion ?? 0
+  const grandfatheredPrivacy = state.grandfatheredPrivacyVersion ?? 0
+
+  const termsSatisfied =
+    acceptedTerms >= currentTermsVersion || grandfatheredTerms >= currentTermsVersion
+  const privacySatisfied =
+    acceptedPrivacy >= currentPrivacyVersion || grandfatheredPrivacy >= currentPrivacyVersion
+
+  return !termsSatisfied || !privacySatisfied
+}
+
+/**
+ * True when the member must (re)accept the CURRENT Terms and/or Privacy versions
+ * before continuing. Satisfied by affirmative acceptance OR a grandfathering
+ * exemption through the current version. Grandfathering is only an access
+ * exemption — it never counts as affirmative acceptance and never populates the
+ * accepted-version fields. Pure — safe on client and server.
+ */
+export function needsReacceptance(state: LegalAcceptanceState): boolean {
+  return needsReacceptanceAt(TERMS_VERSION, PRIVACY_VERSION, state)
 }

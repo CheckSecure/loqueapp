@@ -163,10 +163,12 @@ export default async function Home() {
       </main>
 
       <footer className="border-t border-slate-100 py-8 text-center text-sm text-slate-400">
-        <div className="flex items-center justify-center gap-6 mb-3">
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mb-3">
           <Link href="/about" className="hover:text-slate-600 transition-colors">About</Link>
           <Link href="/pricing" className="hover:text-slate-600 transition-colors">Pricing</Link>
           <Link href="/login" className="hover:text-slate-600 transition-colors">Sign in</Link>
+          <Link href="/terms" className="hover:text-slate-600 transition-colors">Terms</Link>
+          <Link href="/privacy" className="hover:text-slate-600 transition-colors">Privacy</Link>
         </div>
         © {new Date().getFullYear()} Andrel. All rights reserved.
       </footer>
