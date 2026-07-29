@@ -64,6 +64,7 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
   const [impError, setImpError] = useState<string | null>(null)
   const [impPreview, setImpPreview] = useState<{ summary: any; preview: any[]; parseErrors: any[] } | null>(null)
   const [impResult, setImpResult] = useState<{ summary: any; results: any[] } | null>(null)
+  const [showUnmatched, setShowUnmatched] = useState(false)
 
   async function runBackfill() {
     if (backfilling) return
@@ -102,7 +103,7 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
 
   async function previewImport() {
     if (impBusy || !csv.trim()) return
-    setImpBusy(true); setImpError(null); setImpResult(null); setImpPreview(null)
+    setImpBusy(true); setImpError(null); setImpResult(null); setImpPreview(null); setShowUnmatched(false)
     try {
       const res = await fetch('/api/admin/company-enrichment/import', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv }),
@@ -416,6 +417,53 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
                   )
                 })}
               </div>
+
+              {/* Diagnostic: why did rows fail to match? Show unmatched + closest candidates. */}
+              {impPreview.summary.notFound > 0 && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowUnmatched((v) => !v)}
+                    className="text-[11px] font-semibold text-brand-navy hover:underline"
+                  >
+                    {showUnmatched ? 'Hide' : 'Show'} unmatched companies ({impPreview.summary.notFound})
+                  </button>
+                  {showUnmatched && (
+                    <div className="mt-2 overflow-x-auto rounded-lg border border-slate-100">
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 text-left">
+                            <th className="px-2 py-1.5 font-medium">CSV Name</th>
+                            <th className="px-2 py-1.5 font-medium">CSV Slug</th>
+                            <th className="px-2 py-1.5 font-medium">Possible Network Company</th>
+                            <th className="px-2 py-1.5 font-medium">Network Slug</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {impPreview.preview.filter((p: any) => p.action === 'not_found').map((p: any, i: number) => {
+                            const matches = (p.closest_network_matches || [])
+                            if (!matches.length) return (
+                              <tr key={i}>
+                                <td className="px-2 py-1.5 text-slate-800">{p.company_name}</td>
+                                <td className="px-2 py-1.5 text-slate-400">{p.slug}</td>
+                                <td className="px-2 py-1.5 text-slate-400 italic" colSpan={2}>no similar network company</td>
+                              </tr>
+                            )
+                            return matches.map((m: any, j: number) => (
+                              <tr key={`${i}-${j}`}>
+                                <td className="px-2 py-1.5 text-slate-800">{j === 0 ? p.company_name : ''}</td>
+                                <td className="px-2 py-1.5 text-slate-400">{j === 0 ? p.slug : ''}</td>
+                                <td className="px-2 py-1.5 text-slate-700">{m.company_name}</td>
+                                <td className="px-2 py-1.5 text-slate-400">{m.slug}</td>
+                              </tr>
+                            ))
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

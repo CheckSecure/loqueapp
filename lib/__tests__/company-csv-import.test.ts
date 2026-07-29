@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { parseImportCsv, parseCsvRecords, computeImportPlan, type ExistingCompany } from '@/lib/company/csvImport'
-import { buildCompanyResolver, resolveCompany } from '@/lib/company/companyResolver'
+import { buildCompanyResolver, resolveCompany, nearestCandidates } from '@/lib/company/companyResolver'
 
 const mapOf = (rows: ExistingCompany[]) => new Map(rows.map((r) => [r.slug, r]))
 
@@ -159,6 +159,22 @@ describe('companyResolver — exact → canonical → fuzzy', () => {
   it('fuzzy uses equality, not similarity — "Wonder" never drifts onto "Wonderlic"', () => {
     const r = buildCompanyResolver([{ slug: 'wonderlic', name: 'Wonderlic' }])
     expect(resolveCompany('Wonder', r)).toBeNull()
+  })
+})
+
+describe('nearestCandidates — diagnostics only (does not affect matching)', () => {
+  it('surfaces a shared-word candidate for an unmatched name', () => {
+    const r = buildCompanyResolver([{ slug: 'baker-mckenzie', name: 'Baker McKenzie' }, { slug: 'zoeller', name: 'Zoeller' }])
+    // "Baker Botts" does NOT resolve (different fuzzy key), but shares the token "baker".
+    expect(resolveCompany('Baker Botts L.L.P.', r)).toBeNull()
+    const near = nearestCandidates('Baker Botts L.L.P.', r)
+    expect(near[0]).toMatchObject({ company_name: 'Baker McKenzie', slug: 'baker-mckenzie' })
+    expect(near.some((n) => n.slug === 'zoeller')).toBe(false) // no shared word → excluded
+  })
+
+  it('returns nothing when there is no similar candidate at all', () => {
+    const r = buildCompanyResolver([{ slug: 'zoeller', name: 'Zoeller' }])
+    expect(nearestCandidates('Baker Botts L.L.P.', r)).toEqual([])
   })
 })
 
@@ -411,6 +427,21 @@ describe('company-enrichment import route — network company matching', () => {
     expect(data.summary.networkError).toBeNull()
     expect(data.summary.notFound).toBe(0)
     expect(data.preview[0].confidence).toBe('fuzzy')
+  })
+
+  it('attaches closest_network_matches to unmatched rows (and nothing to resolved rows)', async () => {
+    h.companies = []
+    h.profiles = [{ company: 'Baker McKenzie' }, { company: 'Neurocrine' }]
+    const csv = 'company_name,website,logo_url,description\n'
+      + 'Baker Botts L.L.P.,bakerbotts.com,,\n'                       // not_found, shares "baker"
+      + 'Neurocrine Biosciences,neurocrine.com,http://l/n.png,"X"'    // resolves (fuzzy)
+    const data = await (await post({ csv })).json()
+    const baker = data.preview.find((p: any) => p.company_name === 'Baker Botts L.L.P.')
+    const neuro = data.preview.find((p: any) => p.company_name === 'Neurocrine Biosciences')
+    expect(baker.action).toBe('not_found')
+    expect(baker.closest_network_matches[0]).toMatchObject({ company_name: 'Baker McKenzie', slug: 'baker-mckenzie' })
+    expect(neuro.action).toBe('update')
+    expect(neuro.closest_network_matches).toEqual([]) // resolved rows carry none
   })
 
   it('debug payload exposes the candidate universe (network + csv) when requested', async () => {

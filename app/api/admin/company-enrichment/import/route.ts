@@ -5,6 +5,7 @@ import { parseImportCsv, computeImportPlan, type ExistingCompany, type ImportPla
 import { downloadAndStoreLogo } from '@/lib/company/enrichment/logo'
 import { computeNetworkCompanies, ensureCompanyRecord } from '@/lib/company/enrich'
 import { companySlug } from '@/lib/company/slug'
+import { buildCompanyResolver, nearestCandidates } from '@/lib/company/companyResolver'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -94,6 +95,9 @@ export async function POST(request: Request) {
 
   // ---- Preview (dry run) -----------------------------------------------------
   if (!apply) {
+    // Diagnostic resolver over the SAME candidate universe (existing + network),
+    // used only to surface closest candidates for unmatched rows — never for matching.
+    const diagResolver = buildCompanyResolver(Array.from(bySlug.values()).map((c) => ({ slug: c.slug, name: c.name ?? null })))
     const preview = plan.map((p) => ({
       company_name: p.input.company_name,
       slug: p.slug,
@@ -110,6 +114,11 @@ export async function POST(request: Request) {
       csv_website: p.input.website || null,
       csv_logo_url: p.input.logo_url || null,
       csv_description: p.input.description || null,
+      // Diagnostic: for unmatched rows, the closest network/existing candidates
+      // (why the match failed). Empty for resolved rows. Does not affect matching.
+      closest_network_matches: p.action === 'not_found'
+        ? nearestCandidates(p.input.company_name, diagResolver).map((m) => ({ company_name: m.company_name, slug: m.slug }))
+        : [],
     }))
     // Opt-in inspection (POST { debug: true }): the candidate universe the resolver
     // saw, so a mismatch between CSV companies and the network is visible directly.

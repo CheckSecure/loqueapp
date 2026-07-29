@@ -125,3 +125,30 @@ export function resolveCompany(rawName: string, r: CompanyResolver): CompanyReso
 
   return null
 }
+
+export interface NearestCandidate { company_name: string; slug: string; score: number }
+
+/**
+ * DIAGNOSTIC ONLY — not part of matching. For an unmatched name, surface the
+ * candidates that come closest, so an admin can see WHY the match failed (a shared
+ * word, an aggressive-key prefix overlap, or nothing at all → the company just
+ * isn't in the set). Ranks by shared normalized tokens, with an aggressive-key
+ * prefix affinity as a tiebreaker. Never influences resolveCompany.
+ */
+export function nearestCandidates(rawName: string, r: CompanyResolver, limit = 3): NearestCandidate[] {
+  const csvTokens = new Set(normalizeCompanyName(rawName).split(' ').filter(Boolean))
+  const csvKey = fuzzyKey(rawName)
+  const scored: NearestCandidate[] = []
+  for (const c of r.bySlug.values()) {
+    const name = c.name ?? c.slug.replace(/-/g, ' ')
+    const tokens = normalizeCompanyName(name).split(' ').filter(Boolean)
+    let shared = 0
+    for (const t of tokens) if (csvTokens.has(t)) shared++
+    const key = fuzzyKey(name)
+    const prefix = csvKey && key && (csvKey.startsWith(key) || key.startsWith(csvKey)) ? 1 : 0
+    const score = shared * 2 + prefix
+    if (score > 0) scored.push({ company_name: name, slug: c.slug, score })
+  }
+  scored.sort((a, b) => b.score - a.score || a.slug.localeCompare(b.slug))
+  return scored.slice(0, limit)
+}
