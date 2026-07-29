@@ -3,6 +3,8 @@ import {
   classifyIntroHistory,
   exhaustionThreshold,
   HARD_HISTORY_STATUSES,
+  isIntroHistoryRow,
+  buildIntroHistoryExclusions,
 } from '@/lib/introRequests/history'
 
 const row = (requester_id: string, target_user_id: string, status?: string, batch_id?: string | null) =>
@@ -113,5 +115,50 @@ describe('exhaustionThreshold — configurable safety valve', () => {
     expect(exhaustionThreshold()).toBe(5)
     process.env.RECOMMENDATION_EXHAUSTION_THRESHOLD = '12'
     expect(exhaustionThreshold()).toBe(12)
+  })
+})
+
+describe('isIntroHistoryRow', () => {
+  it('treats HARD, ACTIVE, and SOFT statuses as history', () => {
+    for (const s of ['accepted', 'pending', 'approved', 'declined', 'rejected', 'hidden', 'hidden_permanent', 'suggested', 'queued', 'passed', 'expired']) {
+      expect(isIntroHistoryRow(s, 'b1')).toBe(true)
+      expect(isIntroHistoryRow(s, null)).toBe(true) // batch_id irrelevant for these
+    }
+  })
+  it('archived is history ONLY with a batch_id (artifact carve-out)', () => {
+    expect(isIntroHistoryRow('archived', 'b1')).toBe(true)
+    expect(isIntroHistoryRow('archived', null)).toBe(false)
+  })
+  it('unknown/empty status is never history', () => {
+    expect(isIntroHistoryRow('weird', 'b1')).toBe(false)
+    expect(isIntroHistoryRow(null, 'b1')).toBe(false)
+    expect(isIntroHistoryRow('', 'b1')).toBe(false)
+  })
+})
+
+describe('buildIntroHistoryExclusions — bidirectional pair map', () => {
+  it('adds both directions for a genuine-history row', () => {
+    const m = buildIntroHistoryExclusions([row('a', 'b', 'suggested')])
+    expect(m.get('a')?.has('b')).toBe(true)
+    expect(m.get('b')?.has('a')).toBe(true)
+  })
+  it('excludes migration artifacts (archived, no batch_id) and unknown statuses', () => {
+    const m = buildIntroHistoryExclusions([row('a', 'b', 'archived', null), row('c', 'd', 'weird')])
+    expect(m.get('a')?.has('b') ?? false).toBe(false)
+    expect(m.get('c')?.has('d') ?? false).toBe(false)
+  })
+  it('includes archived WITH a batch_id (genuinely presented)', () => {
+    const m = buildIntroHistoryExclusions([row('a', 'b', 'archived', 'b1')])
+    expect(m.get('a')?.has('b')).toBe(true)
+  })
+  it('ignores self-pairs and empty input', () => {
+    expect(buildIntroHistoryExclusions([row('a', 'a', 'accepted')]).size).toBe(0)
+    expect(buildIntroHistoryExclusions(null).size).toBe(0)
+    expect(buildIntroHistoryExclusions([]).size).toBe(0)
+  })
+  it('accumulates multiple targets per member', () => {
+    const m = buildIntroHistoryExclusions([row('a', 'b', 'passed'), row('a', 'c', 'accepted')])
+    expect(m.get('a')?.has('b')).toBe(true)
+    expect(m.get('a')?.has('c')).toBe(true)
   })
 })

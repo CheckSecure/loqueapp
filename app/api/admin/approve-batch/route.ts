@@ -36,6 +36,21 @@ export async function POST(req: NextRequest) {
 
     const adminClient = createAdminClient()
 
+    // Idempotency guard: approval is a one-way transition from pending_review.
+    // Re-approving an already active/completed batch would re-run materialization
+    // (the shown-rows loader below has no materialized_at filter), so we refuse
+    // BEFORE any mutation or enqueue — no double-send, no duplicate intro_requests.
+    const { data: batchRow, error: loadErr } = await adminClient
+      .from('introduction_batches').select('id, status').eq('id', batchId).maybeSingle()
+    if (loadErr) return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    if (!batchRow) return NextResponse.json({ error: 'Batch not found' }, { status: 404 })
+    if (batchRow.status !== 'pending_review') {
+      return NextResponse.json(
+        { error: `Batch is already '${batchRow.status}'. Approval is only allowed from 'pending_review'; no changes were made.`, alreadyProcessed: true, status: batchRow.status },
+        { status: 409 },
+      )
+    }
+
     // Mark any previous active batch as completed, then activate this one.
     await adminClient.from('introduction_batches').update({ status: 'completed' }).eq('status', 'active')
     const { error: activateErr } = await adminClient

@@ -10,6 +10,7 @@ import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, RECOMMEN
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
 import { selectReciprocalGraph } from '@/lib/matching/reciprocal-graph'
+import { buildIntroHistoryExclusions } from '@/lib/introRequests/history'
 
 export const dynamic = 'force-dynamic'
 
@@ -230,6 +231,22 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Previously-presented introductions live in the QUEUE (intro_requests), NOT in
+    // batch_suggestions — so batches produced by the queue engine (onboarding/weekly)
+    // are invisible to the exclusions above. Load that history and exclude those pairs
+    // too, reusing the canonical tiered classification (lib/introRequests/history.ts):
+    // HARD + ACTIVE + SOFT (accepted/pending/approved/suggested/queued/passed/expired
+    // and archived rows that belonged to a real batch) are excluded; migration/backfill
+    // artifacts (archived with no batch_id) are intentionally NOT treated as history.
+    // Deploy-safe: on any read error, proceed with no queue exclusions (never block).
+    const { data: introHistoryRows, error: introHistoryErr } = await adminClient
+      .from('intro_requests')
+      .select('requester_id, target_user_id, status, batch_id')
+    if (introHistoryErr) {
+      console.warn('[generate-batch] intro_requests history load failed; proceeding without queue exclusions:', introHistoryErr.message)
+    }
+    const introHistoryMap = buildIntroHistoryExclusions(introHistoryRows)
+
     const allPairs: PairScore[] = []
     
     for (let i = 0; i < profiles.length; i++) {
@@ -246,9 +263,11 @@ export async function POST(req: NextRequest) {
         const bMatchedA = matchedMap[userB.id]?.has(userA.id)
         const aShownB = recentlyShownMap[userA.id]?.has(userB.id)
         const bShownA = recentlyShownMap[userB.id]?.has(userA.id)
-        
-        // Exclude if: hidden, passed, matched, recently shown, or same company
-        if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA || isSameCompany(userA, userB)) continue
+        // Queue history (intro_requests) — bidirectional, so either direction excludes.
+        const introHistory = introHistoryMap.get(userA.id)?.has(userB.id) || introHistoryMap.get(userB.id)?.has(userA.id)
+
+        // Exclude if: hidden, passed, matched, recently shown, queue-history, or same company
+        if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA || introHistory || isSameCompany(userA, userB)) continue
         
         const scoreAtoB = scoreMatchV2(userA, userB, scoringCtx)
         const scoreBtoA = scoreMatchV2(userB, userA, scoringCtx)

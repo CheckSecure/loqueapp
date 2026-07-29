@@ -84,6 +84,41 @@ export function classifyIntroHistory(
   return { hardExcluded: hard, softExcluded: soft }
 }
 
+/** True when an intro_requests row counts as genuine introduction history (a pair
+ *  that was presented / acted on / is live). Backfill artifacts (archived with no
+ *  batch_id) are NOT history. Mirrors classifyIntroHistory's status rules so both
+ *  stay in lockstep. */
+export function isIntroHistoryRow(status: string | null | undefined, batchId: string | null | undefined): boolean {
+  const s = status ?? ''
+  if (ACTIVE_STATUSES.has(s) || HARD_HISTORY_STATUSES.has(s) || SOFT_HISTORY_STATUSES.has(s)) return true
+  if (s === 'archived') return !!batchId // shown (belonged to a real batch) → history; artifact → not
+  return false // unknown/legacy → never invent an exclusion
+}
+
+/**
+ * Build a BIDIRECTIONAL exclusion map (userId → set of other userIds it has intro
+ * history with) from raw intro_requests rows. Used by producers that select over
+ * pairs (e.g. the admin reciprocal batch generator) so a pair already presented in
+ * the queue is never re-recommended. Combines the HARD, ACTIVE and SOFT tiers and
+ * drops migration artifacts — the same universe as classifyIntroHistory's
+ * hardExcluded ∪ softExcluded, but keyed both ways for O(1) pair lookups.
+ */
+export function buildIntroHistoryExclusions(rows: IntroHistoryRow[] | null | undefined): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>()
+  const add = (a: string, b: string) => {
+    let set = map.get(a)
+    if (!set) { set = new Set<string>(); map.set(a, set) }
+    set.add(b)
+  }
+  for (const r of rows ?? []) {
+    if (!r || !r.requester_id || !r.target_user_id || r.requester_id === r.target_user_id) continue
+    if (!isIntroHistoryRow(r.status, r.batch_id)) continue
+    add(r.requester_id, r.target_user_id)
+    add(r.target_user_id, r.requester_id)
+  }
+  return map
+}
+
 /**
  * Configurable exhaustion safety-valve threshold (env RECOMMENDATION_EXHAUSTION_THRESHOLD).
  * When a member's fresh candidate pool (after HARD + same-company exclusions, with

@@ -14,6 +14,7 @@ import { perRecipientIntroLimit } from '@/lib/matching/batch-limits'
 
 const state = vi.hoisted(() => ({
   profiles: [] as any[],
+  introRequests: [] as any[],
   lastBatch: { batch_number: 2 } as any,
   batch: { id: 'batch-new-id', batch_number: 3 } as any,
   batchError: null as any,
@@ -31,6 +32,7 @@ vi.mock('@/lib/supabase/admin', () => {
   const resolve = (b: any) => {
     if (b._table === 'profiles') return { data: state.profiles, error: null }
     if (b._table === 'matches') return { data: [], error: null }
+    if (b._table === 'intro_requests') return { data: state.introRequests, error: null }
     if (b._table === 'introduction_batches') {
       if (b._insert) { state.insertedBatch = b._insert; return { data: state.batch, error: state.batchError } }
       if (b._delete) { const id = (b._eqs.find((e: any) => e[0] === 'id') || [])[1]; state.deletedBatchIds.push(id); return { error: null } }
@@ -76,6 +78,7 @@ const post = () => POST(new Request('http://localhost/api/admin/generate-batch',
 
 beforeEach(() => {
   state.profiles = [member('a'), member('b'), member('c')]
+  state.introRequests = []
   state.batchError = null
   state.suggestionsError = null
   state.insertedSuggestions = null
@@ -224,5 +227,63 @@ describe('Generate New Batch — full insert', () => {
       for (const r of rows) exp[r.suggested_id] = (exp[r.suggested_id] || 0) + 1
       expect(Math.max(...Object.values(exp))).toBeLessThanOrEqual(EXPOSURE_CONFIG.maxPerBatch)
     }
+  })
+})
+
+// Queue-history exclusion: a pair already presented via the queue (intro_requests)
+// must never reappear in a freshly generated admin batch — while scoring, reciprocity,
+// caps, and all other pairs are unaffected.
+describe('Generate New Batch — intro_requests (queue) history exclusion', () => {
+  const ir = (requester: string, target: string, status: string, batch_id: string | null = 'b1') => ({ requester_id: requester, target_user_id: target, status, batch_id })
+  const hasEdge = (rows: any[], x: string, y: string) =>
+    rows.some((r: any) => (r.recipient_id === x && r.suggested_id === y) || (r.recipient_id === y && r.suggested_id === x))
+  const noDuplicatePairs = (rows: any[]) =>
+    new Set(rows.map((r: any) => r.recipient_id + '|' + r.suggested_id)).size === rows.length
+
+  it('baseline (no queue history): the a–b edge IS generated — behavior unchanged', async () => {
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'a', 'b')).toBe(true)
+    expect(noDuplicatePairs(rows)).toBe(true)
+  })
+
+  it('a pair present in intro_requests cannot appear in the new batch (both directions removed)', async () => {
+    state.introRequests = [ir('a', 'b', 'suggested')] // a↔b already in the queue
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(rows.length).toBeGreaterThan(0) // batch is not degenerate
+    // The excluded pair is gone in BOTH directions…
+    expect(rows.some((r: any) => r.recipient_id === 'a' && r.suggested_id === 'b')).toBe(false)
+    expect(rows.some((r: any) => r.recipient_id === 'b' && r.suggested_id === 'a')).toBe(false)
+    // …no generated edge is ever the excluded {a,b} pair…
+    for (const r of rows) expect([r.recipient_id, r.suggested_id].sort().join('|')).not.toBe('a|b')
+    // …and other eligible members are still introduced (c still appears).
+    expect(rows.some((r: any) => r.recipient_id === 'c' || r.suggested_id === 'c')).toBe(true)
+    expect(noDuplicatePairs(rows)).toBe(true)
+  })
+
+  it('excludes across all queue history tiers (accepted/pending/approved/passed/queued/archived-with-batch)', async () => {
+    for (const status of ['accepted', 'pending', 'approved', 'passed', 'queued', 'archived']) {
+      state.introRequests = [ir('a', 'b', status)]
+      state.insertedSuggestions = null
+      await post()
+      const rows = state.insertedSuggestions || []
+      expect(hasEdge(rows, 'a', 'b')).toBe(false)      // excluded for this status
+      expect(rows.length).toBeGreaterThan(0)           // other pairs still generated (non-degenerate)
+    }
+  })
+
+  it('does NOT over-exclude: an archived backfill artifact (no batch_id) is not history', async () => {
+    state.introRequests = [ir('a', 'b', 'archived', null)] // migration artifact
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'a', 'b')).toBe(true) // still eligible — artifact, never presented
+  })
+
+  it('reverse-direction history also excludes the pair (bidirectional)', async () => {
+    state.introRequests = [ir('b', 'a', 'passed')] // stored as b→a
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'a', 'b')).toBe(false)
   })
 })
