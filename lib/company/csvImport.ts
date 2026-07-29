@@ -1,4 +1,5 @@
 import { companySlug } from '@/lib/company/slug'
+import { buildCompanyResolver, resolveCompany } from '@/lib/company/companyResolver'
 
 /**
  * Pure helpers for the admin CSV company-enrichment import (one-time cleanup of
@@ -94,9 +95,12 @@ export interface ExistingCompany {
 
 export interface ImportPlanItem {
   input: ImportCsvRow
+  /** The RESOLVED company slug when matched; the attempted slug when unresolved. */
   slug: string
   matchedName: string | null
   action: 'update' | 'skip' | 'not_found'
+  /** How the CSV name was matched to a company (unresolved → not_found). */
+  confidence: 'exact' | 'canonical' | 'fuzzy' | 'unresolved'
   reason?: string
   /** Fields the import would fill (missing on the row AND present in the CSV). */
   fields: {
@@ -115,11 +119,21 @@ export interface ImportPlanItem {
  *     non-empty logo_url or description.
  */
 export function computeImportPlan(rows: ImportCsvRow[], existingBySlug: Map<string, ExistingCompany>): ImportPlanItem[] {
+  // Resolve against ALL known companies (materialized rows + seeded network
+  // companies): exact slug → registry canonical → high-confidence fuzzy.
+  const resolver = buildCompanyResolver(
+    Array.from(existingBySlug.values()).map((c) => ({ slug: c.slug, name: c.name ?? null })),
+  )
   return rows.map((input): ImportPlanItem => {
-    const slug = companySlug(input.company_name)
-    const row = slug ? existingBySlug.get(slug) : undefined
-    if (!slug || !row) return { input, slug, matchedName: null, action: 'not_found', fields: {} }
-    if (row.admin_edited === true) return { input, slug, matchedName: row.name ?? null, action: 'skip', reason: 'admin_edited', fields: {} }
+    const resolution = resolveCompany(input.company_name, resolver)
+    if (!resolution) {
+      return { input, slug: companySlug(input.company_name), matchedName: null, action: 'not_found', confidence: 'unresolved', fields: {} }
+    }
+    const slug = resolution.slug
+    const confidence = resolution.confidence
+    const row = existingBySlug.get(slug)
+    if (!row) return { input, slug, matchedName: null, action: 'not_found', confidence: 'unresolved', fields: {} }
+    if (row.admin_edited === true) return { input, slug, matchedName: row.name ?? null, action: 'skip', reason: 'admin_edited', confidence, fields: {} }
 
     const fields: ImportPlanItem['fields'] = {}
     if (!has(row.logo_url) && has(input.logo_url)) fields.logo_url = { current: row.logo_url ?? null, candidate: input.logo_url.trim() }
@@ -127,8 +141,8 @@ export function computeImportPlan(rows: ImportCsvRow[], existingBySlug: Map<stri
 
     if (!fields.logo_url && !fields.description) {
       const reason = has(row.logo_url) && has(row.description) ? 'already complete' : 'no new values in CSV'
-      return { input, slug, matchedName: row.name ?? null, action: 'skip', reason, fields: {} }
+      return { input, slug, matchedName: row.name ?? null, action: 'skip', reason, confidence, fields: {} }
     }
-    return { input, slug, matchedName: row.name ?? null, action: 'update', fields }
+    return { input, slug, matchedName: row.name ?? null, action: 'update', confidence, fields }
   })
 }

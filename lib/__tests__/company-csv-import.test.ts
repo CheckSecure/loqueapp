@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { parseImportCsv, parseCsvRecords, computeImportPlan, type ExistingCompany } from '@/lib/company/csvImport'
+import { buildCompanyResolver, resolveCompany } from '@/lib/company/companyResolver'
 
 const mapOf = (rows: ExistingCompany[]) => new Map(rows.map((r) => [r.slug, r]))
 
@@ -112,6 +113,90 @@ describe('computeImportPlan — fill-missing-only rules', () => {
 })
 
 // ---- Route: auth, preview, apply (idempotent, logo validation, audit) --------
+
+describe('companyResolver — exact → canonical → fuzzy', () => {
+  const network = buildCompanyResolver([
+    { slug: 'neurocrine', name: 'Neurocrine' },
+    { slug: 'dxc', name: 'DXC' },
+    { slug: 'sofi', name: 'SoFi' },
+    { slug: 'discovery', name: 'Discovery' },
+    { slug: 'davis-wright-tremaine', name: 'Davis Wright Tremaine LLP' },
+    { slug: 'acme', name: 'Acme' },
+  ])
+
+  it('exact: an identically-normalized name matches with confidence "exact"', () => {
+    expect(resolveCompany('Neurocrine', network)).toMatchObject({ slug: 'neurocrine', confidence: 'exact' })
+    expect(resolveCompany('Acme', network)).toMatchObject({ slug: 'acme', confidence: 'exact' })
+  })
+
+  it('fuzzy: full official name → short member company (the reported failures)', () => {
+    expect(resolveCompany('Neurocrine Biosciences', network)).toMatchObject({ slug: 'neurocrine', confidence: 'fuzzy' })
+    expect(resolveCompany('DXC Technology', network)).toMatchObject({ slug: 'dxc', confidence: 'fuzzy' })
+    expect(resolveCompany('SoFi Technologies,Inc.', network)).toMatchObject({ slug: 'sofi', confidence: 'fuzzy' })
+    expect(resolveCompany('Discovery Education', network)).toMatchObject({ slug: 'discovery', confidence: 'fuzzy' })
+  })
+
+  it('canonical: a registry alias resolves onto a candidate ("DWT" → davis-wright-tremaine)', () => {
+    expect(resolveCompany('DWT', network)).toMatchObject({ slug: 'davis-wright-tremaine', confidence: 'canonical' })
+  })
+
+  it('Wonder stays unresolved when there is no matching candidate', () => {
+    expect(resolveCompany('Wonder', network)).toBeNull()
+  })
+
+  it('STG stays unresolved', () => {
+    expect(resolveCompany('STG', network)).toBeNull()
+  })
+
+  it('ambiguous fuzzy key (two candidates) stays unresolved — no false positive', () => {
+    const amb = buildCompanyResolver([
+      { slug: 'discovery', name: 'Discovery' },
+      { slug: 'discovery-communications', name: 'Discovery Communications' },
+    ])
+    expect(resolveCompany('Discovery Education', amb)).toBeNull()
+  })
+
+  it('fuzzy uses equality, not similarity — "Wonder" never drifts onto "Wonderlic"', () => {
+    const r = buildCompanyResolver([{ slug: 'wonderlic', name: 'Wonderlic' }])
+    expect(resolveCompany('Wonder', r)).toBeNull()
+  })
+})
+
+describe('computeImportPlan — resolution integration', () => {
+  const mapOf = (rows: ExistingCompany[]) => new Map(rows.map((r) => [r.slug, r]))
+
+  it('resolves a fuzzy CSV name onto the network company (update, confidence=fuzzy, resolved slug)', () => {
+    const plan = computeImportPlan(
+      [{ company_name: 'Neurocrine Biosciences', website: '', logo_url: 'http://l/n.png', description: 'Biopharma.' }],
+      mapOf([{ slug: 'neurocrine', name: 'Neurocrine', logo_url: null, description: null, admin_edited: false }]),
+    )
+    expect(plan[0].action).toBe('update')
+    expect(plan[0].confidence).toBe('fuzzy')
+    expect(plan[0].slug).toBe('neurocrine')       // apply will use the RESOLVED slug
+    expect(plan[0].matchedName).toBe('Neurocrine')
+  })
+
+  it('an exact match still resolves with confidence=exact', () => {
+    const plan = computeImportPlan(
+      [{ company_name: 'Neurocrine', website: '', logo_url: 'http://l/n.png', description: 'X' }],
+      mapOf([{ slug: 'neurocrine', name: 'Neurocrine', logo_url: null, description: null, admin_edited: false }]),
+    )
+    expect(plan[0].action).toBe('update')
+    expect(plan[0].confidence).toBe('exact')
+  })
+
+  it('Wonder / STG remain not_found + unresolved when absent from the candidate set', () => {
+    const plan = computeImportPlan(
+      [
+        { company_name: 'Wonder', website: '', logo_url: 'http://l/w.png', description: 'W' },
+        { company_name: 'STG', website: '', logo_url: 'http://l/s.png', description: 'S' },
+      ],
+      mapOf([{ slug: 'neurocrine', name: 'Neurocrine', logo_url: null, description: null, admin_edited: false }]),
+    )
+    expect(plan[0]).toMatchObject({ action: 'not_found', confidence: 'unresolved' })
+    expect(plan[1]).toMatchObject({ action: 'not_found', confidence: 'unresolved' })
+  })
+})
 
 const h = vi.hoisted(() => ({
   user: { id: 'admin', email: 'bizdev91@gmail.com' } as any,
@@ -311,6 +396,25 @@ describe('company-enrichment import route — network company matching', () => {
     expect(data.summary.notFound).toBe(1)
     expect(data.results[0].skipped_reason).toBe('not_found')
     expect(h.ensured).toHaveLength(0)
+  })
+
+  it('fuzzy: full CSV name resolves to the short member company, materializes it, fills fields', async () => {
+    h.companies = []
+    h.profiles = [{ company: 'Neurocrine' }]   // member typed the short name
+    const csv = 'company_name,website,logo_url,description\nNeurocrine Biosciences,neurocrine.com,http://src/n.png,"Biopharma."'
+    // Preview first: should resolve (fuzzy), not not_found.
+    const prev = await (await post({ csv })).json()
+    expect(prev.summary.notFound).toBe(0)
+    expect(prev.preview[0].action).toBe('update')
+    expect(prev.preview[0].confidence).toBe('fuzzy')
+    expect(prev.preview[0].slug).toBe('neurocrine')
+    // Apply: materialize under the RESOLVED slug + fill both fields.
+    const data = await (await post({ csv, apply: true })).json()
+    expect(h.ensured).toContain('neurocrine')
+    expect(downloadAndStoreLogo).toHaveBeenCalledWith(expect.anything(), 'neurocrine', ['http://src/n.png'])
+    expect(data.summary.updatedFields).toBe(2)
+    const row = h.companies.find((r) => r.slug === 'neurocrine')
+    expect(row.description).toBe('Biopharma.')
   })
 
   it('does not overwrite existing logo/description on a materialized-or-real row', async () => {

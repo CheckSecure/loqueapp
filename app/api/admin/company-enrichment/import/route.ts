@@ -85,6 +85,7 @@ export async function POST(request: Request) {
       slug: p.slug,
       matched_company: p.matchedName,
       action: p.action,
+      confidence: p.confidence,
       reason: p.reason ?? null,
       current_logo_url: p.fields.logo_url?.current ?? null,
       new_logo_url: p.fields.logo_url?.candidate ?? null,

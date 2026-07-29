@@ -312,8 +312,14 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
                 {impPreview.preview.map((p: any, i: number) => (
                   <div key={i} className="px-3 py-2 text-xs">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium text-slate-800 truncate">{p.matched_company || p.company_name}</span>
-                      <span className={p.action === 'update' ? 'text-emerald-700 font-semibold' : p.action === 'not_found' ? 'text-amber-600' : 'text-slate-400'}>
+                      <span className="min-w-0">
+                        {/* Original CSV name → resolved company, slug, and match confidence. */}
+                        <span className="font-medium text-slate-800">{p.company_name}</span>
+                        {p.action !== 'not_found' && (
+                          <span className="text-slate-500"> → {p.matched_company || p.slug} <span className="text-slate-400">/{p.slug} · <span className={p.confidence === 'exact' ? 'text-emerald-600' : p.confidence === 'canonical' ? 'text-sky-600' : 'text-amber-600 font-semibold'}>{p.confidence}</span></span></span>
+                        )}
+                      </span>
+                      <span className={p.action === 'update' ? 'text-emerald-700 font-semibold flex-shrink-0' : p.action === 'not_found' ? 'text-amber-600 flex-shrink-0' : 'text-slate-400 flex-shrink-0'}>
                         {p.action}{p.reason ? ` · ${p.reason}` : ''}
                       </span>
                     </div>
