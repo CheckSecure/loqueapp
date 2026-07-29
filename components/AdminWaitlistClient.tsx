@@ -94,6 +94,42 @@ export default function AdminWaitlistClient({
   const [sending, setSending] = useState(false)
   const [block, setBlock] = useState<{ reason: string; requiresReason?: boolean; overridable?: boolean } | null>(null)
   const [overrideReason, setOverrideReason] = useState('')
+
+  // Revoke-invite confirmation modal state.
+  const [revokeEntry, setRevokeEntry] = useState<WaitlistEntry | null>(null)
+  const [revoking, setRevoking] = useState(false)
+  const [revokeError, setRevokeError] = useState<string | null>(null)
+
+  const openRevoke = (entry: WaitlistEntry) => {
+    setRevokeError(null)
+    setRevokeEntry(entry)
+  }
+
+  const doRevoke = async () => {
+    if (!revokeEntry) return
+    setRevoking(true)
+    setRevokeError(null)
+    try {
+      const res = await fetch('/api/admin/waitlist/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryId: revokeEntry.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      // Idempotent: an already-revoked entry returns ok:true.
+      if (res.ok && data.ok) {
+        setRevokeEntry(null)
+        router.refresh() // row leaves the Invited tab (status is no longer 'invited')
+        return
+      }
+      // 409 activated (or other): surface the message; the already-activated copy
+      // comes straight from the server so the UI can't diverge from the rule.
+      setRevokeError(data.error || 'Could not revoke this invitation. Please try again.')
+    } catch {
+      setRevokeError('Network error. Please try again.')
+    }
+    setRevoking(false)
+  }
   // Per-row "Mark as founding member" toggle. Lives client-side only; the value
   // is read at send-invite time and posted to the API. Resets on page refresh.
   const [markFounding, setMarkFounding] = useState<Record<string, boolean>>({})
@@ -549,13 +585,25 @@ export default function AdminWaitlistClient({
                         )}
 
                         {activeTab === 'invited' && (
-                          <button
-                            onClick={() => handleSendInvite(entry.id)}
-                            disabled={processing === entry.id}
-                            className="px-4 py-2 border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50"
-                          >
-                            {processing === entry.id ? 'Sending...' : 'Resend Access Email'}
-                          </button>
+                          <div className="flex flex-col items-end gap-2">
+                            <button
+                              onClick={() => handleSendInvite(entry.id)}
+                              disabled={processing === entry.id}
+                              className="px-4 py-2 border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              {processing === entry.id ? 'Sending...' : 'Resend Access Email'}
+                            </button>
+                            {/* Destructive: revoke a mistaken / duplicate / requested-removal invite
+                                before activation. Same button styling as the Approved-tab "Remove". */}
+                            <button
+                              onClick={() => openRevoke(entry)}
+                              disabled={processing === entry.id}
+                              className="flex items-center gap-1.5 px-4 py-1.5 bg-white text-red-600 border border-red-200 text-xs font-medium rounded-lg hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              Revoke Invite
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -647,6 +695,47 @@ export default function AdminWaitlistClient({
           </div>
         )
       })()}
+
+      {revokeEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50" onClick={() => !revoking && setRevokeEntry(null)} />
+          <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">Revoke Invitation?</h3>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <p className="text-sm text-slate-600">
+                This will revoke this invitation and prevent{' '}
+                <span className="font-semibold text-slate-800">{revokeEntry.full_name || revokeEntry.email}</span>{' '}
+                from activating their account using the existing invite.
+              </p>
+              <p className="text-xs text-slate-500">
+                Use this only for mistaken invitations, duplicate records, or members who requested removal.
+              </p>
+              {revokeError && (
+                <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">{revokeError}</p>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setRevokeEntry(null)}
+                disabled={revoking}
+                className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doRevoke}
+                disabled={revoking}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                <XCircle className="w-4 h-4" />
+                {revoking ? 'Revoking…' : 'Revoke Invite'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -18,8 +18,9 @@ export const WAITLIST_TRANSITIONS: Record<string, readonly string[]> = {
   pending: ['approved', 'declined'],
   approved: ['contacted', 'invited', 'declined'],
   contacted: ['contacted', 'invited', 'declined'],
-  invited: ['invited'],
+  invited: ['invited', 'revoked'],
   declined: [],
+  revoked: [], // terminal — a revoked invitation cannot be re-invited or re-declined
 }
 
 export function canTransition(from: string | null | undefined, to: string): boolean {

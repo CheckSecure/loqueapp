@@ -72,6 +72,14 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Warm recommendation "Contacted" tracking',
     impact: 'Contacted timestamps are not stored (send-recommendation sets status only); the Contacted state still works but loses its date until applied.',
   },
+  {
+    migration: '029_waitlist_revoked.sql',
+    kind: 'column',
+    table: 'waitlist',
+    column: 'revoked_at',
+    feature: 'Admin Revoke Invite audit timestamp',
+    impact: 'Revoke still works (status set to revoked) but the revoked_at timestamp is not stored until applied.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {
