@@ -176,11 +176,13 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
     } catch { /* non-fatal */ }
   }
 
-  // Open the editor for a CSV preview row — even a resolved company that isn't
-  // materialized yet (treated as a pending record). Unresolved rows (not_found)
-  // are not editable and must never be created here.
+  // Open the editor for ANY CSV preview row. Resolved rows edit the resolved
+  // company (materialized or pending network company) with existing values winning.
+  // not_found rows open a "pending company enrichment" editor keyed by the canonical
+  // slug (p.slug === companySlug(company_name)); Save materializes it via the upsert
+  // path with admin_edited = true.
   async function openFromPreview(p: any) {
-    if (!p || p.action === 'not_found') return
+    if (!p) return
     setLogoError(null)
     const existing = companies.find((c) => c.slug === p.slug) || null
     const base: CompanyRow = existing ?? { slug: p.slug, name: p.matched_company || p.company_name, memberCount: 0, meta: null }
@@ -383,28 +385,29 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
               </div>
               <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-slate-100 divide-y divide-slate-100">
                 {impPreview.preview.map((p: any, i: number) => {
-                  const editable = p.action !== 'not_found' // resolved rows can be opened/created; unresolved cannot
+                  const isNotFound = p.action === 'not_found'
                   return (
                   <div
                     key={i}
-                    onClick={editable ? () => openFromPreview(p) : undefined}
-                    role={editable ? 'button' : undefined}
-                    title={editable ? 'Click to edit or create this company' : undefined}
-                    className={`px-3 py-2 text-xs ${editable ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+                    onClick={() => openFromPreview(p)} // every row is clickable
+                    role="button"
+                    title={isNotFound ? 'Click to create this company' : 'Click to edit this company'}
+                    className="px-3 py-2 text-xs cursor-pointer hover:bg-slate-50"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="min-w-0">
                         {/* Original CSV name → resolved company, slug, and match confidence. */}
                         <span className="font-medium text-slate-800">{p.company_name}</span>
-                        {p.action !== 'not_found' && (
+                        {!isNotFound && (
                           <span className="text-slate-500"> → {p.matched_company || p.slug} <span className="text-slate-400">/{p.slug} · <span className={p.confidence === 'exact' ? 'text-emerald-600' : p.confidence === 'canonical' ? 'text-sky-600' : 'text-amber-600 font-semibold'}>{p.confidence}</span></span></span>
                         )}
+                        {isNotFound && <span className="text-slate-400"> → /{p.slug} · not in network</span>}
                       </span>
                       <span className="flex items-center gap-2 flex-shrink-0">
-                        <span className={p.action === 'update' ? 'text-emerald-700 font-semibold' : p.action === 'not_found' ? 'text-amber-600' : 'text-slate-400'}>
-                          {p.action}{p.reason ? ` · ${p.reason}` : ''}
+                        <span className={p.action === 'update' ? 'text-emerald-700 font-semibold' : isNotFound ? 'text-brand-navy font-semibold' : 'text-slate-400'}>
+                          {isNotFound ? 'create company' : `${p.action}${p.reason ? ` · ${p.reason}` : ''}`}
                         </span>
-                        {editable && <span className="text-[10px] font-semibold text-brand-navy">Edit →</span>}
+                        <span className="text-[10px] font-semibold text-brand-navy">{isNotFound ? 'Edit enrichment →' : 'Edit →'}</span>
                       </span>
                     </div>
                     {p.action === 'update' && (
@@ -527,7 +530,10 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
         ) : (
           <div className="rounded-2xl border border-slate-200/70 bg-white p-5 space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold text-brand-navy">Editing /{editing.slug}</h3>
+              <h3 className="text-sm font-bold text-brand-navy">
+                {companies.some(c => c.slug === editing.slug) ? 'Editing' : 'Creating'} /{editing.slug}
+                {!companies.some(c => c.slug === editing.slug) && <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-brand-navy bg-brand-cream/50 border border-brand-navy/20 rounded-full px-2 py-0.5">new</span>}
+              </h3>
               <Link href={`/company/${editing.slug}`} target="_blank" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-navy hover:text-brand-gold">
                 Preview <ExternalLink className="w-3 h-3" />
               </Link>

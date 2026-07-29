@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { validateLogoBytes, sniffLogo } from '@/lib/company/imageSniff'
 import { buildEditorFormFromPreview } from '@/lib/company/previewEditor'
+import { companySlug } from '@/lib/company/slug'
 
 // ---- byte builders ----------------------------------------------------------
 const png = (n = 300) => { const b = new Uint8Array(Math.max(n, 8)); b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0); return b }
@@ -47,6 +48,18 @@ describe('buildEditorFormFromPreview', () => {
     const form = buildEditorFormFromPreview(preview, null)
     expect(form).toMatchObject({
       name: 'Neurocrine', website: 'neurocrine.com', logo_url: 'http://l/n.png', description: 'Biopharma.',
+      industry: '', headquarters: '',
+    })
+  })
+
+  it('not_found row (no match): opens a pending editor populated from the CSV company_name', () => {
+    const p = {
+      company_name: 'Brand New Co', slug: 'brand-new-co', matched_company: null, action: 'not_found' as const,
+      csv_website: 'brandnew.com', csv_logo_url: 'http://l/b.png', csv_description: 'Does things.',
+    }
+    const form = buildEditorFormFromPreview(p, null)
+    expect(form).toMatchObject({
+      name: 'Brand New Co', website: 'brandnew.com', logo_url: 'http://l/b.png', description: 'Does things.',
       industry: '', headquarters: '',
     })
   })
@@ -145,6 +158,14 @@ describe('company upsert route — create on save', () => {
     expect(data.ok).toBe(true)
     expect(h.upserts[0]).toMatchObject({ slug: 'neurocrine', name: 'Neurocrine', admin_edited: true })
     expect(h.companies.some((r) => r.slug === 'neurocrine')).toBe(true)
+  })
+
+  it('saving a not_found company materializes it under the canonical slug (admin_edited=true)', async () => {
+    const slug = companySlug('Brand New Co') // what openFromPreview/Save uses for a not_found row
+    const res = await upsertCompanyRoute(jsonReq({ slug, name: 'Brand New Co', website: 'brandnew.com', description: 'Does things.' }))
+    expect(res.status).toBe(200)
+    expect(h.upserts[0]).toMatchObject({ slug, name: 'Brand New Co', admin_edited: true })
+    expect(h.companies.some((r) => r.slug === slug)).toBe(true)
   })
 
   it('401 for a non-admin caller', async () => {

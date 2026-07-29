@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { parseImportCsv, parseCsvRecords, computeImportPlan, type ExistingCompany } from '@/lib/company/csvImport'
 import { buildCompanyResolver, resolveCompany, nearestCandidates } from '@/lib/company/companyResolver'
+import { companySlug } from '@/lib/company/slug'
 
 const mapOf = (rows: ExistingCompany[]) => new Map(rows.map((r) => [r.slug, r]))
 
@@ -427,6 +428,18 @@ describe('company-enrichment import route — network company matching', () => {
     expect(data.summary.networkError).toBeNull()
     expect(data.summary.notFound).toBe(0)
     expect(data.preview[0].confidence).toBe('fuzzy')
+  })
+
+  it('a not_found row carries the canonical slug + CSV fields so the editor can create it', async () => {
+    h.companies = []
+    h.profiles = [] // empty network → not_found
+    const csv = 'company_name,website,logo_url,description\nBrand New Co,brandnew.com,http://l/b.png,"Does things."'
+    const row = (await (await post({ csv })).json()).preview[0]
+    expect(row.action).toBe('not_found')
+    expect(row.slug).toBe(companySlug('Brand New Co')) // canonical slug for materialization on save
+    expect(row.csv_website).toBe('brandnew.com')
+    expect(row.csv_logo_url).toBe('http://l/b.png')
+    expect(row.csv_description).toBe('Does things.')
   })
 
   it('attaches closest_network_matches to unmatched rows (and nothing to resolved rows)', async () => {
