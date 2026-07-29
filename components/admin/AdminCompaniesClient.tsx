@@ -39,6 +39,44 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
   const [repairing, setRepairing] = useState(false)
   const [repairMsg, setRepairMsg] = useState<string | null>(null)
   const [repairStages, setRepairStages] = useState<Record<string, any> | null>(null)
+  // "Enrich Missing Company Data" backfill progress.
+  const [backfilling, setBackfilling] = useState(false)
+  const [bf, setBf] = useState<{ totalMissing: number; processed: number; total: number; succeeded: number; failed: number; done: boolean } | null>(null)
+
+  async function runBackfill() {
+    if (backfilling) return
+    setBackfilling(true)
+    let offset = 0
+    let succeeded = 0
+    let failed = 0
+    try {
+      // Walk the stable, resumable batches until done.
+      for (let guard = 0; guard < 1000; guard++) {
+        const res = await fetch('/api/admin/company-enrichment/backfill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ offset }),
+        })
+        const data = await res.json()
+        if (!res.ok || !data.ok) { setBf((p) => (p ? { ...p, done: true } : p)); break }
+        succeeded += data.succeeded || 0
+        failed += data.failed || 0
+        setBf({
+          totalMissing: data.totalMissing ?? 0,
+          processed: data.processed ?? 0,
+          total: data.totalCompanies ?? 0,
+          succeeded,
+          failed,
+          done: !!data.done,
+        })
+        if (data.done || data.nextOffset == null) break
+        offset = data.nextOffset
+      }
+    } catch {
+      setBf((p) => (p ? { ...p, done: true } : { totalMissing: 0, processed: 0, total: 0, succeeded, failed, done: true }))
+    }
+    setBackfilling(false)
+  }
   // Fallback metadata (company_metadata) — used only when scraping is blocked.
   const [fb, setFb] = useState<Record<string, string>>({})
   const [fbSaving, setFbSaving] = useState(false)
@@ -141,6 +179,44 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
     <div className="grid lg:grid-cols-2 gap-6">
       {/* List */}
       <div>
+        {/* Backfill: enrich companies missing a logo or description. */}
+        <div className="mb-3 rounded-xl border border-slate-200/70 bg-white p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Enrich Missing Company Data</p>
+              <p className="text-xs text-slate-500 mt-0.5">Fill logos &amp; descriptions for companies missing them. Safe &amp; resumable — already-enriched and admin-edited companies are skipped.</p>
+            </div>
+            <button
+              onClick={runBackfill}
+              disabled={backfilling || !tableReady}
+              className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-brand-navy text-white text-sm font-semibold rounded-lg hover:bg-brand-navy/90 disabled:opacity-50"
+            >
+              {backfilling ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {backfilling ? 'Enriching…' : 'Enrich Missing Company Data'}
+            </button>
+          </div>
+          {bf && (
+            <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+              <div className="rounded-lg bg-slate-50 border border-slate-100 py-2">
+                <p className="text-base font-bold text-slate-900">{bf.totalMissing}</p>
+                <p className="text-[11px] text-slate-500">Missing</p>
+              </div>
+              <div className="rounded-lg bg-slate-50 border border-slate-100 py-2">
+                <p className="text-base font-bold text-slate-900">{bf.processed}/{bf.total}</p>
+                <p className="text-[11px] text-slate-500">Processed</p>
+              </div>
+              <div className="rounded-lg bg-emerald-50 border border-emerald-100 py-2">
+                <p className="text-base font-bold text-emerald-700">{bf.succeeded}</p>
+                <p className="text-[11px] text-emerald-600">Completed</p>
+              </div>
+              <div className="rounded-lg bg-red-50 border border-red-100 py-2">
+                <p className="text-base font-bold text-red-600">{bf.failed}</p>
+                <p className="text-[11px] text-red-500">Failed</p>
+              </div>
+            </div>
+          )}
+          {bf?.done && !backfilling && <p className="mt-2 text-xs text-emerald-700">Done.</p>}
+        </div>
         <div className="relative mb-3">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input

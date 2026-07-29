@@ -31,7 +31,7 @@ export async function runEnrichment(
   admin: any,
   slug: string,
   name: string,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; website?: string } = {},
 ): Promise<EnrichResult> {
   if (!slug || !name?.trim()) return { status: 'skipped' }
   const force = !!opts.force
@@ -105,8 +105,18 @@ export async function runEnrichment(
   console.log(JSON.stringify({ event: 'company_enrich_start', slug, name, force }))
 
   try {
-    // 1) Discover the official website.
-    const disc = await discoveryProvider.discover(name)
+    // 1) Discover the official website. A caller-PROVIDED domain (enrichCompany's
+    //    companyDomain) skips discovery — the key unlock for companies not in the
+    //    registry and not findable without a search key. Registry identity still
+    //    wins when present (authoritative), handled below.
+    const providedWebsite = opts.website?.trim()
+      ? (/^https?:\/\//i.test(opts.website.trim())
+          ? opts.website.trim()
+          : `https://${opts.website.trim().replace(/^\/+/, '')}`)
+      : null
+    const disc = providedWebsite
+      ? { website: providedWebsite, via: 'provided' }
+      : await discoveryProvider.discover(name)
     const registryResolved = disc.via === 'registry' || !!canonical
     console.log(JSON.stringify({ event: 'company_enrich_discovery', slug, website: disc.website, via: disc.via, registry: registryResolved }))
 
@@ -121,7 +131,23 @@ export async function runEnrichment(
     // 2) Fetch the homepage and extract structured metadata (may fail: 403/timeout/blocked).
     const page = await fetchText(website, 7000)
     const { metadata, logoCandidates } = extractMetadata(page.text || '', page.url || website)
-    const storedLogo = await downloadAndStoreLogo(admin, slug, logoCandidates)
+    // Domain-derived logo fallbacks, appended AFTER scraped candidates so a real
+    // homepage logo still wins. These fill a logo even when the homepage blocks
+    // scraping (403 / timeout / no discoverable icon) — every candidate is derived
+    // from the VERIFIED domain (a logo API keyed on it + the site's own icons),
+    // never a random image. downloadAndStoreLogo validates each by magic bytes and
+    // a minimum size before storing our own copy, so a 404 / parked / 1×1 response
+    // is rejected and logo_url stays null.
+    const logoDomain = (() => {
+      try { return new URL(website).hostname.replace(/^www\./, '').toLowerCase() } catch { return '' }
+    })()
+    const domainLogoCandidates = logoDomain ? [
+      `https://logo.clearbit.com/${logoDomain}`,
+      `https://${logoDomain}/apple-touch-icon.png`,
+      `https://${logoDomain}/apple-touch-icon-precomposed.png`,
+      `https://${logoDomain}/favicon.ico`,
+    ] : []
+    const storedLogo = await downloadAndStoreLogo(admin, slug, [...logoCandidates, ...domainLogoCandidates])
     const scrapedOk = page.ok && (has(metadata.description) || has(metadata.headquarters) || !!storedLogo)
     console.log(JSON.stringify({ event: 'company_enrich_extracted', slug, httpOk: page.ok, scrapedOk, hasDescription: has(metadata.description), logo: !!storedLogo }))
 
