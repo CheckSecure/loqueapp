@@ -116,7 +116,9 @@ describe('computeImportPlan — fill-missing-only rules', () => {
 const h = vi.hoisted(() => ({
   user: { id: 'admin', email: 'bizdev91@gmail.com' } as any,
   companies: [] as any[],
+  profiles: [] as any[],
   updates: [] as any[],
+  ensured: [] as string[],
   logoResult: 'https://bucket/acme.png?v=1' as string | null,
 }))
 
@@ -129,8 +131,9 @@ vi.mock('@/lib/company/enrichment/logo', () => ({
 }))
 
 vi.mock('@/lib/supabase/admin', () => {
-  function from(_table: string) {
+  function from(table: string) {
     const state: any = { op: 'select', patch: null, filters: {} }
+    const rowsFor = () => (h as any)[table] ?? []
     const b: any = {
       select() {
         if (state.op === 'update') {
@@ -144,11 +147,20 @@ vi.mock('@/lib/supabase/admin', () => {
         }
         return b
       },
+      not() { return b }, // profiles: .not('company','is',null) — no-op in the mock
       update(patch: any) { state.op = 'update'; state.patch = patch; return b },
+      // ensureCompanyRecord(): insert-if-absent by slug (ignoreDuplicates), never overwrite.
+      upsert(payload: any) {
+        if (table === 'companies' && payload?.slug && !h.companies.some((r) => r.slug === payload.slug)) {
+          h.companies.push({ slug: payload.slug, name: payload.name ?? null, logo_url: null, description: null, admin_edited: false, enrichment_source: payload.enrichment_source ?? null })
+          h.ensured.push(payload.slug)
+        }
+        return Promise.resolve({ data: null, error: null })
+      },
       eq(k: string, v: any) { state.filters[k] = v; return b },
       is(k: string, v: any) { state.filters[k] = v; return b },
       then(res: any, rej: any) {
-        return Promise.resolve({ data: h.companies.map((r) => ({ ...r })), error: null }).then(res, rej)
+        return Promise.resolve({ data: rowsFor().map((r: any) => ({ ...r })), error: null }).then(res, rej)
       },
     }
     return b
@@ -167,7 +179,9 @@ const post = (body: any) =>
 beforeEach(() => {
   h.user = { id: 'admin', email: 'bizdev91@gmail.com' }
   h.companies = []
+  h.profiles = []
   h.updates = []
+  h.ensured = []
   h.logoResult = 'https://bucket/acme.png?v=1'
   ;(downloadAndStoreLogo as any).mockClear()
 })
@@ -209,6 +223,8 @@ describe('company-enrichment import route', () => {
     expect(h.companies[0].admin_edited).toBe(false) // cleanup, not a manual override
     // Every update is guarded to only fill a still-null field.
     expect(h.updates.every((u) => u.filters.admin_edited === false)).toBe(true)
+    // A real companies row is NOT re-materialized (ensureCompanyRecord not called).
+    expect(h.ensured).toHaveLength(0)
   })
 
   it('records a rejected logo (broken/placeholder/tiny) without failing the row', async () => {
@@ -245,5 +261,65 @@ describe('company-enrichment import route', () => {
     const data = await (await post({ csv: CSV, apply: true })).json()
     expect(data.summary.notFound).toBe(1)
     expect(data.results[0].skipped_reason).toBe('not_found')
+  })
+})
+
+// Network-derived matching: a real member company with no companies row yet must
+// resolve (update), not not_found — matching the Admin Companies page universe.
+describe('company-enrichment import route — network company matching', () => {
+  const CSV = 'company_name,website,logo_url,description\nAcme,acme.com,http://src/logo.png,"What Acme does."'
+
+  it('network company with NO companies row → preview shows update, not not_found', async () => {
+    h.companies = []                       // nothing materialized yet
+    h.profiles = [{ company: 'Acme' }]     // but Acme is a real member company
+    const data = await (await post({ csv: CSV })).json()
+    expect(data.applied).toBe(false)
+    expect(data.summary.notFound).toBe(0)
+    expect(data.summary.toUpdate).toBe(1)
+    expect(data.preview[0].action).toBe('update')
+    expect(data.preview[0].matched_company).toBe('Acme')
+    expect(h.updates).toHaveLength(0)      // preview writes nothing
+    expect(h.ensured).toHaveLength(0)      // and materializes nothing
+  })
+
+  it('apply materializes the missing companies row and fills both fields', async () => {
+    h.companies = []
+    h.profiles = [{ company: 'Acme' }]
+    const data = await (await post({ csv: CSV, apply: true })).json()
+    expect(h.ensured).toContain('acme')            // row created via ensureCompanyRecord
+    expect(data.summary.updatedCompanies).toBe(1)
+    expect(data.summary.updatedFields).toBe(2)
+    const row = h.companies.find((r) => r.slug === 'acme')
+    expect(row.logo_url).toBe('https://bucket/acme.png?v=1')
+    expect(row.description).toBe('What Acme does.')
+    expect(row.admin_edited).toBe(false)
+  })
+
+  it('an existing companies row is used directly and NOT re-materialized', async () => {
+    h.companies = [{ slug: 'acme', name: 'Acme', logo_url: null, description: null, admin_edited: false }]
+    h.profiles = [{ company: 'Acme' }]     // also in the network, but a real row already exists
+    const data = await (await post({ csv: CSV, apply: true })).json()
+    expect(h.ensured).toHaveLength(0)       // realSlugs guard → no upsert
+    expect(data.summary.updatedFields).toBe(2)
+    expect(h.companies[0].description).toBe('What Acme does.')
+  })
+
+  it('a CSV company matching neither a row nor a network company stays not_found', async () => {
+    h.companies = []
+    h.profiles = [{ company: 'Globex' }]   // network has Globex, not Acme
+    const data = await (await post({ csv: CSV, apply: true })).json()
+    expect(data.summary.notFound).toBe(1)
+    expect(data.results[0].skipped_reason).toBe('not_found')
+    expect(h.ensured).toHaveLength(0)
+  })
+
+  it('does not overwrite existing logo/description on a materialized-or-real row', async () => {
+    h.companies = [{ slug: 'acme', name: 'Acme', logo_url: 'http://has/logo.png', description: 'Existing desc.', admin_edited: false }]
+    h.profiles = [{ company: 'Acme' }]
+    const data = await (await post({ csv: CSV, apply: true })).json()
+    expect(data.summary.updatedFields).toBe(0)      // both already present → skip
+    expect(h.companies[0].logo_url).toBe('http://has/logo.png')
+    expect(h.companies[0].description).toBe('Existing desc.')
+    expect(downloadAndStoreLogo).not.toHaveBeenCalled()
   })
 })

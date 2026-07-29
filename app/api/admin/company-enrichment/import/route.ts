@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { parseImportCsv, computeImportPlan, type ExistingCompany, type ImportPlanItem } from '@/lib/company/csvImport'
 import { downloadAndStoreLogo } from '@/lib/company/enrichment/logo'
+import { computeNetworkCompanies, ensureCompanyRecord } from '@/lib/company/enrich'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -50,6 +51,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Could not read companies.' }, { status: 500 })
   }
   const bySlug = new Map<string, ExistingCompany>((existing.data || []).map((r: any) => [r.slug, r]))
+  // Slugs that already have a real companies row — used on apply to decide which
+  // matched companies still need their row materialized via ensureCompanyRecord().
+  const realSlugs = new Set(bySlug.keys())
+
+  // Match against the SAME company universe the Admin Companies page uses: the
+  // member-derived network list. A network company without a companies row yet
+  // gets a synthetic empty entry so the plan treats it as fillable (update) rather
+  // than not_found. We never invent companies from CSV names — only from real
+  // members — so a CSV row matching neither a real row nor a network company stays
+  // not_found.
+  const { data: profs } = await admin.from('profiles').select('company').not('company', 'is', null)
+  for (const c of computeNetworkCompanies(profs)) {
+    if (!bySlug.has(c.slug)) {
+      bySlug.set(c.slug, { slug: c.slug, name: c.name, logo_url: null, description: null, admin_edited: false })
+    }
+  }
+
   const plan = computeImportPlan(rows, bySlug)
 
   const summary = {
@@ -107,6 +125,13 @@ export async function POST(request: Request) {
     }
 
     const changed: string[] = []
+
+    // Materialize a companies row for a matched NETWORK company that has none yet
+    // (idempotent upsert; ignoreDuplicates → never overwrites an existing row).
+    // Real rows are left untouched; the null-guarded updates below still apply.
+    if (!realSlugs.has(item.slug)) {
+      await ensureCompanyRecord(admin, item.slug, item.matchedName || item.input.company_name)
+    }
 
     // Logo: validate + download + store our own copy via the existing pipeline util.
     if (item.fields.logo_url) {
