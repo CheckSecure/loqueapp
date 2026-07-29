@@ -64,7 +64,7 @@ export async function POST(request: Request) {
 
   const email = normalizeEmail(entry.email)
 
-  // ── Activation check (server-authoritative) ───────────────────────────────
+  // ── Auth account lookup (for cleanup) ─────────────────────────────────────
   let authUser: any = null
   if (email) {
     try {
@@ -75,36 +75,58 @@ export async function POST(request: Request) {
     }
   }
 
-  let activated = false
-  if (authUser) {
-    if (authUser.last_sign_in_at) {
-      activated = true
-    } else {
-      const { data: profileRow, error: profErr } = await admin
-        .from('profiles').select('id').eq('id', authUser.id).maybeSingle()
-      if (profErr) {
-        console.error('[waitlist/revoke] profile lookup failed:', profErr.message)
-        return NextResponse.json({ ok: false, error: 'Could not verify the account. Please try again.' }, { status: 500 })
-      }
-      activated = !!profileRow
-    }
+  // ── Canonical member check (server-authoritative) ─────────────────────────
+  // The ONLY thing that blocks revocation is being a FULLY ACTIVE member — the
+  // exact signal the Invited tab uses to exclude someone: a profile with
+  // profile_complete = true (matched by email; waitlist.email == profiles.email by
+  // construction — see lib/waitlist/joined.ts + app/dashboard/admin/waitlist/page.tsx).
+  // A sign-in alone, or a PARTIAL profile (profile_complete = false, onboarding not
+  // finished), is NOT full activation and stays revocable — exactly as it stays
+  // listed under Invited. We deliberately do NOT use last_sign_in_at or mere profile
+  // existence.
+  const memberBlocked = 'This invitation has already been activated. Activated members must be managed from the Members section.'
+  const { data: profile, error: profErr } = await admin
+    .from('profiles')
+    .select('id, profile_complete')
+    .ilike('email', email)
+    .maybeSingle()
+  if (profErr) {
+    console.error('[waitlist/revoke] profile lookup failed:', profErr.message)
+    return NextResponse.json({ ok: false, error: 'Could not verify the account. Please try again.' }, { status: 500 })
   }
-
-  if (activated) {
-    return NextResponse.json(
-      {
-        ok: false,
-        activated: true,
-        error: 'This invitation has already been activated. Activated members must be managed from the Members section.',
-      },
-      { status: 409 },
-    )
+  if (profile?.profile_complete === true) {
+    return NextResponse.json({ ok: false, activated: true, error: memberBlocked }, { status: 409 })
   }
 
   // ── Revoke ────────────────────────────────────────────────────────────────
   const now = new Date().toISOString()
 
-  // 1) Terminal waitlist status (removes from Invited tab + all email paths).
+  // 1) Clean up a PARTIAL profile (onboarding started, not finished) so no orphaned
+  //    onboarding data remains — the delete is CONDITIONAL on profile_complete = false,
+  //    which doubles as the race guard: if onboarding completes between the check
+  //    above and here, the delete matches 0 rows; we re-verify, and a now-complete
+  //    profile means this is a real member, so we ABORT before revoking. A profile
+  //    that vanished concurrently, or a delete error (the auth-user delete below
+  //    cascades the profile anyway), is non-fatal and we continue.
+  if (profile) {
+    const { data: deletedProfile, error: delProfErr } = await admin
+      .from('profiles')
+      .delete()
+      .eq('id', profile.id)
+      .eq('profile_complete', false)
+      .select('id')
+    if (delProfErr) {
+      console.error('[waitlist/revoke] partial-profile delete failed (non-fatal; auth delete cascades):', delProfErr.message)
+    } else if (!deletedProfile?.length) {
+      const { data: recheck } = await admin
+        .from('profiles').select('profile_complete').eq('id', profile.id).maybeSingle()
+      if (recheck?.profile_complete === true) {
+        return NextResponse.json({ ok: false, activated: true, error: memberBlocked }, { status: 409 })
+      }
+    }
+  }
+
+  // 2) Terminal waitlist status (removes from Invited tab + all email paths).
   //    Resilient to migration 029 (revoked_at) not being applied yet.
   let { error: wlErr } = await admin
     .from('waitlist')
@@ -118,9 +140,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Could not revoke the invitation. Please try again.' }, { status: 500 })
   }
 
-  // 2) Delete the bare, not-activated auth account so the temp password can no
-  //    longer sign in. Safe (no profile → no cascade). Best-effort + idempotent:
-  //    a missing / already-deleted user is treated as success.
+  // 3) Delete the auth account so the temp password can no longer sign in (and to
+  //    cascade-clean any residual profile). Safe: no fully-active member reaches
+  //    here. Best-effort + idempotent — a missing / already-deleted user is success.
   if (authUser) {
     const { error: delErr } = await admin.auth.admin.deleteUser(authUser.id)
     if (delErr && !/not[\s_-]?found/i.test(delErr.message || '')) {
@@ -128,7 +150,7 @@ export async function POST(request: Request) {
     }
   }
 
-  // 3) Sync any linked referral to terminal (mirrors the decline path). No-op if none.
+  // 4) Sync any linked referral to terminal (mirrors the decline path). No-op if none.
   await admin.from('referrals').update({ status: 'rejected', rejected_at: now }).eq('waitlist_id', entryId)
 
   // Lightweight audit trail (no formal admin-audit table exists in the repo).
