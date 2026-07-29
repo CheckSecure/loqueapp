@@ -91,6 +91,11 @@ export async function POST(request: Request) {
       new_logo_url: p.fields.logo_url?.candidate ?? null,
       current_description: p.fields.description?.current ?? null,
       new_description: p.fields.description?.next ?? null,
+      // Raw CSV values so the editor can populate a preview row (resolved but not
+      // yet materialized) directly.
+      csv_website: p.input.website || null,
+      csv_logo_url: p.input.logo_url || null,
+      csv_description: p.input.description || null,
     }))
     return NextResponse.json({ ok: true, applied: false, summary, preview, parseErrors })
   }

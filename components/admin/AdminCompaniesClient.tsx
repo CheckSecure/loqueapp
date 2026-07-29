@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Search, ExternalLink, Loader2, Check, RefreshCw } from 'lucide-react'
+import { Search, ExternalLink, Loader2, Check, RefreshCw, Upload, Trash2 } from 'lucide-react'
+import { buildEditorFormFromPreview } from '@/lib/company/previewEditor'
 
 type CompanyRow = {
   slug: string
@@ -30,8 +32,22 @@ const FIELDS: { key: keyof NonNullable<CompanyRow['meta']> | 'name'; label: stri
 ]
 
 export default function AdminCompaniesClient({ companies, tableReady }: { companies: CompanyRow[]; tableReady: boolean }) {
+  const router = useRouter()
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<CompanyRow | null>(null)
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [logoError, setLogoError] = useState<string | null>(null)
+  const logoInputRef = useRef<HTMLInputElement | null>(null)
+  // Deferred logo storage: the chosen file is held client-side (with a local
+  // object-URL preview) and only stored in the bucket when Save succeeds — so an
+  // uploaded-but-never-saved logo never creates an orphan file.
+  const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null)
+  const [pendingLogoPreview, setPendingLogoPreview] = useState<string | null>(null)
+
+  function clearPendingLogo() {
+    setPendingLogoFile(null)
+    setPendingLogoPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return null })
+  }
   const [form, setForm] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -138,7 +154,8 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
 
   async function open(c: CompanyRow) {
     setEditing(c)
-    setSaved(false); setError(null); setRepairMsg(null); setRepairStages(null)
+    clearPendingLogo()
+    setSaved(false); setError(null); setRepairMsg(null); setRepairStages(null); setLogoError(null)
     setForm({
       name: c.meta?.name || c.name || '',
       logo_url: c.meta?.logo_url || '',
@@ -156,6 +173,38 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
       const m = data?.metadata || {}
       setFb({ description: m.description || '', industry: m.industry || '', headquarters: m.headquarters || '', logo_url: m.logo_url || '' })
     } catch { /* non-fatal */ }
+  }
+
+  // Open the editor for a CSV preview row — even a resolved company that isn't
+  // materialized yet (treated as a pending record). Unresolved rows (not_found)
+  // are not editable and must never be created here.
+  async function openFromPreview(p: any) {
+    if (!p || p.action === 'not_found') return
+    setLogoError(null)
+    const existing = companies.find((c) => c.slug === p.slug) || null
+    const base: CompanyRow = existing ?? { slug: p.slug, name: p.matched_company || p.company_name, memberCount: 0, meta: null }
+    await open(base)
+    // Overlay: existing values win; CSV fills the gaps.
+    setForm(buildEditorFormFromPreview(p, existing))
+  }
+
+  const LOGO_MIME = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon']
+
+  // Choose a logo file — held locally until Save; server re-validates by magic bytes then.
+  function selectLogo(file: File) {
+    setLogoError(null)
+    if (file.size < 200) { setLogoError('Image is too small (looks like a placeholder).'); return }
+    if (file.size > 5_000_000) { setLogoError('Image is too large (max 5 MB).'); return }
+    if (file.type && !LOGO_MIME.includes(file.type)) { setLogoError('Accepted formats: PNG, JPG, SVG, ICO.'); return }
+    setPendingLogoFile(file)
+    setPendingLogoPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file) })
+    setSaved(false)
+    if (logoInputRef.current) logoInputRef.current.value = ''
+  }
+
+  function removeLogo() {
+    clearPendingLogo()
+    setForm({ ...form, logo_url: '' }); setSaved(false); setLogoError(null)
   }
 
   async function saveFallback() {
@@ -178,19 +227,38 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
 
   async function save() {
     if (!editing) return
-    setSaving(true); setError(null); setSaved(false)
+    setSaving(true); setError(null); setSaved(false); setLogoError(null)
     try {
+      // Finalize a pending logo into the company-logos bucket ONLY now (deferred
+      // storage). Server re-validates by magic bytes; a rejection aborts the save.
+      let logoUrl = form.logo_url
+      if (pendingLogoFile) {
+        setLogoUploading(true)
+        const fd = new FormData()
+        fd.append('slug', editing.slug)
+        fd.append('file', pendingLogoFile)
+        const up = await fetch('/api/admin/companies/logo', { method: 'POST', body: fd })
+        const upData = await up.json().catch(() => ({}))
+        setLogoUploading(false)
+        if (!up.ok || !upData.ok) { setError(upData.error || 'Logo upload failed.'); return }
+        logoUrl = upData.url
+      }
       const res = await fetch('/api/admin/companies/upsert', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: editing.slug, ...form }),
+        body: JSON.stringify({ slug: editing.slug, ...form, logo_url: logoUrl }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Save failed'); return }
+      // Persisted: reflect the finalized logo and drop the pending file.
+      clearPendingLogo()
+      setForm((prev) => ({ ...prev, logo_url: logoUrl }))
       setSaved(true)
+      // A pending (preview) company is created on save — refresh so it appears in the list.
+      router.refresh()
     } catch {
       setError('Network error')
     } finally {
-      setSaving(false)
+      setSaving(false); setLogoUploading(false)
     }
   }
 
@@ -309,8 +377,16 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
                 {impPreview.summary.parseErrors > 0 && <span className="text-red-600">{impPreview.summary.parseErrors} parse errors</span>}
               </div>
               <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-slate-100 divide-y divide-slate-100">
-                {impPreview.preview.map((p: any, i: number) => (
-                  <div key={i} className="px-3 py-2 text-xs">
+                {impPreview.preview.map((p: any, i: number) => {
+                  const editable = p.action !== 'not_found' // resolved rows can be opened/created; unresolved cannot
+                  return (
+                  <div
+                    key={i}
+                    onClick={editable ? () => openFromPreview(p) : undefined}
+                    role={editable ? 'button' : undefined}
+                    title={editable ? 'Click to edit or create this company' : undefined}
+                    className={`px-3 py-2 text-xs ${editable ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <span className="min-w-0">
                         {/* Original CSV name → resolved company, slug, and match confidence. */}
@@ -319,8 +395,11 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
                           <span className="text-slate-500"> → {p.matched_company || p.slug} <span className="text-slate-400">/{p.slug} · <span className={p.confidence === 'exact' ? 'text-emerald-600' : p.confidence === 'canonical' ? 'text-sky-600' : 'text-amber-600 font-semibold'}>{p.confidence}</span></span></span>
                         )}
                       </span>
-                      <span className={p.action === 'update' ? 'text-emerald-700 font-semibold flex-shrink-0' : p.action === 'not_found' ? 'text-amber-600 flex-shrink-0' : 'text-slate-400 flex-shrink-0'}>
-                        {p.action}{p.reason ? ` · ${p.reason}` : ''}
+                      <span className="flex items-center gap-2 flex-shrink-0">
+                        <span className={p.action === 'update' ? 'text-emerald-700 font-semibold' : p.action === 'not_found' ? 'text-amber-600' : 'text-slate-400'}>
+                          {p.action}{p.reason ? ` · ${p.reason}` : ''}
+                        </span>
+                        {editable && <span className="text-[10px] font-semibold text-brand-navy">Edit →</span>}
                       </span>
                     </div>
                     {p.action === 'update' && (
@@ -330,7 +409,8 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
                       </div>
                     )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -403,7 +483,47 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
             {FIELDS.map(f => (
               <div key={f.key}>
                 <label className="block text-xs font-medium text-slate-600 mb-1">{f.label}</label>
-                {f.textarea ? (
+                {f.key === 'logo_url' ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {(pendingLogoPreview || form.logo_url)
+                          ? <img src={pendingLogoPreview || form.logo_url} alt="Logo" className="max-w-full max-h-full object-contain" />
+                          : <span className="text-[10px] text-slate-400">No logo</span>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          ref={logoInputRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/svg+xml,image/x-icon,.png,.jpg,.jpeg,.svg,.ico"
+                          onChange={e => { const file = e.target.files?.[0]; if (file) selectLogo(file) }}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => logoInputRef.current?.click()}
+                          disabled={logoUploading || !tableReady}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          <Upload className="w-3.5 h-3.5" /> {pendingLogoFile ? 'Change Logo' : 'Upload Logo'}
+                        </button>
+                        {(pendingLogoFile || form.logo_url) && (
+                          <button type="button" onClick={removeLogo} className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-500 text-xs font-semibold rounded-lg hover:bg-slate-50">
+                            <Trash2 className="w-3.5 h-3.5" /> Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {pendingLogoFile && <p className="text-[11px] text-amber-600">Pending — this logo is stored only when you click Save.</p>}
+                    {logoError && <p className="text-xs text-red-600">{logoError}</p>}
+                    <input
+                      value={form.logo_url || ''}
+                      onChange={e => { setForm({ ...form, logo_url: e.target.value }); setSaved(false) }}
+                      placeholder="…or paste a logo URL (advanced)"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-brand-navy"
+                    />
+                  </div>
+                ) : f.textarea ? (
                   <textarea
                     value={form[f.key] || ''}
                     onChange={e => { setForm({ ...form, [f.key]: e.target.value }); setSaved(false) }}
