@@ -42,6 +42,12 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
   // "Enrich Missing Company Data" backfill progress.
   const [backfilling, setBackfilling] = useState(false)
   const [bf, setBf] = useState<{ totalMissing: number; processed: number; total: number; succeeded: number; failed: number; done: boolean } | null>(null)
+  // CSV enrichment import (one-time cleanup): paste → preview → apply → export audit.
+  const [csv, setCsv] = useState('')
+  const [impBusy, setImpBusy] = useState(false)
+  const [impError, setImpError] = useState<string | null>(null)
+  const [impPreview, setImpPreview] = useState<{ summary: any; preview: any[]; parseErrors: any[] } | null>(null)
+  const [impResult, setImpResult] = useState<{ summary: any; results: any[] } | null>(null)
 
   async function runBackfill() {
     if (backfilling) return
@@ -76,6 +82,47 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
       setBf((p) => (p ? { ...p, done: true } : { totalMissing: 0, processed: 0, total: 0, succeeded, failed, done: true }))
     }
     setBackfilling(false)
+  }
+
+  async function previewImport() {
+    if (impBusy || !csv.trim()) return
+    setImpBusy(true); setImpError(null); setImpResult(null); setImpPreview(null)
+    try {
+      const res = await fetch('/api/admin/company-enrichment/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) setImpError(data.error || (data.reason === 'companies_table_absent' ? 'The companies table is not available yet.' : 'Preview failed.'))
+      else setImpPreview({ summary: data.summary, preview: data.preview || [], parseErrors: data.parseErrors || [] })
+    } catch (e: any) { setImpError(e?.message || 'Preview failed.') }
+    setImpBusy(false)
+  }
+
+  async function applyImport() {
+    if (impBusy || !csv.trim()) return
+    if (!window.confirm('Apply these updates? This fills only missing logos/descriptions on matched companies. Existing values and admin-edited rows are never overwritten.')) return
+    setImpBusy(true); setImpError(null)
+    try {
+      const res = await fetch('/api/admin/company-enrichment/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv, apply: true }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) setImpError(data.error || 'Import failed.')
+      else { setImpResult({ summary: data.summary, results: data.results || [] }); setImpPreview(null) }
+    } catch (e: any) { setImpError(e?.message || 'Import failed.') }
+    setImpBusy(false)
+  }
+
+  function downloadAudit() {
+    const rows = impResult?.results || []
+    const esc = (v: any) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+    const header = ['company_name', 'fields_updated', 'previous_value', 'new_value', 'skipped_reason']
+    const body = rows.map((r: any) => [r.company_name, r.fields_updated, r.previous_value, r.new_value, r.skipped_reason].map(esc).join(','))
+    const csvText = [header.join(','), ...body].join('\n')
+    const url = URL.createObjectURL(new Blob([csvText], { type: 'text/csv' }))
+    const a = document.createElement('a')
+    a.href = url; a.download = 'company-import-audit.csv'; a.click()
+    URL.revokeObjectURL(url)
   }
   // Fallback metadata (company_metadata) — used only when scraping is blocked.
   const [fb, setFb] = useState<Record<string, string>>({})
@@ -217,6 +264,86 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
           )}
           {bf?.done && !backfilling && <p className="mt-2 text-xs text-emerald-700">Done.</p>}
         </div>
+
+        {/* CSV enrichment import: one-time cleanup of missing logos/descriptions. */}
+        <div className="mb-3 rounded-xl border border-slate-200/70 bg-white p-4">
+          <p className="text-sm font-semibold text-slate-900">Import Company Enrichment (CSV)</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Paste a CSV (<code className="text-[11px]">company_name, website, logo_url, description</code>) to fill only <em>missing</em> fields.
+            Preview first — existing values and admin-edited rows are never overwritten; logos are validated &amp; re-hosted.
+          </p>
+          <textarea
+            value={csv}
+            onChange={(e) => setCsv(e.target.value)}
+            placeholder={'company_name,website,logo_url,description\nAcme Corp,acme.com,https://…/logo.png,"What Acme does."'}
+            rows={4}
+            className="mt-2 w-full text-xs font-mono rounded-lg border border-slate-200/80 bg-white p-2 focus:outline-none focus:border-brand-navy focus:ring-1 focus:ring-brand-navy/20"
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={previewImport}
+              disabled={impBusy || !tableReady || !csv.trim()}
+              className="flex items-center gap-2 px-3 py-1.5 border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50"
+            >
+              {impBusy && !impResult ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />} Preview
+            </button>
+            {impPreview && impPreview.summary.toUpdate > 0 && (
+              <button
+                onClick={applyImport}
+                disabled={impBusy}
+                className="flex items-center gap-2 px-3 py-1.5 bg-brand-navy text-white text-sm font-semibold rounded-lg hover:bg-brand-navy/90 disabled:opacity-50"
+              >
+                {impBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Apply {impPreview.summary.toUpdate} update{impPreview.summary.toUpdate === 1 ? '' : 's'}
+              </button>
+            )}
+          </div>
+          {impError && <p className="mt-2 text-xs text-red-600">{impError}</p>}
+
+          {impPreview && (
+            <div className="mt-3">
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
+                <span>{impPreview.summary.csvRows} rows</span>
+                <span className="text-emerald-700">{impPreview.summary.toUpdate} to update</span>
+                <span className="text-slate-500">{impPreview.summary.toSkip} skip</span>
+                <span className="text-amber-600">{impPreview.summary.notFound} not found</span>
+                {impPreview.summary.parseErrors > 0 && <span className="text-red-600">{impPreview.summary.parseErrors} parse errors</span>}
+              </div>
+              <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-slate-100 divide-y divide-slate-100">
+                {impPreview.preview.map((p: any, i: number) => (
+                  <div key={i} className="px-3 py-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-slate-800 truncate">{p.matched_company || p.company_name}</span>
+                      <span className={p.action === 'update' ? 'text-emerald-700 font-semibold' : p.action === 'not_found' ? 'text-amber-600' : 'text-slate-400'}>
+                        {p.action}{p.reason ? ` · ${p.reason}` : ''}
+                      </span>
+                    </div>
+                    {p.action === 'update' && (
+                      <div className="mt-1 space-y-0.5 text-[11px] text-slate-500">
+                        {p.new_logo_url && <div>logo: <span className="text-slate-400">{p.current_logo_url || '—'}</span> → <span className="text-emerald-700 break-all">{p.new_logo_url}</span></div>}
+                        {p.new_description && <div>description: <span className="text-slate-400">{p.current_description ? '(existing)' : '—'}</span> → <span className="text-emerald-700">{p.new_description.slice(0, 120)}{p.new_description.length > 120 ? '…' : ''}</span></div>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {impResult && (
+            <div className="mt-3">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600">
+                <span className="text-emerald-700 font-semibold">{impResult.summary.updatedCompanies} companies updated</span>
+                <span>{impResult.summary.updatedFields} fields filled</span>
+                {impResult.summary.logoRejected > 0 && <span className="text-amber-600">{impResult.summary.logoRejected} logos rejected</span>}
+                <button onClick={downloadAudit} className="ml-auto flex items-center gap-1 text-brand-navy font-semibold hover:underline">
+                  <ExternalLink className="w-3.5 h-3.5" /> Export audit CSV
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-emerald-700">Import complete. Re-uploading the same CSV will make no further changes.</p>
+            </div>
+          )}
+        </div>
+
         <div className="relative mb-3">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
