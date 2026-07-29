@@ -80,6 +80,29 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Admin Revoke Invite audit timestamp',
     impact: 'Revoke still works (status set to revoked) but the revoked_at timestamp is not stored until applied.',
   },
+  {
+    migration: '030_companies_merge.sql',
+    kind: 'column',
+    table: 'companies',
+    column: 'company_status',
+    feature: 'Company merge/lifecycle model',
+    impact: 'Company dedupe/merge lifecycle (active/pending_review/merged, tombstones) is unavailable; company-normalization Phase 0 is inert until applied.',
+  },
+  {
+    migration: '031_company_aliases.sql',
+    kind: 'table',
+    table: 'company_aliases',
+    feature: 'Runtime company alias authority',
+    impact: 'Alias resolution falls back to the compiled registry only; admin/backfill-added aliases are unavailable until applied.',
+  },
+  {
+    migration: '032_profiles_company_id.sql',
+    kind: 'column',
+    table: 'profiles',
+    column: 'company_id',
+    feature: 'Canonical company FK on profiles',
+    impact: 'profiles.company_id resolution/backfill is inert; company association stays slug-derived only until applied.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {
