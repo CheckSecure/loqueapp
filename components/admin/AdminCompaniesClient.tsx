@@ -375,6 +375,10 @@ export default function AdminCompaniesClient({ companies, tableReady }: { compan
                 <span className="text-slate-500">{impPreview.summary.toSkip} skip</span>
                 <span className="text-amber-600">{impPreview.summary.notFound} not found</span>
                 {impPreview.summary.parseErrors > 0 && <span className="text-red-600">{impPreview.summary.parseErrors} parse errors</span>}
+                {typeof impPreview.summary.networkCount === 'number' && (
+                  <span className="text-slate-400">{impPreview.summary.networkCount} network · {impPreview.summary.existingCount} existing candidates</span>
+                )}
+                {impPreview.summary.networkError && <span className="text-red-600">network load failed</span>}
               </div>
               <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-slate-100 divide-y divide-slate-100">
                 {impPreview.preview.map((p: any, i: number) => {

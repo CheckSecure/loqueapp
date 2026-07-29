@@ -205,6 +205,7 @@ const h = vi.hoisted(() => ({
   updates: [] as any[],
   ensured: [] as string[],
   logoResult: 'https://bucket/acme.png?v=1' as string | null,
+  profilesError: null as string | null,
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -245,6 +246,7 @@ vi.mock('@/lib/supabase/admin', () => {
       eq(k: string, v: any) { state.filters[k] = v; return b },
       is(k: string, v: any) { state.filters[k] = v; return b },
       then(res: any, rej: any) {
+        if (table === 'profiles' && h.profilesError) return Promise.resolve({ data: null, error: { message: h.profilesError } }).then(res, rej)
         return Promise.resolve({ data: rowsFor().map((r: any) => ({ ...r })), error: null }).then(res, rej)
       },
     }
@@ -268,6 +270,7 @@ beforeEach(() => {
   h.updates = []
   h.ensured = []
   h.logoResult = 'https://bucket/acme.png?v=1'
+  h.profilesError = null
   ;(downloadAndStoreLogo as any).mockClear()
 })
 
@@ -396,6 +399,37 @@ describe('company-enrichment import route — network company matching', () => {
     expect(data.summary.notFound).toBe(1)
     expect(data.results[0].skipped_reason).toBe('not_found')
     expect(h.ensured).toHaveLength(0)
+  })
+
+  it('surfaces network/existing candidate counts, and a healthy network resolves fuzzily', async () => {
+    h.companies = []
+    h.profiles = [{ company: 'Neurocrine' }]
+    const csv = 'company_name,website,logo_url,description\nNeurocrine Biosciences,neurocrine.com,http://src/n.png,"Biopharma."'
+    const data = await (await post({ csv })).json()
+    expect(data.summary.networkCount).toBe(1)
+    expect(data.summary.existingCount).toBe(0)
+    expect(data.summary.networkError).toBeNull()
+    expect(data.summary.notFound).toBe(0)
+    expect(data.preview[0].confidence).toBe('fuzzy')
+  })
+
+  it('debug payload exposes the candidate universe (network + csv) when requested', async () => {
+    h.companies = []
+    h.profiles = [{ company: 'Neurocrine' }]
+    const csv = 'company_name,website,logo_url,description\nNeurocrine Biosciences,neurocrine.com,,'
+    const data = await (await post({ csv, debug: true })).json()
+    expect(data.debug.network).toEqual([{ name: 'Neurocrine', slug: 'neurocrine' }])
+    expect(data.debug.csv[0]).toMatchObject({ name: 'Neurocrine Biosciences', slug: 'neurocrine-biosciences' })
+  })
+
+  it('a failed profiles read surfaces networkError (root-cause signal), not a silent empty network', async () => {
+    h.companies = []
+    h.profilesError = 'permission denied for table profiles'
+    const csv = 'company_name,website,logo_url,description\nNeurocrine Biosciences,neurocrine.com,http://src/n.png,"Biopharma."'
+    const data = await (await post({ csv })).json()
+    expect(data.summary.networkError).toContain('permission denied')
+    expect(data.summary.networkCount).toBe(0)
+    expect(data.summary.notFound).toBe(1) // network empty → correctly unresolved
   })
 
   it('fuzzy: full CSV name resolves to the short member company, materializes it, fills fields', async () => {

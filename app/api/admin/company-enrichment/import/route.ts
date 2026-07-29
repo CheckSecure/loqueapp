@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { parseImportCsv, computeImportPlan, type ExistingCompany, type ImportPlanItem } from '@/lib/company/csvImport'
 import { downloadAndStoreLogo } from '@/lib/company/enrichment/logo'
 import { computeNetworkCompanies, ensureCompanyRecord } from '@/lib/company/enrich'
+import { companySlug } from '@/lib/company/slug'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -61,8 +62,15 @@ export async function POST(request: Request) {
   // than not_found. We never invent companies from CSV names — only from real
   // members — so a CSV row matching neither a real row nor a network company stays
   // not_found.
-  const { data: profs } = await admin.from('profiles').select('company').not('company', 'is', null)
-  for (const c of computeNetworkCompanies(profs)) {
+  const profRes = await admin.from('profiles').select('company').not('company', 'is', null)
+  if (profRes.error) {
+    // Surfacing this instead of silently swallowing it: an empty/failed profiles
+    // read collapses the network to nothing, so only already-materialized companies
+    // resolve and every other CSV row falls through to not_found.
+    console.error('[company-import] profiles load failed:', profRes.error.message)
+  }
+  const network = computeNetworkCompanies(profRes.data)
+  for (const c of network) {
     if (!bySlug.has(c.slug)) {
       bySlug.set(c.slug, { slug: c.slug, name: c.name, logo_url: null, description: null, admin_edited: false })
     }
@@ -76,6 +84,12 @@ export async function POST(request: Request) {
     toUpdate: plan.filter((p) => p.action === 'update').length,
     toSkip: plan.filter((p) => p.action === 'skip').length,
     notFound: plan.filter((p) => p.action === 'not_found').length,
+    // Diagnostics: how many candidates each source contributed. A networkCount of 0
+    // (or networkError) is the tell that the network read — not the resolver — is why
+    // real member companies come back not_found.
+    existingCount: realSlugs.size,
+    networkCount: network.length,
+    networkError: profRes.error ? (profRes.error.message || 'profiles load failed') : null,
   }
 
   // ---- Preview (dry run) -----------------------------------------------------
@@ -97,7 +111,16 @@ export async function POST(request: Request) {
       csv_logo_url: p.input.logo_url || null,
       csv_description: p.input.description || null,
     }))
-    return NextResponse.json({ ok: true, applied: false, summary, preview, parseErrors })
+    // Opt-in inspection (POST { debug: true }): the candidate universe the resolver
+    // saw, so a mismatch between CSV companies and the network is visible directly.
+    const debug = body?.debug === true
+      ? {
+          existing: [...realSlugs],
+          network: network.map((c) => ({ name: c.name, slug: c.slug })),
+          csv: rows.map((r) => ({ name: r.company_name, slug: companySlug(r.company_name) })),
+        }
+      : undefined
+    return NextResponse.json({ ok: true, applied: false, summary, preview, parseErrors, ...(debug ? { debug } : {}) })
   }
 
   // ---- Apply -----------------------------------------------------------------
