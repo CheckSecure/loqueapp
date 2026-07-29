@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, GitBranch, UserPlus, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, AlertTriangle, Briefcase, Zap, ThumbsUp, Sparkles } from 'lucide-react'
+import { Users, GitBranch, UserPlus, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, AlertTriangle, Briefcase, Zap, ThumbsUp, Sparkles, Building2 } from 'lucide-react'
 import { getQueueHealthMetrics, type QueueHealthMetrics } from '@/lib/introductions/queue-metrics'
 import { checkMigrationHealth, type MigrationHealth } from '@/lib/db/migrationHealth'
 
@@ -444,6 +444,16 @@ export default async function AdminDashboard() {
             <h3 className="text-base font-bold text-slate-900 mb-1">Issue Reports</h3>
             <p className="text-xs text-slate-500 mb-2.5">User-submitted bug reports and support questions</p>
             <div className="text-xs text-slate-600"><span>{(newIssueCount || 0) > 0 ? `${newIssueCount} unreviewed` : 'No new reports'}</span></div>
+          </Link>
+
+          {/* Companies */}
+          <Link href="/dashboard/admin/companies" className={`${navCardBase} ${toneTop.blue}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={iconChip}><Building2 className={iconCls} /></div>
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1">Companies</h3>
+            <p className="text-xs text-slate-500 mb-2.5">Edit company profiles, enrich missing logos &amp; descriptions, import enrichment CSV</p>
+            <div className="text-xs text-slate-600"><span>Company data &amp; enrichment</span></div>
           </Link>
 
         </div>
