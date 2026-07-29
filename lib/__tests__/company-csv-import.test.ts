@@ -36,6 +36,70 @@ describe('parseCsvRecords / parseImportCsv', () => {
   })
 })
 
+describe('parseImportCsv — contaminated company_name rejection (malformed-slug prevention)', () => {
+  it('A. valid comma CSV → slug is derived from company_name ONLY (akamai-technologies)', () => {
+    const { rows, errors } = parseImportCsv(
+      'company_name,website,logo_url,description\n'
+      + 'Akamai Technologies,https://akamai.com,https://example.com/logo.png,"Cloud company"',
+    )
+    expect(errors).toHaveLength(0)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toEqual({
+      company_name: 'Akamai Technologies',
+      website: 'https://akamai.com',
+      logo_url: 'https://example.com/logo.png',
+      description: 'Cloud company',
+    })
+    const slug = companySlug(rows[0].company_name)
+    expect(slug).toBe('akamai-technologies')
+    // The slug must NOT absorb website / logo_url / description.
+    expect(slug).not.toContain('http')
+    expect(slug).not.toContain('akamai-com')
+    expect(slug).not.toContain('example')
+    // And through the actual preview/create path (computeImportPlan → not_found slug).
+    const plan = computeImportPlan(rows, new Map())
+    expect(plan[0].slug).toBe('akamai-technologies')
+  })
+
+  it('B. malformed non-comma row (whole row in company_name) → rejected, no row, no slug', () => {
+    const line = 'Akamai Technologies https://akamai.com https://example.com/logo.png'
+    const { rows, errors } = parseImportCsv(line)
+    expect(rows).toHaveLength(0)                    // cannot become a company
+    expect(errors).toHaveLength(1)
+    expect(errors[0].line).toBe(1)
+    expect(errors[0].value).toBe(line)             // original value surfaced
+    expect(errors[0].reason).toMatch(/url|http/i)  // reason rejected
+    // Nothing reaches slug generation.
+    expect(computeImportPlan(rows, new Map())).toHaveLength(0)
+  })
+
+  it('rejects each contamination signal: http, www, tab, and >100 chars', () => {
+    const cases: Array<[string, RegExp]> = [
+      ['Acme http://acme.com', /url|http/i],
+      ['Acme https://acme.com', /url|http/i],
+      ['Acme www.acme.com', /www/i],
+      ['Acme\tacme.com\tlogo', /tab/i],
+      ['A'.repeat(101), /100 characters/i],
+    ]
+    for (const [name, reason] of cases) {
+      const { rows, errors } = parseImportCsv(name)
+      expect(rows).toHaveLength(0)
+      expect(errors).toHaveLength(1)
+      expect(errors[0].reason).toMatch(reason)
+    }
+  })
+
+  it('still accepts legitimate multi-word names (no false positives)', () => {
+    for (const name of ['Davis Wright Tremaine LLP', 'Becton, Dickinson and Company', 'AT&T']) {
+      const csv = `"${name}",,,` // quote so a comma inside the name stays one field
+      const { rows, errors } = parseImportCsv(csv)
+      expect(errors).toHaveLength(0)
+      expect(rows).toHaveLength(1)
+      expect(rows[0].company_name).toBe(name)
+    }
+  })
+})
+
 describe('computeImportPlan — fill-missing-only rules', () => {
   it('fills BOTH fields when both are missing', () => {
     const plan = computeImportPlan(
@@ -273,6 +337,7 @@ vi.mock('@/lib/supabase/admin', () => {
 })
 
 import { POST } from '@/app/api/admin/company-enrichment/import/route'
+import { POST as upsertPOST } from '@/app/api/admin/companies/upsert/route'
 import { downloadAndStoreLogo } from '@/lib/company/enrichment/logo'
 
 const post = (body: any) =>
@@ -503,5 +568,31 @@ describe('company-enrichment import route — network company matching', () => {
     expect(h.companies[0].logo_url).toBe('http://has/logo.png')
     expect(h.companies[0].description).toBe('Existing desc.')
     expect(downloadAndStoreLogo).not.toHaveBeenCalled()
+  })
+})
+
+// ---- Write-sink slug guard: /api/admin/companies/upsert -----------------------
+describe('companies/upsert — malformed slug write guard', () => {
+  const call = (body: any) =>
+    upsertPOST(new Request('http://x/api/admin/companies/upsert', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }))
+
+  it('C. rejects a slug containing "http" (the malformed value)', async () => {
+    const res = await call({ slug: 'akamai-technologies-https://akamai.com-https://example.com', name: 'Akamai' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/invalid slug/i)
+    expect(h.companies).toHaveLength(0) // nothing written
+  })
+
+  it('rejects a slug longer than 80 characters', async () => {
+    const res = await call({ slug: 'a'.repeat(90), name: 'X' })
+    expect(res.status).toBe(400)
+    expect(h.companies).toHaveLength(0)
+  })
+
+  it('accepts a valid canonical slug (incl. multi-word registry slugs)', async () => {
+    expect((await call({ slug: 'akamai-technologies', name: 'Akamai Technologies' })).status).toBe(200)
+    expect((await call({ slug: 'davis-wright-tremaine', name: 'Davis Wright Tremaine LLP' })).status).toBe(200)
   })
 })

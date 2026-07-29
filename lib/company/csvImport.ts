@@ -51,15 +51,34 @@ export function parseCsvRecords(text: string): string[][] {
 
 const CANONICAL_HEADER = ['company_name', 'website', 'logo_url', 'description'] as const
 
+const MAX_COMPANY_NAME_LEN = 100
+
+/**
+ * Guard against a CONTAMINATED company_name — the tell-tale of a non-comma-delimited
+ * upload (TSV / space-separated / single-column paste) where the WHOLE ROW collapses
+ * into the first field. Such a value must never reach companySlug(), or it produces a
+ * junk slug built from the entire row (e.g. "akamai-technologies-https-akamai-com-...").
+ * Returns a human reason when the value is not a plausible bare company name, else null.
+ * Deliberately conservative (near-zero false positives on real names).
+ */
+function companyNameRejection(name: string): string | null {
+  if (/https?:\/\//i.test(name)) return 'company_name contains a URL (http:// or https://) — looks like an entire CSV row, not a comma-delimited company name'
+  if (/www\./i.test(name)) return 'company_name contains "www." — looks like a URL / an entire CSV row'
+  if (/\t/.test(name)) return 'company_name contains a tab — the row is tab-separated, not comma-delimited'
+  if (name.length > MAX_COMPANY_NAME_LEN) return `company_name exceeds ${MAX_COMPANY_NAME_LEN} characters — looks like an entire CSV row, not a single company name`
+  return null
+}
+
 /**
  * Parse the import CSV. Accepts an optional header row (any column order) or, if
- * absent, assumes the canonical column order. Rows without a company_name are
- * reported as errors, never silently dropped.
+ * absent, assumes the canonical column order. Rows without a company_name — or with a
+ * CONTAMINATED company_name (see companyNameRejection) — are reported as errors,
+ * never silently dropped and never allowed to reach slug generation.
  */
-export function parseImportCsv(text: string): { rows: ImportCsvRow[]; errors: { line: number; reason: string }[] } {
+export function parseImportCsv(text: string): { rows: ImportCsvRow[]; errors: { line: number; value: string; reason: string }[] } {
   const records = parseCsvRecords(text)
   const rows: ImportCsvRow[] = []
-  const errors: { line: number; reason: string }[] = []
+  const errors: { line: number; value: string; reason: string }[] = []
   if (records.length === 0) return { rows, errors }
 
   let idx: Record<(typeof CANONICAL_HEADER)[number], number> = { company_name: 0, website: 1, logo_url: 2, description: 3 }
@@ -79,7 +98,9 @@ export function parseImportCsv(text: string): { rows: ImportCsvRow[]; errors: { 
     const r = records[i]
     const get = (k: keyof typeof idx) => (r[idx[k]] ?? '').trim()
     const company_name = get('company_name')
-    if (!company_name) { errors.push({ line: i + 1, reason: 'Missing company_name' }); continue }
+    if (!company_name) { errors.push({ line: i + 1, value: '', reason: 'Missing company_name' }); continue }
+    const rejection = companyNameRejection(company_name)
+    if (rejection) { errors.push({ line: i + 1, value: company_name, reason: rejection }); continue }
     rows.push({ company_name, website: get('website'), logo_url: get('logo_url'), description: get('description') })
   }
   return { rows, errors }

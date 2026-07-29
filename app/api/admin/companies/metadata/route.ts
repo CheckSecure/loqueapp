@@ -30,6 +30,14 @@ export async function POST(req: Request) {
   try { body = await req.json() } catch { /* empty */ }
   const slug = String(body?.slug || '').toLowerCase().trim()
   if (!slug) return NextResponse.json({ error: 'slug required' }, { status: 400 })
+  // Same malformed-slug guard as the companies upsert route: a valid slug never
+  // contains "http" or exceeds 80 chars. Reject rather than silently rewrite.
+  if (slug.includes('http') || slug.length > 80) {
+    return NextResponse.json(
+      { error: 'Invalid slug: a company slug cannot contain "http" or exceed 80 characters.' },
+      { status: 400 },
+    )
+  }
 
   const fields: Record<string, string> = {}
   for (const k of ['description', 'industry', 'headquarters', 'logo_url']) {

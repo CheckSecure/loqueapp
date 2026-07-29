@@ -14,6 +14,15 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const slug = String(body.slug || '').toLowerCase().trim()
   if (!slug) return NextResponse.json({ error: 'Missing slug' }, { status: 400 })
+  // Guard against a malformed slug (a contaminated company_name that leaked through):
+  // a valid canonical slug never contains "http" and is never this long. Reject rather
+  // than silently rewrite, so the caller fixes the source instead of persisting junk.
+  if (slug.includes('http') || slug.length > 80) {
+    return NextResponse.json(
+      { error: 'Invalid slug: a company slug cannot contain "http" or exceed 80 characters. This usually means the company name was not comma-delimited in the CSV.' },
+      { status: 400 },
+    )
+  }
 
   const clean = (v: unknown) => {
     const s = typeof v === 'string' ? v.trim() : ''

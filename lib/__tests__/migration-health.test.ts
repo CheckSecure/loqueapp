@@ -9,15 +9,18 @@ import {
   type SchemaExpectation,
 } from '@/lib/db/migrationHealth'
 
-// Minimal Supabase-query-builder stub: .from(table).select(col,{head}).limit()
-// resolves to { error } per a table→error map.
+// Minimal Supabase-query-builder stub: .from(table).select(col).limit() resolves
+// to { error } per an error map. Keys may be a plain table ("companies") or a
+// specific column ("companies.enrichment_version"); the column key wins, so a test
+// can fail ONE expectation on a table without tripping other expectations that
+// probe different columns of the same table.
 function stubAdmin(errorsByTable: Record<string, { message: string; code?: string } | null>) {
   return {
     from(table: string) {
-      const result = { error: errorsByTable[table] ?? null }
+      let col = '*'
       const builder: any = {
-        select: () => builder,
-        limit: () => Promise.resolve(result),
+        select: (c: string) => { col = c; return builder },
+        limit: () => Promise.resolve({ error: errorsByTable[`${table}.${col}`] ?? errorsByTable[table] ?? null }),
       }
       return builder
     },
@@ -69,10 +72,10 @@ describe('checkMigrationHealth', () => {
   })
 
   it('flags exactly the unapplied migrations with messages', async () => {
-    // 024 column missing; 015 table present.
+    // Only the 024 column is missing; every other expectation (incl. other
+    // companies columns like 030's company_status) is present.
     const admin = stubAdmin({
-      companies: { message: 'column companies.enrichment_version does not exist', code: '42703' },
-      company_metadata: null,
+      'companies.enrichment_version': { message: 'column companies.enrichment_version does not exist', code: '42703' },
     })
     const h = await checkMigrationHealth(admin)
     expect(h.ok).toBe(false)
@@ -81,8 +84,9 @@ describe('checkMigrationHealth', () => {
   })
 
   it('flags multiple pending migrations', async () => {
+    // 024 column missing + 015 table missing → exactly two pending.
     const admin = stubAdmin({
-      companies: { message: 'column companies.enrichment_version does not exist', code: '42703' },
+      'companies.enrichment_version': { message: 'column companies.enrichment_version does not exist', code: '42703' },
       company_metadata: { message: 'does not exist', code: 'PGRST205' },
     })
     const h = await checkMigrationHealth(admin)
