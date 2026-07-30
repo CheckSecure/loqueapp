@@ -120,6 +120,10 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
   waiting_response: {
     title: 'Someone is waiting on you',
     message: 'A connection expressed interest and is awaiting your response.'
+  },
+  introductions_waiting: {
+    title: 'Your introductions are waiting',
+    message: 'Review your current introductions to unlock your next round.'
   }
 }
 
@@ -141,7 +145,8 @@ const LINK_BY_TYPE: Partial<Record<string, string>> = {
   opportunity_nudge_receiver: '/dashboard/opportunities',
   opportunity_closed: '/dashboard/opportunities/responses',
   introduction_reminder: '/dashboard/introductions',
-  waiting_response: '/dashboard/introductions'
+  waiting_response: '/dashboard/introductions',
+  introductions_waiting: '/dashboard/introductions'
 }
 
 export async function createNotificationSafe({
