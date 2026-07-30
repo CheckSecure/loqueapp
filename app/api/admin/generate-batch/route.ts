@@ -11,6 +11,7 @@ import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/l
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
 import { selectReciprocalGraph } from '@/lib/matching/reciprocal-graph'
 import { buildIntroHistoryExclusions } from '@/lib/introRequests/history'
+import { membersWithUnresolvedIntros } from '@/lib/introductions/queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -247,6 +248,15 @@ export async function POST(req: NextRequest) {
     }
     const introHistoryMap = buildIntroHistoryExclusions(introHistoryRows)
 
+    // Availability tiers (re-engagement WITHOUT asymmetry). A member with unresolved
+    // active recommendations (a 'suggested' row they haven't acted on) may only be
+    // paired with ANOTHER unresolved member — never a fully-resolved one. Otherwise the
+    // resolved side would see/respond immediately while the unresolved side, still
+    // working their active batch, is placed behind the queue and cannot. Both-resolved
+    // and both-unresolved pairs are unaffected. This gates candidate PAIRS only —
+    // scoring, ranking, and the per-member cap are untouched.
+    const unresolvedMembers = membersWithUnresolvedIntros(introHistoryRows ?? [])
+
     const allPairs: PairScore[] = []
     
     for (let i = 0; i < profiles.length; i++) {
@@ -268,6 +278,10 @@ export async function POST(req: NextRequest) {
 
         // Exclude if: hidden, passed, matched, recently shown, queue-history, or same company
         if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA || introHistory || isSameCompany(userA, userB)) continue
+
+        // Availability tier: pair only same-tier members. Exactly one unresolved →
+        // asymmetric intro (one side blocked behind their queue) → skip.
+        if (unresolvedMembers.has(userA.id) !== unresolvedMembers.has(userB.id)) continue
         
         const scoreAtoB = scoreMatchV2(userA, userB, scoringCtx)
         const scoreBtoA = scoreMatchV2(userB, userA, scoringCtx)

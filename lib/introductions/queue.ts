@@ -117,6 +117,40 @@ export async function countUnresolvedRecommendations(adminClient: any, memberId:
   return targets.filter((t) => !expressedSet.has(t)).length
 }
 
+/**
+ * PURE, pool-wide analogue of countUnresolvedRecommendations. Given a full set of
+ * intro_requests rows, return the set of member ids that have ≥1 UNRESOLVED active
+ * recommendation — a 'suggested' row whose requester has NOT expressed interest in
+ * that target. Uses the SAME "resolved" definition as countUnresolvedRecommendations
+ * (EXPRESSED_INTEREST_STATUSES), so one in-memory pass replaces a per-member query.
+ * Read-only: computes a set, changes no queue state.
+ */
+export function membersWithUnresolvedIntros(
+  rows: Array<{ requester_id?: string | null; target_user_id?: string | null; status?: string | null }> | null | undefined,
+): Set<string> {
+  const suggested = new Map<string, Set<string>>() // requester → targets with a live 'suggested' row
+  const expressed = new Map<string, Set<string>>() // requester → targets they expressed interest in
+  const push = (m: Map<string, Set<string>>, k: string, v: string) => {
+    let s = m.get(k)
+    if (!s) { s = new Set<string>(); m.set(k, s) }
+    s.add(v)
+  }
+  const EXPRESSED = new Set<string>(EXPRESSED_INTEREST_STATUSES as unknown as string[])
+  for (const r of rows ?? []) {
+    if (!r?.requester_id || !r?.target_user_id) continue
+    if (r.status === 'suggested') push(suggested, r.requester_id, r.target_user_id)
+    else if (r.status && EXPRESSED.has(r.status)) push(expressed, r.requester_id, r.target_user_id)
+  }
+  const unresolved = new Set<string>()
+  for (const [member, targets] of Array.from(suggested.entries())) {
+    const exp = expressed.get(member)
+    for (const t of Array.from(targets)) {
+      if (!exp || !exp.has(t)) { unresolved.add(member); break } // an unmet suggestion → unresolved
+    }
+  }
+  return unresolved
+}
+
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 /** Remove rows whose target already occupies a slot for this member (dedupe). */

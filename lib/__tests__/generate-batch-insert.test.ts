@@ -287,3 +287,46 @@ describe('Generate New Batch — intro_requests (queue) history exclusion', () =
     expect(hasEdge(rows, 'a', 'b')).toBe(false)
   })
 })
+
+// Availability tiers: never pair a member who has unresolved active intros with a
+// fully-resolved member (asymmetric — resolved side sees/responds, unresolved side is
+// blocked behind their queue). Both-resolved and both-unresolved pairs are unaffected.
+describe('Generate New Batch — availability tiers (asymmetry guard)', () => {
+  const hasEdge = (rows: any[], x: string, y: string) =>
+    rows.some((r: any) => (r.recipient_id === x && r.suggested_id === y) || (r.recipient_id === y && r.suggested_id === x))
+  const involves = (rows: any[], id: string) => rows.some((r: any) => r.recipient_id === id || r.suggested_id === id)
+  // A 'suggested' row to an OUT-OF-POOL target makes that member "unresolved" without
+  // creating any a/b/c pair history (so we isolate the tier rule from the exclusion rule).
+  const unresolved = (member: string) => ({ requester_id: member, target_user_id: 'ext-' + member, status: 'suggested', batch_id: 'b1' })
+
+  it('resolved ↔ unresolved pairs are BLOCKED (both directions)', async () => {
+    state.introRequests = [unresolved('a')] // a unresolved; b, c resolved
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(rows.length).toBeGreaterThan(0)
+    expect(involves(rows, 'a')).toBe(false)     // a never paired with resolved b/c
+    expect(hasEdge(rows, 'b', 'c')).toBe(true)  // resolved↔resolved still allowed
+  })
+
+  it('unresolved ↔ unresolved pairs remain possible (re-engagement preserved)', async () => {
+    state.introRequests = [unresolved('a'), unresolved('b')] // a, b unresolved; c resolved
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'a', 'b')).toBe(true)  // both unresolved → allowed
+    expect(hasEdge(rows, 'a', 'c')).toBe(false) // tier mismatch → blocked
+    expect(hasEdge(rows, 'b', 'c')).toBe(false) // tier mismatch → blocked
+  })
+
+  it('resolved ↔ resolved pairs are unchanged when nobody is unresolved', async () => {
+    state.introRequests = []
+    await post()
+    const withNone = (state.insertedSuggestions || []).map((r: any) => `${r.recipient_id}>${r.suggested_id}`).sort()
+    expect(withNone.length).toBeGreaterThan(0)
+    expect(hasEdge(state.insertedSuggestions || [], 'a', 'b')).toBe(true)
+    // Re-run: identical output → the tier logic adds no restriction and no perturbation.
+    state.insertedSuggestions = null
+    await post()
+    const rerun = (state.insertedSuggestions || []).map((r: any) => `${r.recipient_id}>${r.suggested_id}`).sort()
+    expect(rerun).toEqual(withNone)
+  })
+})
