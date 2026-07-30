@@ -9,7 +9,7 @@ import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
-import { selectReciprocalGraph, fillForCoverage } from '@/lib/matching/reciprocal-graph'
+import { selectReciprocalGraph, fillForCoverage, repairOneIntroCoverage } from '@/lib/matching/reciprocal-graph'
 import { buildIntroHistoryExclusions } from '@/lib/introRequests/history'
 import { membersWithUnresolvedIntros } from '@/lib/introductions/queue'
 
@@ -355,17 +355,25 @@ export async function POST(req: NextRequest) {
     const primaryFilled = fillForCoverage(primaryEdges, nonPartnerPairs, fillConfig)
     const selectedEdgesFilled = fillForCoverage(primaryFilled, allPairs, fillConfig)
 
+    // COVERAGE REPAIR (post-processing) — seat members left at exactly 1 intro via a safe
+    // augmenting swap. Never creates a partner↔partner edge (isPartnerPair), never exceeds
+    // the 2-cap, never drops a displaced member's degree, and re-checks the throttle on
+    // every add. Draws only from allPairs, so history/tier/same-company/relevance hold.
+    const selectedEdgesRepaired = repairOneIntroCoverage(selectedEdgesFilled, allPairs, {
+      capOf, isBusinessSolutionProvider, bsCapOf, isThrottleExemptPair: isLegalNetworkingPair, isPartnerPair,
+    })
+
     // Fan each selected edge out into BOTH directions. This is the only place rows are
     // created, so a one-way recommendation is structurally impossible: an edge that
     // isn't selected produces zero rows; one that is produces exactly two.
     const userBatches: Record<string, any[]> = {}
-    for (const e of selectedEdgesFilled) {
+    for (const e of selectedEdgesRepaired) {
       ;(userBatches[e.userA.id] ||= []).push({ suggested: e.userB, score: e.scoreAtoB, reason: e.reasonAtoB })
       ;(userBatches[e.userB.id] ||= []).push({ suggested: e.userA, score: e.scoreBtoA, reason: e.reasonBtoA })
     }
 
     // Every edge is a mutual introduction by construction (selection + coverage fill).
-    const mutualMatchesCreated = selectedEdgesFilled.length
+    const mutualMatchesCreated = selectedEdgesRepaired.length
     const allSuggestions: any[] = []
 
     // Build + insert suggestions. Any failure here (out-of-range score or a DB

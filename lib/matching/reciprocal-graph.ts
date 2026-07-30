@@ -257,6 +257,134 @@ export function fillForCoverage<E extends ReciprocalEdgeInput>(
 }
 
 /**
+ * CONSTRAINED coverage repair for members left at EXACTLY 1 intro after selection +
+ * fill. A focused post-processing pass (never re-runs selection): for each 1-intro
+ * member it tries a length-1 add or a length-3 displacement/re-seat swap
+ * (remove {P,Q}, add {u,P} and {Q,R}), which lifts `u` (and `R`) without dropping
+ * anyone — `P` and `Q` each lose one edge and gain one, so a member at 2 stays at 2.
+ *
+ * Unlike augmentForCoverage this is NOT Pareto-quality-locked: it accepts a bounded,
+ * local quality change to seat a stranded member (best move = max quality delta). It
+ * is otherwise strictly guarded:
+ *   • never CREATES a Law Firm Partner ↔ Law Firm Partner edge (config.isPartnerPair) —
+ *     so the two-pass partner fallback is never regressed (partner count can only fall);
+ *   • never exceeds a member's cap (2-intro maximum);
+ *   • never drops a member's degree (displaced members are re-seated);
+ *   • only draws edges from `edges` (the caller's eligible set — history / availability
+ *     tiers / same-company / relevance already applied) and re-checks the
+ *     business-solution throttle on every add, so no excluded/throttled edge slips in.
+ * Deterministic: 1-intro members processed most-constrained-first (fewest reachable
+ * candidates, id tiebreak); best move by quality delta then pair-key.
+ */
+export function repairOneIntroCoverage<E extends ReciprocalEdgeInput>(
+  selected: E[],
+  edges: E[],
+  config: {
+    capOf: (m: any) => number
+    isBusinessSolutionProvider?: (m: any) => boolean
+    bsCapOf?: (m: any, cap: number) => number
+    isThrottleExemptPair?: (a: any, b: any) => boolean
+    isPartnerPair?: (a: any, b: any) => boolean
+    target?: number
+  },
+): E[] {
+  const isBS = config.isBusinessSolutionProvider || (() => false)
+  const isExempt = (a: any, b: any) => !!config.isThrottleExemptPair?.(a, b)
+  const isPartner = (a: any, b: any) => !!config.isPartnerPair?.(a, b)
+  const capOf = (m: any) => Math.max(0, config.capOf(m))
+  const bsCapOf = (m: any) => (config.bsCapOf ? config.bsCapOf(m, capOf(m)) : capOf(m))
+  const K = reciprocalPairKey
+  const target = config.target ?? 2
+
+  const result = selected.slice()
+  const memberById = new Map<string, any>()
+  const adj = new Map<string, string[]>()
+  const edgeByKey = new Map<string, E>()
+  for (const e of edges) {
+    memberById.set(e.userA.id, e.userA); memberById.set(e.userB.id, e.userB)
+    edgeByKey.set(K(e.userA.id, e.userB.id), e)
+    ;(adj.get(e.userA.id) ?? adj.set(e.userA.id, []).get(e.userA.id)!).push(e.userB.id)
+    ;(adj.get(e.userB.id) ?? adj.set(e.userB.id, []).get(e.userB.id)!).push(e.userA.id)
+  }
+  const M = (id: string) => memberById.get(id)
+  const w = (x: string, y: string) => edgeByKey.get(K(x, y))?.mutualScore ?? 0
+  const peer = (x: string, y: string) => (isBS(M(x)) && isBS(M(y))) || isExempt(M(x), M(y))
+
+  const matched = new Set(result.map((e) => K(e.userA.id, e.userB.id)))
+  const degree = new Map<string, number>()
+  const bsCount = new Map<string, number>()
+  const bump = (m: Map<string, number>, id: string, d = 1) => m.set(id, (m.get(id) || 0) + d)
+  // bsCount[x] = providers x (as a buyer) has been shown; peer/exempt edges don't count.
+  const bsAdjust = (x: string, y: string, sign: number) => {
+    if (peer(x, y)) return
+    if (isBS(M(y))) bump(bsCount, x, sign)
+    if (isBS(M(x))) bump(bsCount, y, sign)
+  }
+  for (const e of result) { bump(degree, e.userA.id); bump(degree, e.userB.id); bsAdjust(e.userA.id, e.userB.id, +1) }
+
+  // Would adding {x,y} respect the throttle at the CURRENT bsCount? (x,y disjoint from
+  // any concurrently-removed edge — callers pre-apply removals via bsAdjust.)
+  const canAdd = (x: string, y: string) => {
+    if (peer(x, y)) return true
+    if (isBS(M(y)) && (bsCount.get(x) || 0) >= bsCapOf(M(x))) return false
+    if (isBS(M(x)) && (bsCount.get(y) || 0) >= bsCapOf(M(y))) return false
+    return true
+  }
+  const applyAdd = (x: string, y: string) => {
+    const e = edgeByKey.get(K(x, y))!; result.push(e); matched.add(K(x, y))
+    bump(degree, x); bump(degree, y); bsAdjust(x, y, +1)
+  }
+  const applyRemove = (x: string, y: string) => {
+    matched.delete(K(x, y))
+    const i = result.findIndex((e) => K(e.userA.id, e.userB.id) === K(x, y))
+    if (i >= 0) result.splice(i, 1)
+    bump(degree, x, -1); bump(degree, y, -1); bsAdjust(x, y, -1)
+  }
+
+  const ones = Array.from(memberById.keys())
+    .filter((id) => (degree.get(id) || 0) === 1)
+    .sort((a, b) => (adj.get(a)?.length || 0) - (adj.get(b)?.length || 0) || (a < b ? -1 : 1))
+
+  for (const u of ones) {
+    if ((degree.get(u) || 0) >= Math.min(target, capOf(M(u)))) continue
+    let best: { P: string; Q?: string; R?: string; delta: number; tie: string } | null = null
+    const consider = (cand: { P: string; Q?: string; R?: string; delta: number }) => {
+      const tie = cand.Q ? `${K(u, cand.P)}#${K(cand.Q, cand.R!)}` : K(u, cand.P)
+      if (!best || cand.delta > best.delta || (cand.delta === best.delta && tie < best.tie)) best = { ...cand, tie }
+    }
+    for (const P of adj.get(u) || []) {
+      if (matched.has(K(u, P)) || isPartner(M(u), M(P))) continue
+      if ((degree.get(P) || 0) < capOf(M(P))) { // length-1
+        if (canAdd(u, P)) consider({ P, delta: w(u, P) })
+        continue
+      }
+      // length-3: displace a match Q of the saturated P; re-seat Q with a free R.
+      const partnersOfP = result.filter((e) => e.userA.id === P || e.userB.id === P)
+        .map((e) => (e.userA.id === P ? e.userB.id : e.userA.id))
+      for (const Q of partnersOfP) {
+        if (Q === u) continue
+        for (const R of adj.get(Q) || []) {
+          if (R === P || R === u || matched.has(K(Q, R))) continue
+          if (isPartner(M(Q), M(R))) continue
+          if ((degree.get(R) || 0) >= capOf(M(R))) continue
+          // Throttle feasibility with {P,Q} removed (u/P and Q/R are disjoint members).
+          bsAdjust(P, Q, -1)
+          const ok = canAdd(u, P) && canAdd(Q, R)
+          bsAdjust(P, Q, +1)
+          if (!ok) continue
+          consider({ P, Q, R, delta: w(u, P) + w(Q, R) - w(P, Q) })
+        }
+      }
+    }
+    if (!best) continue
+    const b = best as { P: string; Q?: string; R?: string }
+    if (!b.Q) applyAdd(u, b.P)
+    else { applyRemove(b.P, b.Q); applyAdd(u, b.P); applyAdd(b.Q, b.R!) }
+  }
+  return result
+}
+
+/**
  * Augmenting-path improvement over a greedy b-matching (Phase 2 of selectReciprocalGraph,
  * also usable standalone). Repeatedly looks for a member `u` with spare capacity and
  * either
