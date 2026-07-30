@@ -331,41 +331,56 @@ describe('Generate New Batch — availability tiers (asymmetry guard)', () => {
   })
 })
 
-// Partner-to-partner fallback + two-intro coverage. LFP↔LFP is demoted (chosen only when
-// a member has no cross-role option left, never hard-excluded), and role diversity is a
-// preference that must not strand a member below 2 intros.
-describe('Generate New Batch — partner demotion + coverage fill', () => {
+// Partner-to-partner LAST-RESORT (two-pass selection) + two-intro coverage. LFP↔LFP is
+// excluded from the primary pass and reintroduced only for members who cannot otherwise
+// reach 2 intros; role diversity is a preference that must not strand a member below 2.
+describe('Generate New Batch — partner two-pass fallback + coverage fill', () => {
   const hasEdge = (rows: any[], x: string, y: string) =>
     rows.some((r: any) => (r.recipient_id === x && r.suggested_id === y) || (r.recipient_id === y && r.suggested_id === x))
   const degree = (rows: any[], id: string) => rows.filter((r: any) => r.recipient_id === id).length
   // open_to_business_solutions:true so a law-firm (provider) member can be matched with a
-  // non-partner buyer — otherwise the SEPARATE business-solution throttle (not the role
-  // demotion under test) would block those edges and mask the behavior we're asserting.
+  // non-partner buyer — otherwise the SEPARATE business-solution throttle (not the partner
+  // rule under test) would block those edges and mask the behavior we're asserting.
   const withRole = (id: string, role: string, company?: string) => ({ ...member(id), id, role_type: role, company: company ?? ('co-' + id), open_to_business_solutions: true })
 
-  it('partner + strong non-partner options → non-partner selected (LFP↔LFP skipped when cross-role suffices)', async () => {
-    // Star: lp1 (firm B) has two dedicated cross-role partners (x1, x2, firm A) plus the
-    // eligible-but-demoted partner lp2 (firm A). Same-company excludes every A↔A edge, so
-    // x1/x2 have spare capacity for lp1 — lp1 can reach 2 WITHOUT the partner, so it must.
+  it('partner WITH viable non-partner (GC/in-house) options → does NOT receive another partner', async () => {
+    // Star: lp1 (firm B) has two dedicated non-partner options (gc1/gc2, firm A) plus the
+    // partner lp2 (firm A). Same-company excludes every A↔A edge, so gc1/gc2 have spare
+    // capacity for lp1 — lp1 reaches 2 via non-partners in pass 1, so pass 2 adds no partner.
     state.profiles = [
       withRole('lp1', 'Law Firm Partner', 'firm-B'),
       withRole('lp2', 'Law Firm Partner', 'firm-A'),
-      withRole('x1', 'Founder', 'firm-A'),
-      withRole('x2', 'Investor', 'firm-A'),
+      withRole('gc1', 'General Counsel', 'firm-A'),
+      withRole('gc2', 'In-House Counsel', 'firm-A'),
     ]
     await post()
     const rows = state.insertedSuggestions || []
     expect(hasEdge(rows, 'lp1', 'lp2')).toBe(false) // partner available but NOT chosen
-    expect(hasEdge(rows, 'lp1', 'x1')).toBe(true)   // filled cross-role instead
-    expect(hasEdge(rows, 'lp1', 'x2')).toBe(true)
+    expect(hasEdge(rows, 'lp1', 'gc1')).toBe(true)  // non-partner options taken instead
+    expect(hasEdge(rows, 'lp1', 'gc2')).toBe(true)
     expect(degree(rows, 'lp1')).toBe(2)
   })
 
-  it('partner + no viable non-partner option → partner match ALLOWED (last resort, not excluded)', async () => {
+  it('partner with NO viable non-partner option → partner↔partner ALLOWED (last resort)', async () => {
     state.profiles = [withRole('lp1', 'Law Firm Partner'), withRole('lp2', 'Law Firm Partner')]
     await post()
     const rows = state.insertedSuggestions || []
-    expect(hasEdge(rows, 'lp1', 'lp2')).toBe(true) // eligible when nothing better remains
+    expect(hasEdge(rows, 'lp1', 'lp2')).toBe(true) // fallback pass seats it when nothing else exists
+  })
+
+  it('partner reaches 2 via one non-partner + one partner (partner ONLY for the shortfall slot)', async () => {
+    // lp1 (firm B) has exactly ONE non-partner option (gc1, firm A) and one partner (lp2,
+    // firm A). Pass 1 gives lp1 the non-partner; pass 2 adds the partner for the 2nd slot.
+    state.profiles = [
+      withRole('lp1', 'Law Firm Partner', 'firm-B'),
+      withRole('lp2', 'Law Firm Partner', 'firm-A'),
+      withRole('gc1', 'General Counsel', 'firm-A'),
+    ]
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'lp1', 'gc1')).toBe(true) // preferred non-partner taken first
+    expect(hasEdge(rows, 'lp1', 'lp2')).toBe(true) // partner only to fill the remaining slot
+    expect(degree(rows, 'lp1')).toBe(2)
   })
 
   it('role diversity cannot strand a member at 1 intro (coverage fill tops up the 2nd)', async () => {

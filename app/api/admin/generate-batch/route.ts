@@ -20,18 +20,15 @@ const MIN_RELEVANCE_SCORE = BATCH_CONFIG.minRelevanceScore
 const MAX_SAME_ROLE_PERCENT = BATCH_CONFIG.maxSameRolePercent
 const MUTUAL_MATCH_PERCENTILE = 0.4 // reported in qualityMetrics only
 
-// Law Firm Partner ↔ Law Firm Partner is a low-value pairing (competing senior partners
-// at different firms rarely refer to each other). We DEMOTE it in the SELECTION WEIGHT
-// only — never in scoreMatch, buckets, reasons, or the stored match_score, and never a
-// hard exclusion. Scaling the edge weight by this tiny factor keeps a partner↔partner
-// edge strictly below every cross-role edge (min cross-role mutualScore = 2 ×
-// MIN_RELEVANCE = 80) while staying POSITIVE, so it is chosen only after a member's
-// cross-role options are exhausted, yet remains a genuine last-resort fill. LFP↔Attorney
-// and other legal pairs are intentionally NOT demoted (seniority-diverse, higher value).
-const PARTNER_PAIR_WEIGHT_SCALE = 0.001
+// Law Firm Partner ↔ Law Firm Partner is a LAST-RESORT pairing (competing senior partners
+// at different firms rarely refer to each other). A weight demotion proved insufficient:
+// the b-matching still fills a member's open slot with a demoted partner edge. Instead we
+// use a TWO-PASS selection below — the primary pass EXCLUDES LFP↔LFP edges entirely, and a
+// fallback pass reintroduces them ONLY for members who cannot otherwise reach 2 intros.
+// scoreMatch, buckets, reasons, and the stored match_score are untouched. LFP↔Attorney and
+// other legal pairs are intentionally NOT treated as partner pairs (seniority-diverse).
 const isLawFirmPartner = (m: any) => String(m?.role_type ?? '').trim().toLowerCase() === 'law firm partner'
-const partnerDemotedWeight = (a: any, b: any, rawMutual: number): number =>
-  isLawFirmPartner(a) && isLawFirmPartner(b) ? rawMutual * PARTNER_PAIR_WEIGHT_SCALE : rawMutual
+const isPartnerPair = (a: any, b: any) => isLawFirmPartner(a) && isLawFirmPartner(b)
 
 function isCompatiblePair(userA: any, userB: any): boolean {
   // 1. Geographic compatibility
@@ -307,9 +304,7 @@ export async function POST(req: NextRequest) {
           userB,
           scoreAtoB,
           scoreBtoA,
-          // Selection weight only — demoted for LFP↔LFP so it ranks below cross-role edges
-          // (raw directional scores below are kept for buckets/reasons/stored score).
-          mutualScore: partnerDemotedWeight(userA, userB, scoreAtoB + scoreBtoA),
+          mutualScore: scoreAtoB + scoreBtoA,
           relevanceScore: avgScore,
           reasonAtoB: generateReason(userA, userB),
           reasonBtoA: generateReason(userB, userA),
@@ -335,21 +330,27 @@ export async function POST(req: NextRequest) {
     // lib/matching/reciprocal-graph.ts for the full rationale.
     const capOf = (m: any) => perRecipientIntroLimit(m.subscription_tier || 'free')
     const bsCapOf = (m: any, cap: number) => maxBusinessSolutionCount(m.open_to_business_solutions || false, m.subscription_tier || 'free', cap)
-    const { selected: selectedEdges } = selectReciprocalGraph(allPairs, {
-      capOf,
-      maxSameRolePercent: MAX_SAME_ROLE_PERCENT,
-      isBusinessSolutionProvider,
-      bsCapOf,
-    })
+    const graphConfig = { capOf, maxSameRolePercent: MAX_SAME_ROLE_PERCENT, isBusinessSolutionProvider, bsCapOf }
+    const fillConfig = { capOf, isBusinessSolutionProvider, bsCapOf }
 
-    // COVERAGE FILL — role diversity is a PREFERENCE, never a reason to strand a member
-    // below their intro cap. Top up any under-cap member with their best remaining
-    // ELIGIBLE edge, relaxing ONLY role diversity. allPairs already excludes history,
-    // availability-tier mismatches, same-company, and sub-threshold pairs; the per-member
-    // cap (2-max) and the business-solution throttle are still enforced. Because
-    // mutualScore carries the partner demotion, cross-role fills are preferred and
-    // partner↔partner remains the last resort.
-    const selectedEdgesFilled = fillForCoverage(selectedEdges, allPairs, { capOf, isBusinessSolutionProvider, bsCapOf })
+    // TWO-PASS SELECTION — Law Firm Partner ↔ Law Firm Partner is a LAST RESORT.
+    //
+    // Pass 1 (preferred): build the best batch using ONLY non-partner edges — every
+    // LFP↔LFP pair is excluded, so members are first satisfied with real cross-role
+    // alternatives (GC / in-house / other roles), then topped up by the coverage fill.
+    //
+    // Pass 2 (fallback): fill any member still below their cap over the FULL edge set,
+    // now allowing LFP↔LFP. Because pass 1's fill already exhausted every feasible
+    // non-partner edge between under-cap members, the ONLY edges pass 2 can add are
+    // LFP↔LFP — and only for members who could not otherwise reach 2.
+    //
+    // Both passes preserve history/availability-tier/same-company/relevance exclusions
+    // (already applied to allPairs), the per-member cap (2-max), and the BS throttle.
+    // Role diversity is relaxed by the fill only (a preference, never a strander).
+    const nonPartnerPairs = allPairs.filter((p) => !isPartnerPair(p.userA, p.userB))
+    const { selected: primaryEdges } = selectReciprocalGraph(nonPartnerPairs, graphConfig)
+    const primaryFilled = fillForCoverage(primaryEdges, nonPartnerPairs, fillConfig)
+    const selectedEdgesFilled = fillForCoverage(primaryFilled, allPairs, fillConfig)
 
     // Fan each selected edge out into BOTH directions. This is the only place rows are
     // created, so a one-way recommendation is structurally impossible: an edge that
