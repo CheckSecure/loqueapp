@@ -64,6 +64,13 @@ export interface ReciprocalGraphConfig {
   isBusinessSolutionProvider?: (member: any) => boolean
   /** Business-solution cap for a member given their resolved intro cap. */
   bsCapOf?: (member: any, cap: number) => number
+  /**
+   * Edge-level exemption from the business-solution throttle, IN ADDITION to the
+   * built-in provider↔provider peer rule. Returns true when the pair should be
+   * treated as peers (e.g. legal↔legal professional networking). Optional and
+   * default-off: when unset, throttle behavior is exactly the provider↔provider rule.
+   */
+  isThrottleExemptPair?: (a: any, b: any) => boolean
 }
 
 export interface ReciprocalGraphResult<E extends ReciprocalEdgeInput> {
@@ -147,7 +154,9 @@ export function selectReciprocalGraph<E extends ReciprocalEdgeInput>(
     // lib/matching/business-solutions.ts.
     const bIsBS = isBS(b)
     const aIsBS = isBS(a)
-    const peer = aIsBS && bIsBS
+    // Peer edges are exempt from the throttle: both providers, OR an explicit
+    // edge-level exemption (e.g. legal↔legal professional networking).
+    const peer = (aIsBS && bIsBS) || !!config.isThrottleExemptPair?.(a, b)
     if (!peer) {
       if (bIsBS && bsCount.get(a.id)! >= bsCap.get(a.id)!) continue // provider b shown to buyer a
       if (aIsBS && bsCount.get(b.id)! >= bsCap.get(b.id)!) continue // provider a shown to buyer b
@@ -208,9 +217,11 @@ export function fillForCoverage<E extends ReciprocalEdgeInput>(
     capOf: (m: any) => number
     isBusinessSolutionProvider?: (m: any) => boolean
     bsCapOf?: (m: any, cap: number) => number
+    isThrottleExemptPair?: (a: any, b: any) => boolean
   },
 ): E[] {
   const isBS = config.isBusinessSolutionProvider || (() => false)
+  const isExempt = (a: any, b: any) => !!config.isThrottleExemptPair?.(a, b)
   const result = selected.slice()
   const chosen = new Set(result.map((e) => reciprocalPairKey(e.userA.id, e.userB.id)))
   const degree = new Map<string, number>()
@@ -219,7 +230,7 @@ export function fillForCoverage<E extends ReciprocalEdgeInput>(
   for (const e of result) {
     bump(degree, e.userA.id); bump(degree, e.userB.id)
     const aBS = isBS(e.userA), bBS = isBS(e.userB)
-    if (!(aBS && bBS)) { if (bBS) bump(bsCount, e.userA.id); if (aBS) bump(bsCount, e.userB.id) }
+    if (!((aBS && bBS) || isExempt(e.userA, e.userB))) { if (bBS) bump(bsCount, e.userA.id); if (aBS) bump(bsCount, e.userB.id) }
   }
   const capOf = (m: any) => Math.max(0, config.capOf(m))
   const bsCapOf = (m: any) => (config.bsCapOf ? config.bsCapOf(m, capOf(m)) : capOf(m))
@@ -233,7 +244,7 @@ export function fillForCoverage<E extends ReciprocalEdgeInput>(
     const a = e.userA, b = e.userB
     const da = degree.get(a.id) || 0, db = degree.get(b.id) || 0
     if (da >= capOf(a) || db >= capOf(b)) continue // never exceed the hard per-member cap
-    const aBS = isBS(a), bBS = isBS(b), peer = aBS && bBS
+    const aBS = isBS(a), bBS = isBS(b), peer = (aBS && bBS) || isExempt(a, b)
     if (!peer) { // keep the business-solution throttle; only role diversity is relaxed
       if (bBS && (bsCount.get(a.id) || 0) >= bsCapOf(a)) continue
       if (aBS && (bsCount.get(b.id) || 0) >= bsCapOf(b)) continue
@@ -322,7 +333,8 @@ export function augmentForCoverage<E extends ReciprocalEdgeInput>(
       rc.get(b)!.set(ra, (rc.get(b)!.get(ra) || 0) + 1)
       const aBS = isBS(memberById.get(a))
       const bBS = isBS(memberById.get(b))
-      if (!(aBS && bBS)) { // provider↔provider peer edges are exempt from the quota
+      const peer = (aBS && bBS) || !!config.isThrottleExemptPair?.(memberById.get(a), memberById.get(b))
+      if (!peer) { // peer edges (both providers, or an exempt pair) don't consume the quota
         if (bBS) bc.set(a, (bc.get(a) || 0) + 1)
         if (aBS) bc.set(b, (bc.get(b) || 0) + 1)
       }

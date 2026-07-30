@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
+import { isBusinessSolutionProvider, maxBusinessSolutionCount, isLegalProfessional, isLegalNetworkingPair } from '@/lib/matching/business-solutions'
 
 describe('isBusinessSolutionProvider', () => {
   it('classifies law firms and consultants as providers', () => {
@@ -38,5 +38,31 @@ describe('maxBusinessSolutionCount — buyer provider quota (v3.2)', () => {
   it('non-opted allowance stays the reduced percentage (0 until the batch is large)', () => {
     expect(maxBusinessSolutionCount(false, 'free', 4)).toBe(0) // floor(floor(1.2)*0.5)=0
     expect(maxBusinessSolutionCount(false, 'free', 10)).toBe(1) // floor(3*0.5)=1
+  })
+})
+
+describe('isLegalProfessional / isLegalNetworkingPair — legal peer exemption', () => {
+  it('recognizes practicing lawyers and in-house/GC counsel as legal professionals', () => {
+    for (const r of ['Law Firm Partner', 'Law Firm Attorney', 'General Counsel', 'In-House Counsel', 'Deputy General Counsel', 'Associate General Counsel']) {
+      expect(isLegalProfessional({ role_type: r })).toBe(true)
+    }
+  })
+  it('does NOT treat legal VENDORS or non-legal roles as legal professionals', () => {
+    expect(isLegalProfessional({ role_type: 'Legal Tech Founder' })).toBe(false) // vendor, not a peer lawyer
+    expect(isLegalProfessional({ role_type: 'Legal Services' })).toBe(false)
+    expect(isLegalProfessional({ role_type: 'Management Consultant' })).toBe(false)
+    expect(isLegalProfessional({ role_type: 'Founder' })).toBe(false)
+    expect(isLegalProfessional({})).toBe(false)
+  })
+  it('isLegalNetworkingPair requires BOTH endpoints to be legal professionals', () => {
+    expect(isLegalNetworkingPair({ role_type: 'Law Firm Partner' }, { role_type: 'General Counsel' })).toBe(true)
+    expect(isLegalNetworkingPair({ role_type: 'Law Firm Attorney' }, { role_type: 'In-House Counsel' })).toBe(true)
+    expect(isLegalNetworkingPair({ role_type: 'Law Firm Partner' }, { role_type: 'Founder' })).toBe(false)     // non-legal buyer
+    expect(isLegalNetworkingPair({ role_type: 'Law Firm Partner' }, { role_type: 'Legal Tech Founder' })).toBe(false) // legal vendor, not peer
+  })
+  it('classification is unchanged: law firms + legal-tech are still business-solution providers', () => {
+    expect(isBusinessSolutionProvider({ role_type: 'Law Firm Partner' })).toBe(true)
+    expect(isBusinessSolutionProvider({ role_type: 'Legal Tech Founder' })).toBe(true)
+    expect(isBusinessSolutionProvider({ role_type: 'General Counsel' })).toBe(false)
   })
 })

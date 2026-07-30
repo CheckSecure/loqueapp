@@ -407,3 +407,43 @@ describe('Generate New Batch — partner two-pass fallback + coverage fill', () 
     expect(ids.filter((id: string) => degree(rows, id) === 2).length).toBe(ids.length) // everyone reaches 2
   })
 })
+
+// Business-solution throttle — legal peer-networking exemption. A law firm (provider) may
+// meet a GC / in-house counsel (buyer) WITHOUT a business-solution opt-in, because that is
+// peer legal networking. Non-legal buyer↔provider stays throttled.
+describe('Generate New Batch — legal peer exemption from BS throttle', () => {
+  const hasEdge = (rows: any[], x: string, y: string) =>
+    rows.some((r: any) => (r.recipient_id === x && r.suggested_id === y) || (r.recipient_id === y && r.suggested_id === x))
+  // Explicit per-member opt-in so we can prove the exemption works WITHOUT opt-in.
+  const withOpt = (id: string, role: string, company: string, opt: boolean) => ({ ...member(id), id, role_type: role, company, open_to_business_solutions: opt })
+
+  it('Law Firm Partner + GC match WITHOUT business-solution opt-in (legal peer networking)', async () => {
+    state.profiles = [
+      withOpt('lp', 'Law Firm Partner', 'firm-A', false), // provider, no opt-in
+      withOpt('gc', 'General Counsel', 'corp-B', false),   // buyer, no opt-in
+    ]
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'lp', 'gc')).toBe(true) // exempt → allowed despite no opt-in
+  })
+
+  it('Law Firm Partner + non-legal, non-opted buyer STAYS throttled (no edge without opt-in)', async () => {
+    state.profiles = [
+      withOpt('lp', 'Law Firm Partner', 'firm-A', false), // provider
+      withOpt('fnd', 'Founder', 'startup-B', false),       // non-legal buyer, NOT opted in
+    ]
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'lp', 'fnd')).toBe(false) // throttle preserved for non-legal
+  })
+
+  it('same non-legal buyer matches the law firm once they DO opt in (throttle still governs non-legal)', async () => {
+    state.profiles = [
+      withOpt('lp', 'Law Firm Partner', 'firm-A', false),
+      withOpt('fnd', 'Founder', 'startup-B', true), // opted in → provider may be shown
+    ]
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'lp', 'fnd')).toBe(true)
+  })
+})

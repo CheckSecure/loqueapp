@@ -38,6 +38,37 @@ export function isBusinessSolutionProvider(candidate: { role_type?: string }): b
   )
 }
 
+/**
+ * A LEGAL PROFESSIONAL — a practicing lawyer or in-house/GC counsel. An introduction
+ * between two legal professionals (e.g. a law-firm partner and a General Counsel) is
+ * PEER professional networking — referrals, co-counsel, career moves — NOT vendor
+ * exposure, so it must be exempt from the business-solution buyer/provider throttle
+ * even when neither has opted into business solutions.
+ *
+ * Matches law-firm roles and in-house/GC/attorney/counsel roles. Deliberately does NOT
+ * match 'legal services' / 'legal tech': those are legal VENDORS (SaaS/eDiscovery),
+ * already covered by the provider↔provider peer rule, not peer lawyers — so a law
+ * firm ↔ legal-tech vendor keeps its existing treatment, and a law firm ↔ software
+ * vendor / consultant / non-legal buyer stays throttled exactly as before.
+ */
+export function isLegalProfessional(candidate: { role_type?: string }): boolean {
+  const r = (candidate.role_type || '').toLowerCase()
+  return r.includes('law firm') || r.includes('attorney') || r.includes('counsel') || r.includes('lawyer')
+}
+
+/**
+ * True when BOTH members are legal professionals — a legal peer-networking edge that is
+ * EXEMPT from the business-solution throttle (mirrors the provider↔provider peer
+ * exemption, scoped to the legal domain). Used as the edge-level `isThrottleExemptPair`
+ * by the batch selection path. Never broadens the exemption beyond legal↔legal.
+ */
+export function isLegalNetworkingPair(
+  a: { role_type?: string },
+  b: { role_type?: string },
+): boolean {
+  return isLegalProfessional(a) && isLegalProfessional(b)
+}
+
 const BASE_CAP = 0.30
 const TIER_MULTIPLIERS: Record<string, number> = {
   free: 1.0,

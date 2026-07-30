@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matching/business-solutions'
+import { isBusinessSolutionProvider, maxBusinessSolutionCount, isLegalNetworkingPair } from '@/lib/matching/business-solutions'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
@@ -330,8 +330,11 @@ export async function POST(req: NextRequest) {
     // lib/matching/reciprocal-graph.ts for the full rationale.
     const capOf = (m: any) => perRecipientIntroLimit(m.subscription_tier || 'free')
     const bsCapOf = (m: any, cap: number) => maxBusinessSolutionCount(m.open_to_business_solutions || false, m.subscription_tier || 'free', cap)
-    const graphConfig = { capOf, maxSameRolePercent: MAX_SAME_ROLE_PERCENT, isBusinessSolutionProvider, bsCapOf }
-    const fillConfig = { capOf, isBusinessSolutionProvider, bsCapOf }
+    // Legal↔legal is peer professional networking, exempt from the business-solution
+    // buyer/provider throttle (e.g. a Law Firm Partner ↔ General Counsel needs no opt-in).
+    // isBusinessSolutionProvider is unchanged, so non-legal vendor throttling is preserved.
+    const graphConfig = { capOf, maxSameRolePercent: MAX_SAME_ROLE_PERCENT, isBusinessSolutionProvider, bsCapOf, isThrottleExemptPair: isLegalNetworkingPair }
+    const fillConfig = { capOf, isBusinessSolutionProvider, bsCapOf, isThrottleExemptPair: isLegalNetworkingPair }
 
     // TWO-PASS SELECTION — Law Firm Partner ↔ Law Firm Partner is a LAST RESORT.
     //
