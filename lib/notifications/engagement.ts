@@ -145,3 +145,77 @@ export async function notifyNewVisibleBatch(memberId: string, batchId: string, c
     console.error('[engagement] notifyNewVisibleBatch failed (non-fatal):', e?.message)
   }
 }
+
+/**
+ * Notify a member that an ADMIN-APPROVED batch is visible now. Identical dedupe to
+ * notifyNewVisibleBatch (one `new_batch` notification per batch, dedupeKey `batch:<id>`,
+ * race-safe) but sends the dedicated admin-approval email — so the SHARED
+ * sendNewBatchEmail used by weekly/onboarding/promotion is left untouched. Best-effort.
+ */
+export async function notifyAdminBatchReady(memberId: string, batchId: string, count?: number): Promise<void> {
+  try {
+    const admin = createAdminClient()
+    let n = count
+    if (n == null) {
+      const { count: c } = await admin
+        .from('intro_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('requester_id', memberId)
+        .eq('batch_id', batchId)
+        .eq('status', 'suggested')
+      n = c ?? 0
+    }
+    if (!n) return // nothing visible → nothing to announce
+
+    const created = await createNotificationSafe({
+      userId: memberId,
+      type: 'new_batch',
+      data: { batchId, count: n },
+      dedupeKey: `batch:${batchId}`,
+    })
+    if (!created) return // duplicate → this batch was already announced
+
+    const { data: p } = await admin.from('profiles').select('email, full_name').eq('id', memberId).maybeSingle()
+    if (p?.email && process.env.RESEND_API_KEY) {
+      console.log(`[Email] type=admin_batch_ready memberId=${memberId} batchId=${batchId} count=${n}`)
+      const { sendAdminBatchReadyEmail } = await import('@/lib/email')
+      await sendAdminBatchReadyEmail(p.email, p.full_name || 'there')
+    }
+  } catch (e: any) {
+    console.error('[engagement] notifyAdminBatchReady failed (non-fatal):', e?.message)
+  }
+}
+
+/**
+ * Notify a member whose freshly-approved admin batch was QUEUED (hidden) because they
+ * still have unresolved introductions in their CURRENT active batch. Sends the
+ * "finish your current introductions" email immediately — never revealing the queued
+ * batch (no counts/names; the email links only to current introductions). Idempotent:
+ * one nudge per queued batch (dedupeKey `queuedwaiting:<queuedBatchId>`), so an
+ * approve-batch retry can't duplicate it. Best-effort — never throws.
+ *
+ * The CALLER is responsible for only invoking this when the member actually has
+ * unresolved current intros (via countUnresolvedRecommendations); this helper does not
+ * read or change any queue/promotion state.
+ */
+export async function notifyQueuedIntrosWaiting(memberId: string, queuedBatchId: string): Promise<void> {
+  try {
+    const admin = createAdminClient()
+    const created = await createNotificationSafe({
+      userId: memberId,
+      type: 'introductions_waiting',
+      data: { batchId: queuedBatchId },
+      dedupeKey: `queuedwaiting:${queuedBatchId}`,
+    })
+    if (!created) return // already nudged for this queued batch
+
+    const { data: p } = await admin.from('profiles').select('email, full_name').eq('id', memberId).maybeSingle()
+    if (p?.email && process.env.RESEND_API_KEY) {
+      console.log(`[Email] type=introductions_waiting memberId=${memberId} queuedBatchId=${queuedBatchId}`)
+      const { sendCurrentIntroductionsWaitingEmail } = await import('@/lib/email')
+      await sendCurrentIntroductionsWaitingEmail(p.email, p.full_name || 'there')
+    }
+  } catch (e: any) {
+    console.error('[engagement] notifyQueuedIntrosWaiting failed (non-fatal):', e?.message)
+  }
+}

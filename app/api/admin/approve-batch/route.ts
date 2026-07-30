@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { enqueueBatch } from '@/lib/introductions/queue'
-import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
+import { enqueueBatch, countUnresolvedRecommendations } from '@/lib/introductions/queue'
+import { notifyAdminBatchReady, notifyQueuedIntrosWaiting } from '@/lib/notifications/engagement'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,25 +105,41 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Member notification/email — ONE authoritative path, shared with organic
-    // generation and queue promotion. Announce ONLY batches that are visible now
-    // (placed ACTIVE). A queued admin batch is hidden and stays silent; it will be
-    // announced by the SAME helper when promoteIfResolved later promotes it. The
-    // shared dedupeKey (batch:<batchId>) makes approval and promotion deduplicate
-    // against each other, so a member is emailed exactly once — when visible.
+    // Member notification/email at send time:
+    //   • VISIBLE (placed ACTIVE) → notifyAdminBatchReady: the dedicated admin-approval
+    //     email. It shares the dedupeKey (batch:<batchId>, type new_batch) with the
+    //     promotion path, so a member is emailed exactly once per batch when visible;
+    //     the shared sendNewBatchEmail (weekly/onboarding/promotion) is untouched.
+    //   • QUEUED (hidden) → notifyQueuedIntrosWaiting, ONLY if the member still has
+    //     unresolved CURRENT intros — a "finish your current introductions" nudge that
+    //     never reveals the queued batch. Queued-but-resolved recipients stay silent.
+    // A queued admin batch is still announced by promoteIfResolved (unchanged) when it
+    // is later promoted to active.
     let notified = 0
+    let queuedNotified = 0
     let skippedQueued = 0
     for (const p of placed) {
       if (p.state === 'active') {
-        await notifyNewVisibleBatch(p.recipientId, p.batchId, p.count)
+        // Visible now → dedicated admin-approval email (dedupe batch:<batchId>, same as
+        // the shared path — but its own sender, leaving weekly/onboarding/promotion alone).
+        await notifyAdminBatchReady(p.recipientId, p.batchId, p.count)
         notified++
       } else {
-        console.log(`[Email] type=new_introductions skipped=hidden_queued_batch memberId=${p.recipientId} batchId=${p.batchId}`)
-        skippedQueued++
+        // Queued (hidden) → nudge to finish their CURRENT introductions, but ONLY if they
+        // actually have unresolved current intros (read-only check; no queue change). The
+        // email never reveals the queued batch. Queued-but-resolved members get nothing.
+        const unresolved = await countUnresolvedRecommendations(adminClient, p.recipientId)
+        if (unresolved > 0) {
+          await notifyQueuedIntrosWaiting(p.recipientId, p.batchId)
+          queuedNotified++
+        } else {
+          console.log(`[Email] type=introductions_waiting skipped=no_unresolved memberId=${p.recipientId}`)
+          skippedQueued++
+        }
       }
     }
 
-    console.log(`[approve-batch] materialized: ${placed.length} placed, ${rejected.length} rejected; ${notified} announced (active), ${skippedQueued} silent (queued)`)
+    console.log(`[approve-batch] materialized: ${placed.length} placed, ${rejected.length} rejected; ${notified} announced (active), ${queuedNotified} nudged (queued+unresolved), ${skippedQueued} silent (queued+resolved)`)
     if (rejected.length > 0) {
       console.warn('[approve-batch] rejected recipients (already had a queued admin batch or no candidates):', JSON.stringify(rejected))
     }
@@ -134,6 +150,7 @@ export async function POST(req: NextRequest) {
       rejected: rejected.length,
       rejectedDetail: rejected,
       notified,
+      queuedNotified,
       skippedQueued,
     })
   } catch (err: any) {

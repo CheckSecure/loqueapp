@@ -163,6 +163,74 @@ export async function sendNewBatchEmail(
   })
 }
 
+/**
+ * Dedicated sender for an ADMIN-APPROVED batch that is visible now. Used ONLY by
+ * approve-batch's visible recipients — the shared sendNewBatchEmail (weekly / onboarding /
+ * promotion) is intentionally left unchanged.
+ */
+export async function sendAdminBatchReadyEmail(toEmail: string, toName: string) {
+  if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
+  await resend.emails.send({
+    from: 'Andrel <hello@andrel.app>',
+    to: toEmail,
+    subject: 'You have new introductions waiting on Andrel',
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2850; margin-bottom: 24px;">New introductions on Andrel</h2>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          Hi ${toName},
+        </p>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+          We've curated new introductions for you based on your profile and interests.<br/><br/>
+          Log in to review your new connections and let us know which ones you'd like to pursue.
+        </p>
+        <a href="https://andrel.app/dashboard/introductions"
+           style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+          Review Introductions
+        </a>
+        <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+          — The Andrel Team
+        </p>
+      </div>
+    `,
+  })
+}
+
+/**
+ * Sent when an admin batch was QUEUED behind a member's still-unresolved current batch.
+ * Nudges them to finish their CURRENT introductions. Deliberately takes only email + name
+ * (no counts, no target names) so it can never reveal the queued batch; links only to the
+ * member's current introductions.
+ */
+export async function sendCurrentIntroductionsWaitingEmail(toEmail: string, toName: string) {
+  if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
+  await resend.emails.send({
+    from: 'Andrel <hello@andrel.app>',
+    to: toEmail,
+    subject: 'Your Andrel introductions are waiting',
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2850; margin-bottom: 24px;">Your introductions are waiting</h2>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          Hi ${toName},
+        </p>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+          You still have introductions waiting for you from your previous round.<br/><br/>
+          Take a moment to Express Interest or Pass on each introduction — once you've reviewed them,
+          we'll unlock your next curated introductions.
+        </p>
+        <a href="https://andrel.app/dashboard/introductions"
+           style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+          Review Current Introductions
+        </a>
+        <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+          — The Andrel Team
+        </p>
+      </div>
+    `,
+  })
+}
+
 // Weekly reminder that a member still has unresolved introductions to review.
 // Same category as new-introduction emails (email_new_introductions), so it is
 // automatically suppressed once a member opts out of introduction emails.

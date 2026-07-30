@@ -14,6 +14,9 @@ const h = vi.hoisted(() => ({
   suggestions: [] as any[],
   enqueueCalls: [] as any[],
   notifyCalls: [] as any[],
+  queuedNotifyCalls: [] as any[],
+  placement: {} as Record<string, string>,  // memberId → 'active' | 'queued' (default active)
+  unresolved: {} as Record<string, number>, // memberId → current unresolved count (default 0)
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -21,16 +24,20 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 vi.mock('@/lib/introductions/queue', () => ({
-  // Recorder — placed ACTIVE so the notification path is exercised on first approval.
+  // Recorder — placement is per-member (default ACTIVE so existing tests are unchanged).
   enqueueBatch: vi.fn(async (_admin: any, opts: any) => {
     h.enqueueCalls.push(opts)
-    return { placed: true, state: 'active', batchId: 'rb-' + opts.memberId, count: opts.rows.length }
+    return { placed: true, state: h.placement[opts.memberId] ?? 'active', batchId: 'rb-' + opts.memberId, count: opts.rows.length }
   }),
+  countUnresolvedRecommendations: vi.fn(async (_admin: any, memberId: string) => h.unresolved[memberId] ?? 0),
 }))
 
 vi.mock('@/lib/notifications/engagement', () => ({
-  notifyNewVisibleBatch: vi.fn(async (memberId: string, batchId: string, count?: number) => {
+  notifyAdminBatchReady: vi.fn(async (memberId: string, batchId: string, count?: number) => {
     h.notifyCalls.push({ memberId, batchId, count })
+  }),
+  notifyQueuedIntrosWaiting: vi.fn(async (memberId: string, queuedBatchId: string, ...extra: any[]) => {
+    h.queuedNotifyCalls.push({ memberId, queuedBatchId, extraArgs: extra })
   }),
 }))
 
@@ -66,7 +73,7 @@ vi.mock('@/lib/supabase/admin', () => {
 
 import { POST } from '@/app/api/admin/approve-batch/route'
 import { enqueueBatch } from '@/lib/introductions/queue'
-import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
+import { notifyAdminBatchReady, notifyQueuedIntrosWaiting } from '@/lib/notifications/engagement'
 
 const post = () => POST(new Request('http://x/api/admin/approve-batch', {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batchId: 'batch-1' }),
@@ -81,8 +88,12 @@ beforeEach(() => {
   ]
   h.enqueueCalls = []
   h.notifyCalls = []
+  h.queuedNotifyCalls = []
+  h.placement = {}
+  h.unresolved = {}
   ;(enqueueBatch as any).mockClear()
-  ;(notifyNewVisibleBatch as any).mockClear()
+  ;(notifyAdminBatchReady as any).mockClear()
+  ;(notifyQueuedIntrosWaiting as any).mockClear()
 })
 
 describe('approve-batch — idempotency guard', () => {
@@ -114,11 +125,11 @@ describe('approve-batch — idempotency guard', () => {
   it('3. email notification behavior is unchanged (fires once on first approval, not on re-approval)', async () => {
     await post()
     expect(h.notifyCalls).toHaveLength(2)            // active placements announced (as before)
-    expect(notifyNewVisibleBatch).toHaveBeenCalledTimes(2)
+    expect(notifyAdminBatchReady).toHaveBeenCalledTimes(2)
 
     await post()                                     // re-approval short-circuits at the guard
     expect(h.notifyCalls).toHaveLength(2)            // no additional emails
-    expect(notifyNewVisibleBatch).toHaveBeenCalledTimes(2)
+    expect(notifyAdminBatchReady).toHaveBeenCalledTimes(2)
   })
 
   it('refuses approval from other terminal states (completed) without mutating', async () => {
@@ -126,7 +137,7 @@ describe('approve-batch — idempotency guard', () => {
     const res = await post()
     expect(res.status).toBe(409)
     expect(h.enqueueCalls).toHaveLength(0)
-    expect(notifyNewVisibleBatch).not.toHaveBeenCalled()
+    expect(notifyAdminBatchReady).not.toHaveBeenCalled()
   })
 
   it('404 when the batch does not exist (and nothing enqueued)', async () => {
@@ -134,6 +145,62 @@ describe('approve-batch — idempotency guard', () => {
     const res = await post()
     expect(res.status).toBe(404)
     expect(h.enqueueCalls).toHaveLength(0)
-    expect(notifyNewVisibleBatch).not.toHaveBeenCalled()
+    expect(notifyAdminBatchReady).not.toHaveBeenCalled()
+  })
+})
+
+describe('approve-batch — send-time notifications (visible vs queued vs resolved)', () => {
+  it('routes each recipient to the correct email path', async () => {
+    // m1 visible; m2 queued WITH unresolved current intros; m3 queued but RESOLVED.
+    h.suggestions = [
+      { recipient_id: 'm1', suggested_id: 't1', reason: 'r', position: 0 },
+      { recipient_id: 'm2', suggested_id: 't2', reason: 'r', position: 0 },
+      { recipient_id: 'm3', suggested_id: 't3', reason: 'r', position: 0 },
+    ]
+    h.placement = { m1: 'active', m2: 'queued', m3: 'queued' }
+    h.unresolved = { m2: 2, m3: 0 }
+
+    const res = await post()
+    const body = await res.json()
+    expect(res.status).toBe(200)
+
+    // Visible → "new introductions" email; NOT the queued nudge.
+    expect(h.notifyCalls.map((c) => c.memberId)).toEqual(['m1'])
+    // Queued + unresolved → "finish current introductions" nudge, for m2 only.
+    expect(h.queuedNotifyCalls.map((c) => c.memberId)).toEqual(['m2'])
+    // Queued + resolved (m3) → nothing.
+    expect(body).toMatchObject({ notified: 1, queuedNotified: 1, skippedQueued: 1 })
+  })
+
+  it('the queued nudge reveals NO queued-batch details (only memberId + queued batch id)', async () => {
+    h.suggestions = [{ recipient_id: 'm2', suggested_id: 't2', reason: 'r', position: 0 }]
+    h.placement = { m2: 'queued' }
+    h.unresolved = { m2: 3 }
+    await post()
+    expect(notifyQueuedIntrosWaiting).toHaveBeenCalledTimes(1)
+    const call = h.queuedNotifyCalls[0]
+    expect(call.memberId).toBe('m2')
+    expect(call.queuedBatchId).toBe('rb-m2') // the queued batch id only — no targets/count
+    expect(call.extraArgs).toEqual([])        // no suggested names/counts passed through
+  })
+
+  it('a resolved queued member (no unresolved current intros) receives nothing', async () => {
+    h.suggestions = [{ recipient_id: 'm3', suggested_id: 't3', reason: 'r', position: 0 }]
+    h.placement = { m3: 'queued' }
+    h.unresolved = { m3: 0 }
+    await post()
+    expect(notifyAdminBatchReady).not.toHaveBeenCalled()
+    expect(notifyQueuedIntrosWaiting).not.toHaveBeenCalled()
+  })
+
+  it('retrying approval does not fire the queued nudge again (guard blocks re-run)', async () => {
+    h.suggestions = [{ recipient_id: 'm2', suggested_id: 't2', reason: 'r', position: 0 }]
+    h.placement = { m2: 'queued' }
+    h.unresolved = { m2: 2 }
+    await post()                                       // first: pending_review → active
+    expect(notifyQueuedIntrosWaiting).toHaveBeenCalledTimes(1)
+    const res2 = await post()                          // second: status now active → 409
+    expect(res2.status).toBe(409)
+    expect(notifyQueuedIntrosWaiting).toHaveBeenCalledTimes(1) // no duplicate nudge
   })
 })

@@ -23,6 +23,7 @@ export type NotificationType =
   | 'new_connection'
   | 'intro_accepted'
   | 'introduction_reminder'
+  | 'introductions_waiting'
   | 'waiting_response'
 
 export interface NotificationData {
