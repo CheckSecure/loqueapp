@@ -330,3 +330,65 @@ describe('Generate New Batch — availability tiers (asymmetry guard)', () => {
     expect(rerun).toEqual(withNone)
   })
 })
+
+// Partner-to-partner fallback + two-intro coverage. LFP↔LFP is demoted (chosen only when
+// a member has no cross-role option left, never hard-excluded), and role diversity is a
+// preference that must not strand a member below 2 intros.
+describe('Generate New Batch — partner demotion + coverage fill', () => {
+  const hasEdge = (rows: any[], x: string, y: string) =>
+    rows.some((r: any) => (r.recipient_id === x && r.suggested_id === y) || (r.recipient_id === y && r.suggested_id === x))
+  const degree = (rows: any[], id: string) => rows.filter((r: any) => r.recipient_id === id).length
+  // open_to_business_solutions:true so a law-firm (provider) member can be matched with a
+  // non-partner buyer — otherwise the SEPARATE business-solution throttle (not the role
+  // demotion under test) would block those edges and mask the behavior we're asserting.
+  const withRole = (id: string, role: string, company?: string) => ({ ...member(id), id, role_type: role, company: company ?? ('co-' + id), open_to_business_solutions: true })
+
+  it('partner + strong non-partner options → non-partner selected (LFP↔LFP skipped when cross-role suffices)', async () => {
+    // Star: lp1 (firm B) has two dedicated cross-role partners (x1, x2, firm A) plus the
+    // eligible-but-demoted partner lp2 (firm A). Same-company excludes every A↔A edge, so
+    // x1/x2 have spare capacity for lp1 — lp1 can reach 2 WITHOUT the partner, so it must.
+    state.profiles = [
+      withRole('lp1', 'Law Firm Partner', 'firm-B'),
+      withRole('lp2', 'Law Firm Partner', 'firm-A'),
+      withRole('x1', 'Founder', 'firm-A'),
+      withRole('x2', 'Investor', 'firm-A'),
+    ]
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'lp1', 'lp2')).toBe(false) // partner available but NOT chosen
+    expect(hasEdge(rows, 'lp1', 'x1')).toBe(true)   // filled cross-role instead
+    expect(hasEdge(rows, 'lp1', 'x2')).toBe(true)
+    expect(degree(rows, 'lp1')).toBe(2)
+  })
+
+  it('partner + no viable non-partner option → partner match ALLOWED (last resort, not excluded)', async () => {
+    state.profiles = [withRole('lp1', 'Law Firm Partner'), withRole('lp2', 'Law Firm Partner')]
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'lp1', 'lp2')).toBe(true) // eligible when nothing better remains
+  })
+
+  it('role diversity cannot strand a member at 1 intro (coverage fill tops up the 2nd)', async () => {
+    state.profiles = [
+      withRole('m', 'Operator', 'm-co'),
+      withRole('c1', 'Founder', 'shared-co'), // same company as c2 → c1↔c2 excluded, so m's
+      withRole('c2', 'Founder', 'shared-co'), // only partners are two same-role Founders
+    ]
+    await post()
+    const rows = state.insertedSuggestions || []
+    // Graph's role-diversity cap (max 1 same role) would seat only 1; the fill seats both.
+    expect(hasEdge(rows, 'm', 'c1')).toBe(true)
+    expect(hasEdge(rows, 'm', 'c2')).toBe(true)
+    expect(degree(rows, 'm')).toBe(2)
+  })
+
+  it('members with available candidates receive 2 (coverage) and never exceed 2 (cap)', async () => {
+    const roles = ['Founder', 'Investor', 'Operator', 'Advisor']
+    state.profiles = Array.from({ length: 6 }, (_, i) => withRole('u' + i, roles[i % roles.length]))
+    await post()
+    const rows = state.insertedSuggestions || []
+    const ids = state.profiles.map((p: any) => p.id)
+    for (const id of ids) expect(degree(rows, id)).toBeLessThanOrEqual(2) // 2-max preserved
+    expect(ids.filter((id: string) => degree(rows, id) === 2).length).toBe(ids.length) // everyone reaches 2
+  })
+})

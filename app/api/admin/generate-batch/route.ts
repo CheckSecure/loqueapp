@@ -9,7 +9,7 @@ import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
-import { selectReciprocalGraph } from '@/lib/matching/reciprocal-graph'
+import { selectReciprocalGraph, fillForCoverage } from '@/lib/matching/reciprocal-graph'
 import { buildIntroHistoryExclusions } from '@/lib/introRequests/history'
 import { membersWithUnresolvedIntros } from '@/lib/introductions/queue'
 
@@ -19,6 +19,19 @@ export const dynamic = 'force-dynamic'
 const MIN_RELEVANCE_SCORE = BATCH_CONFIG.minRelevanceScore
 const MAX_SAME_ROLE_PERCENT = BATCH_CONFIG.maxSameRolePercent
 const MUTUAL_MATCH_PERCENTILE = 0.4 // reported in qualityMetrics only
+
+// Law Firm Partner ↔ Law Firm Partner is a low-value pairing (competing senior partners
+// at different firms rarely refer to each other). We DEMOTE it in the SELECTION WEIGHT
+// only — never in scoreMatch, buckets, reasons, or the stored match_score, and never a
+// hard exclusion. Scaling the edge weight by this tiny factor keeps a partner↔partner
+// edge strictly below every cross-role edge (min cross-role mutualScore = 2 ×
+// MIN_RELEVANCE = 80) while staying POSITIVE, so it is chosen only after a member's
+// cross-role options are exhausted, yet remains a genuine last-resort fill. LFP↔Attorney
+// and other legal pairs are intentionally NOT demoted (seniority-diverse, higher value).
+const PARTNER_PAIR_WEIGHT_SCALE = 0.001
+const isLawFirmPartner = (m: any) => String(m?.role_type ?? '').trim().toLowerCase() === 'law firm partner'
+const partnerDemotedWeight = (a: any, b: any, rawMutual: number): number =>
+  isLawFirmPartner(a) && isLawFirmPartner(b) ? rawMutual * PARTNER_PAIR_WEIGHT_SCALE : rawMutual
 
 function isCompatiblePair(userA: any, userB: any): boolean {
   // 1. Geographic compatibility
@@ -294,7 +307,9 @@ export async function POST(req: NextRequest) {
           userB,
           scoreAtoB,
           scoreBtoA,
-          mutualScore: scoreAtoB + scoreBtoA,
+          // Selection weight only — demoted for LFP↔LFP so it ranks below cross-role edges
+          // (raw directional scores below are kept for buckets/reasons/stored score).
+          mutualScore: partnerDemotedWeight(userA, userB, scoreAtoB + scoreBtoA),
           relevanceScore: avgScore,
           reasonAtoB: generateReason(userA, userB),
           reasonBtoA: generateReason(userB, userA),
@@ -318,24 +333,35 @@ export async function POST(req: NextRequest) {
     // selected edge is undirected it is mutual BY CONSTRUCTION — reciprocity and the
     // two-directional cap are properties of the output, not a post-process. See
     // lib/matching/reciprocal-graph.ts for the full rationale.
+    const capOf = (m: any) => perRecipientIntroLimit(m.subscription_tier || 'free')
+    const bsCapOf = (m: any, cap: number) => maxBusinessSolutionCount(m.open_to_business_solutions || false, m.subscription_tier || 'free', cap)
     const { selected: selectedEdges } = selectReciprocalGraph(allPairs, {
-      capOf: (m) => perRecipientIntroLimit(m.subscription_tier || 'free'),
+      capOf,
       maxSameRolePercent: MAX_SAME_ROLE_PERCENT,
       isBusinessSolutionProvider,
-      bsCapOf: (m, cap) => maxBusinessSolutionCount(m.open_to_business_solutions || false, m.subscription_tier || 'free', cap),
+      bsCapOf,
     })
+
+    // COVERAGE FILL — role diversity is a PREFERENCE, never a reason to strand a member
+    // below their intro cap. Top up any under-cap member with their best remaining
+    // ELIGIBLE edge, relaxing ONLY role diversity. allPairs already excludes history,
+    // availability-tier mismatches, same-company, and sub-threshold pairs; the per-member
+    // cap (2-max) and the business-solution throttle are still enforced. Because
+    // mutualScore carries the partner demotion, cross-role fills are preferred and
+    // partner↔partner remains the last resort.
+    const selectedEdgesFilled = fillForCoverage(selectedEdges, allPairs, { capOf, isBusinessSolutionProvider, bsCapOf })
 
     // Fan each selected edge out into BOTH directions. This is the only place rows are
     // created, so a one-way recommendation is structurally impossible: an edge that
     // isn't selected produces zero rows; one that is produces exactly two.
     const userBatches: Record<string, any[]> = {}
-    for (const e of selectedEdges) {
+    for (const e of selectedEdgesFilled) {
       ;(userBatches[e.userA.id] ||= []).push({ suggested: e.userB, score: e.scoreAtoB, reason: e.reasonAtoB })
       ;(userBatches[e.userB.id] ||= []).push({ suggested: e.userA, score: e.scoreBtoA, reason: e.reasonBtoA })
     }
 
-    // Every edge is a mutual introduction by construction.
-    const mutualMatchesCreated = selectedEdges.length
+    // Every edge is a mutual introduction by construction (selection + coverage fill).
+    const mutualMatchesCreated = selectedEdgesFilled.length
     const allSuggestions: any[] = []
 
     // Build + insert suggestions. Any failure here (out-of-range score or a DB

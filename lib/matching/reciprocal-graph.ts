@@ -183,6 +183,69 @@ export function selectReciprocalGraph<E extends ReciprocalEdgeInput>(
 }
 
 /**
+ * COVERAGE FILL — role diversity is a PREFERENCE, not a hard limit.
+ *
+ * selectReciprocalGraph optimizes quality while respecting the role-diversity cap as a
+ * HARD constraint, which can leave a member below their intro cap when their only
+ * remaining eligible partners share a role_type they've already used. This pass runs
+ * AFTER selection and tops up any under-cap member with their best remaining eligible
+ * edge, relaxing ONLY the role-diversity preference. Everything else is preserved:
+ *   • the per-member degree cap is never exceeded (the 2-intro maximum holds);
+ *   • the business-solution throttle is still enforced;
+ *   • `edges` is the caller's already-filtered eligible set (history, availability
+ *     tiers, same-company, and the relevance floor were applied upstream), so no
+ *     excluded pair can enter here;
+ *   • edges are considered by mutualScore (which already carries any role demotion),
+ *     so cross-role fills are preferred and demoted pairs are the genuine last resort.
+ * Reciprocity is intact — each returned edge is undirected and fans out to both members.
+ * Deterministic (mutualScore desc, pair-key tiebreak). Adds only consume capacity, so a
+ * single pass is sufficient.
+ */
+export function fillForCoverage<E extends ReciprocalEdgeInput>(
+  selected: E[],
+  edges: E[],
+  config: {
+    capOf: (m: any) => number
+    isBusinessSolutionProvider?: (m: any) => boolean
+    bsCapOf?: (m: any, cap: number) => number
+  },
+): E[] {
+  const isBS = config.isBusinessSolutionProvider || (() => false)
+  const result = selected.slice()
+  const chosen = new Set(result.map((e) => reciprocalPairKey(e.userA.id, e.userB.id)))
+  const degree = new Map<string, number>()
+  const bsCount = new Map<string, number>()
+  const bump = (m: Map<string, number>, id: string) => m.set(id, (m.get(id) || 0) + 1)
+  for (const e of result) {
+    bump(degree, e.userA.id); bump(degree, e.userB.id)
+    const aBS = isBS(e.userA), bBS = isBS(e.userB)
+    if (!(aBS && bBS)) { if (bBS) bump(bsCount, e.userA.id); if (aBS) bump(bsCount, e.userB.id) }
+  }
+  const capOf = (m: any) => Math.max(0, config.capOf(m))
+  const bsCapOf = (m: any) => (config.bsCapOf ? config.bsCapOf(m, capOf(m)) : capOf(m))
+
+  const remaining = edges
+    .filter((e) => !chosen.has(reciprocalPairKey(e.userA.id, e.userB.id)))
+    .sort((x, y) => y.mutualScore - x.mutualScore ||
+      reciprocalPairKey(x.userA.id, x.userB.id).localeCompare(reciprocalPairKey(y.userA.id, y.userB.id)))
+
+  for (const e of remaining) {
+    const a = e.userA, b = e.userB
+    const da = degree.get(a.id) || 0, db = degree.get(b.id) || 0
+    if (da >= capOf(a) || db >= capOf(b)) continue // never exceed the hard per-member cap
+    const aBS = isBS(a), bBS = isBS(b), peer = aBS && bBS
+    if (!peer) { // keep the business-solution throttle; only role diversity is relaxed
+      if (bBS && (bsCount.get(a.id) || 0) >= bsCapOf(a)) continue
+      if (aBS && (bsCount.get(b.id) || 0) >= bsCapOf(b)) continue
+    }
+    result.push(e); chosen.add(reciprocalPairKey(a.id, b.id))
+    bump(degree, a.id); bump(degree, b.id)
+    if (!peer) { if (bBS) bump(bsCount, a.id); if (aBS) bump(bsCount, b.id) }
+  }
+  return result
+}
+
+/**
  * Augmenting-path improvement over a greedy b-matching (Phase 2 of selectReciprocalGraph,
  * also usable standalone). Repeatedly looks for a member `u` with spare capacity and
  * either
