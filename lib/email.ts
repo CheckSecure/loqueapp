@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildRecommendationIntroEmail } from '@/lib/email/recommendationIntro'
+import { introReminderCopy } from '@/lib/notifications/engagement'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -168,27 +169,27 @@ export async function sendNewBatchEmail(
 export async function sendIntroductionReminderEmail(
   toEmail: string,
   toName: string,
-  introCount: number
+  introCount: number,
+  category: 'no_action' | 'partial' = 'no_action'
 ) {
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
+  const copy = introReminderCopy(category, introCount)
   await resend.emails.send({
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
-    subject: 'You still have introductions waiting',
+    subject: copy.subject,
     html: `
       <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #1B2850; margin-bottom: 24px;">Your introductions are waiting</h2>
+        <h2 style="color: #1B2850; margin-bottom: 24px;">${copy.heading}</h2>
         <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
           Hi ${toName},
         </p>
         <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-          You have ${introCount} curated ${introCount === 1 ? 'introduction' : 'introductions'} you haven't reviewed yet.
-          Take a moment to see who we've matched you with — express interest in the people worth knowing,
-          and pass on the rest. Each decision helps us make your future introductions even more relevant.
+          ${copy.body}
         </p>
         <a href="https://andrel.app/dashboard/introductions"
            style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
-          Review Introductions
+          ${copy.cta}
         </a>
         <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
           — The Andrel Team

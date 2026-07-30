@@ -60,6 +60,50 @@ export function shouldSendIntroReminder(unresolvedCount: number, alreadyReminded
   return unresolvedCount > 0 && !alreadyReminded
 }
 
+/** A batch is only stale enough to remind on once it has been visible this long. */
+export const INTRO_REMINDER_STALE_MS = 7 * 24 * 60 * 60 * 1000
+
+export type IntroReminderCategory = 'none' | 'no_action' | 'partial'
+
+/**
+ * Classify a member's engagement with their ACTIVE introduction batch:
+ *   • none      → nothing unresolved (fully reviewed) → no reminder;
+ *   • no_action → has unresolved intros AND has taken no action at all (highest priority);
+ *   • partial   → has unresolved intros but has expressed interest / passed on some.
+ * Purely a function of the two facts the cron already computes; drives which copy is sent.
+ */
+export function classifyIntroReminder(args: { unresolvedCount: number; hasTakenAnyAction: boolean }): IntroReminderCategory {
+  if (args.unresolvedCount <= 0) return 'none'
+  return args.hasTakenAnyAction ? 'partial' : 'no_action'
+}
+
+/**
+ * Category-specific introduction-reminder copy (PURE — unit-tested; lives here rather than
+ * in email.ts so it carries no transport dependency). Both variants link only to the
+ * member's CURRENT introductions, never a queued next batch, so an upcoming batch is never
+ * revealed early. `no_action` (highest priority) vs `partial` engagement.
+ */
+export function introReminderCopy(
+  category: Exclude<IntroReminderCategory, 'none'>,
+  introCount: number,
+): { subject: string; heading: string; body: string; cta: string } {
+  const noun = introCount === 1 ? 'introduction' : 'introductions'
+  if (category === 'partial') {
+    return {
+      subject: `You're almost there — ${introCount} ${noun} left to review`,
+      heading: 'Almost there',
+      body: `Thanks for engaging with your introductions.<br/><br/>You still have ${introCount} left to review. Once you've completed these, we'll prepare your next round of connections.`,
+      cta: 'Finish reviewing',
+    }
+  }
+  return {
+    subject: 'Your Andrel introductions are waiting — take 2 minutes',
+    heading: 'Your introductions are waiting',
+    body: `You have ${introCount} curated ${noun} waiting for your review.<br/><br/>A quick Express interest or Pass helps us understand your network preferences and unlock your next round of connections.<br/><br/>Take two minutes to review your introductions.`,
+    cta: 'Review Introductions',
+  }
+}
+
 // ── Wiring (best-effort; used by producers) ───────────────────────────────────
 
 /**

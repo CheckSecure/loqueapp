@@ -4,6 +4,9 @@ import {
   shouldEmailNewMessage,
   shouldRemindWaiting,
   shouldSendIntroReminder,
+  classifyIntroReminder,
+  introReminderCopy,
+  INTRO_REMINDER_STALE_MS,
   MESSAGE_EMAIL_ACTIVE_WINDOW_MS,
   WAITING_RESPONSE_THRESHOLD_MS,
 } from '@/lib/notifications/engagement'
@@ -101,5 +104,41 @@ describe('shouldSendIntroReminder', () => {
 
   it('does NOT remind twice for the same batch (already reminded)', () => {
     expect(shouldSendIntroReminder(3, true)).toBe(false)
+  })
+})
+
+describe('classifyIntroReminder — no_action / partial / none', () => {
+  it('none when nothing is unresolved (resolved batch → no reminder)', () => {
+    expect(classifyIntroReminder({ unresolvedCount: 0, hasTakenAnyAction: false })).toBe('none')
+    expect(classifyIntroReminder({ unresolvedCount: 0, hasTakenAnyAction: true })).toBe('none')
+  })
+  it('no_action when unresolved and the member has taken no action (highest priority)', () => {
+    expect(classifyIntroReminder({ unresolvedCount: 2, hasTakenAnyAction: false })).toBe('no_action')
+    expect(classifyIntroReminder({ unresolvedCount: 1, hasTakenAnyAction: false })).toBe('no_action')
+  })
+  it('partial when unresolved but the member has acted on some', () => {
+    expect(classifyIntroReminder({ unresolvedCount: 1, hasTakenAnyAction: true })).toBe('partial')
+  })
+  it('the 7-day staleness constant is 7 days', () => {
+    expect(INTRO_REMINDER_STALE_MS).toBe(7 * 24 * 60 * 60 * 1000)
+  })
+})
+
+describe('introReminderCopy — category-specific copy', () => {
+  it('no_action copy (highest priority)', () => {
+    const c = introReminderCopy('no_action', 2)
+    expect(c.subject).toBe('Your Andrel introductions are waiting — take 2 minutes')
+    expect(c.cta).toBe('Review Introductions')
+    expect(c.body).toContain('2 curated introductions')
+  })
+  it('partial copy', () => {
+    const c = introReminderCopy('partial', 3)
+    expect(c.subject).toBe("You're almost there — 3 introductions left to review")
+    expect(c.cta).toBe('Finish reviewing')
+    expect(c.body).toContain('3 left to review')
+  })
+  it('singular/plural noun agreement', () => {
+    expect(introReminderCopy('partial', 1).subject).toBe("You're almost there — 1 introduction left to review")
+    expect(introReminderCopy('no_action', 1).body).toContain('1 curated introduction ')
   })
 })

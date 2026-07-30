@@ -1,14 +1,19 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createNotificationSafe } from '@/lib/notifications'
-import { countUnresolvedRecommendations } from '@/lib/introductions/queue'
+import { countUnresolvedRecommendations, EXPRESSED_INTEREST_STATUSES } from '@/lib/introductions/queue'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { sendIntroductionReminderEmail, sendWaitingResponseEmail } from '@/lib/email'
 import {
   shouldRemindWaiting,
-  shouldSendIntroReminder,
+  classifyIntroReminder,
+  INTRO_REMINDER_STALE_MS,
   WAITING_RESPONSE_THRESHOLD_MS,
 } from '@/lib/notifications/engagement'
+
+// A member has "taken action" on an introduction if they expressed interest in one
+// (any EXPRESSED_INTEREST status) or passed on one. Used to split no_action vs partial.
+const INTRO_ACTION_STATUSES = [...EXPRESSED_INTEREST_STATUSES, 'passed'] as string[]
 
 /**
  * Engagement reminders (runs daily).
@@ -112,50 +117,59 @@ export async function GET(req: Request) {
     }
   }
 
-  // ── PART 3: weekly introduction reminder (Sundays only) ────────────────────
+  // ── PART 3: introduction reminder — ACTIVE batch, unresolved, ≥7 days stale ──
+  // Only reads active recommendation_batches (never queued), so a member's queued
+  // next batch is never revealed. Fires once per batch, ~7 days after it became
+  // visible, with copy chosen by engagement (no_action vs partial). Resolved batches
+  // get nothing. The dedupeKey enforces exactly one reminder per batch.
   let reminderSent = 0
   let reminderSkipped = 0
-  const isSunday = new Date().getUTCDay() === 0
-  if (isSunday) {
-    const { data: activeBatches } = await admin
-      .from('recommendation_batches')
-      .select('batch_id, member_id')
-      .eq('state', 'active')
+  const staleCutoff = new Date(now - INTRO_REMINDER_STALE_MS).toISOString()
+  const { data: activeBatches } = await admin
+    .from('recommendation_batches')
+    .select('batch_id, member_id, displayed_at')
+    .eq('state', 'active')
+    .lte('displayed_at', staleCutoff) // 7-day gate (null displayed_at is excluded)
 
-    for (const b of activeBatches ?? []) {
-      const unresolved = await countUnresolvedRecommendations(admin, b.member_id)
-      // alreadyReminded=false: the dedupeKey below enforces one-per-batch, so this
-      // helper only needs to gate on there being something unresolved to review.
-      if (!shouldSendIntroReminder(unresolved, false)) { reminderSkipped++; continue }
+  for (const b of activeBatches ?? []) {
+    const unresolved = await countUnresolvedRecommendations(admin, b.member_id)
+    // Has the member engaged with any introduction at all (expressed interest / passed)?
+    const { data: acted } = await admin
+      .from('intro_requests')
+      .select('id')
+      .eq('requester_id', b.member_id)
+      .in('status', INTRO_ACTION_STATUSES)
+      .limit(1)
+    const category = classifyIntroReminder({ unresolvedCount: unresolved, hasTakenAnyAction: (acted ?? []).length > 0 })
+    if (category === 'none') { reminderSkipped++; continue } // resolved batch → no reminder
 
-      const { data: p } = await admin
-        .from('profiles')
-        .select('email, full_name, account_status, is_test_account')
-        .eq('id', b.member_id)
-        .maybeSingle()
-      if (!p || p.account_status !== 'active' || p.is_test_account || !p.email) {
-        reminderSkipped++; continue
-      }
+    const { data: p } = await admin
+      .from('profiles')
+      .select('email, full_name, account_status, is_test_account')
+      .eq('id', b.member_id)
+      .maybeSingle()
+    if (!p || p.account_status !== 'active' || p.is_test_account || !p.email) {
+      reminderSkipped++; continue
+    }
 
-      // One reminder per weekly batch (survives re-runs and multiple Sundays).
-      const created = await createNotificationSafe({
-        userId: b.member_id,
-        type: 'introduction_reminder',
-        data: { batchId: b.batch_id, count: unresolved },
-        dedupeKey: `introreminder:${b.batch_id}`,
-      })
-      if (!created) { reminderSkipped++; continue }
+    // One reminder per batch (survives re-runs and repeated daily crons), race-safe.
+    const created = await createNotificationSafe({
+      userId: b.member_id,
+      type: 'introduction_reminder',
+      data: { batchId: b.batch_id, count: unresolved, category },
+      dedupeKey: `introreminder:${b.batch_id}`,
+    })
+    if (!created) { reminderSkipped++; continue }
 
-      console.log(`[Email] type=introduction_reminder memberId=${b.member_id} batchId=${b.batch_id} count=${unresolved}`)
-      try {
-        if (hasResend) await sendIntroductionReminderEmail(p.email, p.full_name || 'there', unresolved)
-        reminderSent++
-      } catch (e: any) {
-        console.error('[engagement-reminders] reminder email failed (non-fatal):', e?.message)
-      }
+    console.log(`[Email] type=introduction_reminder memberId=${b.member_id} batchId=${b.batch_id} count=${unresolved} category=${category}`)
+    try {
+      if (hasResend) await sendIntroductionReminderEmail(p.email, p.full_name || 'there', unresolved, category)
+      reminderSent++
+    } catch (e: any) {
+      console.error('[engagement-reminders] reminder email failed (non-fatal):', e?.message)
     }
   }
 
-  console.log(`[engagement-reminders] done — waiting sent:${waitingSent} skipped:${waitingSkipped}; reminder(sunday=${isSunday}) sent:${reminderSent} skipped:${reminderSkipped}`)
-  return NextResponse.json({ waitingSent, waitingSkipped, reminderSent, reminderSkipped, isSunday })
+  console.log(`[engagement-reminders] done — waiting sent:${waitingSent} skipped:${waitingSkipped}; reminder sent:${reminderSent} skipped:${reminderSkipped}`)
+  return NextResponse.json({ waitingSent, waitingSkipped, reminderSent, reminderSkipped })
 }
