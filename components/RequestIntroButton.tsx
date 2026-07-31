@@ -148,7 +148,7 @@ export default function RequestIntroButton({
       <div className="mt-1">
         <div className="w-full flex items-center justify-center gap-2 text-xs font-medium text-[#C4922A] bg-[#FDF3E3] border border-[#C4922A]/20 py-2 rounded-lg">
           <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-          Facilitating introduction…
+          Sharing your interest…
         </div>
       </div>
     )
@@ -159,7 +159,7 @@ export default function RequestIntroButton({
     return (
       <div className="mt-1">
         <div className="w-full text-center text-xs text-slate-500 bg-slate-50 border border-slate-200 py-2 rounded-lg">
-          Interest expressed
+          Interest sent — they&rsquo;ve been notified
         </div>
       </div>
     )

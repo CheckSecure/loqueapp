@@ -54,8 +54,8 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
     message: 'Your latest set of curated connections is ready to review.'
   },
   interest_received: {
-    title: 'New connection interest',
-    message: 'A curated connection is interested in meeting you.'
+    title: "Someone's interested in connecting",
+    message: 'A member is interested in connecting with you. Open Introductions to see who and respond.'
   },
   mutual_match: {
     title: 'Introduction ready',

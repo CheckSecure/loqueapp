@@ -466,7 +466,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                 <Sparkles className="w-4 h-4 text-brand-gold" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1.5">Why we introduced you</p>
+                <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1.5">Why we recommended them</p>
                 {renderReasonBlock(row)}
               </div>
             </div>
@@ -553,7 +553,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             <div className="flex items-start gap-2">
               <Sparkles className="w-3.5 h-3.5 text-brand-gold flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1 leading-tight">Why we introduced you</p>
+                <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1 leading-tight">Why we recommended them</p>
                 <div className="text-[12px] text-slate-600 leading-snug line-clamp-2 [&_p]:m-0 [&_p]:text-[12px]">
                   {renderReasonBlock(row)}
                 </div>
@@ -751,10 +751,11 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
                 {effectiveAdditional.length > 0 && (
                   <div className="mt-10">
-                    <div className="flex items-end justify-between gap-4 mb-4">
-                      <h3 className="text-base font-bold text-brand-navy tracking-tight">This Week&rsquo;s Introductions</h3>
+                    <div className="flex items-end justify-between gap-4 mb-1.5">
+                      <h3 className="text-base font-bold text-brand-navy tracking-tight">Recommended for you</h3>
                       <Pill variant="gold">{effectiveAdditional.length}</Pill>
                     </div>
+                    <p className="text-xs text-slate-500 mb-4">People we think you should meet. Express interest and we&rsquo;ll let them know — we make the introduction only when it&rsquo;s mutual.</p>
                     <div className="grid sm:grid-cols-2 gap-4">
                       {effectiveAdditional.map(renderAdditional)}
                     </div>
