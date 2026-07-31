@@ -157,7 +157,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       try {
         const adminSupa = createAdminClient()
         const [{ count: wl }, { count: iss }] = await Promise.all([
-          supabase.from('waitlist').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+          adminSupa.from('waitlist').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
           adminSupa.from('issue_reports').select('id', { count: 'exact', head: true }).eq('status', 'new'),
         ])
         return (wl ?? 0) + (iss ?? 0)
