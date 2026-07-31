@@ -69,10 +69,14 @@ export async function POST(req: Request) {
   const { full_name, email, title, company, linkedin_url, relationship, referral_note, consent } = body
 
   // ── Validation 1: required fields ─────────────────────────────────────────
-  // referral_note ("why") and relationship are OPTIONAL; only name + email required.
-  if (!full_name?.trim() || !email?.trim()) {
+  // referral_note ("why") is REQUIRED and must contain at least one non-whitespace
+  // character — public.referrals enforces CHECK(length(trim(referral_note)) > 0), so
+  // a blank/whitespace-only note would violate it. We reject here, BEFORE the waitlist
+  // row is created, so a bad note never leaves an orphaned waitlist entry. relationship
+  // stays optional.
+  if (!full_name?.trim() || !email?.trim() || !referral_note?.trim()) {
     return NextResponse.json(
-      { ok: false, error: 'full_name and email are required', code: 'MISSING_FIELDS' },
+      { ok: false, error: 'full_name, email, and a non-empty referral_note are required', code: 'MISSING_FIELDS' },
       { status: 400 }
     )
   }
@@ -96,8 +100,8 @@ export async function POST(req: Request) {
     )
   }
 
-  // ── Validation 4: referral_note length (only when a note is provided) ──────
-  if (referral_note?.trim() && referral_note.trim().length > 2000) {
+  // ── Validation 4: referral_note length ────────────────────────────────────
+  if (referral_note.trim().length > 2000) {
     return NextResponse.json(
       { ok: false, error: 'Referral note is too long (max 2000 characters)', code: 'NOTE_TOO_LONG' },
       { status: 400 }
@@ -206,12 +210,12 @@ export async function POST(req: Request) {
   // Cleanup query for orphaned waitlist rows:
   //   SELECT * FROM waitlist WHERE referral_source = 'referral'
   //   AND id NOT IN (SELECT waitlist_id FROM referrals);
-  // The note is optional now — store '' when omitted (safe whether the column is
-  // NOT NULL or nullable, and backward compatible with existing rows).
+  // referral_note is required and validated non-empty above (Validation 1), so the
+  // trimmed value always satisfies referrals' CHECK(length(trim(referral_note)) > 0).
   const baseReferral = {
     referrer_user_id: referrerProfile.id,
     waitlist_id:      newWaitlistRow.id,
-    referral_note:    referral_note?.trim() || '',
+    referral_note:    referral_note.trim(),
   }
 
   // Optional, migration-gated columns:

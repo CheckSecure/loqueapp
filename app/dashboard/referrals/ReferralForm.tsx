@@ -15,7 +15,7 @@ function isValidHttpUrl(s: string): boolean {
 }
 
 const ERROR_COPY: Record<string, string> = {
-  MISSING_FIELDS:               'Please fill in the name and email.',
+  MISSING_FIELDS:               'Please fill in the name, email, and your note.',
   INVALID_EMAIL:                'Please enter a valid email address.',
   INVALID_LINKEDIN:             'Please enter a valid LinkedIn URL (including https://).',
   SELF_REFERRAL:                'You cannot nominate yourself.',
@@ -43,9 +43,9 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
     e.preventDefault()
     setErrorMsg('')
 
-    // Client-side pre-validation — mirrors server checks exactly. The note ("why")
-    // is now OPTIONAL; only name and email are required.
-    if (!fullName.trim() || !email.trim()) {
+    // Client-side pre-validation — mirrors server checks exactly. The note ("why") is
+    // REQUIRED and must be non-whitespace (referrals enforces a non-empty CHECK).
+    if (!fullName.trim() || !email.trim() || !referralNote.trim()) {
       setErrorMsg(ERROR_COPY.MISSING_FIELDS)
       setState('error')
       return
@@ -84,7 +84,7 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
         company:       company.trim() || undefined,
         linkedin_url:  linkedinUrl.trim() || undefined,
         relationship:  relationship.trim() || undefined,
-        referral_note: referralNote.trim() || undefined,
+        referral_note: referralNote.trim(),
         consent,
       }),
     })
@@ -200,7 +200,7 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
 
       <div>
         <label className="block text-xs font-medium text-slate-700 mb-1">
-          Why would they strengthen the community? <span className="text-slate-400 font-normal">(optional)</span>
+          Why would they strengthen the community? <span className="text-red-500">*</span>
         </label>
         <textarea
           value={referralNote}

@@ -146,18 +146,48 @@ describe('retained protections still apply', () => {
   })
 })
 
-describe('Option-2 additive deltas: optional "why" + relationship field', () => {
-  it('a nomination with NO referral_note (why omitted) now succeeds', async () => {
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com' }) // no note, no relationship
+describe('referral note is REQUIRED (referrals CHECK: length(trim(referral_note)) > 0)', () => {
+  it('rejects a BLANK note — before creating any waitlist row (no orphan)', async () => {
+    const res = await post({ ...validBody(), referral_note: '' })
+    const data = await res.json()
+    expect(res.status).toBe(400)
+    expect(data.code).toBe('MISSING_FIELDS')
+    // Validation 1 runs BEFORE the waitlist insert — nothing is written.
+    expect(state.lastWaitlistInsert).toBeNull()
+    expect(state.lastReferralInsert).toBeNull()
+  })
+
+  it('rejects a WHITESPACE-only note (would violate the non-empty CHECK)', async () => {
+    const res = await post({ ...validBody(), referral_note: '   ' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).code).toBe('MISSING_FIELDS')
+    expect(state.lastWaitlistInsert).toBeNull() // no orphaned waitlist row
+  })
+
+  it('rejects an OMITTED note', async () => {
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).code).toBe('MISSING_FIELDS')
+    expect(state.lastWaitlistInsert).toBeNull()
+  })
+
+  it('ACCEPTS a non-empty note and stores it trimmed', async () => {
+    const res = await post({ ...validBody(), referral_note: '  Knows them well  ' })
     const data = await res.json()
     expect(res.status).toBe(200)
     expect(data.ok).toBe(true)
-    // Omitted note is stored as '' (safe for a NOT NULL or nullable column).
-    expect(state.lastReferralInsert.referral_note).toBe('')
+    expect(state.lastReferralInsert.referral_note).toBe('Knows them well') // trimmed, non-empty
   })
 
+  it('the note length cap still applies', async () => {
+    const res = await post({ ...validBody(), referral_note: 'x'.repeat(2001) })
+    expect((await res.json()).code).toBe('NOTE_TOO_LONG')
+  })
+})
+
+describe('additive: relationship field (optional) — preserved', () => {
   it('relationship is persisted on the referrals row when provided', async () => {
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', relationship: 'former colleague' })
+    const res = await post({ ...validBody(), relationship: 'former colleague' })
     expect(res.status).toBe(200)
     expect(state.lastReferralInsert.relationship).toBe('former colleague')
   })
@@ -165,41 +195,36 @@ describe('Option-2 additive deltas: optional "why" + relationship field', () => 
   it('fails open when referrals.relationship is not migrated yet (42703 → retry without it)', async () => {
     // First insert (with relationship) hits undefined-column; route retries without it.
     state.admin.insertErrorOnce.referrals = { data: null, error: { code: '42703', message: "column referrals.relationship does not exist" } }
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', relationship: 'client' })
+    const res = await post({ ...validBody(), relationship: 'client' })
     const data = await res.json()
     expect(res.status).toBe(200)
     expect(data.ok).toBe(true)
     // The successful (retry) insert carried NO relationship key.
     expect('relationship' in state.lastReferralInsert).toBe(false)
   })
-
-  it('the note length cap still applies when a note IS provided', async () => {
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', referral_note: 'x'.repeat(2001) })
-    expect((await res.json()).code).toBe('NOTE_TOO_LONG')
-  })
 })
 
 describe('LinkedIn profile field (optional, URL-validated, stored on the nominee)', () => {
   it('accepts a valid LinkedIn URL and persists it on the waitlist row', async () => {
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', linkedin_url: 'https://www.linkedin.com/in/jane' })
+    const res = await post({ ...validBody(), linkedin_url: 'https://www.linkedin.com/in/jane' })
     expect(res.status).toBe(200)
     expect(state.lastWaitlistInsert.linkedin_url).toBe('https://www.linkedin.com/in/jane')
   })
 
   it('rejects a malformed LinkedIn URL', async () => {
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', linkedin_url: 'not a url' })
+    const res = await post({ ...validBody(), linkedin_url: 'not a url' })
     const data = await res.json()
     expect(res.status).toBe(400)
     expect(data.code).toBe('INVALID_LINKEDIN')
   })
 
   it('rejects a non-http(s) scheme', async () => {
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', linkedin_url: 'javascript:alert(1)' })
+    const res = await post({ ...validBody(), linkedin_url: 'javascript:alert(1)' })
     expect((await res.json()).code).toBe('INVALID_LINKEDIN')
   })
 
   it('is fully optional — omitting it stores null and still succeeds', async () => {
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com' })
+    const res = await post(validBody())
     expect(res.status).toBe(200)
     expect(state.lastWaitlistInsert.linkedin_url).toBeNull()
   })
@@ -207,21 +232,21 @@ describe('LinkedIn profile field (optional, URL-validated, stored on the nominee
 
 describe('Referrer consent (privacy)', () => {
   it('stores referrer_consent_to_share=true when the member ticks the box', async () => {
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', consent: true })
+    const res = await post({ ...validBody(), consent: true })
     expect(res.status).toBe(200)
     expect(state.lastReferralInsert.referrer_consent_to_share).toBe(true)
   })
 
   it('defaults to no consent (false) when the box is unticked / omitted', async () => {
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com' })
+    const res = await post(validBody())
     expect(res.status).toBe(200)
     expect(state.lastReferralInsert.referrer_consent_to_share).toBe(false)
-    // Submission is allowed either way — consent is optional, not a hard gate.
+    // Consent is optional — a valid submission still requires a note, but not consent.
   })
 
   it('fails open when referrals.referrer_consent_to_share is not migrated (037) — retry without it', async () => {
     state.admin.insertErrorOnce.referrals = { data: null, error: { code: 'PGRST204', message: "Could not find the 'referrer_consent_to_share' column of 'referrals' in the schema cache" } }
-    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', consent: true })
+    const res = await post({ ...validBody(), consent: true })
     expect(res.status).toBe(200)
     expect((await res.json()).ok).toBe(true)
     expect('referrer_consent_to_share' in state.lastReferralInsert).toBe(false)
