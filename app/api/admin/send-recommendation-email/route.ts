@@ -49,15 +49,18 @@ export async function POST(request: Request) {
     )
   }
 
-  // Resolve the recommender's name from the linked referral.
+  // Resolve the recommender's name from the linked referral — but ONLY if the
+  // referring member consented to being named (referrer_consent_to_share). Default,
+  // absent, or migration-037-unapplied (query errors → null) all mean no consent, so
+  // recommenderName stays '' and the builder renders the anonymous "A founding member
+  // of Andrel…" phrasing. This is the consent gate for the warm recommendation email.
   const { data: referralRow } = await admin
     .from('referrals')
-    .select('referrer:profiles!referrer_user_id(full_name)')
+    .select('referrer_consent_to_share, referrer:profiles!referrer_user_id(full_name)')
     .eq('waitlist_id', entryId)
     .maybeSingle()
-  // Raw recommender name ('' when none) — the email builder renders the natural
-  // "A founding member of Andrel…" phrasing for the blank case (no doubling).
-  const recommenderName = (referralRow?.referrer as any)?.full_name || ''
+  const referrerConsented = (referralRow as any)?.referrer_consent_to_share === true
+  const recommenderName = referrerConsented ? ((referralRow?.referrer as any)?.full_name || '') : ''
 
   // ── Duplicate protection (before any send) ────────────────────────────────
   const dup = await checkNomineeDuplicates(admin, entry.email, entryId)

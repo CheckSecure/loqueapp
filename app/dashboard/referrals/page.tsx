@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { redirect } from 'next/navigation'
+import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
 import ReferralForm from './ReferralForm'
 
 export const metadata = { title: 'Nominations | Andrel' }
@@ -37,6 +38,9 @@ export default async function ReferralsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/')
 
+  // Funnel analytics (reuses the existing recommendation logger — no new system).
+  logRecommendationEvent('recommendation_page_visit', { memberId: user.id })
+
   const { data: referrals } = await supabase
     .from('referrals')
     .select('id, referral_note, status, created_at, waitlist:waitlist_id(full_name, email, title, company)')
@@ -52,7 +56,10 @@ export default async function ReferralsPage() {
       <div>
         <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Recommend Someone</h1>
         <p className="text-slate-500 text-sm mt-2">
-          As a founding member, you can put your name behind someone you&apos;d personally vouch for. Every recommendation is reviewed individually before any outreach is made.
+          Help us grow Andrel through thoughtful recommendations. If you know someone who would strengthen the community, submit their information below. Every recommendation is personally reviewed before an invitation is extended.
+        </p>
+        <p className="text-xs font-medium text-[#C4922A] bg-[#FDF3E3] rounded-lg px-3 py-2 mt-3 inline-block">
+          Founding member recommendations receive priority review.
         </p>
       </div>
 

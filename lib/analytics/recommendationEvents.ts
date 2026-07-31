@@ -4,11 +4,13 @@
  * logs), no external analytics service, no DB table. A log pipeline can grep these.
  *
  * The only five events tracked:
- *   recommendation_submitted   — a member submitted a nomination
- *   recommendation_approved    — founder approved a nomination
- *   recommendation_email_sent  — founder sent the warm recommendation email
- *   recommendation_invite_sent — founder sent the official (temp-password) invite
- *   recommendation_joined      — nominee activated (completed onboarding)
+ *   recommendation_submitted    — a member submitted a nomination
+ *   recommendation_approved     — founder approved a nomination
+ *   recommendation_email_sent   — founder sent the warm recommendation email
+ *   recommendation_invite_sent  — founder sent the official (temp-password) invite
+ *   recommendation_joined       — nominee activated (completed onboarding)
+ *   recommendation_campaign_sent — the one-time "grow the network" email was sent to a member
+ *   recommendation_page_visit    — a member opened the recommend page
  */
 export type RecommendationEvent =
   | 'recommendation_submitted'
@@ -16,6 +18,8 @@ export type RecommendationEvent =
   | 'recommendation_email_sent'
   | 'recommendation_invite_sent'
   | 'recommendation_joined'
+  | 'recommendation_campaign_sent'
+  | 'recommendation_page_visit'
 
 export function logRecommendationEvent(
   event: RecommendationEvent,

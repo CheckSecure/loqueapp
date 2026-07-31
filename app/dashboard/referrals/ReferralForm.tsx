@@ -5,9 +5,19 @@ import { Loader2, CheckCircle } from 'lucide-react'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+function isValidHttpUrl(s: string): boolean {
+  try {
+    const u = new URL(s)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 const ERROR_COPY: Record<string, string> = {
-  MISSING_FIELDS:               'Please fill in name, email, and your note.',
+  MISSING_FIELDS:               'Please fill in the name and email.',
   INVALID_EMAIL:                'Please enter a valid email address.',
+  INVALID_LINKEDIN:             'Please enter a valid LinkedIn URL (including https://).',
   SELF_REFERRAL:                'You cannot nominate yourself.',
   NOTE_TOO_LONG:                'Your note is too long (max 2,000 characters).',
   EMAIL_ALREADY_MEMBER:         'This person is already a member.',
@@ -23,7 +33,9 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
   const [title, setTitle]               = useState('')
   const [company, setCompany]           = useState('')
   const [linkedinUrl, setLinkedinUrl]   = useState('')
+  const [relationship, setRelationship] = useState('')
   const [referralNote, setReferralNote] = useState('')
+  const [consent, setConsent]           = useState(false) // default unchecked = no consent
   const [state, setState]               = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [errorMsg, setErrorMsg]         = useState('')
 
@@ -31,8 +43,9 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
     e.preventDefault()
     setErrorMsg('')
 
-    // Client-side pre-validation — mirrors server checks exactly
-    if (!fullName.trim() || !email.trim() || !referralNote.trim()) {
+    // Client-side pre-validation — mirrors server checks exactly. The note ("why")
+    // is now OPTIONAL; only name and email are required.
+    if (!fullName.trim() || !email.trim()) {
       setErrorMsg(ERROR_COPY.MISSING_FIELDS)
       setState('error')
       return
@@ -53,6 +66,11 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
       setState('error')
       return
     }
+    if (linkedinUrl.trim() && !isValidHttpUrl(linkedinUrl.trim())) {
+      setErrorMsg(ERROR_COPY.INVALID_LINKEDIN)
+      setState('error')
+      return
+    }
 
     setState('loading')
 
@@ -65,7 +83,9 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
         title:         title.trim() || undefined,
         company:       company.trim() || undefined,
         linkedin_url:  linkedinUrl.trim() || undefined,
-        referral_note: referralNote.trim(),
+        relationship:  relationship.trim() || undefined,
+        referral_note: referralNote.trim() || undefined,
+        consent,
       }),
     })
 
@@ -82,7 +102,9 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
     setTitle('')
     setCompany('')
     setLinkedinUrl('')
+    setRelationship('')
     setReferralNote('')
+    setConsent(false)
     setState('done')
   }
 
@@ -152,7 +174,7 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
 
       <div>
         <label className="block text-xs font-medium text-slate-700 mb-1">
-          LinkedIn URL <span className="text-slate-400 font-normal">(optional)</span>
+          LinkedIn profile <span className="text-slate-400 font-normal">(optional)</span>
         </label>
         <input
           type="url"
@@ -165,7 +187,20 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
 
       <div>
         <label className="block text-xs font-medium text-slate-700 mb-1">
-          Why are you comfortable personally recommending this person? <span className="text-red-500">*</span>
+          Your relationship to them <span className="text-slate-400 font-normal">(optional)</span>
+        </label>
+        <input
+          type="text"
+          value={relationship}
+          onChange={e => setRelationship(e.target.value)}
+          placeholder="e.g. former colleague, client, longtime friend"
+          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850] placeholder:text-slate-300"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-slate-700 mb-1">
+          Why would they strengthen the community? <span className="text-slate-400 font-normal">(optional)</span>
         </label>
         <textarea
           value={referralNote}
@@ -178,6 +213,20 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
         <p className={`text-xs mt-1 text-right ${noteLength > 2000 ? 'text-red-500' : noteLength > 1800 ? 'text-amber-500' : 'text-slate-400'}`}>
           {noteLength} / 2,000
         </p>
+      </div>
+
+      <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-3">
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={e => setConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[#1B2850] focus:ring-[#1B2850]/30"
+          />
+          <span className="text-xs text-slate-700 leading-relaxed">
+            You may mention my name when inviting this person. If left unchecked, we&apos;ll keep your recommendation private.
+          </span>
+        </label>
       </div>
 
       {state === 'error' && errorMsg && (

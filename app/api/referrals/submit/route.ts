@@ -4,10 +4,23 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
+import { isMissingColumnError } from '@/lib/db/isMissingColumn'
 
 // Basic email format check. Does NOT normalize Unicode lookalikes or punycode — V1 accepted gap.
 // A determined user could submit visually similar addresses that bypass this check.
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// LinkedIn (and any profile URL) must be a well-formed http(s) URL. Optional field —
+// only validated when a value is present. Kept permissive on host so linkedin.com,
+// www.linkedin.com, and country subdomains all pass.
+function isValidHttpUrl(s: string): boolean {
+  try {
+    const u = new URL(s)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
 
 export async function POST(req: Request) {
 
@@ -53,12 +66,13 @@ export async function POST(req: Request) {
     )
   }
 
-  const { full_name, email, title, company, linkedin_url, referral_note } = body
+  const { full_name, email, title, company, linkedin_url, relationship, referral_note, consent } = body
 
   // ── Validation 1: required fields ─────────────────────────────────────────
-  if (!full_name?.trim() || !email?.trim() || !referral_note?.trim()) {
+  // referral_note ("why") and relationship are OPTIONAL; only name + email required.
+  if (!full_name?.trim() || !email?.trim()) {
     return NextResponse.json(
-      { ok: false, error: 'full_name, email, and referral_note are required', code: 'MISSING_FIELDS' },
+      { ok: false, error: 'full_name and email are required', code: 'MISSING_FIELDS' },
       { status: 400 }
     )
   }
@@ -82,10 +96,18 @@ export async function POST(req: Request) {
     )
   }
 
-  // ── Validation 4: referral_note length ────────────────────────────────────
-  if (referral_note.trim().length > 2000) {
+  // ── Validation 4: referral_note length (only when a note is provided) ──────
+  if (referral_note?.trim() && referral_note.trim().length > 2000) {
     return NextResponse.json(
       { ok: false, error: 'Referral note is too long (max 2000 characters)', code: 'NOTE_TOO_LONG' },
+      { status: 400 }
+    )
+  }
+
+  // ── Validation 4b: LinkedIn URL format (optional field) ────────────────────
+  if (linkedin_url?.trim() && !isValidHttpUrl(linkedin_url.trim())) {
+    return NextResponse.json(
+      { ok: false, error: 'Please enter a valid LinkedIn URL (including https://)', code: 'INVALID_LINKEDIN' },
       { status: 400 }
     )
   }
@@ -184,15 +206,35 @@ export async function POST(req: Request) {
   // Cleanup query for orphaned waitlist rows:
   //   SELECT * FROM waitlist WHERE referral_source = 'referral'
   //   AND id NOT IN (SELECT waitlist_id FROM referrals);
-  const { data: newReferralRow, error: referralError } = await adminClient
-    .from('referrals')
-    .insert({
-      referrer_user_id: referrerProfile.id,
-      waitlist_id:      newWaitlistRow.id,
-      referral_note:    referral_note.trim(),
-    })
-    .select('id')
-    .single()
+  // The note is optional now — store '' when omitted (safe whether the column is
+  // NOT NULL or nullable, and backward compatible with existing rows).
+  const baseReferral = {
+    referrer_user_id: referrerProfile.id,
+    waitlist_id:      newWaitlistRow.id,
+    referral_note:    referral_note?.trim() || '',
+  }
+
+  // Optional, migration-gated columns:
+  //   relationship               → migration 036
+  //   referrer_consent_to_share  → migration 037 (privacy: only true when the member
+  //                                explicitly ticked the consent box; default false)
+  // Fail open PER COLUMN: if a column's migration isn't applied, PostgREST reports a
+  // missing column (42703 / PGRST204) naming it — drop only that column and retry, so
+  // consent still persists even if 036 alone is unapplied (and vice versa).
+  const optionalCols: Record<string, unknown> = {
+    relationship: relationship?.trim() || null,
+    referrer_consent_to_share: consent === true,
+  }
+  let payload: Record<string, unknown> = { ...baseReferral, ...optionalCols }
+  let insertRes = await adminClient.from('referrals').insert(payload).select('id').single()
+  for (let i = 0; i < Object.keys(optionalCols).length && isMissingColumnError(insertRes.error); i++) {
+    const missing = Object.keys(optionalCols).find((k) => (insertRes.error?.message || '').includes(k))
+    if (!missing) break
+    delete payload[missing]
+    insertRes = await adminClient.from('referrals').insert(payload).select('id').single()
+  }
+
+  const { data: newReferralRow, error: referralError } = insertRes
 
   if (referralError || !newReferralRow) {
     console.error('[referrals/submit] ORPHAN_WAITLIST — waitlist row created but referrals insert failed', {

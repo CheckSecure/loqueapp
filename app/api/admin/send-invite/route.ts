@@ -94,10 +94,15 @@ export async function POST(req: Request) {
     if (entry.referral_source === 'referral') {
       const { data: referralRow } = await admin
         .from('referrals')
-        .select('referrer:profiles!referrer_user_id(full_name)')
+        .select('referrer_consent_to_share, referrer:profiles!referrer_user_id(full_name)')
         .eq('waitlist_id', entryId)
         .maybeSingle()
-      referrerName = (referralRow?.referrer as any)?.full_name ?? null
+      // CONSENT GATE: only name the referrer when they explicitly consented. Default,
+      // absent, or (migration 037 unapplied → query errors → null) all mean no consent,
+      // so we fall through to the anonymous sendInviteEmail below.
+      if ((referralRow as any)?.referrer_consent_to_share === true) {
+        referrerName = (referralRow?.referrer as any)?.full_name ?? null
+      }
     }
     return referrerName
       ? sendReferralInviteEmail(email, entry.full_name || 'there', tempPassword, referrerName)

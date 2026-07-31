@@ -1067,6 +1067,84 @@ export async function sendLaunchAnnouncementEmail(
   }
 }
 
+// Canonical production destination for the referral-campaign CTA. Points at the
+// authenticated recommend page (an alias that redirects to the existing referral
+// form); a logged-out click lands on login, never a new-account flow.
+export const RECOMMEND_MEMBER_CTA_URL = 'https://www.andrel.app/dashboard/recommend-member'
+
+/**
+ * One-time "Help us grow the Andrel network" campaign email, asking an existing
+ * member to recommend a strong potential member. Sends nothing to the recommended
+ * person — the CTA opens the member's own authenticated recommend page. `toName`
+ * is split to a first name (defaults to "there"). Returns {success} so the caller
+ * marks the member as sent ONLY on a provider-accepted send (idempotent campaign).
+ */
+export async function sendReferralRequestEmail(
+  toEmail: string,
+  toName: string,
+): Promise<{ success: boolean; error?: string }> {
+  const firstName = (toName?.split(' ')[0] || 'there')
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'Daniel Abramoff <hello@andrel.app>',
+      to: toEmail,
+      subject: 'Who should be in this room?',
+      // Reuse the existing preference system as the unsubscribe mechanism: the
+      // List-Unsubscribe header + the footer link both point at /dashboard/settings,
+      // where a member toggles email_product_updates (honored by the campaign's
+      // eligibility filter). No custom unsubscribe system is introduced.
+      headers: {
+        'List-Unsubscribe': '<mailto:hello@andrel.app?subject=unsubscribe>, <https://www.andrel.app/dashboard/settings>',
+      },
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Hi ${escapeHtml(firstName)},
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Andrel grows by judgment rather than volume, which means the people already in it help shape what it becomes.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            If someone comes to mind, I'd love to hear who.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Every recommendation is personally reviewed before any invitation goes out.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+            If you choose to allow it, we'll mention that you recommended them. Otherwise your recommendation remains private.
+          </p>
+          <div style="margin: 0 0 28px 0;">
+            <a href="${RECOMMEND_MEMBER_CTA_URL}"
+               style="display: inline-block; background: #1B2850; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 8px;">
+              Recommend someone
+            </a>
+          </div>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
+            Thank you for helping shape this.
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6;">
+            Daniel
+          </p>
+          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 32px 0 16px;" />
+          <p style="color: #94a3b8; font-size: 12px; line-height: 1.5;">
+            You're receiving this as an Andrel member.
+            <a href="https://www.andrel.app/dashboard/settings" style="color: #94a3b8; text-decoration: underline;">Manage your email preferences</a>.
+          </p>
+        </div>
+      `,
+    })
+    if (error) {
+      console.error('[referral-campaign] Resend API error:', error.message)
+      return { success: false, error: error.message }
+    }
+    console.log('[referral-campaign] sent, message ID:', data?.id)
+    return { success: true }
+  } catch (err: any) {
+    console.error('[referral-campaign] exception:', err?.message)
+    return { success: false, error: err?.message }
+  }
+}
+
 // Canonical production destination for the first-matching-round reminder CTA.
 // An invited member follows this into the normal password login → onboarding
 // flow. It is NOT a tokenized/personalized link (the app authenticates with a

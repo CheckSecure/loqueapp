@@ -103,6 +103,30 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Canonical company FK on profiles',
     impact: 'profiles.company_id resolution/backfill is inert; company association stays slug-derived only until applied.',
   },
+  {
+    migration: '035_profiles_referral_campaign_sent.sql',
+    kind: 'column',
+    table: 'profiles',
+    column: 'referral_campaign_sent_at',
+    feature: 'One-time member referral-campaign dedupe',
+    impact: 'The referral campaign cannot dedupe/resume (every member reads as un-sent); DO NOT run the campaign until applied.',
+  },
+  {
+    migration: '036_referrals_relationship.sql',
+    kind: 'column',
+    table: 'referrals',
+    column: 'relationship',
+    feature: 'Optional relationship context on nominations',
+    impact: 'The optional Relationship field is dropped on submit (the route fails open and inserts without it); nominations otherwise work until applied.',
+  },
+  {
+    migration: '037_referrals_referrer_consent.sql',
+    kind: 'column',
+    table: 'referrals',
+    column: 'referrer_consent_to_share',
+    feature: 'Referrer consent to be named in nominee outreach',
+    impact: 'Referrer-consent is unstorable (submit fails open) so every referral is treated as no-consent (invite flow stays anonymous); the referral campaign send route refuses to run until applied.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {

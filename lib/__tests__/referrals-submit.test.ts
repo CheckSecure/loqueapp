@@ -5,9 +5,12 @@ import { readFileSync } from 'node:fs'
 const state = vi.hoisted(() => ({
   user: { id: 'ref1' } as any,
   referrerProfile: { id: 'ref1', email: 'me@x.com', account_status: 'active' } as any,
+  lastReferralInsert: null as any, // captures the referrals insert payload
+  lastWaitlistInsert: null as any, // captures the waitlist insert payload
   admin: {
     select: { profiles: { data: null, error: null }, waitlist: { data: null, error: null }, referrals: { data: null, error: null } },
     insert: { waitlist: { data: { id: 'wl1' }, error: null }, referrals: { data: { id: 're1' }, error: null } },
+    insertErrorOnce: {} as Record<string, any>, // return this error on the FIRST insert to `table`, then clear
   } as any,
 }))
 
@@ -23,10 +26,20 @@ vi.mock('@/lib/supabase/admin', () => ({
     from: (table: string) => {
       const b: any = { table, isInsert: false }
       b.select = () => b
-      b.insert = () => { b.isInsert = true; return b }
+      b.insert = (payload: any) => {
+        b.isInsert = true
+        if (table === 'referrals') state.lastReferralInsert = payload
+        if (table === 'waitlist') state.lastWaitlistInsert = payload
+        return b
+      }
       b.eq = () => b; b.neq = () => b; b.in = () => b; b.ilike = () => b
       b.maybeSingle = async () => state.admin.select[table] ?? { data: null, error: null }
-      b.single = async () => (b.isInsert ? state.admin.insert[table] : state.admin.select[table]) ?? { data: null, error: null }
+      b.single = async () => {
+        if (!b.isInsert) return state.admin.select[table] ?? { data: null, error: null }
+        const once = state.admin.insertErrorOnce[table]
+        if (once) { state.admin.insertErrorOnce[table] = null; return once } // one-shot insert error
+        return state.admin.insert[table] ?? { data: null, error: null }
+      }
       return b
     },
   }),
@@ -43,9 +56,12 @@ const validBody = (email = 'jane@example.com') => ({ full_name: 'Jane Smith', em
 beforeEach(() => {
   state.user = { id: 'ref1' }
   state.referrerProfile = { id: 'ref1', email: 'me@x.com', account_status: 'active' }
+  state.lastReferralInsert = null
+  state.lastWaitlistInsert = null
   state.admin = {
     select: { profiles: { data: null, error: null }, waitlist: { data: null, error: null }, referrals: { data: null, error: null } },
     insert: { waitlist: { data: { id: 'wl1' }, error: null }, referrals: { data: { id: 're1' }, error: null } },
+    insertErrorOnce: {},
   }
 })
 
@@ -127,6 +143,88 @@ describe('retained protections still apply', () => {
     state.admin.select.waitlist = { data: { id: 'wl_rej' }, error: null }
     state.admin.select.referrals = { data: { id: 'rej1' }, error: null }
     expect((await post(validBody()).then(r => r.json())).code).toBe('REFERRAL_PREVIOUSLY_REJECTED')
+  })
+})
+
+describe('Option-2 additive deltas: optional "why" + relationship field', () => {
+  it('a nomination with NO referral_note (why omitted) now succeeds', async () => {
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com' }) // no note, no relationship
+    const data = await res.json()
+    expect(res.status).toBe(200)
+    expect(data.ok).toBe(true)
+    // Omitted note is stored as '' (safe for a NOT NULL or nullable column).
+    expect(state.lastReferralInsert.referral_note).toBe('')
+  })
+
+  it('relationship is persisted on the referrals row when provided', async () => {
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', relationship: 'former colleague' })
+    expect(res.status).toBe(200)
+    expect(state.lastReferralInsert.relationship).toBe('former colleague')
+  })
+
+  it('fails open when referrals.relationship is not migrated yet (42703 → retry without it)', async () => {
+    // First insert (with relationship) hits undefined-column; route retries without it.
+    state.admin.insertErrorOnce.referrals = { data: null, error: { code: '42703', message: "column referrals.relationship does not exist" } }
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', relationship: 'client' })
+    const data = await res.json()
+    expect(res.status).toBe(200)
+    expect(data.ok).toBe(true)
+    // The successful (retry) insert carried NO relationship key.
+    expect('relationship' in state.lastReferralInsert).toBe(false)
+  })
+
+  it('the note length cap still applies when a note IS provided', async () => {
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', referral_note: 'x'.repeat(2001) })
+    expect((await res.json()).code).toBe('NOTE_TOO_LONG')
+  })
+})
+
+describe('LinkedIn profile field (optional, URL-validated, stored on the nominee)', () => {
+  it('accepts a valid LinkedIn URL and persists it on the waitlist row', async () => {
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', linkedin_url: 'https://www.linkedin.com/in/jane' })
+    expect(res.status).toBe(200)
+    expect(state.lastWaitlistInsert.linkedin_url).toBe('https://www.linkedin.com/in/jane')
+  })
+
+  it('rejects a malformed LinkedIn URL', async () => {
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', linkedin_url: 'not a url' })
+    const data = await res.json()
+    expect(res.status).toBe(400)
+    expect(data.code).toBe('INVALID_LINKEDIN')
+  })
+
+  it('rejects a non-http(s) scheme', async () => {
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', linkedin_url: 'javascript:alert(1)' })
+    expect((await res.json()).code).toBe('INVALID_LINKEDIN')
+  })
+
+  it('is fully optional — omitting it stores null and still succeeds', async () => {
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com' })
+    expect(res.status).toBe(200)
+    expect(state.lastWaitlistInsert.linkedin_url).toBeNull()
+  })
+})
+
+describe('Referrer consent (privacy)', () => {
+  it('stores referrer_consent_to_share=true when the member ticks the box', async () => {
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', consent: true })
+    expect(res.status).toBe(200)
+    expect(state.lastReferralInsert.referrer_consent_to_share).toBe(true)
+  })
+
+  it('defaults to no consent (false) when the box is unticked / omitted', async () => {
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com' })
+    expect(res.status).toBe(200)
+    expect(state.lastReferralInsert.referrer_consent_to_share).toBe(false)
+    // Submission is allowed either way — consent is optional, not a hard gate.
+  })
+
+  it('fails open when referrals.referrer_consent_to_share is not migrated (037) — retry without it', async () => {
+    state.admin.insertErrorOnce.referrals = { data: null, error: { code: 'PGRST204', message: "Could not find the 'referrer_consent_to_share' column of 'referrals' in the schema cache" } }
+    const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com', consent: true })
+    expect(res.status).toBe(200)
+    expect((await res.json()).ok).toBe(true)
+    expect('referrer_consent_to_share' in state.lastReferralInsert).toBe(false)
   })
 })
 
