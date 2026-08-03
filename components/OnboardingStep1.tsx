@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { normalizeExpertise } from '@/lib/expertise'
+import { isValidFullName, FULL_NAME_ERROR, pickOnboardingPrefillName } from '@/lib/validation/fullName'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Loader2, ArrowRight } from 'lucide-react'
@@ -27,14 +28,17 @@ interface Profile {
   current_status?: string
 }
 
-export default function OnboardingStep1({ 
-  profile, 
-  email, 
-  onNext 
-}: { 
+export default function OnboardingStep1({
+  profile,
+  email,
+  waitlistName = null,
+  onNext
+}: {
   profile: Profile | null
   email: string
-  onNext: () => void 
+  /** Name the member was invited under; used to prefill when no valid profile name. */
+  waitlistName?: string | null
+  onNext: () => void
 }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -66,6 +70,10 @@ export default function OnboardingStep1({
     }
 
     const formData = new FormData(e.currentTarget)
+    // Require a real first + last name (mirrors the server /api/profile/update).
+    if (!isValidFullName(formData.get('full_name') as string)) {
+      setError(FULL_NAME_ERROR); setLoading(false); return
+    }
     formData.set('expertise', expertise.join(','))
     formData.set('role_type', roleType)
     // Derived title (selected role label, or custom role text for 'Other').
@@ -115,7 +123,7 @@ export default function OnboardingStep1({
           <input
             name="full_name"
             type="text"
-            defaultValue={profile?.full_name || ''}
+            defaultValue={pickOnboardingPrefillName(profile?.full_name ?? null, waitlistName)}
             placeholder="Jane Smith"
             className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
             required

@@ -1,4 +1,5 @@
 import { parseMultiSelectField } from '@/lib/profile/multiSelect'
+import { validateFullName } from '@/lib/validation/fullName'
 
 /**
  * Builds the /api/profile/update write payload from submitted FormData as a
@@ -20,7 +21,14 @@ export function buildProfileUpdate(formData: FormData): ProfileUpdateResult {
   const payload: Record<string, unknown> = {}
 
   // --- Present-only free-text fields (explicit empty clears; omitted preserved) ---
-  if (has('full_name')) payload.full_name = raw('full_name')
+  // full_name is the one exception to "explicit empty clears": when submitted it
+  // must be a real first + last name (shared authority), so a one-word or blank
+  // value is rejected rather than written. Normalized value persisted.
+  if (has('full_name')) {
+    const nameCheck = validateFullName(raw('full_name'))
+    if (!nameCheck.ok) return { error: nameCheck.error }
+    payload.full_name = nameCheck.value
+  }
   if (has('title')) payload.title = raw('title')
   if (has('company')) payload.company = raw('company')
   if (has('bio')) payload.bio = raw('bio')

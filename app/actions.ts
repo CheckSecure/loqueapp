@@ -24,6 +24,7 @@ import { validateSelection, validateSelectionWithCaps } from '@/lib/role-taxonom
 import { companySlug, isLinkableCompany } from '@/lib/company/slug'
 import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
 import { provisionMemberRecords } from '@/lib/provisioning'
+import { validateFullName } from '@/lib/validation/fullName'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -65,6 +66,8 @@ export async function updateProfile(formData: FormData) {
   // role_type/seniority/expertise to empty — making the user invisible to the
   // matcher's candidate filter (lib/generate-recommendations.ts:889-894).
   // Messages and field semantics are identical to completeOnboarding.
+  const nameCheck = validateFullName(formData.get('full_name') as string)
+  if (!nameCheck.ok) return { error: nameCheck.error }
   const roleType = (formData.get('role_type') as string || '').trim()
   const seniority = (formData.get('seniority') as string || '').trim()
   if (!roleType) return { error: 'Please select your professional role' }
@@ -98,7 +101,7 @@ export async function updateProfile(formData: FormData) {
     email: user.email,
     email_verified: true,  // User received invite via email, so email is verified
     email_verified_at: new Date().toISOString(),
-    full_name: formData.get('full_name') as string || null,
+    full_name: nameCheck.value,
     title: formData.get('title') as string || null,
     exact_job_title: ((formData.get('exact_job_title') as string) || '').trim() || null,
     company: formData.get('company') as string || null,
@@ -213,6 +216,11 @@ export async function completeOnboarding(formData: FormData) {
   const state = (formData.get('state') as string || '').trim()
   const location = city && state ? `${city}, ${state}` : city || state || null
 
+  // Require a real first + last name (shared authority; matches client + all
+  // other write paths). Rejects one-word names before the profile is created.
+  const nameCheck = validateFullName(formData.get('full_name') as string)
+  if (!nameCheck.ok) return { error: nameCheck.error }
+
   // Server-side validation matching the matcher's candidate filter
   // (lib/generate-recommendations.ts:889-894). Profiles missing these fields
   // would silently fail to appear in other founders' batches.
@@ -267,7 +275,7 @@ export async function completeOnboarding(formData: FormData) {
     email: user.email,
     email_verified: true,  // User received invite via email, so email is verified
     email_verified_at: new Date().toISOString(),
-    full_name: (formData.get('full_name') as string) || null,
+    full_name: nameCheck.value,
     title: title,
     exact_job_title: ((formData.get('exact_job_title') as string) || '').trim() || null,
     company: company,
@@ -639,6 +647,11 @@ export async function submitWaitlist(data: {
     return { success: true }
   }
 
+  // Require a real first + last name before the waitlist row is created, so a
+  // one-word name can never propagate downstream into provisioning/profiles.
+  const wlNameCheck = validateFullName(data.fullName)
+  if (!wlNameCheck.ok) return { error: wlNameCheck.error }
+
   // Server-side email format check. The form has type="email" but a direct
   // server-action call can bypass that, and Resend will reject malformed
   // addresses anyway — fail fast with a clean error before the DB insert.
@@ -679,7 +692,7 @@ export async function submitWaitlist(data: {
   const verification_method = hasLinkedIn ? 'linkedin' : 'none'
   
   const { error } = await supabase.from('waitlist').insert({
-    full_name: data.fullName,
+    full_name: wlNameCheck.value,
     email: email,
     title: data.title || null,
     company: data.company || null,

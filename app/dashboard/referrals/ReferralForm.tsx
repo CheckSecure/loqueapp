@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Loader2, CheckCircle } from 'lucide-react'
+import { isValidFullName, FULL_NAME_ERROR } from '@/lib/validation/fullName'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -47,6 +48,12 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
     // REQUIRED and must be non-whitespace (referrals enforces a non-empty CHECK).
     if (!fullName.trim() || !email.trim() || !referralNote.trim()) {
       setErrorMsg(ERROR_COPY.MISSING_FIELDS)
+      setState('error')
+      return
+    }
+    // Nominee must have a real first + last name (mirrors the server).
+    if (!isValidFullName(fullName)) {
+      setErrorMsg(FULL_NAME_ERROR)
       setState('error')
       return
     }

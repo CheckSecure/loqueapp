@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendInviteEmail } from '@/lib/email'
 import { randomBytes } from 'crypto'
+import { isValidFullName, normalizeFullName } from '@/lib/validation/fullName'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 const MAX_BATCH = 100
@@ -78,6 +79,14 @@ function parseText(text: string): { entries: ParsedEntry[]; invalid: InvalidEntr
       invalid.push({ raw: raw.trim(), reason: `Duplicate in paste: ${parsed.email}` })
       continue
     }
+    // A provided name must be a real first + last name (shared authority). An
+    // email-only line (no name) is still allowed — the member supplies a validated
+    // name at onboarding — but a present one-word name is rejected, never stored.
+    if (parsed.name && !isValidFullName(parsed.name)) {
+      invalid.push({ raw: raw.trim(), reason: 'Name must include a first and last name' })
+      continue
+    }
+    parsed.name = normalizeFullName(parsed.name)
     seen.add(parsed.email)
     entries.push(parsed)
   }

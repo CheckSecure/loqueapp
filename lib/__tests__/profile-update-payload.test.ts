@@ -31,11 +31,11 @@ describe('true partial update — omitted fields are never written', () => {
 
   it('Step1 (basic info) writes its fields and does not include goals/interests', () => {
     const p = payloadOf(fd({
-      full_name: 'Jane', title: 'GC', company: 'Acme', bio: 'hi', location: 'NYC',
+      full_name: 'Jane Doe', title: 'GC', company: 'Acme', bio: 'hi', location: 'NYC',
       role_type: 'Legal', seniority: 'Senior', expertise: 'AI,Privacy',
     }))
     expect(p).toMatchObject({
-      full_name: 'Jane', title: 'GC', company: 'Acme', bio: 'hi', location: 'NYC',
+      full_name: 'Jane Doe', title: 'GC', company: 'Acme', bio: 'hi', location: 'NYC',
       role_type: 'Legal', seniority: 'Senior', expertise: ['AI', 'Privacy'],
     })
     expect(p).not.toHaveProperty('purposes')
@@ -45,7 +45,7 @@ describe('true partial update — omitted fields are never written', () => {
 
   it('Settings save WITHOUT intro_preferences preserves it (not written)', () => {
     const p = payloadOf(fd({
-      full_name: 'Jane', title: 'GC', company: 'Acme', city: 'NYC', state: 'NY',
+      full_name: 'Jane Doe', title: 'GC', company: 'Acme', city: 'NYC', state: 'NY',
       bio: 'hi', purposes: 'Hiring', role_type: 'Legal', seniority: 'Senior', expertise: 'AI',
     }))
     expect(p).not.toHaveProperty('intro_preferences') // ProfileEditForm omits it → never wiped
@@ -56,7 +56,7 @@ describe('true partial update — omitted fields are never written', () => {
 
 describe('location precedence', () => {
   it('omitting location/city/state touches none of the three', () => {
-    const p = payloadOf(fd({ full_name: 'Jane' }))
+    const p = payloadOf(fd({ full_name: 'Jane Doe' }))
     expect(p).not.toHaveProperty('location')
     expect(p).not.toHaveProperty('city')
     expect(p).not.toHaveProperty('state')
@@ -80,9 +80,12 @@ describe('location precedence', () => {
 })
 
 describe('explicit empty values clear ONLY the submitted field', () => {
-  it('empty full_name/bio clear those fields', () => {
-    const p = payloadOf(fd({ full_name: '', bio: '' }))
-    expect(p.full_name).toBe('')
+  it('empty bio clears; full_name is required-when-present (empty → error, never cleared)', () => {
+    // full_name is the one free-text field that CANNOT be cleared: a submitted
+    // blank/one-word value is rejected (shared validator), never written.
+    expect(buildProfileUpdate(fd({ full_name: '' }))).toEqual({ error: 'Please enter your first and last name.' })
+    expect(buildProfileUpdate(fd({ full_name: 'Eller' }))).toEqual({ error: 'Please enter your first and last name.' })
+    const p = payloadOf(fd({ bio: '' }))
     expect(p.bio).toBe('')
     expect(p).not.toHaveProperty('title') // untouched
   })

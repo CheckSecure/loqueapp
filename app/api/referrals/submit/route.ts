@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
 import { isMissingColumnError } from '@/lib/db/isMissingColumn'
+import { validateFullName } from '@/lib/validation/fullName'
 
 // Basic email format check. Does NOT normalize Unicode lookalikes or punycode — V1 accepted gap.
 // A determined user could submit visually similar addresses that bypass this check.
@@ -77,6 +78,16 @@ export async function POST(req: Request) {
   if (!full_name?.trim() || !email?.trim() || !referral_note?.trim()) {
     return NextResponse.json(
       { ok: false, error: 'full_name, email, and a non-empty referral_note are required', code: 'MISSING_FIELDS' },
+      { status: 400 }
+    )
+  }
+
+  // Nominee must have a real first + last name (shared authority; same rule as
+  // every other name entry point) so a one-word nominee never enters the waitlist.
+  const nomineeNameCheck = validateFullName(full_name)
+  if (!nomineeNameCheck.ok) {
+    return NextResponse.json(
+      { ok: false, error: nomineeNameCheck.error, code: 'INVALID_FULL_NAME' },
       { status: 400 }
     )
   }
@@ -175,7 +186,7 @@ export async function POST(req: Request) {
   const { data: newWaitlistRow, error: waitlistError } = await adminClient
     .from('waitlist')
     .insert({
-      full_name:           full_name.trim(),
+      full_name:           nomineeNameCheck.value,
       email:               targetEmail,
       title:               title?.trim() || null,
       company:             company?.trim() || null,

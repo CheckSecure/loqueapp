@@ -11,6 +11,7 @@ import { completeOnboarding } from '@/app/actions'
 import { Loader2, User, Camera, Eye, EyeOff } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
+import { isValidFullName, FULL_NAME_ERROR } from '@/lib/validation/fullName'
 
 // Role-type picker — Phase B replaces the flat A-1 button list with a
 // category → title picker (components/RoleCategoryPicker.tsx) sourced from
@@ -46,7 +47,7 @@ const PURPOSES = [
 
 type Step = 'password' | 'profile' | 'preferences'
 
-export default function OnboardingForm() {
+export default function OnboardingForm({ initialFullName = '' }: { initialFullName?: string }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -63,7 +64,7 @@ export default function OnboardingForm() {
   // Profile step
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
-  const [fullName, setFullName] = useState('')
+  const [fullName, setFullName] = useState(initialFullName)
   const [title, setTitle] = useState('')
   const [company, setCompany] = useState('')
   const [city, setCity] = useState('')
@@ -117,7 +118,7 @@ export default function OnboardingForm() {
 
   const handleProfileNext = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!fullName.trim()) { setError('Full name is required'); return }
+    if (!isValidFullName(fullName)) { setError(FULL_NAME_ERROR); return }
     if (title.trim().length < 2) { setError('Please enter your title or role'); return }
     if (company.trim().length < 2) { setError('Please enter your company or organization'); return }
     if (!roleType.trim()) { setError('Please select your professional role'); return }
@@ -132,6 +133,7 @@ export default function OnboardingForm() {
     console.log('[OnboardingForm] handleSubmit called!')
     // Defense-in-depth: handleProfileNext should have gated these, but state
     // could be cleared between steps. Catch here before sending to the server.
+    if (!isValidFullName(fullName)) { setError(FULL_NAME_ERROR); return }
     if (title.trim().length < 2) { setError('Please enter your title or role'); return }
     if (company.trim().length < 2) { setError('Please enter your company or organization'); return }
     if (!roleType.trim()) { setError('Please select your professional role'); return }

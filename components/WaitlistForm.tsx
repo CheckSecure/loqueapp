@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Loader2, CheckCircle, Lock, Linkedin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { submitWaitlist } from '@/app/actions'
+import { isValidFullName, FULL_NAME_ERROR } from '@/lib/validation/fullName'
 
 const ROLE_OPTIONS = [
   { value: '', label: 'Select your role type' },
@@ -44,9 +45,11 @@ export default function WaitlistForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError(null)
     setExisting(false)
+    // Mirror the server: require a real first + last name before submitting.
+    if (!isValidFullName(fullName)) { setError(FULL_NAME_ERROR); return }
+    setLoading(true)
     const result = await submitWaitlist({
       fullName,
       email,
