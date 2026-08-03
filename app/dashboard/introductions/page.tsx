@@ -11,12 +11,14 @@ import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
 import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
 import ImproveRecommendationsCard from '@/components/ImproveRecommendationsCard'
+import IncomingInterestCard from '@/components/IncomingInterestCard'
 import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { matchProfileCompletion } from '@/lib/matching/profile-completion'
 import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
+import { fetchActionableIncomingInterest } from '@/lib/introductions/incomingInterest'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
 import { professionalIdentity, professionalIdentityLine } from '@/lib/professionalIdentity'
@@ -218,6 +220,14 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     )
   )
 
+  // INCOMING INTEREST — members who expressed interest in the viewer and are
+  // waiting on a response. Single source of truth shared with the reminder cron
+  // (fetchActionableIncomingInterest). Read-only; drives the "Interested in you"
+  // section. A person shown here is excluded from the suggestion/pending sections
+  // below so they render in exactly one place.
+  const incomingInterest = await fetchActionableIncomingInterest(supabase, profileId)
+  const incomingRequesterIds = new Set(incomingInterest.map((i) => i.requesterId))
+
   // For each admin intro, check if the reverse intro is approved
   const adminIntros = await Promise.all((adminIntrosRaw || []).map(async (intro: any) => {
     const { data: reverse } = await supabase
@@ -271,7 +281,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // reciprocal batches all land here). Deactivated / matched targets are dropped in
   // memory; the DB rows are untouched.
   const suggestedProfiles = (suggestedIntros || [])
-    .filter((intro: any) => intro.target && !matchedUserIds.has(intro.target.id) && !deactivatedIds.has(intro.target.id))
+    .filter((intro: any) => intro.target && !matchedUserIds.has(intro.target.id) && !deactivatedIds.has(intro.target.id) && !incomingRequesterIds.has(intro.target.id))
     .map((intro: any) => ({
       rowId: intro.id,
       profile: intro.target,
@@ -292,6 +302,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   for (const intro of (pendingIntrosRaw as any[] | null) || []) {
     const t = intro.target
     if (!t || matchedUserIds.has(t.id) || (t.account_status && t.account_status !== 'active')) continue
+    if (incomingRequesterIds.has(t.id)) continue // shown in "Interested in you" instead
     if (!pendingByTarget.has(t.id)) {
       pendingByTarget.set(t.id, { rowId: intro.id, profile: t, matchReason: intro.match_reason || null, status: intro.status })
     }
@@ -692,6 +703,31 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
           {/* MAIN COLUMN */}
           <div className="lg:col-span-2 space-y-8 min-w-0">
 
+            {/* INTERESTED IN YOU — members who expressed interest and are waiting on
+                the viewer. Highest-priority actionable item; the "Someone is waiting
+                on your response" reminder links here. */}
+            {incomingInterest.length > 0 && (
+              <section className="p-5 rounded-xl border border-brand-gold/30 bg-brand-gold/5">
+                <div className="flex items-end justify-between gap-4 mb-1.5">
+                  <h3 className="text-base font-bold text-brand-navy tracking-tight">Interested in you</h3>
+                  <Pill variant="gold">{incomingInterest.length}</Pill>
+                </div>
+                <p className="text-xs text-slate-500 mb-4">These members expressed interest and are waiting on your response. Accept to review, then connect.</p>
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {incomingInterest.map((item) => (
+                    <IntroductionCard key={item.introRequestId} targetId={item.requesterId}>
+                      <IncomingInterestCard
+                        introRequestId={item.introRequestId}
+                        requester={item.requester}
+                        matchReason={item.matchReason}
+                        commonGround={computeMatchSignals(profileRow, item.requester).signals}
+                      />
+                    </IntroductionCard>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {adminIntrosVisible.length > 0 && (
               <section className="p-5 rounded-xl border border-brand-gold/30 bg-brand-gold/5">
                 <h3 className="text-sm font-semibold text-brand-navy mb-3">Introduced by Andrel</h3>
@@ -745,9 +781,10 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                   </div>
                 )}
               </section>
-            ) : (
+            ) : incomingInterest.length > 0 ? null : (
               /* Single neutral empty state — the one guidance card above owns any
-                 profile prompt; the empty state carries no separate CTA. */
+                 profile prompt; the empty state carries no separate CTA. Suppressed
+                 when there's incoming interest to act on. */
               <section className="rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-7">
                 <div className="flex items-start gap-4">
                   <div className="w-10 h-10 rounded-xl bg-brand-navy/[0.04] text-brand-gold flex items-center justify-center flex-shrink-0">

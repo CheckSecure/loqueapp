@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createNotificationSafe } from '@/lib/notifications'
 import { countUnresolvedRecommendations, EXPRESSED_INTEREST_STATUSES } from '@/lib/introductions/queue'
-import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { sendIntroductionReminderEmail, sendWaitingResponseEmail } from '@/lib/email'
 import {
   shouldRemindWaiting,
@@ -10,6 +9,7 @@ import {
   INTRO_REMINDER_STALE_MS,
   WAITING_RESPONSE_THRESHOLD_MS,
 } from '@/lib/notifications/engagement'
+import { fetchActionableIncomingInterest } from '@/lib/introductions/incomingInterest'
 
 // A member has "taken action" on an introduction if they expressed interest in one
 // (any EXPRESSED_INTEREST status) or passed on one. Used to split no_action vs partial.
@@ -18,11 +18,15 @@ const INTRO_ACTION_STATUSES = [...EXPRESSED_INTEREST_STATUSES, 'passed'] as stri
 /**
  * Engagement reminders (runs daily).
  *
- *  • PART 4 — "Someone is waiting on your response": every day, any outbound
- *    expressed-interest (`approved`) row older than 48h whose counterpart hasn't
- *    responded yet nudges the counterpart once. Excludes already-matched pairs,
- *    counterparts who already acted (passed/hidden/declined/expressed), and
- *    inactive recipients. One nudge per approved row (dedupeKey `waiting:<id>`).
+ *  • PART 4 — "Someone is waiting on your response": every day, any member-initiated
+ *    expressed-interest (`approved`) row older than 48h nudges the counterpart once,
+ *    BUT only when that item is an ACTIONABLE incoming-interest item for the
+ *    recipient per fetchActionableIncomingInterest — the exact same source of truth
+ *    the Introductions "Interested in you" surface renders. So a reminder is sent
+ *    only when the recipient will actually see, and can immediately act on, the
+ *    item (excludes matched pairs, deactivated expressers, same-company, and
+ *    admin-initiated rows by construction). One nudge per surfaced row
+ *    (dedupeKey `waiting:<id>`).
  *
  *  • PART 3 — weekly introduction reminder: on SUNDAYS only, any member whose
  *    active batch still has unresolved introductions gets one reminder. One
@@ -44,22 +48,21 @@ export async function GET(req: Request) {
   const now = Date.now()
   const hasResend = !!process.env.RESEND_API_KEY
 
-  // Reverse-side statuses that mean the counterpart has already acted on (or is
-  // committed to) this pair — if any exist, there is nothing to wait on.
-  const COUNTERPART_RESOLVED = new Set([
-    'approved', 'pending', 'accepted', 'accepted_pending_payment', 'admin_pending',
-    'passed', 'hidden', 'hidden_permanent', 'declined', 'rejected', 'expired', 'archived',
-  ])
-
   // ── PART 4: "Someone is waiting on your response" (daily) ──────────────────
   let waitingSent = 0
   let waitingSkipped = 0
   const waitingCutoff = new Date(now - WAITING_RESPONSE_THRESHOLD_MS).toISOString()
   const { data: approvedRows } = await admin
     .from('intro_requests')
-    .select('id, requester_id, target_user_id, status, updated_at')
+    .select('id, requester_id, target_user_id, status, updated_at, is_admin_initiated')
     .eq('status', 'approved')
+    .eq('is_admin_initiated', false)
     .lte('updated_at', waitingCutoff)
+
+  // Cache the recipient's actionable incoming-interest set (the SAME query the
+  // "Interested in you" surface uses) so the reminder can never point at something
+  // the page won't show. Computed once per recipient.
+  const actionableByWaiter = new Map<string, Set<string>>()
 
   for (const row of approvedRows ?? []) {
     const expresserId = row.requester_id // expressed interest → approved their outbound rec
@@ -70,24 +73,17 @@ export async function GET(req: Request) {
       waitingSkipped++; continue
     }
 
-    // Already matched (either direction) → nothing to wait on.
-    const { data: match } = await admin
-      .from('matches')
-      .select('id')
-      .or(buildBidirectionalMatchFilter(expresserId, waiterId))
-      .limit(1)
-      .maybeSingle()
-    if (match) { waitingSkipped++; continue }
-
-    // Counterpart already acted on this pair (their reverse row is resolved) → skip.
-    const { data: reverse } = await admin
-      .from('intro_requests')
-      .select('status')
-      .eq('requester_id', waiterId)
-      .eq('target_user_id', expresserId)
-    if ((reverse ?? []).some((r: any) => COUNTERPART_RESOLVED.has(r.status))) {
-      waitingSkipped++; continue
+    // Single source of truth: only nudge if THIS row is a live, actionable incoming
+    // item the recipient can act on right now (fetchActionableIncomingInterest
+    // already excludes matched pairs, deactivated expressers, same-company, and
+    // admin rows). If it isn't surfaced, no reminder — ever.
+    let actionable = actionableByWaiter.get(waiterId)
+    if (!actionable) {
+      const items = await fetchActionableIncomingInterest(admin, waiterId)
+      actionable = new Set(items.map((i) => i.introRequestId))
+      actionableByWaiter.set(waiterId, actionable)
     }
+    if (!actionable.has(row.id)) { waitingSkipped++; continue }
 
     // Recipient must be active and have an email.
     const { data: waiter } = await admin
