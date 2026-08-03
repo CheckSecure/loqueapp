@@ -456,6 +456,15 @@ export default async function AdminDashboard() {
             <div className="text-xs text-slate-600"><span>Company data &amp; enrichment</span></div>
           </Link>
 
+          {/* Referral Campaign */}
+          <Link href="/dashboard/admin/referral-campaign" className={`${navCardBase} ${toneTop.blue}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div className={iconChip}><Network className={iconCls} /></div>
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1">Referral Campaign</h3>
+            <p className="text-xs text-slate-500">Invite active members to recommend high-quality additions to Andrel.</p>
+          </Link>
+
         </div>
       </div>
     </div>
