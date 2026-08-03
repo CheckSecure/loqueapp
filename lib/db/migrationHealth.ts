@@ -127,6 +127,14 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Referrer consent to be named in nominee outreach',
     impact: 'Referrer-consent is unstorable (submit fails open) so every referral is treated as no-consent (invite flow stays anonymous); the referral campaign send route refuses to run until applied.',
   },
+  {
+    migration: '039_profiles_intro_prompt_dismissed.sql',
+    kind: 'column',
+    table: 'profiles',
+    column: 'intro_profile_prompt_dismissed_at',
+    feature: 'Dismissal for the Introductions "Improve your recommendations" prompt',
+    impact: 'The "Not now" dismissal is not persisted (the card can reappear next visit); the card still auto-retires when the matching profile is complete. No matching impact.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {

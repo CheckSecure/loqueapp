@@ -10,17 +10,12 @@ import IntroductionCard from '@/components/IntroductionCard'
 import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
 import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
-import ProfileCompletionCard from '@/components/ProfileCompletionCard'
-import ProfilePhotoReminder from '@/components/ProfilePhotoReminder'
-import { computeProfileCompletionFields, isOnlyPhotoMissing } from '@/lib/profileCompletion'
+import ImproveRecommendationsCard from '@/components/ImproveRecommendationsCard'
 import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
-import MatchProfileCompletionCard from '@/components/MatchProfileCompletionCard'
-import BroadenPreferencesNotice from '@/components/BroadenPreferencesNotice'
 import { matchProfileCompletion } from '@/lib/matching/profile-completion'
-import { perRecipientIntroLimit } from '@/lib/matching/batch-limits'
 import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
@@ -97,13 +92,18 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     .limit(1)
 
   const profileRow = profileRows?.[0] ?? null
-  const completionFields = computeProfileCompletionFields(profileRow)
-  const isProfileComplete = Object.values(completionFields).every(Boolean)
-  // The "being curated" empty state shows an actionable completion nudge ONLY
-  // when there are real profile gaps beyond the photo (the photo is already
-  // nudged by ProfilePhotoReminder above). A complete member should never be
-  // told to "complete your profile" — they see the calm status card instead.
-  const showCuratedCompletion = !isProfileComplete && !isOnlyPhotoMissing(completionFields)
+  // Single recommendation-improvement prompt: driven by the matching-relevant
+  // fields (matchProfileCompletion), dismissible per member, and it retires
+  // automatically once the matching profile is complete. The dismissal flag is read
+  // fail-open so the page never breaks if migration 039 isn't applied yet.
+  const mc = matchProfileCompletion(profileRow)
+  const introPromptDismissed = await supabase
+    .from('profiles')
+    .select('intro_profile_prompt_dismissed_at')
+    .eq('id', user.id)
+    .maybeSingle()
+    .then((r) => (r.data as any)?.intro_profile_prompt_dismissed_at != null, () => false)
+  const showImproveCard = mc.missing.length > 0 && !introPromptDismissed
   const profileId = profileRow?.id ?? user.id
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
   const userTier = (profileRow as any)?.subscription_tier ?? 'free'
@@ -656,14 +656,11 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
         <FoundingMemberWelcomeBanner show={showFoundingWelcome} />
 
-        {/* Mutually exclusive: when the ONLY gap is the photo, the focused
-            ProfilePhotoReminder owns the prompt; otherwise the completion card
-            does (and keeps "Profile photo" in its checklist). Both use the same
-            completionFields, so they can never render together. */}
-        {isOnlyPhotoMissing(completionFields) ? (
-          <ProfilePhotoReminder hasPhoto={completionFields.photo} />
-        ) : (
-          <ProfileCompletionCard fields={completionFields} />
+        {/* At most ONE prompt: shown only when recommendation-relevant profile
+            fields are missing AND the member hasn't dismissed it. Retires
+            automatically once the matching profile is complete. */}
+        {showImproveCard && (
+          <ImproveRecommendationsCard missing={mc.missing.map((f) => ({ key: f.key, label: f.label }))} />
         )}
 
         {!isPaid && !isFoundingMember && (
@@ -683,25 +680,11 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
         )}
 
 
-        {/* Under-served experience. A member who received FEWER than their max
-            introductions gets a targeted, actionable explanation instead of a bare
-            gap — and the RIGHT one for their situation:
-              • hasn't said who they want to meet (no intro_preferences) → complete
-                their matching profile;
-              • has stated preferences but they're too narrow → broaden them.
-            Members at their max, or with a complete-and-broad profile, see nothing. */}
-        {(() => {
-          const introCount = allSuggestions.length + adminIntrosVisible.length
-          const underServed = introCount < perRecipientIntroLimit(userTier)
-          if (!underServed) return null
-          const mc = matchProfileCompletion(profileRow)
-          const hasPreferences = mc.fields.find(f => f.key === 'intro_preferences')?.done
-          // Has preferences → the shortfall is restrictiveness → broaden.
-          if (hasPreferences) return <BroadenPreferencesNotice />
-          // No preferences / incomplete matching profile → complete it first.
-          if (!mc.complete) return <MatchProfileCompletionCard profile={profileRow} variant="empty" />
-          return null
-        })()}
+        {/* The old low-match / under-served notices were removed: they fired on a
+            temporary empty-queue state (visible intros below the tier limit), not on
+            real candidate scarcity, so they could not reliably justify a warning. The
+            single card above covers the actionable case (missing recommendation
+            fields); the neutral empty state covers the rest. */}
 
         {/* TWO-COLUMN LAYOUT */}
         <div className="grid lg:grid-cols-3 gap-6 lg:gap-8">
@@ -763,43 +746,22 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                 )}
               </section>
             ) : (
-              showCuratedCompletion ? (
-                /* Real profile gaps → one calm, actionable nudge (no checklist). */
-                <section className="rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-7">
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-brand-navy/[0.04] text-brand-gold flex items-center justify-center flex-shrink-0">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Curating</p>
-                      <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated.</h2>
-                      <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-xl">
-                        We introduce you when there&rsquo;s a strong mutual fit. Completing your profile helps us find yours sooner.
-                      </p>
-                      <Link href="/dashboard/profile" className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-navy hover:text-brand-gold transition-colors">
-                        Complete your profile <ArrowRight className="w-4 h-4" />
-                      </Link>
-                    </div>
+              /* Single neutral empty state — the one guidance card above owns any
+                 profile prompt; the empty state carries no separate CTA. */
+              <section className="rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-7">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-brand-navy/[0.04] text-brand-gold flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-5 h-5" />
                   </div>
-                </section>
-              ) : (
-                /* Complete (or only photo missing, handled above) → calm, passive
-                   status. Andrel is working for you; there is nothing to do. */
-                <section className="rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-7">
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-brand-navy/[0.04] text-brand-gold flex items-center justify-center flex-shrink-0">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">All caught up</p>
-                      <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">You&rsquo;re all caught up.</h2>
-                      <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-xl">
-                        Your next introductions will appear when your next batch is available. We reserve introductions for genuine mutual fit.
-                      </p>
-                    </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Curating</p>
+                    <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated</h2>
+                    <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-xl">
+                      We&rsquo;ll notify you when a strong match is ready.
+                    </p>
                   </div>
-                </section>
-              )
+                </div>
+              </section>
             )}
 
           </div>

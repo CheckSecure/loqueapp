@@ -26,7 +26,7 @@ export default function MatchProfileCompletionCard({
   const empty = variant === 'empty'
   const headline = empty
     ? 'Complete your matching profile to unlock more high-quality introductions'
-    : 'Improve your introductions'
+    : 'Improve your recommendations'
 
   return (
     <div className={`rounded-2xl border ${empty ? 'border-brand-gold/30 bg-brand-gold-soft/60' : 'border-slate-200/70 bg-white'} p-5 mb-4`}>
@@ -48,8 +48,9 @@ export default function MatchProfileCompletionCard({
           </div>
 
           <p className="mt-3 text-xs text-slate-500 leading-relaxed">
-            Introductions are only as good as the details you share. Completing these directly improves the
-            quality and number of introductions you receive:
+            {empty
+              ? 'Introductions are only as good as the details you share. Completing these directly improves the quality and number of introductions you receive:'
+              : 'Keeping your expertise, interests, networking goals, and preferred connections up to date helps Andrel find stronger matches for you.'}
           </p>
 
           {/* Missing matchable fields, as prompts */}
