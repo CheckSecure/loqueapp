@@ -25,6 +25,7 @@ import { companySlug, isLinkableCompany } from '@/lib/company/slug'
 import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
 import { provisionMemberRecords } from '@/lib/provisioning'
 import { validateFullName } from '@/lib/validation/fullName'
+import { persistFocusAreas } from '@/lib/profile/focusAreas'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -128,6 +129,13 @@ export async function updateProfile(formData: FormData) {
   })
 
   if (error) return { error: error.message }
+
+  // Current focus areas (optional, soft signal) — a separate best-effort write on
+  // its own column that FAILS OPEN if migration 041 isn't applied, so the main
+  // profile save never breaks. Present-only: only touched when submitted.
+  if (formData.has('current_focus_areas')) {
+    await persistFocusAreas(adminClient, user.id, formData.get('current_focus_areas'))
+  }
 
   // Company enters the network here → create + enrich its page record in the
   // background (deduped; never re-runs an already-enriched company).
@@ -314,6 +322,12 @@ export async function completeOnboarding(formData: FormData) {
   if (error) {
     console.error('[completeOnboarding] error:', error.message)
     return { error: error.message }
+  }
+
+  // Current focus areas (optional, soft signal) — best-effort, fails open if
+  // migration 041 isn't applied. Present-only so onboarding without it is fine.
+  if (formData.has('current_focus_areas')) {
+    await persistFocusAreas(adminClient, user.id, formData.get('current_focus_areas'))
   }
 
   // Company enters the network here → create + enrich its page record in the

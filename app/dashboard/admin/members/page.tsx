@@ -28,6 +28,17 @@ export default async function AdminMembersPage() {
   
   const profiles = profileQuery.data
 
+  // Current focus areas — fetched SEPARATELY and fail-open, so a not-yet-applied
+  // migration 041 (missing column) can never break the admin members page. When
+  // the column is absent the query errors and we simply show no focus areas.
+  const focusByMember: Record<string, unknown> = {}
+  const { data: focusRows, error: focusErr } = await supabase
+    .from('profiles')
+    .select('id, current_focus_areas')
+  if (!focusErr) {
+    for (const r of (focusRows ?? []) as any[]) focusByMember[r.id] = r.current_focus_areas
+  }
+
   // Get credits for all users
   const { data: credits } = await supabase
     .from('meeting_credits')
@@ -109,6 +120,7 @@ export default async function AdminMembersPage() {
       ...p,
       tier: p.subscription_tier,
       launch_cohort: p.launch_cohort ?? null,
+      current_focus_areas: focusByMember[p.id] ?? [], // fail-open: [] when 041 pending
       was_invited: wasInvited,
       activation_state,
       credits: creditsMap[p.id] || 0,

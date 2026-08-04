@@ -4,6 +4,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles, Calendar } from 'lucide-react'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
+import { normalizeFocusAreas } from '@/lib/profile/focusAreas'
 import { professionalIdentity } from '@/lib/professionalIdentity'
 import { isLinkableCompany } from '@/lib/company/slug'
 import CompanyLink from '@/components/CompanyLink'
@@ -351,6 +352,19 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
               <Section icon={Star} title="Expertise">
                 <div className="flex flex-wrap gap-2">
                   {parseExpertise(profile.expertise).map((tag: string) => (
+                    <Badge key={tag} label={tag} />
+                  ))}
+                </div>
+              </Section>
+            </div>
+          )}
+
+          {/* Current focus areas — compact; only when values exist */}
+          {normalizeFocusAreas(profile.current_focus_areas).length > 0 && (
+            <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm p-6">
+              <Section icon={Sparkles} title="Current focus areas">
+                <div className="flex flex-wrap gap-2">
+                  {normalizeFocusAreas(profile.current_focus_areas).map((tag: string) => (
                     <Badge key={tag} label={tag} />
                   ))}
                 </div>

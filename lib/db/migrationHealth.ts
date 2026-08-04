@@ -135,7 +135,15 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Dismissal for the Introductions "Improve your recommendations" prompt',
     impact: 'The "Not now" dismissal is not persisted (the card can reappear next visit); the card still auto-retires when the matching profile is complete. No matching impact.',
   },
-]
+
+  {
+    migration: '041_profiles_current_focus_areas.sql',
+    kind: 'column',
+    table: 'profiles',
+    column: 'current_focus_areas',
+    feature: 'Current focus areas (timely topical interests)',
+    impact: 'Focus-area edits are not persisted (the write fails open and no-ops); the field is hidden and never affects completion, onboarding, or matching until applied.',
+  },]
 
 export interface MigrationWarning extends SchemaExpectation {
   message: string

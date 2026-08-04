@@ -8,6 +8,7 @@ import { type CategoryTitleSelection } from '@/lib/role-taxonomy'
 import ConnectionTargetPicker from '@/components/ConnectionTargetPicker'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
+import CurrentFocusAreasInput from '@/components/CurrentFocusAreasInput'
 import { Linkedin, Twitter, Link as LinkIcon, Loader2, CheckCircle } from 'lucide-react'
 import { updateProfile } from '@/app/actions'
 import AvatarUpload from '@/components/AvatarUpload'
@@ -32,6 +33,7 @@ interface Profile {
   role_type?: string
   exact_job_title?: string | null
   mentorship_role?: string
+  current_focus_areas?: string[]
 }
 
 const INTRO_PREFS = ['Investors', 'Founders', 'Potential hires', 'Collaborators', 'Mentors', 'Customers']
@@ -306,6 +308,11 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
             </label>
           ))}
         </div>
+      </div>
+
+      {/* Current focus areas (optional, timely topical interests) */}
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6">
+        <CurrentFocusAreasInput initial={profile?.current_focus_areas || []} />
       </div>
       </div>
 

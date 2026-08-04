@@ -12,6 +12,7 @@ import { Loader2, User, Camera, Eye, EyeOff } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { isValidFullName, FULL_NAME_ERROR } from '@/lib/validation/fullName'
+import CurrentFocusAreasInput from '@/components/CurrentFocusAreasInput'
 
 // Role-type picker — Phase B replaces the flat A-1 button list with a
 // category → title picker (components/RoleCategoryPicker.tsx) sourced from
@@ -89,6 +90,7 @@ export default function OnboardingForm({ initialFullName = '' }: { initialFullNa
   const [meetingFormat, setMeetingFormat] = useState('both')
   const [geographicScope, setGeographicScope] = useState('us-wide')
   const [lookingFor, setLookingFor] = useState('')
+  const [focusAreas, setFocusAreas] = useState<string[]>([])
 
   const toggleItem = (list: string[], setList: (v: string[]) => void, item: string) => {
     setList(list.includes(item) ? list.filter(i => i !== item) : [...list, item])
@@ -178,6 +180,7 @@ export default function OnboardingForm({ initialFullName = '' }: { initialFullNa
     fd.append('desired_connections', JSON.stringify(desiredConnections))
     fd.append('meeting_format_preference', meetingFormat)
     fd.append('geographic_scope', geographicScope)
+    fd.append('current_focus_areas', JSON.stringify(focusAreas))
     if (avatarUrl) fd.append('avatar_url', avatarUrl)
 
     console.log('[OnboardingForm] About to call completeOnboarding')
@@ -396,6 +399,12 @@ export default function OnboardingForm({ initialFullName = '' }: { initialFullNa
                 Anything else? <span className="text-slate-400 font-normal text-xs">optional</span>
               </label>
               <textarea value={lookingFor} onChange={e => setLookingFor(e.target.value)} placeholder="e.g. Looking for a Series A lead, want to connect with healthcare operators in NYC..." rows={3} className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition resize-none" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-1">Current focus areas <span className="text-slate-400 font-normal text-xs">optional</span></label>
+              <p className="text-xs text-slate-500 mb-2">Topics, technologies, industries, or policy areas especially relevant to you right now. These can change over time.</p>
+              <CurrentFocusAreasInput compact onChange={setFocusAreas} />
             </div>
 
             {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-lg">{error}</p>}

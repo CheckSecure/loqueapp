@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { buildProfileUpdate } from '@/lib/profile/updatePayload'
+import { persistFocusAreas } from '@/lib/profile/focusAreas'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyLinkedInConsistency } from '@/app/actions/verify-linkedin'
@@ -51,6 +52,13 @@ export async function POST(req: NextRequest) {
       // Row not updated (missing profile / RLS) — never report a false success.
       console.error('[profile/update] update affected 0 rows for', user.id)
       return NextResponse.json({ error: 'Could not save your changes. Please try again.' }, { status: 409 })
+    }
+
+    // Current focus areas (optional) — present-only, separate best-effort write on
+    // its own column; fails open if migration 041 isn't applied. Kept out of
+    // buildProfileUpdate's payload so a missing column can never fail the main save.
+    if (formData.has('current_focus_areas')) {
+      await persistFocusAreas(createAdminClient(), user.id, formData.get('current_focus_areas'))
     }
 
     // Run LinkedIn verification

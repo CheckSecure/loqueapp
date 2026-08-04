@@ -3,6 +3,7 @@
 
 import { useState, useMemo } from 'react'
 import { professionalIdentityLine } from '@/lib/professionalIdentity'
+import { normalizeFocusAreas } from '@/lib/profile/focusAreas'
 import { Search, Filter, UserPlus, Zap, Edit, CheckCircle, AlertTriangle, Users, TrendingUp } from 'lucide-react'
 import { adminForceMatch, adminUpdateUser, adminSetFoundingMember, adminAdjustCredits } from '@/app/actions'
 import { useRouter } from 'next/navigation'
@@ -408,6 +409,13 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                         <div>
                           <p className="text-sm font-semibold text-slate-900">{user.full_name || 'Unnamed'}</p>
                           <p className="text-xs text-slate-500">{professionalIdentityLine(user)}</p>
+                          {normalizeFocusAreas((user as any).current_focus_areas).length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {normalizeFocusAreas((user as any).current_focus_areas).map((f: string) => (
+                                <span key={f} className="rounded border border-brand-gold/30 bg-brand-gold-soft/40 px-1.5 py-0.5 text-[10px] font-medium text-brand-navy/80">{f}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         {user.is_priority && (
                           <Zap className="w-4 h-4 text-amber-500" />
