@@ -49,6 +49,8 @@ const scheduleEnrichment = vi.fn()
 vi.mock('@/lib/company/enrichment/schedule', () => ({ scheduleEnrichment: (...a: any[]) => scheduleEnrichment(...a) }))
 vi.mock('@/app/actions/verify-linkedin', () => ({ verifyLinkedInConsistency: async () => {} }))
 vi.mock('@/lib/trust/signals', () => ({ checkProfileCompletion: async () => {} }))
+// The route now calls revalidatePath on success; it throws outside a request scope.
+vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
 
 import { POST } from '@/app/api/profile/update/route'
 

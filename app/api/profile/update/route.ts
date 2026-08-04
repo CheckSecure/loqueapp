@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { buildProfileUpdate } from '@/lib/profile/updatePayload'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -89,6 +90,12 @@ export async function POST(req: NextRequest) {
       }
       if (shouldEnrich) scheduleEnrichment(admin, slug, (newCompany as string).trim())
     }
+
+    // Completing the matching-profile fields retires the "Improve your
+    // recommendations" reminder on both surfaces — revalidate them so it clears
+    // immediately after save (clients also router.refresh() for the Router Cache).
+    revalidatePath('/dashboard/profile')
+    revalidatePath('/dashboard/introductions')
 
     return NextResponse.json({ success: true })
   } catch (err: any) {

@@ -46,8 +46,11 @@ export async function updateProfile(formData: FormData) {
       expertise = expertiseRaw.split(',').map(s => s.trim()).filter(Boolean)
     }
   }
-  const introPref = (formData.get('intro_preferences') as string || '')
-    .split(',').map(s => s.trim()).filter(Boolean)
+  // Normalize to a clean string[] via the shared serializer so intro_preferences
+  // is ALWAYS stored as an array (accepts the comma-joined form the client sends,
+  // and any legacy string). Array-only matcher readers (generate-recommendations)
+  // then never silently drop a valid preference set.
+  const introPref = parseMultiSelectField(formData.get('intro_preferences'))
   // Goals ("Your goals on Andrel") and personal interests — previously omitted
   // from this upsert, so profile edits silently dropped them. Parsed with the
   // shared normalizer so onboarding and profile-edit stay identical.
@@ -134,6 +137,10 @@ export async function updateProfile(formData: FormData) {
   }
 
   revalidatePath('/dashboard/profile')
+  // Completing the matching-profile fields retires the "Improve your
+  // recommendations" card on Introductions too — revalidate it so the reminder
+  // disappears immediately after save, not just on the Profile page.
+  revalidatePath('/dashboard/introductions')
   return { success: true }
 }
 
@@ -197,8 +204,11 @@ export async function completeOnboarding(formData: FormData) {
   console.log('[completeOnboarding] User:', user?.email)
   if (!user) return { error: 'Not authenticated' }
 
-  const introPref = (formData.get('intro_preferences') as string || '')
-    .split(',').map(s => s.trim()).filter(Boolean)
+  // Normalize to a clean string[] via the shared serializer so intro_preferences
+  // is ALWAYS stored as an array (accepts the comma-joined form the client sends,
+  // and any legacy string). Array-only matcher readers (generate-recommendations)
+  // then never silently drop a valid preference set.
+  const introPref = parseMultiSelectField(formData.get('intro_preferences'))
   const purposes = parseMultiSelectField(formData.get('purposes'))
   const interests = parseMultiSelectField(formData.get('interests'))
   // Parse expertise - handle both JSON array and comma-separated string

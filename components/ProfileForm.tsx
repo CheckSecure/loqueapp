@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { serializeMultiSelectField } from '@/lib/profile/multiSelect'
 import { normalizeExpertise } from '@/lib/expertise'
 import { type CategoryTitleSelection } from '@/lib/role-taxonomy'
@@ -38,6 +39,7 @@ const PURPOSE_OPTIONS = ["Find customers", "Raise capital", "Hire talent", "Lear
 const INTEREST_OPTIONS = ["Sports", "Travel", "Food & wine", "Arts & culture", "Technology", "Fitness", "Reading", "Music", "Volunteering"]
 
 export default function ProfileForm({ profile, email }: { profile: Profile | null; email: string }) {
+  const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -76,6 +78,9 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
       setError(result.error)
     } else {
       setSaved(true)
+      // Refresh the Router Cache so the "Improve your recommendations" reminder
+      // (Profile + Introductions) reflects the just-completed fields immediately.
+      router.refresh()
       setTimeout(() => setSaved(false), 3000)
     }
   }

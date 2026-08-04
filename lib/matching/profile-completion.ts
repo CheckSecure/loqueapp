@@ -13,7 +13,7 @@
  */
 
 export type MatchField = {
-  key: 'intro_preferences' | 'purposes' | 'expertise' | 'interests'
+  key: 'intro_preferences' | 'purposes' | 'expertise'
   label: string        // short label for UI
   prompt: string       // the onboarding-style question that fills it
   done: boolean
@@ -28,12 +28,21 @@ export type MatchProfileCompletion = {
   missing: MatchField[]    // the ones still empty (what to prompt)
 }
 
-/** The recommendation-engine fields, in the order they most improve match quality. */
+/**
+ * The recommendation-engine fields that GATE completion, in the order they most
+ * improve match quality. These are exactly the fields the primary onboarding flow
+ * collects. `interests` is intentionally NOT here: the invite-onboarding form never
+ * collects it and it captures personal hobbies (a soft rapport signal), not a
+ * required professional matching field — requiring it left members who fully
+ * completed onboarding permanently flagged "incomplete". `interests` remains a real,
+ * editable, matching-relevant field; it is simply not part of the completion gate.
+ * Likewise, optional future fields (current focus areas, additional roles) must
+ * never be added here — they must not make an already-complete profile incomplete.
+ */
 const MATCH_FIELDS: Omit<MatchField, 'done'>[] = [
   { key: 'intro_preferences', label: 'Who you want to meet', prompt: 'Who would you like to meet?' },
   { key: 'purposes', label: 'Your goals', prompt: 'What are your goals on Andrel?' },
   { key: 'expertise', label: 'Areas of expertise', prompt: 'What areas of expertise do you have?' },
-  { key: 'interests', label: 'Industries & interests', prompt: 'What industries and topics interest you?' },
 ]
 
 /** Normalize the profile fields (array | JSON | pg-array | csv | single) to a list. */
