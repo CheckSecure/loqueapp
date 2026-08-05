@@ -6,6 +6,7 @@ import { ArrowLeft, MapPin, Globe, Building2, Users } from 'lucide-react'
 import CompanyLogo from '@/components/CompanyLogo'
 import { companySlug, isLinkableCompany, titleCaseSlug, resolveLegacySlug } from '@/lib/company/slug'
 import { professionalIdentityLine, professionalIdentity } from '@/lib/professionalIdentity'
+import { discoverableMemberIds } from '@/lib/privacy/canViewerDiscoverMember'
 
 export const metadata = { title: 'Company | Andrel' }
 
@@ -29,55 +30,47 @@ export default async function CompanyPage({ params }: { params: { slug: string }
 
   const admin = createAdminClient()
 
-  // Metadata (deploy-safe: null if the companies table/row isn't present yet)
-  // + the viewer's matches and blocks, in parallel.
-  const [companyRes, matchRes, blockRes] = await Promise.all([
-    admin.from('companies')
-      .select('slug, name, industry, headquarters, website, company_size, description, logo_url, admin_edited, enrichment_status')
-      .eq('slug', slug).maybeSingle(),
-    admin.from('matches')
-      .select('user_a_id, user_b_id, status')
-      .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`),
-    admin.from('blocked_users')
-      .select('user_id, blocked_user_id')
-      .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`),
-  ])
-  const company: any = companyRes.data ?? null
+  // Company metadata (deploy-safe: null if the companies table/row isn't present).
+  const { data: companyRow } = await admin.from('companies')
+    .select('id, slug, name, industry, headquarters, website, company_size, description, logo_url, admin_edited, enrichment_status')
+    .eq('slug', slug).maybeSingle()
+  const company: any = companyRow ?? null
 
-  // Backwards-compat (general): if this row's stored name now canonicalizes to a
-  // different slug (an orphaned pre-migration row, registry or normalization
-  // change), redirect to the canonical page.
+  // Backwards-compat: if this row's stored name canonicalizes to a different slug,
+  // redirect to the canonical page.
   if (company?.name) {
     const canonicalSlug = companySlug(company.name)
     if (canonicalSlug && canonicalSlug !== slug) redirect(`/company/${canonicalSlug}`)
   }
 
-  // Visible people = current user + non-blocked connections. Already fully
-  // visible on the Network page; filtering by company exposes nobody new.
-  const blocked = new Set<string>()
-  for (const b of blockRes.data || []) {
-    blocked.add(b.user_id === user.id ? b.blocked_user_id : b.user_id)
+  // Member visibility (server-side, curated-network rule):
+  //   • NAMED members = self + members the viewer may discover (canViewerDiscoverMember).
+  //   • Every OTHER active, non-test member at the company is counted only, as an
+  //     aggregate — no id/name/title/photo/URL is sent to the client for them.
+  const SAFE = 'id, full_name, company, company_id, title, exact_job_title, role_type, avatar_url, location, account_status, is_test_account'
+  const sortSelfFirst = (a: any, b: any) => {
+    if (a.id === user.id) return -1
+    if (b.id === user.id) return 1
+    return (a.full_name || '').localeCompare(b.full_name || '')
   }
-  const connectionIds = (matchRes.data || [])
-    .filter((m: any) => m.status !== 'removed')
-    .map((m: any) => (m.user_a_id === user.id ? m.user_b_id : m.user_a_id))
-    .filter((id: string) => id && !blocked.has(id))
-  const visibleIds = Array.from(new Set<string>([user.id, ...connectionIds]))
-
-  const { data: visibleProfiles } = await admin
-    .from('profiles')
-    .select('id, full_name, company, title, exact_job_title, role_type, avatar_url, location, account_status')
-    .in('id', visibleIds)
-
-  const members = (visibleProfiles || [])
-    .filter((p: any) => isLinkableCompany(p.company) && companySlug(p.company) === slug && p.account_status !== 'deactivated')
-    .sort((a: any, b: any) => {
-      if (a.id === user.id) return -1
-      if (b.id === user.id) return 1
-      return (a.full_name || '').localeCompare(b.full_name || '')
-    })
-
-  const memberName = members.map((m: any) => (m.company || '').trim()).find(Boolean)
+  // Determine this company's full membership, then split into discoverable NAMED
+  // members vs a hidden aggregate count. Membership is matched by BOTH the canonical
+  // company_id AND the free-text company slug (company_id backfill is incomplete),
+  // and excludes placeholder/non-company identities (isLinkableCompany). At the
+  // current member scale a single active-members scan is cheap; hidden members never
+  // leave the server (only the integer count is rendered).
+  const { data: allActive } = await admin.from('profiles').select(SAFE).eq('account_status', 'active')
+  const candidates = (allActive || []).filter((p: any) => {
+    if (p.is_test_account) return false
+    const byId = Boolean(company?.id) && p.company_id === company.id
+    const byText = isLinkableCompany(p.company) && companySlug(p.company) === slug
+    return byId || byText
+  })
+  const memberName = candidates.map((p: any) => (p.company || '').trim()).find(Boolean) || ''
+  const otherIds = candidates.filter((p: any) => p.id !== user.id).map((p: any) => p.id)
+  const discoverable = await discoverableMemberIds(admin, user.id, otherIds)
+  const members = candidates.filter((p: any) => p.id === user.id || discoverable.has(p.id)).sort(sortSelfFirst)
+  const hiddenCount = candidates.filter((p: any) => p.id !== user.id && !discoverable.has(p.id)).length
 
   // Display only. This page never initiates enrichment — records are created and
   // enriched in the background the moment a company first enters the network (a
@@ -135,20 +128,18 @@ export default async function CompanyPage({ params }: { params: { slug: string }
           </section>
         )}
 
-        {/* People you know here — ONLY the viewer's visible connections + self */}
+        {/* People you know through Andrel — named members are self + those the
+            viewer may discover; everyone else at the company is an aggregate count
+            only (no id/name/title/photo/URL is sent to the client for them). The
+            section is omitted entirely when there is nothing to show. */}
+        {(members.length > 0 || hiddenCount > 0) && (
         <section className="mt-8">
           <h2 className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-3">
-            People you know here
+            People you know through Andrel
             {members.length > 0 && <span className="ml-1.5 font-medium text-slate-400 tabular-nums">({members.length})</span>}
           </h2>
 
-          {members.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-6">
-              <p className="text-sm text-slate-500 leading-relaxed">
-                You don&rsquo;t currently know anyone at {displayName} through Andrel.
-              </p>
-            </div>
-          ) : (
+          {members.length > 0 && (
             <div className="rounded-2xl border border-slate-200/70 bg-white divide-y divide-slate-100 overflow-hidden">
               {members.map((m: any) => {
                 const isSelf = m.id === user.id
@@ -182,7 +173,14 @@ export default async function CompanyPage({ params }: { params: { slug: string }
               })}
             </div>
           )}
+
+          {hiddenCount > 0 && (
+            <p className={`text-sm text-slate-500 leading-relaxed ${members.length > 0 ? 'mt-3' : ''}`}>
+              {hiddenCount} other Andrel {hiddenCount === 1 ? 'member works' : 'members work'} here.
+            </p>
+          )}
         </section>
+        )}
       </div>
     </div>
   )

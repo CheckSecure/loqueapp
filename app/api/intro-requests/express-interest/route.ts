@@ -28,6 +28,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Intro request not found' }, { status: 404 })
     }
 
+    // Authorization: the caller MUST be a participant of this intro request.
+    // Reject arbitrary introRequestId probing with the same neutral 404 as a
+    // missing row (never leak the participants' identities).
+    const isParticipant =
+      user.id === introReqCheck.requester_id || user.id === introReqCheck.target_user_id
+    if (!isParticipant) {
+      return NextResponse.json({ error: 'Intro request not found' }, { status: 404 })
+    }
+
     const otherUserIdCheck = user.id === introReqCheck.requester_id
       ? introReqCheck.target_user_id
       : introReqCheck.requester_id
@@ -45,10 +54,12 @@ export async function POST(request: Request) {
       )
     }
 
-    // STEP 1: Get the intro request
+    // STEP 1: Get the intro request. Only the direction/flag fields are used
+    // downstream — do NOT join the full requester/target profiles (that exposed
+    // both members' private columns for any caller).
     const { data: introRequest } = await supabase
       .from('intro_requests')
-      .select('*, requester:profiles!requester_id(*), target:profiles!target_user_id(*)')
+      .select('id, requester_id, target_user_id, is_admin_initiated, status')
       .eq('id', introRequestId)
       .single()
 

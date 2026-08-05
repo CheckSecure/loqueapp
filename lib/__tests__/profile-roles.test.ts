@@ -235,7 +235,7 @@ describe('Phase A/B wiring', () => {
 
   it('profile editor + display + admin are wired fail-open', () => {
     expect(profileForm).toContain('<AdditionalRolesEditor')
-    expect(profilePage).toContain('listRoles(createAdminClient()')
+    expect(profilePage).toContain('listRoles(admin,') // admin = createAdminClient(), reused for the discoverability gate
     expect(profilePage).toContain('additionalRoles.length > 0')
     expect(adminPage).toContain('listRolesForProfiles')
     expect(adminClient).toContain('roleQualityFlags')

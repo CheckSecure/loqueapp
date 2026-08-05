@@ -8,6 +8,8 @@ import { normalizeFocusAreas } from '@/lib/profile/focusAreas'
 import { listRoles, ROLE_CATEGORY_LABELS } from '@/lib/profileRoles'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { professionalIdentity } from '@/lib/professionalIdentity'
+import { canViewerDiscoverMember } from '@/lib/privacy/canViewerDiscoverMember'
+import { PUBLIC_PROFILE_SELECT } from '@/lib/privacy/profileColumns'
 import { isLinkableCompany } from '@/lib/company/slug'
 import CompanyLink from '@/components/CompanyLink'
 import IdentityLine from '@/components/IdentityLine'
@@ -81,18 +83,28 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
   if (params.id === user.id) redirect('/dashboard/profile')
 
-  const { data: profile, error } = await supabase
+  // Discoverability gate — a member may view another member's profile ONLY when
+  // connected or legitimately shown through an introduction (shared server rule).
+  // Runs BEFORE any profile/roles/company read. Undiscoverable → 404 (never reveal
+  // that the profile exists; no access-denied page).
+  const admin = createAdminClient()
+  if (!(await canViewerDiscoverMember(admin, user.id, params.id))) notFound()
+
+  const { data: profileRow, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select(PUBLIC_PROFILE_SELECT)
     .eq('id', params.id)
     .single()
 
   if (error) console.error('[Profile/[id]] query error:', error.message)
-  if (!profile) notFound()
+  if (!profileRow) notFound()
+  // Safe projection (PUBLIC_PROFILE_SELECT) — a runtime column string, so the typed
+  // client can't infer the shape; treat as the display record.
+  const profile: any = profileRow
 
   // Additional roles & affiliations — fetched fail-open (empty if migration 042
   // is not applied). Display-only; never part of matching or completion.
-  const additionalRoles = await listRoles(createAdminClient(), params.id)
+  const additionalRoles = await listRoles(admin, params.id)
 
   // Viewer's profile (for computed shared signals) + any active connection
   // between viewer and viewed (for the connection date line).
