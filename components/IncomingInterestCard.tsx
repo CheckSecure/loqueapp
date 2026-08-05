@@ -29,6 +29,8 @@ interface IncomingInterestCardProps {
   matchReason?: string | null
   /** Structured Match Intelligence signals (built server-side). Display only. */
   signals?: MatchSignal[]
+  /** Conversation starters derived from the signals (display only). */
+  starters?: string[]
 }
 
 function initials(name: string | null) {
@@ -41,7 +43,7 @@ function pickColor(id: string) {
   return AVATAR_COLORS[n % AVATAR_COLORS.length]
 }
 
-export default function IncomingInterestCard({ introRequestId, requester, matchReason, signals }: IncomingInterestCardProps) {
+export default function IncomingInterestCard({ introRequestId, requester, matchReason, signals, starters }: IncomingInterestCardProps) {
   const router = useRouter()
   const expertiseTags = toList(requester.expertise)
   const identity = professionalIdentity(requester)
@@ -141,7 +143,7 @@ export default function IncomingInterestCard({ introRequestId, requester, matchR
       {/* Match Intelligence: structured signals when available, else the stored
           match_reason (newline-bullet contract preserved), else generic. Signals
           are neutral commonalities — they never imply mutual interest. */}
-      <MatchIntelligenceCard signals={signals ?? []} fallbackReason={matchReason} title="Why you may connect" />
+      <MatchIntelligenceCard signals={signals ?? []} starters={starters} fallbackReason={matchReason} title="Why you may connect" />
 
       {/* IDLE — Accept opens the review step; nothing is mutated yet. */}
       {state === 'idle' && (

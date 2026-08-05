@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { listRolesForProfiles } from '@/lib/profileRoles'
 import { getAuthUser } from '@/lib/supabase/authUser'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -336,15 +338,53 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   const effectiveFeatured: any = isDevReview ? DEMO_FEATURED : featuredSuggestion
   const effectiveAdditional: any[] = isDevReview ? DEMO_ADDITIONAL : additionalSuggestions
 
-  // Reason render: prefer stored match_reason (rich prose from generateIntroReason),
-  // fall back to computeMatchSignals at render, fall back to generic.
+  // ── Match Intelligence (Phase B) context — bulk, fail-open, NO N+1 ──────────
+  // One query per data type for EVERY profile shown on this page (viewer + all
+  // suggested/admin/incoming others): focus areas + previous_roles from profiles
+  // (fail-open to previous-only if migration 041 is unapplied), additional roles
+  // via listRolesForProfiles (admin client — owner-only RLS; fail-open to {} if
+  // migration 042 is unapplied). Display-only; reads nothing scoring uses.
+  const miIds = Array.from(new Set<string>([
+    profileId,
+    ...allSuggestions.map((s: any) => s?.profile?.id).filter(Boolean),
+    ...adminIntrosVisible.map((i: any) => i?.other?.id).filter(Boolean),
+    ...incomingInterest.map((i) => i.requesterId),
+  ]))
+  const miAdmin = createAdminClient()
+  const miFocusById: Record<string, unknown> = {}
+  const miPrevById: Record<string, unknown> = {}
+  if (miIds.length > 0) {
+    const combined = await miAdmin.from('profiles').select('id, current_focus_areas, previous_roles').in('id', miIds)
+    const rows: any[] = !combined.error
+      ? ((combined.data as any[]) ?? [])
+      : (((await miAdmin.from('profiles').select('id, previous_roles').in('id', miIds)).data as any[]) ?? [])
+    for (const r of rows) { miFocusById[r.id] = r.current_focus_areas; miPrevById[r.id] = r.previous_roles }
+  }
+  const miRolesById = await listRolesForProfiles(miAdmin, miIds) // fail-open → {}
+  const asPrevArray = (v: any): any[] =>
+    Array.isArray(v) ? v : (typeof v === 'string' ? (() => { try { const j = JSON.parse(v); return Array.isArray(j) ? j : [] } catch { return [] } })() : [])
+  const miContext = (otherId: string) => ({
+    viewerFocus: miFocusById[profileId], viewedFocus: miFocusById[otherId],
+    viewerRoles: (miRolesById[profileId] as any) ?? [], viewedRoles: (miRolesById[otherId] as any) ?? [],
+    viewerPrev: asPrevArray(miPrevById[profileId]), viewedPrev: asPrevArray(miPrevById[otherId]),
+  })
+  // Build once per other (signals + conversation starters), memoized.
+  const miCache = new Map<string, ReturnType<typeof buildMatchIntelligence>>()
+  const miFor = (other: any, otherId: string) => {
+    const hit = miCache.get(otherId)
+    if (hit) return hit
+    const built = buildMatchIntelligence(profileRow, other, miContext(otherId))
+    miCache.set(otherId, built)
+    return built
+  }
+
   // Match Intelligence (display-only): structured signals when available, else the
   // stored match_reason (newline-bullet contract preserved by the card), else
   // generic. Structured signals REPLACE the stored reason when present, so the two
   // never show together (no duplicate concepts).
   const renderReasonBlock = (row: any) => {
-    const { signals } = buildMatchIntelligence(profileRow, row.profile)
-    return <MatchIntelligenceCard variant="bare" signals={signals} fallbackReason={row.matchReason} />
+    const { signals, starters } = miFor(row.profile, row.profile?.id)
+    return <MatchIntelligenceCard variant="bare" signals={signals} starters={starters} fallbackReason={row.matchReason} />
   }
 
   // Expertise tags: up to 5 + "+N more". Uses toList to normalize the varied
@@ -681,7 +721,8 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                         introRequestId={item.introRequestId}
                         requester={item.requester}
                         matchReason={item.matchReason}
-                        signals={buildMatchIntelligence(profileRow, item.requester).signals}
+                        signals={miFor(item.requester, item.requesterId).signals}
+                        starters={miFor(item.requester, item.requesterId).starters}
                       />
                     </IntroductionCard>
                   ))}
@@ -701,7 +742,8 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                         otherAlreadyApproved={intro.otherAlreadyApproved}
                         userAlreadyAccepted={intro.userAlreadyAccepted}
                         matchReason={intro.match_reason}
-                        signals={buildMatchIntelligence(profileRow, intro.other).signals}
+                        signals={miFor(intro.other, intro.other.id).signals}
+                        starters={miFor(intro.other, intro.other.id).starters}
                       />
                     </IntroductionCard>
                   ))}

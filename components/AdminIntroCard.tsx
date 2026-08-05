@@ -30,6 +30,8 @@ interface AdminIntroCardProps {
   matchReason?: string | null
   /** Structured Match Intelligence signals (built server-side). Display only. */
   signals?: MatchSignal[]
+  /** Conversation starters derived from the signals (display only). */
+  starters?: string[]
 }
 
 function initials(name: string | null) {
@@ -42,7 +44,7 @@ function pickColor(id: string) {
   return AVATAR_COLORS[n % AVATAR_COLORS.length]
 }
 
-export default function AdminIntroCard({ introRequestId, otherUser, otherAlreadyApproved, userAlreadyAccepted, matchReason, signals }: AdminIntroCardProps) {
+export default function AdminIntroCard({ introRequestId, otherUser, otherAlreadyApproved, userAlreadyAccepted, matchReason, signals, starters }: AdminIntroCardProps) {
   const expertiseTags = toList(otherUser.expertise)
   const router = useRouter()
   const [state, setState] = useState<'idle' | 'accepting' | 'passing' | 'accepted' | 'matched' | 'passed' | 'no_credits' | 'error'>(userAlreadyAccepted ? 'accepted' : 'idle')
@@ -139,7 +141,7 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
 
       {/* Match Intelligence: structured signals when available, else the stored
           match_reason (newline-bullet contract preserved), else generic. */}
-      <MatchIntelligenceCard signals={signals ?? []} fallbackReason={matchReason} title="Why we introduced you" />
+      <MatchIntelligenceCard signals={signals ?? []} starters={starters} fallbackReason={matchReason} title="Why we introduced you" />
 
       {otherAlreadyApproved && state === 'idle' && (
         <div className="text-xs font-medium text-[#1B2850] bg-[#F5F6FB] border border-[#1B2850]/10 rounded-lg px-3 py-2">
