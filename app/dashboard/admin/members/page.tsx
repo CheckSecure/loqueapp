@@ -41,8 +41,11 @@ export default async function AdminMembersPage() {
   }
 
   // Additional roles & affiliations — ONE bulk query (no N+1), fail-open to {} if
-  // migration 042 is not applied, so the admin page never breaks pre-migration.
-  const rolesByMember = await listRolesForProfiles(supabase, (profiles || []).map((p: any) => p.id))
+  // migration 042 is not applied. MUST use the service-role client: owner-only RLS
+  // on profile_roles hides other members' rows from the user-scoped client, so an
+  // admin would otherwise see only their own roles. The admin gate above already
+  // authorizes this read.
+  const rolesByMember = await listRolesForProfiles(createAdminClient(), (profiles || []).map((p: any) => p.id))
 
   // Get credits for all users
   const { data: credits } = await supabase

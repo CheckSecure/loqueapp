@@ -240,4 +240,23 @@ describe('Phase A/B wiring', () => {
     expect(adminPage).toContain('listRolesForProfiles')
     expect(adminClient).toContain('roleQualityFlags')
   })
+
+  it('admin roles fetch uses the SERVICE-ROLE client (not the user-scoped one) — RLS visibility fix', () => {
+    // Owner-only RLS on profile_roles hides other members' rows from the
+    // user-scoped client; the admin bulk fetch must use the service-role client.
+    expect(adminPage).toContain('listRolesForProfiles(createAdminClient()')
+    expect(adminPage).not.toContain('listRolesForProfiles(supabase')
+    expect(adminPage).toContain("import { createAdminClient }")
+  })
+
+  it('the admin page still gates non-admins exactly as before (redirect), before the roles fetch', () => {
+    expect(adminPage).toContain("user.email !== ADMIN_EMAIL) redirect('/dashboard')")
+    // gate must run BEFORE the roles fetch (compare the gate to the CALL site,
+    // not the import of listRolesForProfiles at the top of the file)
+    expect(adminPage.indexOf("redirect('/dashboard')"))
+      .toBeLessThan(adminPage.indexOf('listRolesForProfiles(createAdminClient'))
+    // member/profile queries are unchanged: still the user-scoped client
+    expect(adminPage).toContain("const supabase = createClient()")
+    expect(adminPage).toMatch(/supabase\s*\n?\s*\.from\('profiles'\)/)
+  })
 })
