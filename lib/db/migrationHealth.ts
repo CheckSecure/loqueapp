@@ -143,7 +143,15 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     column: 'current_focus_areas',
     feature: 'Current focus areas (timely topical interests)',
     impact: 'Focus-area edits are not persisted (the write fails open and no-ops); the field is hidden and never affects completion, onboarding, or matching until applied.',
-  },]
+  },
+  {
+    migration: '042_profile_roles.sql',
+    kind: 'table',
+    table: 'profile_roles',
+    feature: 'Additional roles & affiliations',
+    impact: 'Members cannot add or view additional roles (reads fail open to empty, writes return a graceful "not available" error); primary identity, completion, and matching are unaffected until applied.',
+  },
+]
 
 export interface MigrationWarning extends SchemaExpectation {
   message: string

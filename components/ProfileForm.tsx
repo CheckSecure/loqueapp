@@ -9,6 +9,7 @@ import ConnectionTargetPicker from '@/components/ConnectionTargetPicker'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import CurrentFocusAreasInput from '@/components/CurrentFocusAreasInput'
+import AdditionalRolesEditor from '@/components/AdditionalRolesEditor'
 import { Linkedin, Twitter, Link as LinkIcon, Loader2, CheckCircle } from 'lucide-react'
 import { updateProfile } from '@/app/actions'
 import AvatarUpload from '@/components/AvatarUpload'
@@ -88,6 +89,7 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
   }
 
   return (
+    <div className="space-y-5">
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Avatar + status */}
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
@@ -335,5 +337,13 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
         )}
       </div>
     </form>
+
+      {/* Additional roles & affiliations — a self-saving panel OUTSIDE the form,
+          so Enter in its fields never submits the main profile. Optional; never
+          part of profile completion; never touches the primary role fields. */}
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6">
+        <AdditionalRolesEditor />
+      </div>
+    </div>
   )
 }

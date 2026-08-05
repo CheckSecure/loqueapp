@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import AdminMembersClient from '@/components/AdminMembersClient'
+import { listRolesForProfiles } from '@/lib/profileRoles'
 
 export const metadata = { title: 'Members | Admin' }
 
@@ -38,6 +39,10 @@ export default async function AdminMembersPage() {
   if (!focusErr) {
     for (const r of (focusRows ?? []) as any[]) focusByMember[r.id] = r.current_focus_areas
   }
+
+  // Additional roles & affiliations — ONE bulk query (no N+1), fail-open to {} if
+  // migration 042 is not applied, so the admin page never breaks pre-migration.
+  const rolesByMember = await listRolesForProfiles(supabase, (profiles || []).map((p: any) => p.id))
 
   // Get credits for all users
   const { data: credits } = await supabase
@@ -121,6 +126,7 @@ export default async function AdminMembersPage() {
       tier: p.subscription_tier,
       launch_cohort: p.launch_cohort ?? null,
       current_focus_areas: focusByMember[p.id] ?? [], // fail-open: [] when 041 pending
+      additional_roles: rolesByMember[p.id] ?? [], // fail-open: [] when 042 pending
       was_invited: wasInvited,
       activation_state,
       credits: creditsMap[p.id] || 0,

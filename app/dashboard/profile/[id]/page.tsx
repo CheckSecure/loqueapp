@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles, Calendar } from 'lucide-react'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
 import { normalizeFocusAreas } from '@/lib/profile/focusAreas'
+import { listRoles, ROLE_CATEGORY_LABELS } from '@/lib/profileRoles'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { professionalIdentity } from '@/lib/professionalIdentity'
 import { isLinkableCompany } from '@/lib/company/slug'
 import CompanyLink from '@/components/CompanyLink'
@@ -87,6 +89,10 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
   if (error) console.error('[Profile/[id]] query error:', error.message)
   if (!profile) notFound()
+
+  // Additional roles & affiliations — fetched fail-open (empty if migration 042
+  // is not applied). Display-only; never part of matching or completion.
+  const additionalRoles = await listRoles(createAdminClient(), params.id)
 
   // Viewer's profile (for computed shared signals) + any active connection
   // between viewer and viewed (for the connection date line).
@@ -368,6 +374,25 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                     <Badge key={tag} label={tag} />
                   ))}
                 </div>
+              </Section>
+            </div>
+          )}
+
+          {/* Additional roles & affiliations — compact; only when roles exist.
+              Never affects the headline (professionalIdentityLine) elsewhere. */}
+          {additionalRoles.length > 0 && (
+            <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm p-6">
+              <Section icon={Briefcase} title="Additional roles & affiliations">
+                <ul className="space-y-1.5">
+                  {additionalRoles.map((r) => (
+                    <li key={r.id} className="text-sm text-slate-700">
+                      <span className="font-medium">{r.title ? `${r.title} — ` : ''}{r.organization_name}</span>
+                      <span className="text-xs text-slate-400">
+                        {' '}· {ROLE_CATEGORY_LABELS[r.role_category] ?? r.role_category}{r.is_current ? '' : ' · Past'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </Section>
             </div>
           )}

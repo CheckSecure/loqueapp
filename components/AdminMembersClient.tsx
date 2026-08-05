@@ -4,6 +4,7 @@
 import { useState, useMemo } from 'react'
 import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { normalizeFocusAreas } from '@/lib/profile/focusAreas'
+import { roleQualityFlags, ROLE_CATEGORY_LABELS, type RoleCategory } from '@/lib/profileRoles'
 import { Search, Filter, UserPlus, Zap, Edit, CheckCircle, AlertTriangle, Users, TrendingUp } from 'lucide-react'
 import { adminForceMatch, adminUpdateUser, adminSetFoundingMember, adminAdjustCredits } from '@/app/actions'
 import { useRouter } from 'next/navigation'
@@ -416,6 +417,32 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                               ))}
                             </div>
                           )}
+                          {(() => {
+                            const roles = ((user as any).additional_roles ?? []) as any[]
+                            if (roles.length === 0) return null
+                            const q = roleQualityFlags(roles)
+                            const issues = [
+                              q.hasBlankOrg && 'blank org',
+                              q.hasInvalidCategory && 'invalid category',
+                              q.duplicateOrganizations.length > 0 && 'duplicate org',
+                              q.multiplePrimary && 'multiple primary',
+                            ].filter(Boolean) as string[]
+                            return (
+                              <details className="mt-1">
+                                <summary className="text-[10px] text-slate-500 cursor-pointer">
+                                  {roles.length} additional role{roles.length === 1 ? '' : 's'}
+                                  {issues.length > 0 && <span className="ml-1 text-red-600 font-semibold">⚠ {issues.join(', ')}</span>}
+                                </summary>
+                                <ul className="mt-1 space-y-0.5">
+                                  {roles.map((r: any) => (
+                                    <li key={r.id} className="text-[10px] text-slate-600">
+                                      {ROLE_CATEGORY_LABELS[r.role_category as RoleCategory] ?? r.role_category}: {r.title ? `${r.title}, ` : ''}{r.organization_name || <span className="text-red-600">(blank)</span>}{r.is_current ? '' : ' · past'}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )
+                          })()}
                         </div>
                         {user.is_priority && (
                           <Zap className="w-4 h-4 text-amber-500" />
