@@ -7,6 +7,8 @@ import { Sparkles, Briefcase, MapPin, CheckCircle, Loader2, Heart, AlertCircle }
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 import { toList } from '@/lib/match-signals'
 import { professionalIdentity } from '@/lib/professionalIdentity'
+import MatchIntelligenceCard from '@/components/MatchIntelligenceCard'
+import type { MatchSignal } from '@/lib/matchIntelligence'
 
 interface IncomingInterestCardProps {
   introRequestId: string
@@ -23,10 +25,10 @@ interface IncomingInterestCardProps {
     role_type: string | null
     expertise?: unknown
   }
-  /** Curated reason this pairing may be a good connection. Display only. */
+  /** Curated reason this pairing may be a good connection (stored match_reason). */
   matchReason?: string | null
-  /** Common-ground signals (computeMatchSignals output), computed server-side. */
-  commonGround?: string[]
+  /** Structured Match Intelligence signals (built server-side). Display only. */
+  signals?: MatchSignal[]
 }
 
 function initials(name: string | null) {
@@ -39,7 +41,7 @@ function pickColor(id: string) {
   return AVATAR_COLORS[n % AVATAR_COLORS.length]
 }
 
-export default function IncomingInterestCard({ introRequestId, requester, matchReason, commonGround }: IncomingInterestCardProps) {
+export default function IncomingInterestCard({ introRequestId, requester, matchReason, signals }: IncomingInterestCardProps) {
   const router = useRouter()
   const expertiseTags = toList(requester.expertise)
   const identity = professionalIdentity(requester)
@@ -136,25 +138,10 @@ export default function IncomingInterestCard({ introRequestId, requester, matchR
         </div>
       )}
 
-      <div className="rounded-lg bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/25 px-3.5 py-2.5">
-        <div className="flex items-start gap-2.5">
-          <Sparkles className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1">Why you may connect</p>
-            <p className="text-sm text-brand-navy leading-relaxed">
-              {matchReason || `${firstName} expressed interest in connecting with you based on your background and professional interests.`}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {commonGround && commonGround.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {commonGround.slice(0, 4).map((sig) => (
-            <span key={sig} className="inline-flex items-center rounded-full border border-brand-gold/20 bg-brand-gold-soft/50 px-2.5 py-0.5 text-[11px] font-medium text-brand-navy/75">{sig}</span>
-          ))}
-        </div>
-      )}
+      {/* Match Intelligence: structured signals when available, else the stored
+          match_reason (newline-bullet contract preserved), else generic. Signals
+          are neutral commonalities — they never imply mutual interest. */}
+      <MatchIntelligenceCard signals={signals ?? []} fallbackReason={matchReason} title="Why you may connect" />
 
       {/* IDLE — Accept opens the review step; nothing is mutated yet. */}
       {state === 'idle' && (

@@ -20,7 +20,9 @@ import { matchProfileCompletion } from '@/lib/matching/profile-completion'
 import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
 import { fetchActionableIncomingInterest } from '@/lib/introductions/incomingInterest'
 import { getEffectiveTier } from '@/lib/tier-override'
-import { computeMatchSignals, toList } from '@/lib/match-signals'
+import { toList } from '@/lib/match-signals'
+import { buildMatchIntelligence } from '@/lib/matchIntelligence'
+import MatchIntelligenceCard from '@/components/MatchIntelligenceCard'
 import { professionalIdentity, professionalIdentityLine } from '@/lib/professionalIdentity'
 import { expressedTargetIdSet } from '@/lib/introRequests/state'
 import ConciergeLauncher from '@/components/ConciergeLauncher'
@@ -336,38 +338,13 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
   // Reason render: prefer stored match_reason (rich prose from generateIntroReason),
   // fall back to computeMatchSignals at render, fall back to generic.
+  // Match Intelligence (display-only): structured signals when available, else the
+  // stored match_reason (newline-bullet contract preserved by the card), else
+  // generic. Structured signals REPLACE the stored reason when present, so the two
+  // never show together (no duplicate concepts).
   const renderReasonBlock = (row: any) => {
-    const stored = typeof row.matchReason === 'string' ? row.matchReason.trim() : ''
-    if (stored.length > 0) {
-      // New reasons are stored as newline-joined bullets; legacy prose is a
-      // single line. Render multi-line as a list, single line as a paragraph.
-      const lines = stored.split('\n').map((l: string) => l.trim()).filter(Boolean)
-      if (lines.length > 1) {
-        return (
-          <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
-            {lines.map((l: string) => <li key={l}>{l}</li>)}
-          </ul>
-        )
-      }
-      return <p className="text-xs text-slate-600 leading-relaxed">{lines[0] ?? stored}</p>
-    }
-    const match = computeMatchSignals(profileRow, row.profile)
-    if (match.hasStrongSignals && match.signals.length > 0) {
-      return (
-        <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
-          {match.signals.slice(0, 3).map((sig: string) => <li key={sig}>{sig}</li>)}
-        </ul>
-      )
-    }
-    if (match.sharedInterests.length > 0) {
-      return (
-        <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
-          <li>Curated based on your profile and preferences</li>
-          <li>Additional overlap: {match.sharedInterests.join(', ')}</li>
-        </ul>
-      )
-    }
-    return <p className="text-xs text-slate-600 leading-relaxed">Curated based on your profile and preferences.</p>
+    const { signals } = buildMatchIntelligence(profileRow, row.profile)
+    return <MatchIntelligenceCard variant="bare" signals={signals} fallbackReason={row.matchReason} />
   }
 
   // Expertise tags: up to 5 + "+N more". Uses toList to normalize the varied
@@ -389,26 +366,10 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     )
   }
 
-  // Common ground chips from the existing computeMatchSignals output. Only shown
-  // when a stored prose match_reason exists — otherwise renderReasonBlock already
-  // renders these same signals as the reason, so chips would duplicate them.
-  const renderCommonGround = (row: any) => {
-    const stored = typeof row.matchReason === 'string' ? row.matchReason.trim() : ''
-    // Only supplement legacy single-line prose reasons with signal chips. New
-    // multi-line reasons already list the signals as bullets, so chips would
-    // duplicate them.
-    const isSingleLineProse = stored.length > 0 && !stored.includes('\n')
-    if (!isSingleLineProse) return null
-    const { signals } = computeMatchSignals(profileRow, row.profile)
-    if (!signals || signals.length === 0) return null
-    return (
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {signals.slice(0, 4).map((sig: string) => (
-          <span key={sig} className="inline-flex items-center rounded-full border border-brand-gold/20 bg-brand-gold-soft/50 px-2.5 py-0.5 text-[11px] font-medium text-brand-navy/75">{sig}</span>
-        ))}
-      </div>
-    )
-  }
+  // Common-ground chips are now superseded by Match Intelligence (renderReasonBlock
+  // above already renders the structured signals), so this returns nothing to avoid
+  // duplicating the same concepts. Kept as a no-op to preserve call sites.
+  const renderCommonGround = (_row: any) => null
 
   // Tertiary "View full profile" link. Rendered as an <a>, which the
   // IntroductionCard click-wrapper deliberately ignores (closest('a')) — so no
@@ -720,7 +681,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                         introRequestId={item.introRequestId}
                         requester={item.requester}
                         matchReason={item.matchReason}
-                        commonGround={computeMatchSignals(profileRow, item.requester).signals}
+                        signals={buildMatchIntelligence(profileRow, item.requester).signals}
                       />
                     </IntroductionCard>
                   ))}
@@ -740,7 +701,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                         otherAlreadyApproved={intro.otherAlreadyApproved}
                         userAlreadyAccepted={intro.userAlreadyAccepted}
                         matchReason={intro.match_reason}
-                        commonGround={computeMatchSignals(profileRow, intro.other).signals}
+                        signals={buildMatchIntelligence(profileRow, intro.other).signals}
                       />
                     </IntroductionCard>
                   ))}

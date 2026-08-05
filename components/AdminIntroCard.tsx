@@ -7,6 +7,8 @@ import { Sparkles, Briefcase, MapPin, CheckCircle, Loader2, X } from 'lucide-rea
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 import { toList } from '@/lib/match-signals'
 import { professionalIdentity } from '@/lib/professionalIdentity'
+import MatchIntelligenceCard from '@/components/MatchIntelligenceCard'
+import type { MatchSignal } from '@/lib/matchIntelligence'
 
 interface AdminIntroCardProps {
   introRequestId: string
@@ -24,10 +26,10 @@ interface AdminIntroCardProps {
   }
   otherAlreadyApproved?: boolean
   userAlreadyAccepted?: boolean
-  /** Curated reason for this introduction. Rendered prominently when present; generic fallback otherwise. */
+  /** Curated reason for this introduction (stored match_reason). Fallback when no structured signals. */
   matchReason?: string | null
-  /** Common-ground signals (computeMatchSignals output), computed server-side. Display only. */
-  commonGround?: string[]
+  /** Structured Match Intelligence signals (built server-side). Display only. */
+  signals?: MatchSignal[]
 }
 
 function initials(name: string | null) {
@@ -40,7 +42,7 @@ function pickColor(id: string) {
   return AVATAR_COLORS[n % AVATAR_COLORS.length]
 }
 
-export default function AdminIntroCard({ introRequestId, otherUser, otherAlreadyApproved, userAlreadyAccepted, matchReason, commonGround }: AdminIntroCardProps) {
+export default function AdminIntroCard({ introRequestId, otherUser, otherAlreadyApproved, userAlreadyAccepted, matchReason, signals }: AdminIntroCardProps) {
   const expertiseTags = toList(otherUser.expertise)
   const router = useRouter()
   const [state, setState] = useState<'idle' | 'accepting' | 'passing' | 'accepted' | 'matched' | 'passed' | 'no_credits' | 'error'>(userAlreadyAccepted ? 'accepted' : 'idle')
@@ -135,25 +137,9 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
         </div>
       )}
 
-      <div className="rounded-lg bg-gradient-to-br from-brand-gold-soft via-brand-gold-soft/60 to-white border border-brand-gold/25 px-3.5 py-2.5">
-        <div className="flex items-start gap-2.5">
-          <Sparkles className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-brand-gold mb-1">Why we introduced you</p>
-            <p className="text-sm text-brand-navy leading-relaxed">
-              {matchReason || 'Based on your background and professional interests, Andrel selected this introduction.'}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {commonGround && commonGround.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {commonGround.slice(0, 4).map((sig) => (
-            <span key={sig} className="inline-flex items-center rounded-full border border-brand-gold/20 bg-brand-gold-soft/50 px-2.5 py-0.5 text-[11px] font-medium text-brand-navy/75">{sig}</span>
-          ))}
-        </div>
-      )}
+      {/* Match Intelligence: structured signals when available, else the stored
+          match_reason (newline-bullet contract preserved), else generic. */}
+      <MatchIntelligenceCard signals={signals ?? []} fallbackReason={matchReason} title="Why we introduced you" />
 
       {otherAlreadyApproved && state === 'idle' && (
         <div className="text-xs font-medium text-[#1B2850] bg-[#F5F6FB] border border-[#1B2850]/10 rounded-lg px-3 py-2">
