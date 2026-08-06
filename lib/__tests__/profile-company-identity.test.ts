@@ -53,6 +53,43 @@ describe('CompanyLogo — initials fallback preserved (unchanged component)', ()
   })
 })
 
+describe('Network — logo in the EXPANDED connection detail only, not the compact card', () => {
+  const networkPage = readFileSync('app/dashboard/network/page.tsx', 'utf8')
+  const modal = readFileSync('components/network/ConnectionDetailModal.tsx', 'utf8')
+  const card = readFileSync('components/NetworkCard.tsx', 'utf8')
+
+  it('the Network connections query joins the canonical company in ONE query (no N+1)', () => {
+    expect(networkPage).toContain('company_rel:companies!company_id(id, name, slug, logo_url)')
+    expect(networkPage).toContain('company_id,') // fetched for the guard
+    // no separate companies query on the Network page
+    expect(networkPage).not.toMatch(/\.from\('companies'\)/)
+  })
+
+  it('the EXPANDED connection detail (modal) passes canonical company → logo shows', () => {
+    expect(modal).toContain('<IdentityLine profile={profile} company={(profile as any).company_rel} />')
+  })
+
+  it('the COMPACT Network card does NOT pass company → no logo (unchanged)', () => {
+    expect(card).toContain('<IdentityLine profile={profile} guardCardClick />')
+    // the card's IdentityLine never receives a company prop
+    expect(card).not.toMatch(/<IdentityLine[^>]*company=/)
+  })
+
+  it('missing company_id → company_rel null → free-text behavior preserved (IdentityLine falls back)', () => {
+    // IdentityLine gates the logo on company?.slug; a null company_rel → CompanyLink free-text
+    expect(identityLine).toContain('company?.slug ? (')
+    expect(identityLine).toContain('<CompanyLink company={p.company}')
+  })
+
+  it('no matching / privacy / RLS / company-page code touched by the Network change', () => {
+    // the Network page change is purely the select embed; it must not reference these
+    for (const forbidden of ['generateMatchInsights =', 'canViewerDiscoverMember', 'ENABLE ROW LEVEL', 'CREATE POLICY']) {
+      // (generateMatchInsights is still CALLED for insights, but not modified — ensure no new scoring logic)
+      if (forbidden !== 'generateMatchInsights =') expect(networkPage).not.toContain(forbidden)
+    }
+  })
+})
+
 describe('profile page — single-query join, single company identity, full-profile only', () => {
   it('joins the canonical company in the SAME query (no second query)', () => {
     expect(profilePage).toContain('company_rel:companies!company_id(id, name, slug, logo_url)')

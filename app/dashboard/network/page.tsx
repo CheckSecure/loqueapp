@@ -76,7 +76,10 @@ export default async function NetworkPage() {
     matchedUserIds.length > 0
       ? supabase
           .from('profiles')
-          .select('id, full_name, title, company, location, city, state, bio, role_type, seniority, avatar_url, purposes, intro_preferences, interests, expertise, open_to_mentorship, open_to_business_solutions, linkedin_url, account_status')
+          // company_id + canonical company joined in the SAME query (companies is
+          // authenticated-readable) so the EXPANDED connection detail can show the
+          // company logo. No N+1. Null when company_id is absent → free-text.
+          .select('id, full_name, title, company, company_id, location, city, state, bio, role_type, seniority, avatar_url, purposes, intro_preferences, interests, expertise, open_to_mentorship, open_to_business_solutions, linkedin_url, account_status, company_rel:companies!company_id(id, name, slug, logo_url)')
           .in('id', matchedUserIds)
       : Promise.resolve({ data: [] as any[], error: null }),
     supabase
