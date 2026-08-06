@@ -151,7 +151,14 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Additional roles & affiliations',
     impact: 'Members cannot add or view additional roles (reads fail open to empty, writes return a graceful "not available" error); primary identity, completion, and matching are unaffected until applied.',
   },
-]
+
+  {
+    migration: '043_profiles_relationship_read_policy.sql',
+    kind: 'table',
+    table: 'public_profiles',
+    feature: 'Relationship-scoped profiles RLS + safe public_profiles view',
+    impact: 'CRITICAL: until applied, profiles RLS remains permissive (any authenticated member can enumerate the full directory client-side). The public_profiles view is the applied-signal for this migration.',
+  },]
 
 export interface MigrationWarning extends SchemaExpectation {
   message: string
