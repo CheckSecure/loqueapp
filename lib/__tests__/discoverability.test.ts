@@ -143,7 +143,7 @@ describe('surfaces enforce the rule server-side', () => {
     expect(profilePage).toMatch(/if \(!\(await canViewerDiscoverMember\(admin, user\.id, params\.id\)\)\) notFound\(\)/)
     // gate appears before the profile select and before listRoles
     const gateIdx = profilePage.indexOf('canViewerDiscoverMember(admin')
-    expect(gateIdx).toBeLessThan(profilePage.indexOf('.select(PUBLIC_PROFILE_SELECT)'))
+    expect(gateIdx).toBeLessThan(profilePage.indexOf('.select(`${PUBLIC_PROFILE_SELECT}')) // profile fetch (now joins the company)
     expect(gateIdx).toBeLessThan(profilePage.indexOf('listRoles(admin'))
     expect(profilePage).toContain('PUBLIC_PROFILE_SELECT')
     expect(profilePage).not.toContain(".select('*')")

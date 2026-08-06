@@ -92,7 +92,10 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
   const { data: profileRow, error } = await supabase
     .from('profiles')
-    .select(PUBLIC_PROFILE_SELECT)
+    // Canonical company joined in the SAME query via the profiles.company_id FK
+    // (companies is authenticated-readable). No second query. Null when company_id
+    // is absent → the identity line keeps its exact free-text behavior.
+    .select(`${PUBLIC_PROFILE_SELECT}, company_rel:companies!company_id(id, name, slug, logo_url)`)
     .eq('id', params.id)
     .single()
 
@@ -232,7 +235,7 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
                 <>
                   <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
                     <Briefcase className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                    <span className="min-w-0"><IdentityLine profile={profile} /></span>
+                    <span className="min-w-0"><IdentityLine profile={profile} company={profile.company_rel} /></span>
                   </p>
                   {!isLinkableCompany(profile.company) && identity.secondary && (
                     <p className="text-xs text-slate-500 mt-0.5 ml-5">{identity.secondary}</p>
