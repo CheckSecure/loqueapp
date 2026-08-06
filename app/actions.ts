@@ -22,6 +22,7 @@ import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { validateSelection, validateSelectionWithCaps } from '@/lib/role-taxonomy'
 import { companySlug, isLinkableCompany } from '@/lib/company/slug'
+import { resolveCanonicalCompanyLink } from '@/lib/company/canonicalLink'
 import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
 import { provisionMemberRecords } from '@/lib/provisioning'
 import { validateFullName } from '@/lib/validation/fullName'
@@ -100,6 +101,11 @@ export async function updateProfile(formData: FormData) {
 
   console.log('[completeOnboarding] About to upsert profile data')
 
+  // Auto-link the free-text company to its canonical companies.id (one clear match
+  // only). Computed BEFORE the upsert so it's atomic. `preserve` (lookup failed) →
+  // omit company_id entirely; never blocks onboarding. Never touches `company`.
+  const companyLink = await resolveCanonicalCompanyLink(adminClient, (formData.get('company') as string) || null)
+
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
     email: user.email,
@@ -109,6 +115,7 @@ export async function updateProfile(formData: FormData) {
     title: formData.get('title') as string || null,
     exact_job_title: ((formData.get('exact_job_title') as string) || '').trim() || null,
     company: formData.get('company') as string || null,
+    ...(companyLink.action !== 'preserve' && { company_id: companyLink.action === 'set' ? companyLink.companyId : null }),
     location: formData.get('location') as string || null,
     bio: formData.get('bio') as string || null,
     expertise,
@@ -288,6 +295,10 @@ export async function completeOnboarding(formData: FormData) {
     ? { is_founding_member: true, founding_member_expires_at: null as string | null }
     : {}
 
+  // Auto-link the free-text company to its canonical companies.id (one clear match
+  // only). `preserve` (lookup failed) → omit company_id; never blocks onboarding.
+  const companyLink = await resolveCanonicalCompanyLink(adminClient, company)
+
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
     email: user.email,
@@ -297,6 +308,7 @@ export async function completeOnboarding(formData: FormData) {
     title: title,
     exact_job_title: ((formData.get('exact_job_title') as string) || '').trim() || null,
     company: company,
+    ...(companyLink.action !== 'preserve' && { company_id: companyLink.action === 'set' ? companyLink.companyId : null }),
     city: city || null,
     state: state || null,
     location: location,

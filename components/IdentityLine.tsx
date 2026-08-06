@@ -47,7 +47,7 @@ export default function IdentityLine({
     // target). Falls through to the free-text CompanyLink when no canonical slug.
     const link = company?.slug ? (
       <Link href={`/company/${company.slug}`} className={`inline-flex items-center gap-1 align-middle ${linkClassName}`}>
-        <CompanyLogo url={company.logo_url} name={company.name || name} size={16} />
+        <CompanyLogo url={company.logo_url} name={company.name || name} size={22} />
         {company.name || name}
       </Link>
     ) : (

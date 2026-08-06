@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyLinkedInConsistency } from '@/app/actions/verify-linkedin'
 import { checkProfileCompletion } from '@/lib/trust/signals'
 import { isLinkableCompany, companySlug } from '@/lib/company/slug'
+import { resolveCanonicalCompanyLink } from '@/lib/company/canonicalLink'
 import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
 
 export async function POST(req: NextRequest) {
@@ -71,6 +72,27 @@ export async function POST(req: NextRequest) {
 
     // Check and track profile completion
     await checkProfileCompletion(user.id)
+
+    // Canonical company auto-link — recompute company_id off the FINAL persisted
+    // company, but ONLY when this save actually submitted a company (so an unrelated
+    // field edit never disturbs the link). `set` → the one clear match; `clear` →
+    // null when the new company is a placeholder / ambiguous / unmatched (so a stale
+    // link never survives a real company change); `preserve` → leave company_id
+    // untouched when the companies lookup fails. Best-effort: the profile is already
+    // saved above, so this can never block or fail the response.
+    if (companySubmitted) {
+      try {
+        const linkAdmin = createAdminClient()
+        const persistedCompany = (updatedRows[0]?.company as string | null) ?? null
+        const link = await resolveCanonicalCompanyLink(linkAdmin, persistedCompany)
+        if (link.action !== 'preserve') {
+          await linkAdmin
+            .from('profiles')
+            .update({ company_id: link.action === 'set' ? link.companyId : null, updated_at: new Date().toISOString() })
+            .eq('id', user.id)
+        }
+      } catch { /* fail open — profile already persisted */ }
+    }
 
     // Company enrichment — the same background pipeline the /dashboard/profile
     // server action fires, so every real save path is covered. Runs ONLY after a
