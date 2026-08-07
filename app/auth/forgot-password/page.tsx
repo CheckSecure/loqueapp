@@ -1,55 +1,62 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { emitMetric } from '@/lib/metrics'
+import { normalizeEmail } from '@/lib/auth/normalizeEmail'
 import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Phase = 'compose' | 'submitting' | 'sent'
 
+const RESEND_COOLDOWN_SECONDS = 60
+
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
+  const [normalizedEmail, setNormalizedEmail] = useState('')
   const [phase, setPhase] = useState<Phase>('compose')
   const [error, setError] = useState<string | null>(null)
+  const [cooldown, setCooldown] = useState(0)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  // Accessible countdown tick.
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [cooldown])
+
+  // Request a reset for `target`. The server route normalizes + resolves the canonical
+  // auth email and always returns a generic response, so we can never enumerate accounts.
+  async function requestReset(target: string) {
     setError(null)
     setPhase('submitting')
-
-    // Land on the scanner-resistant intermediate page (/auth/recover), which verifies the
-    // token only on an explicit click — never on the email scanner's prefetch GET. NOTE:
-    // full prefetch-resistance also requires the Supabase email template to use a
-    // {{ .TokenHash }} link to /auth/recover (see lib/matching README / deploy notes).
-    const redirectTo = process.env.NEXT_PUBLIC_SITE_URL
-      ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/recover`
-      : `${window.location.origin}/auth/recover`
-
-    const supabase = createClient()
-    // Magic-link sign-in: bypasses the broken Supabase password-recovery flow.
-    // shouldCreateUser: false prevents new-account creation via this path.
-    // The user receives a sign-in link, clicks it, lands on /auth/reset-password
-    // already authenticated, and is prompted to set a new password.
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: false, emailRedirectTo: redirectTo },
-    })
-
-    if (otpError) {
-      // Surface unexpected errors (e.g. rate limit). Generic message prevents
-      // email enumeration — Supabase returns the same response for unknown emails
-      // when shouldCreateUser: false, so we never reveal whether the account exists.
-      console.error('[forgot-password] otp request error:', otpError.message)
-      setError('Something went wrong. Please try again.')
+    const normalized = normalizeEmail(target)
+    setNormalizedEmail(normalized)
+    try {
+      const res = await fetch('/api/auth/request-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalized }),
+      })
+      const data = await res.json().catch(() => ({}))
+      // Only a genuine server fault (ok:false / non-200) is surfaced — never account existence.
+      if (!res.ok || data?.ok === false) {
+        setError('Something went wrong. Please try again in a moment.')
+        setPhase('compose')
+        return
+      }
+      emitMetric('recovery_email_requested')
+      setPhase('sent')
+      setCooldown(RESEND_COOLDOWN_SECONDS)
+    } catch {
+      setError('Something went wrong. Please try again in a moment.')
       setPhase('compose')
-      return
     }
+  }
 
-    // Always show the same confirmation regardless of whether the email exists.
-    emitMetric('recovery_email_requested')
-    setPhase('sent')
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    requestReset(email)
   }
 
   return (
@@ -85,19 +92,50 @@ export default function ForgotPasswordPage() {
           </div>
 
           {phase === 'sent' ? (
-            <div className="bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-4 rounded-lg leading-relaxed">
-              If an account exists for that email, you'll receive a sign-in link shortly.
-              Check your spam folder if it doesn't arrive within a few minutes.
-              <div className="mt-4">
-                <Link href="/login" className="text-brand-navy font-semibold hover:underline text-sm">
-                  Back to sign in
-                </Link>
+            <div className="space-y-4" aria-live="polite">
+              <div className="bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-4 rounded-lg leading-relaxed">
+                If an account exists for that email, we&apos;ll send you a password-reset link shortly.
+                <div className="mt-2 text-green-900">
+                  Sent to <span className="font-semibold break-all">{normalizedEmail}</span>
+                </div>
+                <div className="mt-2 text-green-800/90">Check your spam or junk folder if it doesn&apos;t arrive within a few minutes.</div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => cooldown === 0 && requestReset(normalizedEmail)}
+                  disabled={cooldown > 0}
+                  aria-disabled={cooldown > 0}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-2 border border-slate-300 text-slate-700 text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors',
+                    cooldown > 0 ? 'opacity-60 cursor-not-allowed' : 'hover:bg-slate-50',
+                  )}
+                >
+                  {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend link'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPhase('compose'); setError(null) }}
+                  className="flex-1 text-sm font-semibold text-brand-navy hover:underline px-2 py-2.5"
+                >
+                  Use a different email
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-400">
+                Still stuck? Email{' '}
+                <a href="mailto:hello@andrel.app" className="text-brand-navy font-medium hover:underline">hello@andrel.app</a>{' '}
+                and we&apos;ll help you back in.
+              </p>
+              <div>
+                <Link href="/login" className="text-brand-navy font-semibold hover:underline text-sm">Back to sign in</Link>
               </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
+                <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg" role="alert">
                   {error}
                 </div>
               )}

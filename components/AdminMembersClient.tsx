@@ -8,6 +8,7 @@ import { roleQualityFlags, ROLE_CATEGORY_LABELS, type RoleCategory } from '@/lib
 import { Search, Filter, UserPlus, Zap, Edit, CheckCircle, AlertTriangle, Users, TrendingUp } from 'lucide-react'
 import { adminForceMatch, adminUpdateUser, adminSetFoundingMember, adminAdjustCredits } from '@/app/actions'
 import { useRouter } from 'next/navigation'
+import { requestMemberPasswordReset } from '@/lib/admin/sendPasswordReset'
 
 const COHORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'wave_1', label: 'Wave 1' },
@@ -71,6 +72,10 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
   const [deactivateReason, setDeactivateReason] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  // Send-password-reset admin tool (confirm → POST /api/admin/send-password-reset).
+  const [resettingUser, setResettingUser] = useState<Profile | null>(null)
+  const [resetLoading, setResetLoading] = useState(false)
+  const [resetResult, setResetResult] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
 
   // Filtered profiles
   const filtered = useMemo(() => {
@@ -239,6 +244,16 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
     } finally {
       setActionLoading(false)
     }
+  }
+
+  const handleSendReset = async () => {
+    if (!resettingUser || resetLoading) return
+    setResetLoading(true)
+    setResetResult(null)
+    // requestMemberPasswordReset reads only status + the safe `sent` boolean — no link/token.
+    const result = await requestMemberPasswordReset(resettingUser.id)
+    setResetResult(result)
+    setResetLoading(false)
   }
 
   const stuckUsers = profiles.filter(p => p.matches === 0 && p.pending_intros === 0 && p.active_intros === 0)
@@ -549,6 +564,13 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                         >
                           Edit
                         </button>
+                        <button
+                          onClick={() => { setResettingUser(user); setResetResult(null) }}
+                          className="text-sm text-slate-600 hover:underline"
+                          data-testid="send-password-reset"
+                        >
+                          Send password reset
+                        </button>
                         {user.account_status === 'active' && user.id !== currentUserId && (
                           <button
                             onClick={() => { setDeactivatingUser(user); setDeactivateReason(''); setErrorMessage('') }}
@@ -618,6 +640,51 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Send password reset — confirm + result (never shows link/token/raw response) */}
+        {resettingUser && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+              <h2 className="text-lg font-bold text-slate-900 mb-2">Send password reset</h2>
+              {!resetResult ? (
+                <>
+                  <p className="text-sm text-slate-600 mb-4">
+                    Send a password reset email to{' '}
+                    <span className="font-semibold">{resettingUser.full_name || resettingUser.email}</span>?
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleSendReset}
+                      disabled={resetLoading}
+                      className="flex-1 px-4 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040] disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {resetLoading ? 'Sending…' : 'Send reset email'}
+                    </button>
+                    <button
+                      onClick={() => setResettingUser(null)}
+                      disabled={resetLoading}
+                      className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className={`text-sm mb-4 ${resetResult.kind === 'success' ? 'text-green-700' : 'text-red-700'}`} role="status">
+                    {resetResult.message}
+                  </p>
+                  <button
+                    onClick={() => { setResettingUser(null); setResetResult(null) }}
+                    className="w-full px-4 py-2 bg-[#1B2850] text-white text-sm font-semibold rounded-lg hover:bg-[#162040]"
+                  >
+                    Close
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
