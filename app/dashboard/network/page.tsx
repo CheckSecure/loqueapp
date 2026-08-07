@@ -90,6 +90,21 @@ export default async function NetworkPage() {
   ])
   for (const p of matchedProfiles || []) profileMap[p.id] = p
 
+  // Presence — enforced at the DATA boundary. member_presence_labels() is a SECURITY
+  // DEFINER RPC that verifies the viewer, applies discoverability + the member's
+  // "Show when I'm active" preference IN SQL, and returns ONLY a coarse label (never a raw
+  // timestamp). The raw last_active_at lives in the private, self-only member_presence
+  // table and is never client-readable. Fails closed (no badge) if migration 046 isn't yet
+  // applied. See lib/presence/lastActive.ts (the mirrored TS formatter) for the label rules.
+  const presenceLabelById: Record<string, string | null> = {}
+  if (matchedUserIds.length > 0) {
+    // Bound the RPC input (the function also caps at 500 server-side) so a huge network can
+    // never submit an arbitrarily large array. 500 comfortably exceeds any real connection count.
+    const presenceTargets = matchedUserIds.slice(0, 500)
+    const { data: presenceRows } = await supabase.rpc('member_presence_labels', { target_ids: presenceTargets })
+    for (const row of (presenceRows as any[]) || []) presenceLabelById[row.member_id] = row.label
+  }
+
   // Fetch conversations keyed by match_id so cards can link directly
   const matchIdList = matches.map((m: any) => m.id)
   const { data: matchConversations } = matchIdList.length > 0
@@ -103,6 +118,12 @@ export default async function NetworkPage() {
   const connections = (matches || []).map((m: any) => {
     const otherId = m.user_a_id === profileId ? m.user_b_id : m.user_a_id
     const profile = profileMap[otherId]
+    // Presence label is the coarse, privacy-filtered value from member_presence_labels()
+    // (the RPC already enforced visibility). Only a label string or null reaches the client
+    // — the raw timestamp never does.
+    if (profile) {
+      ;(profile as any).last_active_display = presenceLabelById[otherId] ?? null
+    }
     let matchInsights: { text: string; kind: string }[] = []
     if (profile && selfProfile) {
       try {

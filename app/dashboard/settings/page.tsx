@@ -6,6 +6,7 @@ import EmailChangeForm from '@/components/EmailChangeForm'
 import PasswordChangeForm from '@/components/PasswordChangeForm'
 import AccountDeletion from '@/components/AccountDeletion'
 import { OpportunityPreferences } from '@/components/opportunities/OpportunityPreferences'
+import ActivityPreference from '@/components/settings/ActivityPreference'
 import ReportIssueButton from '@/components/ReportIssueButton'
 import EmailPreferencesForm from '@/components/EmailPreferencesForm'
 import TutorialReplayButton from '@/components/TutorialReplayButton'
@@ -82,6 +83,9 @@ export default async function SettingsPage() {
                 recruiter: profile.recruiter ?? false,
               }}
             />
+            <div className="border-t border-slate-100 mt-3 pt-1">
+              <ActivityPreference initial={{ show_activity_status: profile.show_activity_status ?? true }} />
+            </div>
           </section>
           <section className="border-t border-slate-100 px-6 py-5">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Email notifications</h3>

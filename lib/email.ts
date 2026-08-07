@@ -2,6 +2,7 @@ import { Resend } from 'resend'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildRecommendationIntroEmail } from '@/lib/email/recommendationIntro'
 import { introReminderCopy } from '@/lib/notifications/engagement'
+import { formatMeetingTimes } from '@/lib/meetings/formatMeetingTime'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -934,6 +935,61 @@ export async function sendMeetingRescheduledEmail(
       </div>
     `,
   })
+}
+
+/**
+ * Calendar invitation / cancellation for a CONFIRMED meeting — carries an RFC 5545
+ * .ics attachment (METHOD:REQUEST or CANCEL) so Google/Outlook/Apple add or cancel the
+ * event. Gated on the existing 'email_meeting_updates' preference (opt-out = handled, no
+ * send). Throws on a provider failure so the caller can record a retryable failure.
+ */
+export async function sendCalendarInviteEmail(args: {
+  to: string
+  toName: string
+  summary: string
+  method: 'REQUEST' | 'CANCEL'
+  scheduledAt: string
+  scheduledTimezone?: string | null
+  ics: string
+  /** Aligned to the durable invite identity (uid:method:sequence:recipient) so a Resend
+   *  retry with the same key is de-duplicated provider-side. */
+  idempotencyKey?: string
+}): Promise<void> {
+  // NOTE: calendar invitations are TRANSACTIONAL meeting artifacts (the actual event a
+  // confirmed participant adds to their calendar), NOT optional reminder/notification email.
+  // They are therefore intentionally NOT gated by the email_meeting_updates preference,
+  // which controls ordinary meeting-notification emails (request/accept/reschedule). Silently
+  // suppressing the invite for a confirmed participant would deny them their calendar entry.
+  const cancelled = args.method === 'CANCEL'
+  const { dateLabel, localLabel, utcLabel } = formatMeetingTimes(args.scheduledAt, args.scheduledTimezone || undefined)
+  await resend.emails.send({
+    from: 'Andrel <hello@andrel.app>',
+    to: args.to,
+    subject: cancelled ? `Cancelled: ${args.summary}` : `Invitation: ${args.summary}`,
+    html: `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1B2850; margin-bottom: 24px;">${cancelled ? 'Meeting cancelled' : 'Meeting confirmed'}</h2>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">Hi ${args.toName},</p>
+        <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          ${cancelled ? 'This meeting has been cancelled:' : 'Your meeting is confirmed:'}
+        </p>
+        ${meetingTimeBlockHtml(dateLabel, localLabel, utcLabel)}
+        <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 16px 0 24px;">
+          ${cancelled ? 'A cancellation has been sent to your calendar.' : 'A calendar invitation is attached — add it to Google, Outlook, or Apple Calendar.'}
+        </p>
+        <a href="https://andrel.app/dashboard/meetings"
+           style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+          View on Andrel
+        </a>
+        <p style="color: #64748b; font-size: 14px; margin-top: 32px;">— The Andrel Team</p>
+      </div>
+    `,
+    attachments: [{
+      filename: cancelled ? 'cancel.ics' : 'invite.ics',
+      content: Buffer.from(args.ics, 'utf-8'),
+      contentType: `text/calendar; charset=utf-8; method=${args.method}`,
+    }],
+  }, args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : undefined)
 }
 
 export async function sendDigestEmail(

@@ -86,8 +86,8 @@ export default async function AdminDashboard() {
     .select('id', { count: 'exact', head: true })
 
   const { count: activeUsers7d } = await adminClient
-    .from('profiles')
-    .select('id', { count: 'exact', head: true })
+    .from('member_presence')
+    .select('user_id', { count: 'exact', head: true })
     .gte('last_active_at', sevenDaysAgo)
 
   // Waitlist Pipeline — all statuses with breakdown

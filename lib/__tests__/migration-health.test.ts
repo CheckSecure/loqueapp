@@ -60,11 +60,51 @@ describe('probeExpectation', () => {
     const admin = stubAdmin({ companies: { message: 'fetch failed', code: '' } })
     expect((await probeExpectation(admin, colExpect)).present).toBe(true)
   })
+
+  // Inverted probe: a CLEANUP expectation is "applied" only once the column is GONE.
+  const dropExpect: SchemaExpectation = {
+    migration: '048_drop_profiles_last_active_at.sql', kind: 'column', table: 'profiles',
+    column: 'last_active_at', expectAbsent: true, feature: 'x', impact: 'y',
+  }
+  it('cleanup (expectAbsent) is PENDING while the legacy column still exists', async () => {
+    const admin = stubAdmin({ profiles: null }) // select succeeds → column present → not cleaned up
+    expect((await probeExpectation(admin, dropExpect)).present).toBe(false)
+  })
+  it('cleanup (expectAbsent) is APPLIED once the column is dropped', async () => {
+    const admin = stubAdmin({ 'profiles.last_active_at': { message: 'column profiles.last_active_at does not exist', code: '42703' } })
+    expect((await probeExpectation(admin, dropExpect)).present).toBe(true)
+  })
+})
+
+describe('required migrations are registered so none can be silently omitted', () => {
+  const byMig = new Map(SCHEMA_EXPECTATIONS.map((e) => [e.migration, e]))
+  it('the calendar BASE migration 045 is registered (omitting it must be impossible)', () => {
+    const e = byMig.get('045_meeting_calendar_invites.sql')
+    expect(e).toBeTruthy()
+    expect(e!.table).toBe('meeting_calendar_invites')
+  })
+  it('the full presence + calendar chain (044, 045, 046, 047, 048) is all registered', () => {
+    for (const m of [
+      '044_profiles_show_activity_status.sql',
+      '045_meeting_calendar_invites.sql',
+      '046_member_presence_expansion.sql',
+      '047_calendar_invite_payload.sql',
+      '048_drop_profiles_last_active_at.sql',
+    ]) expect(byMig.has(m)).toBe(true)
+  })
+  it('047 (payload) depends on the table 045 creates; 048 is the inverted cleanup probe', () => {
+    expect(byMig.get('047_calendar_invite_payload.sql')!.table).toBe('meeting_calendar_invites')
+    expect(byMig.get('048_drop_profiles_last_active_at.sql')!.expectAbsent).toBe(true)
+  })
 })
 
 describe('checkMigrationHealth', () => {
   it('ok when all expectations are satisfied', async () => {
-    const admin = stubAdmin({ companies: null, company_metadata: null })
+    // The 048 cleanup is an inverted probe: "satisfied" means profiles.last_active_at is GONE.
+    const admin = stubAdmin({
+      companies: null, company_metadata: null,
+      'profiles.last_active_at': { message: 'column profiles.last_active_at does not exist', code: '42703' },
+    })
     const h = await checkMigrationHealth(admin)
     expect(h.ok).toBe(true)
     expect(h.pending).toHaveLength(0)
@@ -72,10 +112,11 @@ describe('checkMigrationHealth', () => {
   })
 
   it('flags exactly the unapplied migrations with messages', async () => {
-    // Only the 024 column is missing; every other expectation (incl. other
-    // companies columns like 030's company_status) is present.
+    // Only the 024 column is missing; every other expectation (incl. other companies
+    // columns like 030's company_status, and the 048 inverted cleanup) is present.
     const admin = stubAdmin({
       'companies.enrichment_version': { message: 'column companies.enrichment_version does not exist', code: '42703' },
+      'profiles.last_active_at': { message: 'column profiles.last_active_at does not exist', code: '42703' }, // cleanup applied
     })
     const h = await checkMigrationHealth(admin)
     expect(h.ok).toBe(false)
@@ -84,10 +125,11 @@ describe('checkMigrationHealth', () => {
   })
 
   it('flags multiple pending migrations', async () => {
-    // 024 column missing + 015 table missing → exactly two pending.
+    // 024 column missing + 015 table missing → exactly two pending (048 cleanup applied).
     const admin = stubAdmin({
       'companies.enrichment_version': { message: 'column companies.enrichment_version does not exist', code: '42703' },
       company_metadata: { message: 'does not exist', code: 'PGRST205' },
+      'profiles.last_active_at': { message: 'column profiles.last_active_at does not exist', code: '42703' }, // cleanup applied
     })
     const h = await checkMigrationHealth(admin)
     expect(h.pending).toHaveLength(2)

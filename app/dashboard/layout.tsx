@@ -8,6 +8,7 @@ import Sidebar from '@/components/Sidebar'
 import MobileNav from '@/components/MobileNav'
 import Tutorial from '@/components/Tutorial'
 import FloatingHelp from '@/components/FloatingHelp'
+import PresenceHeartbeat from '@/components/PresenceHeartbeat'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -54,8 +55,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
     meetingNotifCount,
     opportunityBadgeCount,
     adminBadgeCount,
+    presenceRow,
   ] = await Promise.all([
-    supabase.from('profiles').select('profile_complete, full_name, avatar_url, last_active_at').eq('id', user.id).single(),
+    supabase.from('profiles').select('profile_complete, full_name, avatar_url').eq('id', user.id).single(),
     supabase
       .from('profiles')
       .select('terms_version_accepted, privacy_version_accepted, terms_grandfathered_through_version, privacy_grandfathered_through_version')
@@ -165,6 +167,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
         return 0
       }
     })(),
+
+    // Presence throttle read — folded into the fan-out so it adds NO serial latency to the
+    // render path. Reads the member's OWN row from the private member_presence table (self
+    // RLS). Fails open to null if migration 046 isn't applied yet.
+    supabase.from('member_presence').select('last_active_at').eq('user_id', user.id).maybeSingle()
+      .then((r) => r.data as { last_active_at: string | null } | null, () => null),
   ])
 
   if (perfLog) {
@@ -198,17 +206,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const avatarUrl: string | null = (profile as any)?.avatar_url ?? null
   const credits: number = creditRow?.balance ?? 0
 
-  // Throttled activity tracking — at most one write per 5 minutes per user.
-  // Fire-and-forget: this write must never block the render (and therefore the
-  // login navigation). The 5-minute throttle makes an occasional dropped write
-  // self-correcting on the next request.
+  // Throttled activity tracking — at most one write per 5 minutes per user. Writes go to
+  // the PRIVATE member_presence table (self-only RLS), NOT profiles, so an opted-out
+  // member's raw timestamp is never client-readable. Fire-and-forget: this write must never
+  // block the render (and therefore the login navigation). The 5-minute throttle makes an
+  // occasional dropped write self-correcting on the next request.
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
-  const lastActiveAt = (profile as any)?.last_active_at
+  const lastActiveAt = presenceRow?.last_active_at
   if (!lastActiveAt || new Date(lastActiveAt) < fiveMinAgo) {
+    const nowIso = new Date().toISOString()
     void supabase
-      .from('profiles')
-      .update({ last_active_at: new Date().toISOString() })
-      .eq('id', user.id)
+      .from('member_presence')
+      .upsert({ user_id: user.id, last_active_at: nowIso, updated_at: nowIso }, { onConflict: 'user_id' })
       .then(() => {}, () => {})
   }
 
@@ -235,6 +244,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </main>
       </div>
       <FloatingHelp />
+      <PresenceHeartbeat />
     </>
   )
 }

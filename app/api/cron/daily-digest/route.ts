@@ -11,16 +11,25 @@ export async function GET(req: Request) {
   const admin = createAdminClient()
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-  // Candidate recipients: anyone with an email who hasn't been active in 24h.
+  // Candidate recipients: anyone with an email who hasn't been active in 24h. Activity now
+  // lives in the private member_presence table (service-role bypasses its self-only RLS);
+  // "inactive" = no presence row OR last_active_at older than the cutoff.
   // Per-user opt-out is enforced inside sendDigestEmail via email_daily_digest.
-  const { data: profiles } = await admin
-    .from('profiles')
-    .select('id, full_name, email, last_active_at')
-    .not('email', 'is', null)
-    .not('is_test_account', 'is', true)
-    .or(`last_active_at.is.null,last_active_at.lt.${cutoff}`)
+  const [{ data: candidates }, { data: recentlyActive }] = await Promise.all([
+    admin
+      .from('profiles')
+      .select('id, full_name, email')
+      .not('email', 'is', null)
+      .not('is_test_account', 'is', true),
+    admin
+      .from('member_presence')
+      .select('user_id')
+      .gte('last_active_at', cutoff),
+  ])
+  const activeIds = new Set((recentlyActive || []).map((r: any) => r.user_id))
+  const profiles = (candidates || []).filter((p: any) => !activeIds.has(p.id))
 
-  if (!profiles || profiles.length === 0) {
+  if (profiles.length === 0) {
     console.log('[daily-digest] no eligible users')
     return NextResponse.json({ sent: 0 })
   }

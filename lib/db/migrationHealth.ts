@@ -17,6 +17,12 @@ export interface SchemaExpectation {
   table: string
   /** Required for kind 'column'. */
   column?: string
+  /**
+   * For a CLEANUP migration (kind 'column'): the feature is APPLIED when the column is
+   * ABSENT (e.g. a legacy column has been dropped). Inverts the column probe so the banner
+   * flags "cleanup still pending" while the column lingers, and clears once it's gone.
+   */
+  expectAbsent?: boolean
   /** Short human name of the capability. */
   feature: string
   /** What degrades while the migration is unapplied. */
@@ -158,7 +164,55 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     table: 'public_profiles',
     feature: 'Relationship-scoped profiles RLS + safe public_profiles view',
     impact: 'CRITICAL: until applied, profiles RLS remains permissive (any authenticated member can enumerate the full directory client-side). The public_profiles view is the applied-signal for this migration.',
-  },]
+  },
+  {
+    migration: '044_profiles_show_activity_status.sql',
+    kind: 'column',
+    table: 'profiles',
+    column: 'show_activity_status',
+    feature: 'Presence opt-out ("Show when I\'m active")',
+    impact: 'The activity opt-out preference cannot be read or saved until applied; the presence RPC (046) treats everyone as visible-eligible. Applied together with 046.',
+  },
+  {
+    // BASE schema for automatic calendar invitations. 047 adds a column to the table this
+    // migration creates, so 045 must be applied before 047 — registering it explicitly
+    // makes omitting the calendar base (as an earlier deploy note did) impossible to miss.
+    migration: '045_meeting_calendar_invites.sql',
+    kind: 'table',
+    table: 'meeting_calendar_invites',
+    feature: 'Calendar-invite base schema (meetings.calendar_sequence + meeting_calendar_invites)',
+    impact: 'Until applied, confirmation/cancellation calendar invites cannot be recorded or de-duplicated; the accept/delete calendar blocks fail open and send nothing. Required before 046/047.',
+  },
+  {
+    // EXPANSION half of the presence privacy split. The member_presence table (created here
+    // alongside the coarse-label RPC + backfill) is the applied-signal. It does NOT drop
+    // profiles.last_active_at — that is the separate cleanup migration 048.
+    migration: '046_member_presence_expansion.sql',
+    kind: 'table',
+    table: 'member_presence',
+    feature: 'Data-boundary presence privacy (private member_presence + coarse-label RPC)',
+    impact: 'CRITICAL for presence privacy: until applied, member_presence + the coarse-label RPC do not exist, so the Network presence badge shows nothing (fails closed). Backward-compatible: the legacy profiles.last_active_at column remains until cleanup migration 048.',
+  },
+  {
+    migration: '047_calendar_invite_payload.sql',
+    kind: 'column',
+    table: 'meeting_calendar_invites',
+    column: 'payload',
+    feature: 'Durable calendar-invite payload (crash-safe / post-deletion cancel retry)',
+    impact: 'Until applied, a claimed invite stores no rendered payload, so a failed cancellation cannot be retried after the meeting row is deleted (initial inline send is unaffected). Requires 045.',
+  },
+  {
+    // CLEANUP half of the presence privacy split. Inverted probe: this is "applied" only
+    // once the legacy column is GONE. Run ONLY after the new code is deployed + verified.
+    migration: '048_drop_profiles_last_active_at.sql',
+    kind: 'column',
+    table: 'profiles',
+    column: 'last_active_at',
+    expectAbsent: true,
+    feature: 'Presence privacy cleanup (drop legacy profiles.last_active_at)',
+    impact: 'While pending, the legacy profiles.last_active_at column still exists and remains row-readable — the presence privacy boundary is not fully closed until this cleanup runs. Safe to defer, but required to finish the rollout.',
+  },
+]
 
 export interface MigrationWarning extends SchemaExpectation {
   message: string
@@ -188,6 +242,13 @@ export async function probeExpectation(admin: any, e: SchemaExpectation): Promis
     // errors on an unknown column or table.
     const col = e.kind === 'column' ? (e.column as string) : '*'
     const r = await admin.from(e.table).select(col).limit(1)
+    // Cleanup expectation: "applied" means the column is GONE (inverted probe).
+    if (e.expectAbsent) {
+      if (!r.error) return { present: false } // column still exists → cleanup pending
+      const sig = `${r.error.message || ''} ${r.error.code || ''}`
+      if (ABSENT_RE.test(sig)) return { present: true } // column dropped → cleanup applied
+      return { present: true, error: r.error.message } // unknown error → don't false-alarm
+    }
     if (!r.error) return { present: true }
     const sig = `${r.error.message || ''} ${r.error.code || ''}`
     if (ABSENT_RE.test(sig)) return { present: false, error: r.error.message }

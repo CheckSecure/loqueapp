@@ -1156,8 +1156,54 @@ export async function acceptMeeting(meetingId: string) {
         }
       }
     }
+
+    // AUTOMATIC CALENDAR INVITATIONS — a meeting becoming 'confirmed' is the single
+    // canonical transition, so the RFC 5545 invite originates HERE (server), not a
+    // client button. Best-effort + fully self-contained: if migration 045 isn't applied
+    // (calendar_sequence column / meeting_calendar_invites table missing) the whole block
+    // fails open and the confirmation + existing email are unaffected. Idempotent via the
+    // durable meeting_calendar_invites claim, so retries never double-send.
+    try {
+      const { data: full } = await adminClient
+        .from('meetings')
+        .select('id, purpose, scheduled_at, duration_minutes, location, zoom_link, notes, scheduled_timezone, calendar_sequence, requester_id, recipient_id')
+        .eq('id', meetingId)
+        .single()
+      if (full && profiles) {
+        // A reschedule being applied is a material update → bump SEQUENCE (same UID).
+        let seq = (full as any).calendar_sequence ?? 0
+        if (meeting.proposed_scheduled_at) {
+          seq = seq + 1
+          await adminClient.from('meetings').update({ calendar_sequence: seq }).eq('id', meetingId)
+        }
+        const requester = profiles.find(p => p.id === (full as any).requester_id)
+        const recipient = profiles.find(p => p.id === (full as any).recipient_id)
+        const { sendMeetingCalendarInvites } = await import('@/lib/meetings/calendarInvite')
+        const { sendCalendarInviteEmail } = await import('@/lib/email')
+        await sendMeetingCalendarInvites(
+          adminClient,
+          {
+            id: (full as any).id,
+            purpose: (full as any).purpose,
+            scheduled_at: (full as any).scheduled_at,
+            duration_minutes: (full as any).duration_minutes,
+            location: (full as any).location,
+            zoom_link: (full as any).zoom_link,
+            notes: (full as any).notes,
+            scheduled_timezone: (full as any).scheduled_timezone,
+            requester: { email: requester?.email, full_name: requester?.full_name },
+            recipient: { email: recipient?.email, full_name: recipient?.full_name },
+          },
+          'REQUEST',
+          seq,
+          (a) => sendCalendarInviteEmail(a),
+        )
+      }
+    } catch (calErr) {
+      console.error('[acceptMeeting] calendar invite error:', (calErr as any)?.message)
+    }
   }
-  
+
   revalidatePath('/dashboard/meetings')
   return { success: true }
 }
@@ -1250,6 +1296,42 @@ export async function deleteMeeting(meetingId: string) {
   if (!meeting) return { error: 'Meeting not found' }
   if (meeting.requester_id !== user.id && meeting.recipient_id !== user.id) {
     return { error: 'Not authorized to delete this meeting' }
+  }
+
+  // AUTOMATIC CALENDAR CANCELLATION — send METHOD:CANCEL (same stable UID, next SEQUENCE)
+  // to both participants BEFORE the hard delete, but only for a CONFIRMED meeting that had
+  // an invite. Best-effort + self-contained: fails open if migration 045 isn't applied, and
+  // never blocks the delete. The invite record has no FK to meetings, so it survives.
+  try {
+    const adminClient = createAdminClient()
+    const { data: full } = await adminClient
+      .from('meetings')
+      .select('id, status, purpose, scheduled_at, duration_minutes, location, zoom_link, notes, scheduled_timezone, calendar_sequence, requester_id, recipient_id')
+      .eq('id', meetingId)
+      .single()
+    if (full && (full as any).status === 'confirmed') {
+      const { data: profiles } = await adminClient.from('profiles').select('id, full_name, email').in('id', [(full as any).requester_id, (full as any).recipient_id])
+      const requester = profiles?.find(p => p.id === (full as any).requester_id)
+      const recipient = profiles?.find(p => p.id === (full as any).recipient_id)
+      const seq = ((full as any).calendar_sequence ?? 0) + 1
+      const { sendMeetingCalendarInvites } = await import('@/lib/meetings/calendarInvite')
+      const { sendCalendarInviteEmail } = await import('@/lib/email')
+      await sendMeetingCalendarInvites(
+        adminClient,
+        {
+          id: (full as any).id, purpose: (full as any).purpose, scheduled_at: (full as any).scheduled_at,
+          duration_minutes: (full as any).duration_minutes, location: (full as any).location, zoom_link: (full as any).zoom_link,
+          notes: (full as any).notes, scheduled_timezone: (full as any).scheduled_timezone,
+          requester: { email: requester?.email, full_name: requester?.full_name },
+          recipient: { email: recipient?.email, full_name: recipient?.full_name },
+        },
+        'CANCEL',
+        seq,
+        (a) => sendCalendarInviteEmail(a),
+      )
+    }
+  } catch (calErr) {
+    console.error('[deleteMeeting] calendar cancel error:', (calErr as any)?.message)
   }
 
   const { error } = await supabase

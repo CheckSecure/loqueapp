@@ -53,10 +53,11 @@ export async function POST(request: Request) {
       : match.user_a_id
 
     // Block sends to deactivated recipients. Also pull the fields the new-message
-    // email needs (email, name, last_active_at) so no extra round-trip is added.
+    // email needs (email, name) so no extra round-trip is added. last_active_at now lives
+    // in the private member_presence table (read below, service-role bypasses its RLS).
     const { data: recipientProfile } = await adminClient
       .from('profiles')
-      .select('account_status, email, full_name, last_active_at')
+      .select('account_status, email, full_name')
       .eq('id', recipientId)
       .single()
 
@@ -137,8 +138,14 @@ export async function POST(request: Request) {
           .is('read_at', null)
         const hasOtherUnreadInConversation = (unreadNudges ?? []).length > 1
 
+        const { data: recipientPresence } = await adminClient
+          .from('member_presence')
+          .select('last_active_at')
+          .eq('user_id', recipientId)
+          .maybeSingle()
+
         if (shouldEmailNewMessage({
-          recipientLastActiveAt: recipientProfile.last_active_at,
+          recipientLastActiveAt: recipientPresence?.last_active_at ?? null,
           hasOtherUnreadInConversation,
         })) {
           const { data: senderProfile } = await adminClient

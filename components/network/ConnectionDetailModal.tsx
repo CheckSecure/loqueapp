@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 import { professionalIdentity } from '@/lib/professionalIdentity'
 import IdentityLine from '@/components/IdentityLine'
+import PresenceBadge from '@/components/presence/PresenceBadge'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]', 'bg-[#2E4080]', 'bg-amber-500', 'bg-rose-500',
@@ -199,6 +200,7 @@ export default function ConnectionDetailModal({ matchId, profile, connectedAt, m
               {profile.avatar_url ? (<img src={profile.avatar_url} alt={profile.full_name} className="w-28 h-28 rounded-full object-cover shadow-sm" />) : (<div className={'w-28 h-28 rounded-full ' + avatarColor + ' flex items-center justify-center text-white text-3xl font-bold shadow-sm'}>{initials}</div>)}
             </EnlargeableAvatar>
             <h2 className="text-xl font-bold text-brand-navy tracking-tight">{profile.full_name || 'Connection'}</h2>
+            <PresenceBadge label={(profile as any).last_active_display} className="mt-1" />
             {(() => { const identity = professionalIdentity(profile); return identity.primary ? (<div className="mt-1.5"><div className="flex items-center gap-1 text-sm text-slate-600"><Briefcase className="w-3.5 h-3.5 flex-shrink-0" /><span><IdentityLine profile={profile} company={(profile as any).company_rel} /></span></div>{identity.secondary && (<p className="ml-5 text-xs text-slate-500">{identity.secondary}</p>)}</div>) : null })()}
             {location && (<div className="flex items-center gap-1 text-sm text-slate-500 mt-1"><MapPin className="w-3.5 h-3.5 flex-shrink-0" /><span>{location}</span></div>)}
             {connectedDate && (meetingCount !== null && meetingCount > 0 ? (
