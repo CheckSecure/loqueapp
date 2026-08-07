@@ -231,6 +231,50 @@ export async function sendCurrentIntroductionsWaitingEmail(toEmail: string, toNa
   })
 }
 
+/**
+ * PART 3 — "Action needed" reminder for a member SKIPPED from the weekly refresh
+ * because they still have unresolved introductions to review. Uses the existing email
+ * infrastructure (Resend + the `email_new_introductions` preference gate). Returns a
+ * result so the caller can report successes and failures separately; NEVER throws, so
+ * a send failure can never alter eligibility or create a batch.
+ */
+export async function sendPendingIntrosReminderEmail(
+  toEmail: string,
+  toName: string,
+): Promise<{ success: boolean; skipped?: boolean; error?: string }> {
+  try {
+    if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return { success: false, skipped: true }
+    await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: toEmail,
+      subject: 'Action needed before your next introductions',
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #1B2850; margin-bottom: 24px;">Action needed before your next introductions</h2>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+            Hi ${toName},
+          </p>
+          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+            You still have introductions waiting for your response.<br/><br/>
+            Review them and choose either Interested or Pass.<br/><br/>
+            Once you've responded, you'll automatically receive new introductions in the following batch.
+          </p>
+          <a href="https://andrel.app/dashboard/introductions"
+             style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+            Review Introductions
+          </a>
+          <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
+            — The Andrel Team
+          </p>
+        </div>
+      `,
+    })
+    return { success: true }
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) }
+  }
+}
+
 // Weekly reminder that a member still has unresolved introductions to review.
 // Same category as new-introduction emails (email_new_introductions), so it is
 // automatically suppressed once a member opts out of introduction emails.

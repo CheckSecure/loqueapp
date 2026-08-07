@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { enqueueBatch, countUnresolvedRecommendations } from '@/lib/introductions/queue'
-import { notifyAdminBatchReady, notifyQueuedIntrosWaiting } from '@/lib/notifications/engagement'
+import { notifyAdminBatchReady, notifyPendingIntrosActionNeeded, isoWeekKey } from '@/lib/notifications/engagement'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,53 +105,63 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Member notification/email at send time:
-    //   • VISIBLE (placed ACTIVE) → notifyAdminBatchReady: the dedicated admin-approval
-    //     email. It shares the dedupeKey (batch:<batchId>, type new_batch) with the
-    //     promotion path, so a member is emailed exactly once per batch when visible;
-    //     the shared sendNewBatchEmail (weekly/onboarding/promotion) is untouched.
-    //   • QUEUED (hidden) → notifyQueuedIntrosWaiting, ONLY if the member still has
-    //     unresolved CURRENT intros — a "finish your current introductions" nudge that
-    //     never reveals the queued batch. Queued-but-resolved recipients stay silent.
-    // A queued admin batch is still announced by promoteIfResolved (unchanged) when it
-    // is later promoted to active.
-    let notified = 0
-    let queuedNotified = 0
-    let skippedQueued = 0
+    // CANONICAL THURSDAY-SEND notification/eligibility rules — the SAME rules as
+    // weekly-refresh (System A), enforced here so the admin-reviewed batch is the single
+    // operational path:
+    //   • VISIBLE (placed ACTIVE) → member has zero unresolved intros → the existing
+    //     new-batch email (notifyAdminBatchReady; dedupe batch:<batchId>). Unchanged.
+    //   • QUEUED + still-unresolved → the member must NOT see the new batch. Send the
+    //     "Action needed before your next introductions" reminder via the SAME shared
+    //     helper + ISO-week dedupe key (actionneeded:<ISO_WEEK>) as System A, so a member
+    //     gets AT MOST ONE reminder per cycle across BOTH routes. This REPLACES the old
+    //     generic "Your Andrel introductions are waiting" email (never both).
+    //   • QUEUED + resolved → silent (edge; reported as otherSkipped).
+    // A queued admin batch is still announced by promoteIfResolved (unchanged) when later
+    // promoted to active. Reminder failures are best-effort and never block the send.
+    const cycleKey = isoWeekKey(new Date())
+    let batchVisible = 0
+    let actionNeeded = 0
+    let otherSkipped = rejected.length // rejected recipients are an "other skip"
+    let newBatchEmailsSent = 0
+    let actionNeededEmailsSent = 0
+    let remindersAlreadyHandled = 0
+    let emailFailures = 0
     for (const p of placed) {
       if (p.state === 'active') {
-        // Visible now → dedicated admin-approval email (dedupe batch:<batchId>, same as
-        // the shared path — but its own sender, leaving weekly/onboarding/promotion alone).
         await notifyAdminBatchReady(p.recipientId, p.batchId, p.count)
-        notified++
+        batchVisible++; newBatchEmailsSent++
       } else {
-        // Queued (hidden) → nudge to finish their CURRENT introductions, but ONLY if they
-        // actually have unresolved current intros (read-only check; no queue change). The
-        // email never reveals the queued batch. Queued-but-resolved members get nothing.
         const unresolved = await countUnresolvedRecommendations(adminClient, p.recipientId)
         if (unresolved > 0) {
-          await notifyQueuedIntrosWaiting(p.recipientId, p.batchId)
-          queuedNotified++
+          actionNeeded++
+          const r = await notifyPendingIntrosActionNeeded(p.recipientId, p.batchId, cycleKey)
+          if (r.alreadyHandled) remindersAlreadyHandled++
+          else if (r.emailed || r.skipped) actionNeededEmailsSent++
+          else emailFailures++
         } else {
-          console.log(`[Email] type=introductions_waiting skipped=no_unresolved memberId=${p.recipientId}`)
-          skippedQueued++
+          otherSkipped++
         }
       }
     }
 
-    console.log(`[approve-batch] materialized: ${placed.length} placed, ${rejected.length} rejected; ${notified} announced (active), ${queuedNotified} nudged (queued+unresolved), ${skippedQueued} silent (queued+resolved)`)
+    console.log(`[approve-batch] cycle ${cycleKey}: placed=${placed.length} rejected=${rejected.length} | ${batchVisible} visible, ${actionNeeded} action-needed, ${otherSkipped} other-skipped | emails: ${newBatchEmailsSent} new-batch, ${actionNeededEmailsSent} action-needed, ${remindersAlreadyHandled} already-handled (dedup), ${emailFailures} failed`)
     if (rejected.length > 0) {
       console.warn('[approve-batch] rejected recipients (already had a queued admin batch or no candidates):', JSON.stringify(rejected))
     }
 
     return NextResponse.json({
       success: true,
+      cycleKey,
       placed: placed.length,
       rejected: rejected.length,
       rejectedDetail: rejected,
-      notified,
-      queuedNotified,
-      skippedQueued,
+      batchVisible,
+      actionNeeded,
+      otherSkipped,
+      newBatchEmailsSent,
+      actionNeededEmailsSent,
+      remindersAlreadyHandled,
+      emailFailures,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

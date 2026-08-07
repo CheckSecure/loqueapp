@@ -316,23 +316,52 @@ export async function promoteIfResolved(adminClient: any, memberId: string): Pro
 
 // ── Weekly generation eligibility ─────────────────────────────────────────────
 
+export type WeeklyEligibilityReason = 'eligible' | 'unresolved_active' | 'behind_admin' | 'queued_exists'
+
+export interface WeeklyEligibility {
+  eligible: boolean
+  reason: WeeklyEligibilityReason
+  /** Unresolved/actionable introductions from the member's active batch (see countUnresolvedRecommendations). */
+  unresolvedCount: number
+  /** The member's active batch id (when any) — used for reminder de-duplication. */
+  activeBatchId: string | null
+}
+
 /**
- * Whether the weekly engine may GENERATE a new batch for this member right now.
- * Eligible only when there is no backlog to build:
- *   • no queued batch already waiting, AND
- *   • not sitting behind an incomplete admin batch (a member working an admin
- *     reciprocal batch is left undisturbed until it is promoted AND completed).
+ * Whether the weekly engine may GENERATE a new batch for this member right now, with
+ * the REASON when it may not.
+ *
+ * PERMANENT RULE (retires the queued-organic path): a member is ineligible for the
+ * weekly refresh if they have EVEN ONE unresolved/actionable introduction from an
+ * active batch — organic OR admin. "Unresolved" is exactly countUnresolvedRecommendations:
+ * a 'suggested' row whose requester has NOT expressed interest (pending / accepted /
+ * accepted_pending_payment / admin_pending / approved) in that target; passed/hidden
+ * rows have already left 'suggested' and never count. Once the member acts on all of
+ * them, the active batch completes (promoteIfResolved) and they become eligible at the
+ * next scheduled run — no immediate catch-up is generated here.
+ *
+ * Admin reciprocal batches are unchanged: a member behind an incomplete admin batch is
+ * still skipped (now reported as `behind_admin`), and admin generation is untouched.
+ *
  * (The caller has already confirmed the member is active + profile_complete.)
  */
-export async function weeklyEligibilityCheck(adminClient: any, memberId: string): Promise<boolean> {
-  const queued = await getQueuedBatch(adminClient, memberId)
-  if (queued) return false
-  const active = await getActiveBatch(adminClient, memberId)
-  if (active && active.batch_source === 'admin_reciprocal') {
-    const unresolved = await countUnresolvedRecommendations(adminClient, memberId)
-    if (unresolved > 0) return false
+export async function evaluateWeeklyEligibility(adminClient: any, memberId: string): Promise<WeeklyEligibility> {
+  const unresolved = await countUnresolvedRecommendations(adminClient, memberId)
+  if (unresolved > 0) {
+    const active = await getActiveBatch(adminClient, memberId)
+    const reason: WeeklyEligibilityReason = active?.batch_source === 'admin_reciprocal' ? 'behind_admin' : 'unresolved_active'
+    return { eligible: false, reason, unresolvedCount: unresolved, activeBatchId: active?.batch_id ?? null }
   }
-  return true
+  // No unresolved active work. A lingering queued batch (rare now the queued-organic
+  // path is retired) still blocks generation to preserve the ≤1 active / ≤1 queued invariant.
+  const queued = await getQueuedBatch(adminClient, memberId)
+  if (queued) return { eligible: false, reason: 'queued_exists', unresolvedCount: 0, activeBatchId: null }
+  return { eligible: true, reason: 'eligible', unresolvedCount: 0, activeBatchId: null }
+}
+
+/** Backward-compatible boolean gate (delegates to evaluateWeeklyEligibility). */
+export async function weeklyEligibilityCheck(adminClient: any, memberId: string): Promise<boolean> {
+  return (await evaluateWeeklyEligibility(adminClient, memberId)).eligible
 }
 
 export { RECOMMENDATIONS_PER_BATCH }

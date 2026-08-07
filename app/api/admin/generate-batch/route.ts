@@ -9,7 +9,8 @@ import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
-import { selectReciprocalGraph, fillForCoverage, repairOneIntroCoverage } from '@/lib/matching/reciprocal-graph'
+import { selectReciprocalGraph, fillForCoverage, repairOneIntroCoverage, preferCrossMarketForPartners } from '@/lib/matching/reciprocal-graph'
+import { isSameSideLegalPartnerEdge, lawFirmRole } from '@/lib/matching/legalSameSidePenalty'
 import { buildIntroHistoryExclusions } from '@/lib/introRequests/history'
 import { membersWithUnresolvedIntros } from '@/lib/introductions/queue'
 
@@ -27,8 +28,12 @@ const MUTUAL_MATCH_PERCENTILE = 0.4 // reported in qualityMetrics only
 // fallback pass reintroduces them ONLY for members who cannot otherwise reach 2 intros.
 // scoreMatch, buckets, reasons, and the stored match_score are untouched. LFP↔Attorney and
 // other legal pairs are intentionally NOT treated as partner pairs (seniority-diverse).
-const isLawFirmPartner = (m: any) => String(m?.role_type ?? '').trim().toLowerCase() === 'law firm partner'
-const isPartnerPair = (a: any, b: any) => isLawFirmPartner(a) && isLawFirmPartner(b)
+// CROSS-MARKET-FIRST exclusion for the primary selection pass. Broadened from the old
+// partner↔partner-only rule to EVERY same-side legal edge that involves a Law Firm
+// Partner (partner↔partner AND partner↔attorney), so a partner is filled from
+// cross-market candidates first; these edges return only via the coverage fallback.
+// Shared helper (lawFirmRole) keeps this aligned with the live ranker's cross-market-first.
+const isPartnerPair = (a: any, b: any) => isSameSideLegalPartnerEdge(a, b)
 
 function isCompatiblePair(userA: any, userB: any): boolean {
   // 1. Geographic compatibility
@@ -353,7 +358,19 @@ export async function POST(req: NextRequest) {
     const nonPartnerPairs = allPairs.filter((p) => !isPartnerPair(p.userA, p.userB))
     const { selected: primaryEdges } = selectReciprocalGraph(nonPartnerPairs, graphConfig)
     const primaryFilled = fillForCoverage(primaryEdges, nonPartnerPairs, fillConfig)
-    const selectedEdgesFilled = fillForCoverage(primaryFilled, allPairs, fillConfig)
+    // CROSS-MARKET-FIRST bounded reassignment (PART 1/2): fill a partner's still-open slots
+    // with cross-market candidates via safe swaps — displacing a saturated candidate's
+    // weakest edge and re-seating (or leaving the displaced member at ≥ min coverage) —
+    // BEFORE any same-side fallback runs. Operates on the cross-market-only edge set, so it
+    // can never create a same-side pair; Pareto-guarded so no member drops to 0.
+    const { edges: crossMarketSwapped, swaps: partnerSwaps } = preferCrossMarketForPartners(primaryFilled, nonPartnerPairs, {
+      capOf, isBusinessSolutionProvider, bsCapOf, isThrottleExemptPair: isLegalNetworkingPair,
+      isPartner: (m: any) => lawFirmRole(m) === 'partner', isPartnerPair,
+      minCoverage: 1, maxSacrifice: 40, // conservative: no member →0, per-swap quality loss ≤ 40
+    })
+    if (partnerSwaps.length) console.log(`[generate-batch] partner cross-market swaps: ${partnerSwaps.length}`)
+    // Same-side fallback: ONLY NOW may a partner's still-open slot take a law-firm peer.
+    const selectedEdgesFilled = fillForCoverage(crossMarketSwapped, allPairs, fillConfig)
 
     // COVERAGE REPAIR (post-processing) — seat members left at exactly 1 intro via a safe
     // augmenting swap. Never creates a partner↔partner edge (isPartnerPair), never exceeds

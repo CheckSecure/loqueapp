@@ -6,6 +6,7 @@ import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matc
 import { isSameCompany } from '@/lib/matching/same-company'
 import { applyVerticalBoost } from '@/lib/matching/vertical-boost'
 import { applyExposureBalancing, exposureBalancingEnabled } from '@/lib/matching/exposure-balancing'
+import { legalSameSidePenalty, crossMarketFirstForLawFirm } from '@/lib/matching/legalSameSidePenalty'
 import { getActiveIntroCap } from '@/lib/introductions/limits'
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
@@ -438,52 +439,20 @@ export function isLawFirmLawyer(profile: any): boolean {
   return /law firm/i.test(String(profile?.role_type ?? ''))
 }
 
-// "Legal" is a near-universal generic tag; it must not count as complementary-practice signal.
-const GENERIC_EXPERTISE = new Set(['legal'])
-
-function passesPeerStrategicGate(viewer: any, peer: any): boolean {
-  const pe = (e: any): string[] => {
-    if (Array.isArray(e)) return e
-    if (typeof e === 'string') {
-      try { const p = JSON.parse(e); if (Array.isArray(p)) return p } catch {}
-      if (e.startsWith('{') && e.endsWith('}')) return e.slice(1, -1).split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(Boolean)
-    }
-    return []
-  }
-  const ve = pe(viewer.expertise), ce = pe(peer.expertise)
-  const nonGenericOverlap = ve.filter(e => ce.includes(e) && !GENERIC_EXPERTISE.has(String(e).toLowerCase())).length
-  const sameCity = !!(viewer.city && peer.city && viewer.city.toLowerCase().trim() === peer.city.toLowerCase().trim())
-  // Complementary practice (≤1 shared non-generic area) AND a local-referral signal.
-  return nonGenericOverlap <= 1 && sameCity
-}
-
 /**
- * Reorder a rank-ordered candidate list so a law-firm-lawyer viewer's batch is never
- * two law-firm lawyers: at most one peer, only if it clears the strategic gate, and
- * never in the first slot (guaranteeing ≥1 client / referral source). Non-law-firm
- * viewers are returned unchanged. Members and their scores are unchanged — only order.
+ * CROSS-MARKET-FIRST composition for a law-firm-side viewer (the permanent product
+ * rule). Partition the rank-ordered candidates into cross-market (non-law-firm) vs
+ * same-side law firm, preserving score order within each group, and return cross-market
+ * FIRST with same-side appended as a fallback. The downstream top-N slice therefore
+ * fills a Law Firm Partner (or attorney) from cross-market candidates — GC / DGC / CLO /
+ * In-House / Legal Ops / compliance / corporate / investor / government / board — before
+ * ANY same-side law-firm peer; a same-side peer is used ONLY when there aren't enough
+ * cross-market candidates to fill the batch. Non-law-firm viewers are unchanged. Scores
+ * are untouched — only order. (Delegates to the shared helper reused by the batch engine.)
  */
 export function applyLawFirmCompositionPolicy(candidates: any[], viewer: any): any[] {
   if (!isLawFirmLawyer(viewer)) return candidates
-  const front: any[] = []
-  const deferredPeers: any[] = []
-  let peerUsed = false
-  for (const c of candidates) {
-    if (isLawFirmLawyer(c)) {
-      // allow one strategic peer, but only after at least one client is placed (never slot 1)
-      if (!peerUsed && front.length >= 1 && passesPeerStrategicGate(viewer, c)) {
-        front.push(c)
-        peerUsed = true
-      } else {
-        deferredPeers.push(c)
-      }
-    } else {
-      front.push(c)
-    }
-  }
-  // Deferred peers only fill if clients are exhausted (last resort) — never re-introduce a
-  // second peer into the front N ahead of a client.
-  return [...front, ...deferredPeers]
+  return crossMarketFirstForLawFirm(candidates, viewer)
 }
 
 function calculateFinalScore(userProfile: any, candidate: any, userTier: string = 'free', targetedRequest: any = null): number {
@@ -818,9 +787,20 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number) {
   
   // Apply mentorship filtering
   const mentorshipFiltered = filtered.filter(c => !shouldFilterByMentorship(newUserProfile, c, userSeniorityLevel))
-  
+
   console.log('[generate-recommendations] After mentorship filter:', mentorshipFiltered.length)
-  
+
+  // Same-side legal marketplace penalty (PART 5) — a STRONG RANKING penalty applied
+  // AFTER the >=10 relevance gate, so a law-firm ↔ law-firm pair is demoted below any
+  // cross-market alternative (GC / in-house / corporate / investor / gov / board) but
+  // is NEVER hard-banned: it stays in the pool and can still be picked when no better
+  // candidate exists. Shared helper — identical policy in the batch scorer. No-op for
+  // any pair where at least one side is not a law-firm role_type.
+  for (const c of mentorshipFiltered) {
+    const pen = legalSameSidePenalty(newUserProfile, c)
+    if (pen) c.finalScore += pen
+  }
+
   const rankedCandidates = applyTierRankingAdjustment(mentorshipFiltered, userTier)
   // Matching V2 — rank-only desired-connections boost. Applied AFTER the >=10
   // eligibility gate (line 902) and after tier-ranking, BEFORE truncation, so

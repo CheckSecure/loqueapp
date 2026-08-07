@@ -35,15 +35,18 @@
  * can compare historical batches, know exactly which algorithm produced one, and
  * evolve safely. `scoringModelVersion` tracks the scoreMatch model specifically.
  */
-// v3.2: reciprocal graph + augmenting-path coverage phase + corrected business-solution
-// throttle. The pairwise scoring model (scoreMatch / rarity / decay) is unchanged —
-// SCORING_MODEL_VERSION stays v2.0.0. Lineage: v3 (reciprocal, greedy-only) → v3.1 (adds
-// Pareto-safe augmenting-path phase) → v3.2 (business-solution throttle fixed: provider↔
-// provider peer edges exempted, and opted-in buyers guaranteed ≥1 provider at any cap, so
-// providers are no longer mathematically unmatchable at the launch cap of 2). v3.2 alters
-// which suggestions a batch produces, so it is bumped per the versioning contract below.
-// See lib/matching/reciprocal-graph.ts and lib/matching/business-solutions.ts.
-export const RECOMMENDATION_ALGORITHM_VERSION = 'v3.2'
+// v3.3: adds the CROSS-MARKET-FIRST legal rule as a SELECTION change — the primary
+// reciprocal pass now excludes every same-side legal edge that involves a Law Firm
+// Partner (partner↔partner AND partner↔attorney), reintroduced only by the coverage
+// fallback, so partners fill from cross-market candidates first. The pairwise scoring
+// model (scoreMatch / rarity / decay) is UNCHANGED — no score penalty is applied here
+// (that would remove last-resort edges below the relevance gate), so SCORING_MODEL_VERSION
+// stays v2.0.0; only RECOMMENDATION_ALGORITHM_VERSION bumps v3.2 → v3.3 per the contract.
+// Lineage: v3 (reciprocal, greedy-only) → v3.1 (Pareto-safe augmenting-path phase) → v3.2
+// (business-solution throttle fix) → v3.3 (cross-market-first selection).
+// See app/api/admin/generate-batch/route.ts and lib/matching/legalSameSidePenalty.ts.
+
+export const RECOMMENDATION_ALGORITHM_VERSION = 'v3.3'
 export const SCORING_MODEL_VERSION = 'v2.0.0'
 
 export type ScoringConfig = {
@@ -268,6 +271,15 @@ export function scoreMatch(recipient: any, candidate: any, ctx: ScoringContext):
   const verif: Record<string, number> = { high_confidence: 12, verified: 15, pending: 0, flagged: -20 }
   score += verif[candidate.verification_status] ?? 0
   if (candidate.trust_score) score += Math.round((candidate.trust_score / 100) * 10)
+
+  // NOTE: the cross-market-first legal rule is enforced in the batch route's TWO-PASS
+  // SELECTION (primary pass excludes partner-involving same-side edges; the coverage
+  // fallback re-adds them only when a partner can't otherwise be seated). It is
+  // deliberately NOT a scoreMatch penalty here: a score penalty would drop a same-side
+  // edge below the relevance gate and REMOVE it from the candidate pool, which would
+  // eliminate the last-resort fallback (a member left with 0 intros instead of one
+  // same-side pair). Keeping scoreMatch penalty-free preserves true relevance so the
+  // fallback can seat those members. See app/api/admin/generate-batch/route.ts.
 
   return Math.round(score)
 }

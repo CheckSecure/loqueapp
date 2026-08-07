@@ -385,6 +385,165 @@ export function repairOneIntroCoverage<E extends ReciprocalEdgeInput>(
 }
 
 /**
+ * CROSS-MARKET-FIRST bounded reassignment for Law Firm Partners (System B, PART 1/2).
+ *
+ * After the cross-market-only selection + fill, a partner can still have an OPEN slot
+ * because their cross-market candidates were globally SATURATED (high-demand GCs / in-house
+ * seated with others). Without this pass those open slots fall to the same-side fallback,
+ * so a partner gets a law-firm peer even though a cross-market candidate could be seated
+ * with a bounded reassignment. This pass fills a partner's open slots with cross-market
+ * candidates via a BOUNDED, safety-guarded swap, reusing the same adjacency / degree /
+ * throttle bookkeeping as repairOneIntroCoverage (NOT a new matching engine).
+ *
+ * `edges` MUST be the CROSS-MARKET-eligible set (same-side-partner edges already removed),
+ * so this pass can NEVER create a same-side pair. It runs BEFORE the same-side fallback;
+ * whatever it cannot fill is left open for that fallback (the genuine last resort).
+ *
+ * Per open partner slot, for each cross-market candidate C (best mutualScore first):
+ *   • C has spare capacity → add {P,C} (pure gain, no displacement).
+ *   • C is saturated → displace C's WEAKEST edge {C,D} (D≠P) and either
+ *       – re-seat D with a free R (coverage-preserving), or
+ *       – leave D at degree−1 ONLY when D was at ≥ minCoverage+1 (never below minCoverage),
+ *     then add {P,C}. Accepted only when the quality delta ≥ −maxSacrifice.
+ *
+ * SAFETY (PART 2), exact rule — a swap is applied only if ALL hold:
+ *   1. no member drops below `minCoverage` (default 1): a displaced D is either re-seated
+ *      or was already at ≥2 (so it lands at 1, never 0); the partner and C never drop;
+ *   2. no member exceeds `capOf` (checked on every add);
+ *   3. no duplicate pair (matched-set checked);
+ *   4. no history / same-company / relevance violation (only `edges` are used — all pre-gated);
+ *   5. the business-solution throttle is re-checked on every add;
+ *   6. never creates an isPartnerPair edge (belt-and-suspenders; `edges` is cross-market only);
+ *   7. per-swap quality loss ≤ `maxSacrifice`.
+ * Members dropped from 2→1 here are re-seated by the subsequent repairOneIntroCoverage
+ * pass where a feasible edge exists, so coverage loss is typically recovered.
+ * Deterministic: partners most-constrained-first (fewest cross-market neighbours, id tiebreak);
+ * candidates by weight desc; displaced edges weakest-first.
+ */
+export function preferCrossMarketForPartners<E extends ReciprocalEdgeInput>(
+  selected: E[],
+  edges: E[],
+  config: {
+    capOf: (m: any) => number
+    isBusinessSolutionProvider?: (m: any) => boolean
+    bsCapOf?: (m: any, cap: number) => number
+    isThrottleExemptPair?: (a: any, b: any) => boolean
+    isPartner: (m: any) => boolean
+    isPartnerPair?: (a: any, b: any) => boolean
+    minCoverage?: number
+    maxSacrifice?: number
+    target?: number
+  },
+): { edges: E[]; swaps: Array<{ partner: string; seated: string; displaced?: string; reseated?: string; delta: number }> } {
+  const isBS = config.isBusinessSolutionProvider || (() => false)
+  const isExempt = (a: any, b: any) => !!config.isThrottleExemptPair?.(a, b)
+  const isPartnerPair = (a: any, b: any) => !!config.isPartnerPair?.(a, b)
+  const capOf = (m: any) => Math.max(0, config.capOf(m))
+  const bsCapOf = (m: any) => (config.bsCapOf ? config.bsCapOf(m, capOf(m)) : capOf(m))
+  const minCov = config.minCoverage ?? 1
+  const maxSac = config.maxSacrifice ?? Infinity
+  const target = config.target ?? 2
+  const K = reciprocalPairKey
+
+  const result = selected.slice()
+  const memberById = new Map<string, any>()
+  const adj = new Map<string, string[]>()
+  const edgeByKey = new Map<string, E>()
+  for (const e of edges) {
+    memberById.set(e.userA.id, e.userA); memberById.set(e.userB.id, e.userB)
+    edgeByKey.set(K(e.userA.id, e.userB.id), e)
+    ;(adj.get(e.userA.id) ?? adj.set(e.userA.id, []).get(e.userA.id)!).push(e.userB.id)
+    ;(adj.get(e.userB.id) ?? adj.set(e.userB.id, []).get(e.userB.id)!).push(e.userA.id)
+  }
+  const M = (id: string) => memberById.get(id)
+  const w = (x: string, y: string) => edgeByKey.get(K(x, y))?.mutualScore ?? 0
+  const peer = (x: string, y: string) => (isBS(M(x)) && isBS(M(y))) || isExempt(M(x), M(y))
+
+  const matched = new Set(result.map((e) => K(e.userA.id, e.userB.id)))
+  const degree = new Map<string, number>()
+  const bsCount = new Map<string, number>()
+  const bump = (m: Map<string, number>, id: string, d = 1) => m.set(id, (m.get(id) || 0) + d)
+  const bsAdjust = (x: string, y: string, sign: number) => {
+    if (peer(x, y)) return
+    if (isBS(M(y))) bump(bsCount, x, sign)
+    if (isBS(M(x))) bump(bsCount, y, sign)
+  }
+  for (const e of result) { bump(degree, e.userA.id); bump(degree, e.userB.id); bsAdjust(e.userA.id, e.userB.id, +1) }
+  const deg = (id: string) => degree.get(id) || 0
+  const canAdd = (x: string, y: string) => {
+    if (peer(x, y)) return true
+    if (isBS(M(y)) && (bsCount.get(x) || 0) >= bsCapOf(M(x))) return false
+    if (isBS(M(x)) && (bsCount.get(y) || 0) >= bsCapOf(M(y))) return false
+    return true
+  }
+  const applyAdd = (x: string, y: string) => { result.push(edgeByKey.get(K(x, y))!); matched.add(K(x, y)); bump(degree, x); bump(degree, y); bsAdjust(x, y, +1) }
+  const applyRemove = (x: string, y: string) => {
+    matched.delete(K(x, y))
+    const i = result.findIndex((e) => K(e.userA.id, e.userB.id) === K(x, y))
+    if (i >= 0) result.splice(i, 1)
+    bump(degree, x, -1); bump(degree, y, -1); bsAdjust(x, y, -1)
+  }
+  const partnersOf = (id: string) => result.filter((e) => e.userA.id === id || e.userB.id === id).map((e) => (e.userA.id === id ? e.userB.id : e.userA.id))
+
+  const swaps: Array<{ partner: string; seated: string; displaced?: string; reseated?: string; delta: number }> = []
+  const partners = Array.from(memberById.keys())
+    .filter((id) => config.isPartner(M(id)))
+    .sort((a, b) => ((adj.get(a)?.length || 0) - (adj.get(b)?.length || 0)) || (a < b ? -1 : 1))
+
+  for (const P of partners) {
+    const capP = Math.min(target, capOf(M(P)))
+    while (deg(P) < capP) {
+      // Cross-market candidates for P, strongest first. (edges is cross-market-only.)
+      const cands = Array.from(new Set(adj.get(P) || []))
+        .filter((C) => !matched.has(K(P, C)) && C !== P)
+        .sort((x, y) => w(P, y) - w(P, x) || (x < y ? -1 : 1))
+      let applied = false
+      for (const C of cands) {
+        if (isPartnerPair(M(P), M(C))) continue
+        if (!canAdd(P, C)) continue
+        if (deg(C) < capOf(M(C))) {                       // free capacity → pure add
+          applyAdd(P, C); swaps.push({ partner: P, seated: C, delta: w(P, C) }); applied = true; break
+        }
+        // saturated → displace C's weakest partner D and re-seat or drop-if-safe
+        const ds = partnersOf(C).filter((D) => D !== P).sort((x, y) => w(C, x) - w(C, y) || (x < y ? -1 : 1))
+        let bestMove: { D: string; R?: string; delta: number } | null = null
+        for (const D of ds) {
+          if (isPartnerPair(M(C), M(D))) continue        // don't disturb a same-side pair via C (shouldn't exist here)
+          // NEVER displace another Law Firm Partner — dropping a partner would cascade them
+          // into a same-side fallback (moving the problem, not solving it). Only non-partner
+          // edges may be displaced to seat a partner's cross-market candidate.
+          if (config.isPartner(M(D))) continue
+          // try to re-seat D with a free R (coverage-preserving)
+          bsAdjust(C, D, -1)
+          let reseat: { R: string; delta: number } | null = null
+          for (const R of Array.from(new Set(adj.get(D) || [])).sort((x, y) => w(D, y) - w(D, x) || (x < y ? -1 : 1))) {
+            if (R === C || R === P || matched.has(K(D, R))) continue
+            if (isPartnerPair(M(D), M(R))) continue
+            if (deg(R) >= capOf(M(R))) continue
+            if (!canAdd(D, R)) continue
+            reseat = { R, delta: w(P, C) + w(D, R) - w(C, D) }; break
+          }
+          const canSeatPC = canAdd(P, C)
+          bsAdjust(C, D, +1)
+          if (reseat && canSeatPC) { const m = { D, R: reseat.R, delta: reseat.delta }; if (!bestMove || m.delta > bestMove.delta) bestMove = m; continue }
+          // no re-seat → only if D stays ≥ minCoverage after losing one (i.e. D was at ≥ minCov+1)
+          if (deg(D) - 1 >= minCov && canSeatPC) { const m = { D, delta: w(P, C) - w(C, D) }; if (!bestMove || m.delta > bestMove.delta) bestMove = m }
+        }
+        if (bestMove && bestMove.delta >= -maxSac) {
+          const bm = bestMove as { D: string; R?: string; delta: number }
+          applyRemove(C, bm.D)
+          if (bm.R) applyAdd(bm.D, bm.R)
+          applyAdd(P, C)
+          swaps.push({ partner: P, seated: C, displaced: bm.D, reseated: bm.R, delta: bm.delta }); applied = true; break
+        }
+      }
+      if (!applied) break // no bounded cross-market seat for this slot → leave for same-side fallback
+    }
+  }
+  return { edges: result, swaps }
+}
+
+/**
  * Augmenting-path improvement over a greedy b-matching (Phase 2 of selectReciprocalGraph,
  * also usable standalone). Repeatedly looks for a member `u` with spare capacity and
  * either

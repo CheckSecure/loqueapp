@@ -89,39 +89,40 @@ describe('RECOMMENDATIONS_PER_BATCH — one central constant drives every path',
   })
 })
 
-describe('law-firm composition policy — never two law-firm lawyers', () => {
+describe('law-firm composition policy — CROSS-MARKET-FIRST (issue #2 product rule)', () => {
   const viewer = { role_type: 'Law Firm Partner', city: 'Washington', expertise: ['Litigation', 'Legal'] }
   const gc = { id: 'gc', role_type: 'General Counsel' }
   const exec = { id: 'exec', role_type: 'COO' }
   const clonePeer = { id: 'clone', role_type: 'Law Firm Partner', city: 'Washington', expertise: ['Litigation', 'Compliance', 'Legal'] }
-  const strategicPeer = { id: 'strat', role_type: 'Law Firm Attorney', city: 'Washington', expertise: ['Regulatory', 'Legal'] }
-  const outOfTownPeer = { id: 'far', role_type: 'Law Firm Partner', city: 'Denver', expertise: ['Antitrust'] }
+  const attorneyPeer = { id: 'atty', role_type: 'Law Firm Attorney', city: 'Washington', expertise: ['Regulatory', 'Legal'] }
 
-  it('two clients when available → zero law-firm in the top 2', () => {
-    const top2 = applyLawFirmCompositionPolicy([clonePeer, strategicPeer, gc, exec], viewer).slice(0, 2)
+  it('CASE A — ≥2 cross-market candidates → 0 same-side law firm in the top 2', () => {
+    const top2 = applyLawFirmCompositionPolicy([clonePeer, attorneyPeer, gc, exec], viewer).slice(0, 2)
     expect(top2.filter((c) => isLawFirmLawyer(c))).toHaveLength(0)
-  })
-  it('admits ONE strategic peer (complementary practice + same city) into slot 2', () => {
-    const top2 = applyLawFirmCompositionPolicy([gc, strategicPeer, exec], viewer).slice(0, 2)
-    expect(isLawFirmLawyer(top2[0])).toBe(false)
-    expect(top2.filter((c) => isLawFirmLawyer(c))).toHaveLength(1)
-    expect(top2[1].id).toBe('strat')
-  })
-  it('excludes a same-practice clone even if higher-ranked', () => {
-    const top2 = applyLawFirmCompositionPolicy([clonePeer, gc, exec], viewer).slice(0, 2)
     expect(top2.map((c) => c.id)).toEqual(['gc', 'exec'])
   })
-  it('excludes a complementary peer that lacks the local (same-city) signal', () => {
-    const out = applyLawFirmCompositionPolicy([gc, outOfTownPeer, exec], viewer)
-    expect(out.slice(0, 2).filter((c) => isLawFirmLawyer(c))).toHaveLength(0)
+  it('CASE B — exactly 1 cross-market candidate → cross-market slot 1, one same-side fills slot 2', () => {
+    const top2 = applyLawFirmCompositionPolicy([attorneyPeer, gc], viewer).slice(0, 2)
+    expect(isLawFirmLawyer(top2[0])).toBe(false)   // gc first
+    expect(top2[0].id).toBe('gc')
+    expect(top2[1].id).toBe('atty')                // same-side only as fallback for slot 2
   })
-  it('never places a peer in slot 1 (always ≥1 client)', () => {
-    const out = applyLawFirmCompositionPolicy([strategicPeer, gc, exec], viewer)
+  it('CASE C — 0 cross-market candidates → same-side used as fallback (not banned)', () => {
+    const top2 = applyLawFirmCompositionPolicy([attorneyPeer, clonePeer], viewer).slice(0, 2)
+    expect(top2).toHaveLength(2)
+    expect(top2.every((c) => isLawFirmLawyer(c))).toBe(true)
+  })
+  it('a same-side peer never takes slot 1 when any cross-market candidate exists', () => {
+    const out = applyLawFirmCompositionPolicy([attorneyPeer, gc, exec], viewer)
     expect(isLawFirmLawyer(out[0])).toBe(false)
+  })
+  it('partner ↔ law-firm ATTORNEY is treated as same-side (deferred behind cross-market)', () => {
+    const top2 = applyLawFirmCompositionPolicy([attorneyPeer, gc, exec], viewer).slice(0, 2)
+    expect(top2.map((c) => c.id)).toEqual(['gc', 'exec'])
   })
   it('leaves a non-law-firm viewer’s ranking unchanged', () => {
     const gcViewer = { role_type: 'General Counsel' }
-    const input = [clonePeer, gc, strategicPeer, exec]
+    const input = [clonePeer, gc, attorneyPeer, exec]
     expect(applyLawFirmCompositionPolicy(input, gcViewer)).toEqual(input)
   })
 })
@@ -282,10 +283,12 @@ describe('queue — weekly generation eligibility', () => {
     // A,B are unresolved 'suggested' → not eligible for a pre-loaded organic next
     expect(await weeklyEligibilityCheck(c, 'M')).toBe(false)
   })
-  it('is eligible behind an incomplete ORGANIC active batch (pre-load allowed) and when empty', async () => {
+  it('is INELIGIBLE behind an incomplete ORGANIC active batch (queued-organic path retired), eligible when empty', async () => {
+    // PART 2 permanent rule: any unresolved introduction from an active batch → ineligible.
+    // (Previously an organic active batch allowed a pre-loaded queued next batch; that path is retired.)
     const organic = makeClient()
     await enqueueBatch(organic, { memberId: 'M', source: 'onboarding', rows: [{ target_user_id: 'A' }, { target_user_id: 'B' }] })
-    expect(await weeklyEligibilityCheck(organic, 'M')).toBe(true)
+    expect(await weeklyEligibilityCheck(organic, 'M')).toBe(false)
     const empty = makeClient()
     expect(await weeklyEligibilityCheck(empty, 'M')).toBe(true)
   })

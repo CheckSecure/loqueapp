@@ -219,3 +219,74 @@ export async function notifyQueuedIntrosWaiting(memberId: string, queuedBatchId:
     console.error('[engagement] notifyQueuedIntrosWaiting failed (non-fatal):', e?.message)
   }
 }
+
+/** Stable ISO-week key (UTC), e.g. "2026-W32", used as the weekly reminder cycle id. */
+export function isoWeekKey(d: Date): string {
+  const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+  const day = dt.getUTCDay() || 7
+  dt.setUTCDate(dt.getUTCDate() + 4 - day)
+  const yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1))
+  const week = Math.ceil((((dt.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+  return `${dt.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
+}
+
+/**
+ * PART 3 — Notify a member SKIPPED from the weekly refresh because they still have
+ * unresolved introductions. Sends the "Action needed before your next introductions"
+ * email AND creates the in-app notification (reusing the 'introductions_waiting' type +
+ * /dashboard/introductions link).
+ *
+ * DURABLY IDEMPOTENT per weekly cycle (`cycleKey`, an ISO week): a notification row with
+ * dedupeKey `actionneeded:<cycleKey>` is the persistent "handled" marker.
+ *   1. If that marker already exists → already handled this cycle → send NOTHING.
+ *   2. Otherwise send the email.
+ *   3. Record the marker (+ in-app notification) ONLY after the email SUCCEEDS or is
+ *      preference-suppressed. A hard Resend FAILURE records nothing, so a later retry of
+ *      the same weekly run re-sends (failure isn't permanently suppressed).
+ * Result: a second/duplicate invocation of the same weekly run sends 0 duplicate emails,
+ * while a genuine send failure remains retryable. Best-effort — NEVER throws, so it can
+ * never alter eligibility or create a batch. The unique dedupe index collapses a
+ * concurrent double-insert to one row.
+ */
+export async function notifyPendingIntrosActionNeeded(
+  memberId: string,
+  activeBatchId: string | null,
+  cycleKey: string,
+): Promise<{ handled: boolean; emailed: boolean; skipped: boolean; alreadyHandled: boolean; error?: string }> {
+  try {
+    const admin = createAdminClient()
+    const dedupeKey = `actionneeded:${cycleKey}`
+    // 1. Durable check — was this member already handled for this weekly cycle?
+    const { data: existing } = await admin
+      .from('notifications').select('id')
+      .eq('user_id', memberId).eq('type', 'introductions_waiting').eq('data->>dedupeKey', dedupeKey).limit(1)
+    if (existing && existing.length > 0) {
+      return { handled: true, emailed: false, skipped: false, alreadyHandled: true }
+    }
+
+    // 2. Send the email.
+    const { data: p } = await admin.from('profiles').select('email, full_name').eq('id', memberId).maybeSingle()
+    let emailed = false, skipped = false, error: string | undefined
+    if (p?.email && process.env.RESEND_API_KEY) {
+      console.log(`[Email] type=intro_action_needed memberId=${memberId} cycle=${cycleKey}`)
+      const { sendPendingIntrosReminderEmail } = await import('@/lib/email')
+      const res = await sendPendingIntrosReminderEmail(p.email, p.full_name || 'there')
+      emailed = res.success; skipped = !!res.skipped; error = res.error
+      if (!res.success && !res.skipped) {
+        // Hard send failure → record NOTHING so a retry can re-send. Reported separately.
+        return { handled: false, emailed: false, skipped: false, alreadyHandled: false, error }
+      }
+    }
+    // 3. Record the durable cycle marker + in-app notification (email sent / suppressed / no address).
+    await createNotificationSafe({
+      userId: memberId,
+      type: 'introductions_waiting',
+      data: { batchId: activeBatchId, dedupeKey },
+      dedupeKey,
+    })
+    return { handled: true, emailed, skipped, alreadyHandled: false }
+  } catch (e: any) {
+    console.error('[engagement] notifyPendingIntrosActionNeeded failed (non-fatal):', e?.message)
+    return { handled: false, emailed: false, skipped: false, alreadyHandled: false, error: e?.message || String(e) }
+  }
+}
