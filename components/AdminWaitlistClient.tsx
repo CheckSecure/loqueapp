@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserPlus, CheckCircle, XCircle, Mail, Clock, Send, MessageSquare } from 'lucide-react'
+import { UserPlus, CheckCircle, XCircle, Mail, Clock, Send, MessageSquare, RotateCcw } from 'lucide-react'
 import { buildRecommendationIntroEmail } from '@/lib/email/recommendationIntro'
 
 interface EmailLifecycle {
@@ -103,6 +103,42 @@ export default function AdminWaitlistClient({
   const openRevoke = (entry: WaitlistEntry) => {
     setRevokeError(null)
     setRevokeEntry(entry)
+  }
+
+  // Reinstate-declined confirmation modal state (correct an accidental decline).
+  const [reinstateEntry, setReinstateEntry] = useState<WaitlistEntry | null>(null)
+  const [reinstating, setReinstating] = useState(false)
+  const [reinstateError, setReinstateError] = useState<string | null>(null)
+
+  const openReinstate = (entry: WaitlistEntry) => {
+    setReinstateError(null)
+    setReinstateEntry(entry)
+  }
+
+  const doReinstate = async () => {
+    if (!reinstateEntry || reinstating) return // guard double-clicks while in flight
+    setReinstating(true)
+    setReinstateError(null)
+    try {
+      const res = await fetch('/api/admin/waitlist/reinstate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryId: reinstateEntry.id }), // immutable row id, never email
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.ok) {
+        setReinstateEntry(null)
+        router.refresh() // row leaves Declined, appears under Invited; counts update
+        alert('Reinstated. No invitation email was sent.')
+        return
+      }
+      // Conflict (409, status changed concurrently) or any failure → refresh + neutral message.
+      if (data.conflict) router.refresh()
+      setReinstateError('Unable to reinstate this person. Refresh and try again.')
+    } catch {
+      setReinstateError('Unable to reinstate this person. Refresh and try again.')
+    }
+    setReinstating(false)
   }
 
   const doRevoke = async () => {
@@ -605,6 +641,17 @@ export default function AdminWaitlistClient({
                             </button>
                           </div>
                         )}
+
+                        {activeTab === 'declined' && (
+                          <button
+                            onClick={() => openReinstate(entry)}
+                            disabled={processing === entry.id || reinstating}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-white text-[#1B2850] border border-slate-300 text-sm font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            Reinstate
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -731,6 +778,44 @@ export default function AdminWaitlistClient({
               >
                 <XCircle className="w-4 h-4" />
                 {revoking ? 'Revoking…' : 'Revoke Invite'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reinstateEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50" onClick={() => !reinstating && setReinstateEntry(null)} />
+          <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">Reinstate this person and move them back to Invited?</h3>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <p className="text-sm text-slate-600">
+                <span className="font-semibold text-slate-800">{reinstateEntry.full_name || reinstateEntry.email}</span>{' '}
+                will move from Declined back to the Invited tab.
+              </p>
+              <p className="text-xs text-slate-500">This will not send a new invitation email.</p>
+              {reinstateError && (
+                <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">{reinstateError}</p>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setReinstateEntry(null)}
+                disabled={reinstating}
+                className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doReinstate}
+                disabled={reinstating}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-[#1B2850] rounded-lg hover:bg-[#162040] disabled:opacity-50"
+              >
+                <RotateCcw className="w-4 h-4" />
+                {reinstating ? 'Reinstating…' : 'Reinstate'}
               </button>
             </div>
           </div>

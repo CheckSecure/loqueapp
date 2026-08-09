@@ -224,7 +224,9 @@ describe('server-side transition guard (canTransition)', () => {
 describe('isBlockedTransition — route guard, permissive for unknown/legacy status', () => {
   it('blocks the known-invalid transitions', () => {
     expect(isBlockedTransition('pending', 'invited')).toBe(true)
-    expect(isBlockedTransition('declined', 'invited')).toBe(true)
+    // declined → invited is now ALLOWED (admin "Reinstate" — undo an accidental decline);
+    // declined → approved/contacted/revoked stays blocked.
+    expect(isBlockedTransition('declined', 'invited')).toBe(false)
     expect(isBlockedTransition('declined', 'approved')).toBe(true)
     expect(isBlockedTransition('invited', 'contacted')).toBe(true)
   })

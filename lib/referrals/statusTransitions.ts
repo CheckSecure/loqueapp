@@ -11,15 +11,17 @@
  * modeled here). Notes:
  *   • contacted → contacted is allowed (resend the warm recommendation email).
  *   • invited → invited is allowed (resend access email / password reset).
- *   • declined is terminal here (re-approving a declined row is intentionally not
- *     an admin one-click action).
+ *   • declined → invited is the ONLY move out of declined: an admin "Reinstate" to
+ *     correct an accidental decline. It flips the status marker back to invited (no email,
+ *     no provisioning); declined → approved/contacted/revoked stays disallowed.
+ *   • revoked is terminal.
  */
 export const WAITLIST_TRANSITIONS: Record<string, readonly string[]> = {
   pending: ['approved', 'declined'],
   approved: ['contacted', 'invited', 'declined'],
   contacted: ['contacted', 'invited', 'declined'],
   invited: ['invited', 'revoked'],
-  declined: [],
+  declined: ['invited'], // Reinstate — undo an accidental decline (back to the Invited tab)
   revoked: [], // terminal — a revoked invitation cannot be re-invited or re-declined
 }
 
