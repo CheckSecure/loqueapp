@@ -6,6 +6,8 @@ import { formatDistanceToNow } from 'date-fns'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
 import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import PageHint from '@/components/PageHint'
+import PresenceBadge from '@/components/presence/PresenceBadge'
+import { usePresenceLabels } from '@/components/presence/PresenceProvider'
 
 interface Conversation {
   id: string
@@ -56,6 +58,10 @@ export default function MessagesPage() {
     }
   }
 
+  // ONE batched presence subscription for every OTHER participant in the list (never self).
+  // Called before any early return so the hook order is stable.
+  const presenceById = usePresenceLabels(conversations.map((c) => c.otherUser?.id))
+
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
@@ -92,6 +98,11 @@ export default function MessagesPage() {
           {conversations.map(conv => {
             const isUnread = conv.unreadCount > 0
             const isFormer = conv.otherUser?.account_status === 'deactivated'
+            // Presence for the OTHER participant only. Hidden for former members. undefined =
+            // not fetched; null = opt-out/offline → nothing. Online → avatar dot; recent →
+            // relative label under the name (avoids a redundant second "Online now" dot).
+            const presence = !isFormer ? presenceById[conv.otherUser?.id ?? ''] : undefined
+            const isOnline = presence === 'Online now'
             return (
             <Link
               key={conv.id}
@@ -104,7 +115,7 @@ export default function MessagesPage() {
                     : 'border border-slate-200/70 bg-white hover:border-slate-300'
               }`}
             >
-              <div className="flex-shrink-0">
+              <div className="flex-shrink-0 relative">
                 {conv.otherUser?.avatar_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -116,6 +127,13 @@ export default function MessagesPage() {
                   <div className={`w-14 h-14 rounded-full bg-brand-navy/[0.06] ring-1 ring-brand-navy/10 flex items-center justify-center text-brand-navy font-semibold text-lg ${isFormer ? 'opacity-70 grayscale' : ''}`}>
                     {conv.otherUser?.full_name?.[0] || '?'}
                   </div>
+                )}
+                {isOnline && (
+                  <span
+                    className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-green-500 ring-2 ring-white"
+                    aria-label="Online now"
+                    title="Online now"
+                  />
                 )}
               </div>
 
@@ -134,6 +152,10 @@ export default function MessagesPage() {
                 {!isFormer && (() => { const line = professionalIdentityLine(conv.otherUser); return line ? (
                   <p className="text-xs text-slate-500 truncate mt-0.5">{line}</p>
                 ) : null })()}
+
+                {/* Relative presence label (e.g. "Active 12m ago"); online is shown by the
+                    avatar dot instead. Nothing when opted-out/offline. */}
+                {presence && !isOnline && <PresenceBadge label={presence} className="mt-0.5" />}
 
                 {isFormer && (
                   <FormerMemberBadge />

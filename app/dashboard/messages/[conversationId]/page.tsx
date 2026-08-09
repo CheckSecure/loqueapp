@@ -7,6 +7,8 @@ import ConversationView from '@/components/messages/ConversationView'
 import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
 import IssueReportBanner from '@/components/IssueReportBanner'
+import PresenceBadge from '@/components/presence/PresenceBadge'
+import { usePresenceLabel } from '@/components/presence/PresenceProvider'
 
 interface ConversationData {
   id: string
@@ -57,6 +59,10 @@ export default function ConversationPage() {
       setLoading(false)
     }
   }
+
+  // Presence for the OTHER participant, from the shared Messages provider (persists across
+  // conversation switches → updates immediately). Called before any early return.
+  const otherPresence = usePresenceLabel(conversation?.otherUser?.id)
 
   if (loading) {
     return (
@@ -135,6 +141,8 @@ export default function ConversationPage() {
               {(() => { const line = professionalIdentityLine(conversation.otherUser); return line ? (
                 <p className="text-sm text-gray-500">{line}</p>
               ) : null })()}
+              {/* Full coarse presence label for the other participant (green dot when online). */}
+              <PresenceBadge label={otherPresence ?? null} className="mt-0.5" />
             </div>
           </Link>
         )}

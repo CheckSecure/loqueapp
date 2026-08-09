@@ -6,6 +6,7 @@ import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Spa
 import { computeMatchSignals, toList } from '@/lib/match-signals'
 import { normalizeFocusAreas } from '@/lib/profile/focusAreas'
 import { usablePreviousRoles } from '@/lib/profile/previousRoles'
+import LivePresenceBadge from '@/components/presence/LivePresenceBadge'
 import { listRoles, ROLE_CATEGORY_LABELS } from '@/lib/profileRoles'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { professionalIdentity } from '@/lib/professionalIdentity'
@@ -90,6 +91,12 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
   // that the profile exists; no access-denied page).
   const admin = createAdminClient()
   if (!(await canViewerDiscoverMember(admin, user.id, params.id))) notFound()
+
+  // Presence seed — one coarse-label RPC call as the VIEWER (privacy-filtered: discoverability
+  // + the member's opt-out enforced in SQL). Seeds the live badge; never a raw timestamp.
+  const { data: presenceRows } = await supabase.rpc('member_presence_labels', { target_ids: [params.id] })
+  const presenceSeed: string | null =
+    ((presenceRows as any[]) || []).find((r) => r.member_id === params.id)?.label ?? null
 
   const { data: profileRow, error } = await supabase
     .from('profiles')
@@ -226,6 +233,9 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
             </EnlargeableAvatar>
 
             <h1 className="text-2xl font-bold text-brand-navy tracking-tight">{name}</h1>
+
+            {/* Same live presence badge as the expanded Network modal (standalone poll here). */}
+            <LivePresenceBadge memberId={params.id} initialLabel={presenceSeed} className="mt-1" />
 
             {(() => {
               const identity = professionalIdentity(profile)

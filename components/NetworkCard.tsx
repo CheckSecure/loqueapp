@@ -10,6 +10,8 @@ import FormerMemberBadge from '@/components/FormerMemberBadge'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 import { professionalIdentity } from '@/lib/professionalIdentity'
 import IdentityLine from '@/components/IdentityLine'
+import PresenceBadge from '@/components/presence/PresenceBadge'
+import { usePresenceLabel } from '@/components/presence/PresenceProvider'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -41,6 +43,10 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
   const isDeactivated = profile.account_status === 'deactivated'
   const avatarColor = pickColor(profile.id)
   const initials = getInitials(profile.full_name)
+  // Presence — shared surface poll (seeded by the server label until the first live refresh).
+  // undefined = not fetched yet → show the seed; null = opt-out/offline → hide.
+  const livePresence = usePresenceLabel(profile.id)
+  const presenceLabel = livePresence !== undefined ? livePresence : ((profile as any).last_active_display ?? null)
   const connectedRelative = (() => {
     if (!connectedAt) return null
     const d = new Date(connectedAt)
@@ -132,6 +138,13 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
                 )}
               </div>
             ) : null })()}
+            {/* Presence — compact status under the identity. Reserved height so a label
+                appearing/disappearing never shifts the card layout. Hidden for former members. */}
+            {!isDeactivated && (
+              <div className="mt-0.5 min-h-[16px]">
+                <PresenceBadge label={presenceLabel} />
+              </div>
+            )}
             {isDeactivated && <FormerMemberBadge />}
             {profile.location && (
               <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
