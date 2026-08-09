@@ -68,3 +68,16 @@ export function presenceForViewer(opts: {
   if (showActivityStatus === false) return null
   return lastActiveAt ?? null
 }
+
+/**
+ * Extract a member's coarse presence label from the /api/presence/label response
+ * (`{ labels: { [memberId]: label|null } }`). Returns null for no row, a null label, an
+ * empty string, or a non-string — so the badge disappears on opt-out / offline. Keyed by the
+ * RPC's `member_id`, so no snake/camel rename can silently drop the value. Pure.
+ */
+export function pickPresenceLabel(payload: unknown, memberId: string): string | null {
+  const labels = (payload as any)?.labels
+  if (!labels || typeof labels !== 'object') return null
+  const v = labels[memberId]
+  return typeof v === 'string' && v.length > 0 ? v : null
+}

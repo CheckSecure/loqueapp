@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { formatLastActive, presenceForViewer, PRESENCE_ONLINE_MS } from '@/lib/presence/lastActive'
+import { formatLastActive, presenceForViewer, pickPresenceLabel, PRESENCE_ONLINE_MS } from '@/lib/presence/lastActive'
 
 const NOW = Date.parse('2026-08-10T12:00:00Z')
 const ago = (ms: number) => new Date(NOW - ms).toISOString()
@@ -90,8 +90,8 @@ describe('presence wiring (structural)', () => {
     expect(netPage).not.toMatch(/\.select\([^)]*last_active_at/) // raw timestamp never selected
     expect(netPage).toContain('last_active_display')          // only the coarse label reaches the client
   })
-  it('the expanded Network member view renders the badge from the coarse label', () => {
-    expect(modal).toContain('<PresenceBadge label={(profile as any).last_active_display}')
+  it('the expanded Network member view renders a LIVE badge seeded from the coarse label', () => {
+    expect(modal).toContain('<LivePresenceBadge memberId={profile.id} initialLabel={(profile as any).last_active_display')
   })
   it('the dashboard layout heartbeat writes member_presence (not profiles) + mounts the client heartbeat', () => {
     expect(layout).toContain('<PresenceHeartbeat />')
@@ -191,5 +191,103 @@ describe('presence privacy is enforced at the DATA boundary (expansion 046 + cle
       // any last_active_at reference must be on member_presence, never a profiles select
       expect(src).not.toMatch(/from\('profiles'\)[\s\S]{0,120}last_active_at/)
     }
+  })
+})
+
+// ── Smoke-test regression: "Online now" stays lit + failures are diagnosable ───
+describe('presence keep-alive cadence + observability (post-deploy smoke-test fixes)', () => {
+  const route = readFileSync('app/api/profile/heartbeat/route.ts', 'utf8')
+  const hbc = readFileSync('components/PresenceHeartbeat.tsx', 'utf8')
+  const layout = readFileSync('app/dashboard/layout.tsx', 'utf8')
+  const net = readFileSync('app/dashboard/network/page.tsx', 'utf8')
+  const evalMs = (src: string, name: string): number => {
+    const m = src.match(new RegExp(name + '\\s*=\\s*([0-9*.\\s]+)'))
+    if (!m) throw new Error('missing ' + name)
+    return Function('return (' + m[1] + ')')() as number // controlled numeric literal
+  }
+
+  it('write cadence keeps an active member inside the "Online now" window (throttle-beat fix)', () => {
+    const serverThrottle = evalMs(route, 'THROTTLE_MS')
+    const clientInterval = evalMs(hbc, 'MIN_INTERVAL_MS')
+    // Worst-case staleness before the next write = server throttle + one client ping interval.
+    // It MUST stay under the online window or presence drops out of "Online now" while active.
+    // (Regression: the old 5-min throttle + 4.5-min client ping summed to 9.5 min > 5 min.)
+    expect(serverThrottle + clientInterval).toBeLessThan(PRESENCE_ONLINE_MS)
+    // server throttle still respects the "≥2 min between writes" privacy bound
+    expect(serverThrottle).toBeGreaterThanOrEqual(2 * 60 * 1000)
+  })
+
+  it('heartbeat surfaces the exact failing layer (privacy-safe) instead of swallowing it', () => {
+    expect(route).toMatch(/writeError/)                 // upsert error is captured, not ignored
+    expect(route).toMatch(/upsert failed/)              // and logged
+    expect(route).toMatch(/read failed/)                // read error logged too
+    expect(route).toMatch(/auth failed/)                // auth failure logged
+    // PRIVACY: never log emails, URLs, IPs, user-agents, or browsing activity
+    expect(route).not.toMatch(/\.email\b|request\.url|x-forwarded-for|user-agent|referer/i)
+  })
+
+  it('the layout write and Network RPC also log failures for diagnosability', () => {
+    expect(layout).toMatch(/presence\.layout.*upsert failed/)
+    expect(net).toMatch(/presenceError/)
+    expect(net).toMatch(/labels rpc failed/)
+    // no emails / member ids of others leaked into the RPC-error log
+    expect(net).not.toMatch(/labels rpc failed[\s\S]{0,80}\.email/i)
+  })
+})
+
+// ── Live modal refresh: label survives mapping; null clears the badge ──────────
+describe('pickPresenceLabel — coarse-label extraction from the /api/presence/label response', () => {
+  it('returns the coarse label keyed by member_id (no snake/camel rename can drop it)', () => {
+    expect(pickPresenceLabel({ labels: { B: 'Online now' } }, 'B')).toBe('Online now')
+    expect(pickPresenceLabel({ labels: { B: 'Active 12m ago' } }, 'B')).toBe('Active 12m ago')
+  })
+  it('null / no-row / empty / non-string → null (badge disappears: offline or opt-out)', () => {
+    expect(pickPresenceLabel({ labels: { B: null } }, 'B')).toBeNull()   // opted-out / offline
+    expect(pickPresenceLabel({ labels: {} }, 'B')).toBeNull()             // no row
+    expect(pickPresenceLabel({ labels: { B: '' } }, 'B')).toBeNull()
+    expect(pickPresenceLabel({ labels: { B: 12345 } }, 'B')).toBeNull()   // never a raw timestamp/number
+    expect(pickPresenceLabel({}, 'B')).toBeNull()
+    expect(pickPresenceLabel(null, 'B')).toBeNull()
+  })
+})
+
+describe('LivePresenceBadge — refresh lifecycle (structural; jsdom unavailable in this repo)', () => {
+  const live = readFileSync('components/presence/LivePresenceBadge.tsx', 'utf8')
+  const modalSrc = readFileSync('components/network/ConnectionDetailModal.tsx', 'utf8')
+  it('fetches the COARSE label on open via the privacy-filtered route, seeded from the server label', () => {
+    expect(live).toContain('initialLabel')                                   // seed from page-load snapshot
+    expect(live).toMatch(/fetch\(`\/api\/presence\/label\?ids=/)             // refresh from the route (RPC-gated)
+    expect(live).toContain("cache: 'no-store'")                              // never a stale cached label
+    expect(live).toContain('pickPresenceLabel(')                             // map response → label (null clears)
+  })
+  it('polls ~60s while open, pauses when hidden, and STOPS on modal close (cleanup)', () => {
+    expect(live).toMatch(/POLL_MS\s*=\s*60 \* 1000/)
+    expect(live).toContain('setInterval(refresh, POLL_MS)')
+    expect(live).toContain('visibilitychange')
+    expect(live).toContain('clearInterval')                                  // stops on unmount (modal close)
+    expect(live).toMatch(/visibilityState === 'hidden'/)                     // pause polling when tab hidden
+  })
+  it('fails silently and never exposes a raw timestamp to the client', () => {
+    expect(live).toMatch(/catch\s*\{/)                                       // request failure doesn't break the modal
+    expect(live).not.toMatch(/last_active_at|toISOString|Date\.parse/)       // only coarse labels client-side
+    // the modal mounts it live, seeded from the server snapshot
+    expect(modalSrc).toContain('<LivePresenceBadge memberId={profile.id}')
+  })
+})
+
+// ── ISSUE 2 regression: admin + profile career-history read one source ─────────
+describe('career-history surfaces read the SAME authoritative source (admin ↔ profile)', () => {
+  const adminPage = readFileSync('app/dashboard/admin/members/page.tsx', 'utf8')
+  const profilePage = readFileSync('app/dashboard/profile/[id]/page.tsx', 'utf8')
+
+  it('both admin and public profile read profile_roles via the shared profileRoles module', () => {
+    expect(adminPage).toMatch(/listRolesForProfiles\(createAdminClient\(\)/) // service-role (owner-only RLS)
+    expect(profilePage).toContain('listRoles(')
+  })
+  it('neither surface applies a divergent is_current / category filter before display', () => {
+    // The discrepancy must not come from one surface hiding rows the other shows.
+    expect(adminPage).not.toMatch(/\.filter\([^)]*is_current/)
+    expect(profilePage).not.toMatch(/\.filter\([^)]*is_current/)
+    expect(profilePage).not.toMatch(/\.filter\([^)]*role_category/)
   })
 })

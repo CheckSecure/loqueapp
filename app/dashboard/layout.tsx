@@ -211,14 +211,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // member's raw timestamp is never client-readable. Fire-and-forget: this write must never
   // block the render (and therefore the login navigation). The 5-minute throttle makes an
   // occasional dropped write self-correcting on the next request.
-  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
+  const presenceThreshold = new Date(Date.now() - 3 * 60 * 1000)
   const lastActiveAt = presenceRow?.last_active_at
-  if (!lastActiveAt || new Date(lastActiveAt) < fiveMinAgo) {
+  if (!lastActiveAt || new Date(lastActiveAt) < presenceThreshold) {
     const nowIso = new Date().toISOString()
     void supabase
       .from('member_presence')
       .upsert({ user_id: user.id, last_active_at: nowIso, updated_at: nowIso }, { onConflict: 'user_id' })
-      .then(() => {}, () => {})
+      .then(
+        ({ error }) => { if (error) console.error('[presence.layout] upsert failed', { uid: user.id, code: error.code, msg: error.message }) },
+        () => {},
+      )
   }
 
   return (

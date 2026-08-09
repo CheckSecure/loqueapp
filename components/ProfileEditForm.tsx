@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { normalizeExpertise } from '@/lib/expertise'
 import { shouldShowRecentRoleHint } from '@/lib/professionalIdentity'
+import { usablePreviousRoles } from '@/lib/profile/previousRoles'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Loader2, CheckCircle, User, ChevronDown, ChevronUp } from 'lucide-react'
@@ -32,8 +33,12 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
   const [roleType, setRoleType] = useState(initialData.role_type || '')
   const [exactJobTitle, setExactJobTitle] = useState<string | null>(initialData.exact_job_title ?? null)
   const [currentStatus, setCurrentStatus] = useState(initialData.current_status || '')
+  // Seed from ONLY authoritative saved roles (company + title). A stray blank entry left in
+  // the JSON must never render as an input row — its placeholders ("General Counsel",
+  // "Acme Corp") would read as a fake saved "Counsel at Acme". Same rule the read-only
+  // profile uses, so the two surfaces agree.
   const [previousRoles, setPreviousRoles] = useState<{ company: string; title: string; start_date: string; end_date: string }[]>(
-    Array.isArray(initialData.previous_roles) ? initialData.previous_roles : []
+    usablePreviousRoles(initialData.previous_roles)
   )
   // Unified: every previously-saved value loads into one removable selected list.
   const [expertise, setExpertise] = useState<string[]>(normalizeExpertise(initialData.expertise))
@@ -98,7 +103,9 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     // so the user can remove a previously-saved exact title.
     formData.append('exact_job_title', exactJobTitle ?? '')
     formData.append('current_status', currentStatus)
-    formData.append('previous_roles', JSON.stringify(previousRoles))
+    // Persist ONLY complete roles — an unsaved blank "Add role" row is never stored (so it
+    // can never resurface as a placeholder-only "Counsel at Acme").
+    formData.append('previous_roles', JSON.stringify(usablePreviousRoles(previousRoles)))
     formData.append('expertise', expertise.join(','))
     formData.append('purposes', purposes.join(','))
     formData.append('meeting_format_preference', meetingFormat)
@@ -380,7 +387,7 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
                         type="text"
                         value={role.company}
                         onChange={e => { const u = [...previousRoles]; u[i] = { ...u[i], company: e.target.value }; setPreviousRoles(u) }}
-                        placeholder="Acme Corp"
+                        placeholder="e.g. Acme Corp"
                         className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
                       />
                     </div>
@@ -390,7 +397,7 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
                         type="text"
                         value={role.title}
                         onChange={e => { const u = [...previousRoles]; u[i] = { ...u[i], title: e.target.value }; setPreviousRoles(u) }}
-                        placeholder="General Counsel"
+                        placeholder="e.g. General Counsel"
                         className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
                       />
                     </div>

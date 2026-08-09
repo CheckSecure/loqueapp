@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Users, Star, MessageSquare, Sparkles, Calendar } from 'lucide-react'
 import { computeMatchSignals, toList } from '@/lib/match-signals'
 import { normalizeFocusAreas } from '@/lib/profile/focusAreas'
+import { usablePreviousRoles } from '@/lib/profile/previousRoles'
 import { listRoles, ROLE_CATEGORY_LABELS } from '@/lib/profileRoles'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { professionalIdentity } from '@/lib/professionalIdentity'
@@ -187,10 +188,8 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
     neither: 'Neither',
   }
 
-  const previousRoles: { company: string; title: string; start_date?: string | null; end_date?: string | null }[] =
-    Array.isArray(profile.previous_roles)
-      ? profile.previous_roles.filter((r: any) => r.company && r.title)
-      : []
+  // Shared authoritative rule (same helper the editor uses) — only complete roles render.
+  const previousRoles = usablePreviousRoles(profile.previous_roles)
 
   return (
     <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">

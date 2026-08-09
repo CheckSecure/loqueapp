@@ -101,7 +101,10 @@ export default async function NetworkPage() {
     // Bound the RPC input (the function also caps at 500 server-side) so a huge network can
     // never submit an arbitrarily large array. 500 comfortably exceeds any real connection count.
     const presenceTargets = matchedUserIds.slice(0, 500)
-    const { data: presenceRows } = await supabase.rpc('member_presence_labels', { target_ids: presenceTargets })
+    const { data: presenceRows, error: presenceError } = await supabase.rpc('member_presence_labels', { target_ids: presenceTargets })
+    // PRIVACY-SAFE observability: log only the RPC error code/message (no member ids, no
+    // emails) so an RPC/RLS/permission failure is diagnosable instead of silently empty.
+    if (presenceError) console.error('[presence.network] labels rpc failed', { code: presenceError.code, msg: presenceError.message })
     for (const row of (presenceRows as any[]) || []) presenceLabelById[row.member_id] = row.label
   }
 
