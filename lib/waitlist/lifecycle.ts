@@ -29,7 +29,7 @@ export type LifecycleState =
   | 'completed'            // profile_complete → no further activation email
   | 'not_invited'          // status !== 'invited' (defensive)
   | 'invalid_email'        // blank/malformed email
-  | 'missing_invited_at'   // invited but invited_at is null (data anomaly)
+  | 'missing_invited_at'   // status='invited' but invited_at is null → reinstated, invitation NOT sent
   | 'invite_sent'          // invited, reminder 1 not yet due
   | 'reminder_1_due'       // reminder 1 is due and unsent
   | 'reminder_1_sent'      // reminder 1 sent, reminder 2 not yet due
@@ -149,7 +149,9 @@ export function lifecycleLabel(state: LifecycleState): string {
     case 'completed': return 'Completed'
     case 'not_invited': return 'Not invited'
     case 'invalid_email': return 'Invalid email'
-    case 'missing_invited_at': return 'Missing invite date'
+    // status='invited' with no invited_at is only reachable via Reinstate (send-invite always
+    // stamps invited_at). Make it unambiguous so an admin never assumes an email went out.
+    case 'missing_invited_at': return 'Reinstated — invitation not sent'
     case 'invite_sent': return 'Invite sent'
     case 'reminder_1_due': return 'Reminder 1 due'
     case 'reminder_1_sent': return 'Reminder 1 sent'

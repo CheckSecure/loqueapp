@@ -212,6 +212,13 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Presence privacy cleanup (drop legacy profiles.last_active_at)',
     impact: 'While pending, the legacy profiles.last_active_at column still exists and remains row-readable — the presence privacy boundary is not fully closed until this cleanup runs. Safe to defer, but required to finish the rollout.',
   },
+  {
+    migration: '049_invitation_deliveries.sql',
+    kind: 'table',
+    table: 'invitation_deliveries',
+    feature: 'Durable invitation-delivery tracking (secure invitations)',
+    impact: 'REQUIRED before secure invitations can send. The pre-send delivery claim FAILS CLOSED: until this table exists and is writable, the admin send returns a neutral 503 and generates NO token, mutates NO Auth user, calls NO provider, and never writes invited_at — secure invitations are UNAVAILABLE, not sent-untracked. Delivery tracking never fails open. Apply this before setting INVITATIONS_MODE=test or on.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {

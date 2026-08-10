@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   normalizeEmail,
-  generateTempPassword,
   resolveInviteAction,
   registrationExistingState,
 } from '@/lib/invitations'
@@ -14,27 +13,8 @@ describe('normalizeEmail', () => {
   })
 })
 
-describe('generateTempPassword — cryptographically secure & unambiguous', () => {
-  it('produces a long, high-entropy, unique password each call', () => {
-    const a = generateTempPassword()
-    const b = generateTempPassword()
-    expect(a.length).toBeGreaterThanOrEqual(20)
-    expect(a).not.toBe(b)
-  })
-
-  it('contains ONLY unambiguous characters — no 0/O/1/l/I, no whitespace, no punctuation', () => {
-    // Regression guard for "the temporary password doesn't work": the emailed
-    // password must survive being read by eye and typed by hand, and must not
-    // contain characters that copy/paste or HTML formatting can alter.
-    for (let i = 0; i < 200; i++) {
-      const pw = generateTempPassword()
-      expect(pw).toMatch(/^[A-HJ-NP-Za-km-np-z2-9]+$/) // excludes 0 O 1 I l and all symbols/space
-      expect(pw).not.toMatch(/[0O1Il]/)
-      expect(pw).not.toMatch(/\s/)
-      expect(pw).not.toMatch(/[-_+/=]/)
-    }
-  })
-})
+// generateTempPassword was DELETED — invitations are passwordless. The absence of any
+// temp-password code is asserted repo-wide in secure-invite.test.ts.
 
 describe('resolveInviteAction — state-aware invite/resend', () => {
   it('first invite (no auth user) → create exactly one auth user', () => {

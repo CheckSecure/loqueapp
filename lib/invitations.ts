@@ -5,32 +5,13 @@
  * so they can be unit-tested without Supabase; the two async helpers wrap admin
  * lookups. Server-only (imports node:crypto).
  */
-import { randomBytes } from 'node:crypto'
 import { normalizeEmail } from '@/lib/auth/normalizeEmail'
 
 /** Canonical email form used for every lookup, insert, and comparison. */
 export { normalizeEmail }
 
-/**
- * Unambiguous alphabet for temporary passwords: excludes the character pairs
- * that are indistinguishable when read from an email and re-typed by hand
- * (0/O, 1/l/I) and all punctuation (`-` `_` `+` `/`) that copy/paste, HTML
- * escaping, or line-wrapping can silently alter or drop. 56 symbols.
- */
-const TEMP_PW_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
-
-/**
- * Cryptographically secure temporary password (20 chars, ~116 bits). Uses only
- * TEMP_PW_ALPHABET so a member can reliably read it from the invite email and
- * type it into the login form — the previous base64url form could contain
- * `0/O/1/l/I/-/_`, a recurring source of "the password doesn't work" reports.
- */
-export function generateTempPassword(length = 20): string {
-  const bytes = randomBytes(length)
-  let out = ''
-  for (let i = 0; i < length; i++) out += TEMP_PW_ALPHABET[bytes[i] % TEMP_PW_ALPHABET.length]
-  return out
-}
+// NOTE: temporary-password generation was removed — invitations are now passwordless
+// (secure set-password links only). See lib/invitations/secureInvite.ts.
 
 /**
  * Find an auth user by email, case-insensitively. Supabase admin has no
@@ -47,6 +28,28 @@ export async function findAuthUserByEmail(admin: any, email: string): Promise<an
     if (hit) return hit
     if (!data?.users?.length || data.users.length < 1000) return null
   }
+}
+
+/**
+ * COUNT the auth users at a normalized email (to detect duplicate/ambiguous identities) and
+ * return the first match. `count > 1` is a hard-stop for the secure-invite flow. Throws only
+ * on a hard listUsers error.
+ */
+export async function lookupAuthUsersByEmail(
+  admin: any,
+  email: string,
+): Promise<{ count: number; user: { id: string; last_sign_in_at: string | null } | null }> {
+  const target = normalizeEmail(email)
+  if (!target) return { count: 0, user: null }
+  const matches: any[] = []
+  for (let page = 1; ; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 })
+    if (error) throw error
+    for (const u of data?.users ?? []) if (normalizeEmail(u.email) === target) matches.push(u)
+    if (!data?.users?.length || data.users.length < 1000) break
+  }
+  const first = matches[0]
+  return { count: matches.length, user: first ? { id: first.id, last_sign_in_at: first.last_sign_in_at ?? null } : null }
 }
 
 export type InvitePlan = 'create' | 'reset' | 'active' | 'password_reset'

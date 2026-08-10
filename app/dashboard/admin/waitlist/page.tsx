@@ -5,6 +5,8 @@ import AdminWaitlistClient from '@/components/AdminWaitlistClient'
 import { excludeJoinedFromInvited, toCompletedEmailSet } from '@/lib/waitlist/joined'
 import { normalizeEmail } from '@/lib/auth/normalizeEmail'
 import { computeLifecycle, lifecycleLabel } from '@/lib/waitlist/lifecycle'
+import { inviteStatusModel } from '@/lib/waitlist/inviteStatus'
+import { invitationsMode } from '@/lib/invitations/featureGate'
 
 export const metadata = { title: 'Waitlist | Admin' }
 
@@ -78,8 +80,37 @@ export default async function AdminWaitlistPage() {
     declined:  withLifecycle.filter(w => w.status === 'declined').length,
   }
 
+  // Durable delivery status for the Invited tab — ONE bounded query (no N+1): fetch all
+  // attempts for the invited rows, newest first, and keep the latest per waitlist row. Only a
+  // coarse status reaches the client — never a recipient address, provider payload, or error.
+  // This is the READ/DISPLAY side only: if migration 049 isn't applied the query returns nothing
+  // and rows render as "unavailable"/"not sent". The SEND side fails CLOSED (no send without a
+  // persisted claim), so no untracked invitations are ever created.
+  const invitedIds = withLifecycle.filter(w => w.status === 'invited').map(w => w.id)
+  const latestDelivery: Record<string, { status: string | null; attemptedAt: string | null }> = {}
+  if (invitedIds.length > 0) {
+    const { data: deliveries } = await adminClient
+      .from('invitation_deliveries')
+      .select('waitlist_id, status, attempted_at')
+      .in('waitlist_id', invitedIds)
+      .order('attempted_at', { ascending: false })
+    for (const d of (deliveries ?? []) as any[]) {
+      if (d.waitlist_id && !(d.waitlist_id in latestDelivery)) latestDelivery[d.waitlist_id] = { status: d.status, attemptedAt: d.attempted_at ?? null }
+    }
+  }
+  const withStatus = withLifecycle.map(w => ({
+    ...w,
+    inviteStatus: inviteStatusModel({
+      waitlistStatus: w.status,
+      invitedAt: w.invited_at,
+      profileComplete: completedEmails.has(normalizeEmail(w.email)),
+      delivery: latestDelivery[w.id] ?? null,
+      nowMs,
+    }),
+  }))
+
   // Cast at the boundary: PostgREST types the to-one `referrals` join as an
   // array while it is an object at runtime (handled with `as any` in the filter
   // above). Consistent with the pre-existing loose typing of this row shape.
-  return <AdminWaitlistClient waitlist={withLifecycle as any} counts={counts} />
+  return <AdminWaitlistClient waitlist={withStatus as any} counts={counts} invitationsMode={invitationsMode()} />
 }

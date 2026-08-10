@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { sendInviteEmail } from '@/lib/email'
-import { randomBytes } from 'crypto'
+import { sendSecureInviteEmail } from '@/lib/email'
+import { lookupAuthUsersByEmail } from '@/lib/invitations'
+import { sendSecureInvite, type SecureInviteDeps } from '@/lib/invitations/secureInvite'
+import { claimInviteDelivery, markDeliveryAccepted, markDeliveryFailed } from '@/lib/invitations/delivery'
+import { invitationsMode, canSendInvitation, INVITATIONS_PAUSED_MESSAGE } from '@/lib/invitations/featureGate'
+import { getSiteUrl, getRecoveryRedirectUrl } from '@/lib/config/siteUrl'
 import { isValidFullName, normalizeFullName } from '@/lib/validation/fullName'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
@@ -189,70 +193,92 @@ export async function POST(req: Request) {
   type RowResult = {
     email: string
     name: string
-    status: 'sent' | 'email_failed' | 'db_failed'
+    status: 'sent' | 'email_failed' | 'db_failed' | 'skipped'
     error?: string
   }
 
   const results: RowResult[] = []
 
+  // ROLLOUT-MODE GATE. Preview (above) is always allowed; EXECUTE is gated:
+  //   off  → reject the whole batch (503, nothing sent);
+  //   test → process ONLY allowlisted rows; every other row is reported as skipped BEFORE any
+  //          waitlist insert, Auth lookup, delivery claim, or provider call;
+  //   on   → normal.
+  const mode = invitationsMode()
+  if (mode === 'off') {
+    return NextResponse.json({ paused: true, message: INVITATIONS_PAUSED_MESSAGE, sent: 0, results: [] }, { status: 503 })
+  }
+
+  // SECURE, PASSWORDLESS bulk invite: each row inserts its waitlist row first (visible as
+  // "invitation not sent" if delivery fails), then the shared helper mints the auth user via
+  // generateLink({type:'invite'}) — NO temp password — and emails a scanner-resistant set-password
+  // link, recording delivery. invited_at is stamped only on provider acceptance.
+  const siteUrl = getSiteUrl()
+  const recoverUrl = getRecoveryRedirectUrl()
+  const mkDeps = (waitlistId: string, rowEmail: string): SecureInviteDeps => ({
+    siteUrl,
+    lookupAuth: (e) => lookupAuthUsersByEmail(adminClient, e),
+    hasProfile: async (uid) => { const { data } = await adminClient.from('profiles').select('id').eq('id', uid).maybeSingle(); return !!data },
+    claimDelivery: (purpose, authUserId) => claimInviteDelivery(adminClient, { waitlistId, authUserId, email: rowEmail, purpose }),
+    markAccepted: (id, msgId, authUserId) => markDeliveryAccepted(adminClient, id, msgId, authUserId),
+    markFailed: (id, errorClass) => markDeliveryFailed(adminClient, id, errorClass),
+    generateLink: async (type, e) => {
+      // Consistent with the single invite: founding-member metadata via the generateLink
+      // `data` option on the first-invite link only (consumed at onboarding).
+      const options: any = { redirectTo: recoverUrl }
+      if (defaults.isFoundingMember && type === 'invite') options.data = { markAsFounding: true }
+      const { data, error } = await adminClient.auth.admin.generateLink({ type, email: e, options } as any)
+      const ht = (data as any)?.properties?.hashed_token
+      if (error || !ht) throw new Error(error?.message || 'generateLink failed')
+      return { hashedToken: ht, userId: (data as any)?.user?.id ?? null }
+    },
+    sendEmail: (a) => sendSecureInviteEmail({ to: a.to, toName: a.toName, link: a.link, idempotencyKey: a.idempotencyKey }),
+  })
+
   for (const { email, name } of ready_to_invite) {
-    const displayName = name || 'there'
-    const tempPassword = randomBytes(12).toString('base64url')
+    // TEST-MODE ALLOWLIST GATE — the FIRST thing per row, before any Auth lookup, waitlist
+    // insert, delivery claim, or provider call. In 'on' mode canSendInvitation is always true;
+    // in 'test' mode a non-allowlisted row is reported skipped and NOTHING happens for it.
+    if (!canSendInvitation(email)) {
+      results.push({ email, name, status: 'skipped', error: 'not on the test allowlist (invitation test mode)' })
+      continue
+    }
+    // BLOCKER 7 FIX: classify BEFORE inserting the waitlist row, so an already-active or
+    // duplicate/ambiguous account never gets a spurious new waitlist row.
+    let pre
+    try { pre = await lookupAuthUsersByEmail(adminClient, email) } catch { results.push({ email, name, status: 'db_failed', error: 'auth lookup failed' }); continue }
+    const activated = !!pre.user && (!!pre.user.last_sign_in_at || !!(await adminClient.from('profiles').select('id').eq('id', pre.user.id).maybeSingle()).data)
+    if (pre.count > 1) { results.push({ email, name, status: 'skipped', error: 'duplicate/ambiguous account — manual review' }); continue }
+    if (pre.count === 1 && activated) { results.push({ email, name, status: 'skipped', error: 'already an active account' }); continue }
 
-    // Step 1: Send invite email — if this fails, do NOT create the auth user.
-    const emailResult = await sendInviteEmail(email, displayName, tempPassword, defaults.isFoundingMember)
-    if (!emailResult.success) {
-      console.error(`[bulk-invite] email failed for ${email}:`, emailResult.error)
-      results.push({ email, name, status: 'email_failed', error: emailResult.error })
+    const { data: wl, error: wlErr } = await adminClient
+      .from('waitlist')
+      .insert({ email, full_name: name || null, status: 'invited', referral_source: 'direct_invite', role_type: defaults.professionType ?? null })
+      .select('id')
+      .single()
+    if (wlErr || !wl) {
+      console.error(`[bulk-invite] waitlist insert failed for ${email}:`, wlErr?.message)
+      results.push({ email, name, status: 'db_failed', error: wlErr?.message })
       continue
     }
 
-    // Step 2: Create auth user (only reached if email succeeded).
-    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-      email,
-      password: tempPassword,
-      email_confirm: true,
-    })
-
-    if (authError) {
-      // Email sent but auth creation failed — CRITICAL: user received credentials
-      // they cannot use. Admin must manually create the auth row in Supabase
-      // Dashboard using the same email (any password; user will reset).
-      console.error(`[bulk-invite] CRITICAL: email sent but auth user creation failed for ${email}:`, authError.message)
-      results.push({ email, name, status: 'db_failed', error: authError.message })
+    const r = await sendSecureInvite(mkDeps(wl.id, email), { email, fullName: name || null, waitlistId: wl.id })
+    if (r.state === 'active' || r.state === 'ambiguous' || r.state === 'pending' || r.state === 'needs_review' || r.state === 'unavailable') {
+      // Neutral non-send outcomes (already active/ambiguous, an in-flight claim, a past-window
+      // claim needing review, or delivery tracking unavailable → fail closed). No invited_at.
+      results.push({ email, name, status: 'skipped', error: r.message })
       continue
     }
-
-    // Step 3: Insert waitlist row with status=invited.
-    const { error: waitlistError } = await adminClient.from('waitlist').insert({
-      email,
-      full_name: name || null,
-      status: 'invited',
-      invited_at: new Date().toISOString(),
-      referral_source: 'direct_invite',
-      role_type: defaults.professionType ?? null,
-    })
-
-    if (waitlistError) {
-      console.error(`[bulk-invite] waitlist insert failed for ${email}:`, waitlistError.message)
-      // Auth user created and email sent — treat as sent (partial DB failure;
-      // user can log in). Log for manual reconciliation.
-      console.error(`[bulk-invite] manual reconciliation needed: auth user created for ${email} but waitlist row missing`)
+    if (!r.ok) {
+      results.push({ email, name, status: 'email_failed', error: r.message })
+      continue // retryable; the row stays visible as "invitation not sent"
     }
 
-    // Step 4: Apply founding-member flag to profiles (update is a no-op if the
-    // profile row doesn't exist yet — it will be created during onboarding).
-    if (defaults.isFoundingMember && authData.user?.id) {
-      const { error: foundingError } = await adminClient
-        .from('profiles')
-        .update({ is_founding_member: true })
-        .eq('id', authData.user.id)
+    await adminClient.from('waitlist').update({ invited_at: new Date().toISOString() }).eq('id', wl.id)
 
-      if (foundingError) {
-        // Non-fatal: profile row may not exist until onboarding completes.
-        // Admin can set is_founding_member manually after the user onboards.
-        console.warn(`[bulk-invite] founding-member flag not set for ${email} (profile may not exist yet):`, foundingError.message)
-      }
+    if (defaults.isFoundingMember && r.authUserId) {
+      const { error: foundingError } = await adminClient.from('profiles').update({ is_founding_member: true }).eq('id', r.authUserId)
+      if (foundingError) console.warn(`[bulk-invite] founding-member flag not set for ${email} (profile may not exist yet):`, foundingError.message)
     }
 
     results.push({ email, name, status: 'sent' })

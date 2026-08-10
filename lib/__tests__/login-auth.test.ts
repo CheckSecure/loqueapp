@@ -39,30 +39,6 @@ describe('login form normalizes the email and surfaces the real auth error', () 
   })
 })
 
-describe('invite email delivers a clean, copy-safe password', () => {
-  const email = readFileSync('lib/email.ts', 'utf8')
-  // Isolate the sendInviteEmail body so assertions target the invite email only.
-  const body = email.slice(email.indexOf('export async function sendInviteEmail'), email.indexOf('export async function sendReferralInviteEmail'))
-
-  it('interpolates the password inline with NO surrounding whitespace/newline', () => {
-    // A password wrapped by indentation/newlines can be copied with stray
-    // whitespace, which then fails an (un-trimmed) password login.
-    expect(body).toMatch(/>\$\{escapeHtml\(tempPassword\)\}</)          // inline, tight to the tags
-    expect(body).not.toMatch(/\n\s*\$\{escapeHtml\(tempPassword\)\}/)   // never on its own indented line
-  })
-
-  it('sendInviteEmail states the login email, links to the canonical www login, and tells the user to ignore prior links', () => {
-    expect(body).toContain('${escapeHtml(toEmail)}')                 // correct login email shown
-    expect(body).toContain('https://www.andrel.app/login')           // canonical www destination
-    expect(body).not.toMatch(/href="https:\/\/andrel\.app\/login"/)  // no bare (non-www) host
-    expect(body).toMatch(/disregard them|ignore/i)                   // disregard prior magic/reset links
-  })
-
-  it('neither invite email links to the bare andrel.app/login host', () => {
-    expect(email).not.toContain('href="https://andrel.app/login"')
-  })
-})
-
 describe('middleware: password_reset_required does NOT block initial authentication', () => {
   const mw = readFileSync('middleware.ts', 'utf8')
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendInviteReminder1, sendInviteReminder2 } from '@/lib/email'
+import { activationRemindersEnabled } from '@/lib/invitations/featureGate'
 
 // Daily cron. Sends at most one reminder per invited user, in two phases:
 //   Reminder 1: invited 23–48h ago, never reminded, hasn't signed in
@@ -84,6 +85,14 @@ export async function GET(req: Request) {
   const auth = req.headers.get('authorization')
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // GATE: activation reminders are invitation/access emails and run ONLY in 'on' mode. In 'off'
+  // AND 'test' mode, send NOTHING and — critically — DO NOT touch any reminder timestamp (so
+  // recipients stay eligible once the flow is globally enabled). Record a neutral paused result.
+  if (!activationRemindersEnabled()) {
+    console.log('[activation-reminders] paused — invitations mode is not "on"; no sends, no timestamp writes')
+    return NextResponse.json({ paused: true, reminder_1: { sent: 0 }, reminder_2: { sent: 0 } })
   }
 
   const admin = createAdminClient()

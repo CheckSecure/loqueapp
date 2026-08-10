@@ -4,6 +4,16 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { UserPlus, CheckCircle, XCircle, Mail, Clock, Send, MessageSquare, RotateCcw } from 'lucide-react'
 import { buildRecommendationIntroEmail } from '@/lib/email/recommendationIntro'
+import type { InviteStatusModel, InviteTone } from '@/lib/waitlist/inviteStatus'
+
+// One tone → badge style map for the shared invitation-state model.
+const INVITE_TONE_CLASS: Record<InviteTone, string> = {
+  neutral: 'text-slate-600 bg-slate-100 border border-slate-200',
+  info: 'text-sky-800 bg-sky-50 border border-sky-200',
+  positive: 'text-green-800 bg-green-50 border border-green-200',
+  warning: 'text-amber-800 bg-amber-100 border border-amber-300',
+  danger: 'text-red-800 bg-red-50 border border-red-200',
+}
 
 interface EmailLifecycle {
   state: string
@@ -70,6 +80,7 @@ interface WaitlistEntry {
   invite_reminder_2_sent_at: string | null
   first_matching_reminder_sent_at: string | null
   lifecycle?: EmailLifecycle
+  inviteStatus?: InviteStatusModel
   referrals?: {
     referral_note: string
     status: string
@@ -77,12 +88,15 @@ interface WaitlistEntry {
   } | null
 }
 
-export default function AdminWaitlistClient({ 
-  waitlist, 
-  counts 
-}: { 
+export default function AdminWaitlistClient({
+  waitlist,
+  counts,
+  invitationsMode = 'off',
+}: {
   waitlist: WaitlistEntry[]
   counts: { pending: number; approved: number; contacted: number; invited: number; declined: number }
+  // Informational ONLY — the server enforces every send. The banner just tells the admin the mode.
+  invitationsMode?: 'off' | 'test' | 'on'
 }) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'contacted' | 'invited' | 'declined'>('pending')
@@ -196,19 +210,19 @@ export default function AdminWaitlistClient({
     setProcessing(null)
   }
 
-  const postInvite = async (entryId: string, action: 'invite' | 'password_reset') => {
+  const postInvite = async (entryId: string, action: 'invite' | 'password_reset', force = false) => {
     const res = await fetch('/api/admin/send-invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entryId, markAsFounding: !!markFounding[entryId], action }),
+      body: JSON.stringify({ entryId, markAsFounding: !!markFounding[entryId], action, force }),
     })
     return res.json()
   }
 
-  const handleSendInvite = async (entryId: string) => {
+  const handleSendInvite = async (entryId: string, force = false) => {
     setProcessing(entryId)
     try {
-      let data = await postInvite(entryId, 'invite')
+      let data = await postInvite(entryId, 'invite', force)
       // Active member: never silently reset via Resend — offer an explicit reset.
       if (!data.success && data.state === 'active') {
         if (window.confirm(`${data.message}\n\nSend a password reset email instead?`)) {
@@ -286,6 +300,18 @@ export default function AdminWaitlistClient({
           <h1 className="text-2xl font-bold text-slate-900">Waitlist</h1>
           <p className="text-sm text-slate-500 mt-1">Review applications and send invites</p>
         </div>
+
+        {/* Rollout-mode banner (informational only — the server enforces every send). */}
+        {invitationsMode === 'test' && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <span className="font-semibold">Invitation test mode.</span> Only allowlisted test recipients can receive a secure invitation; everyone else is blocked server-side. Activation reminders are paused.
+          </div>
+        )}
+        {invitationsMode === 'off' && (
+          <div className="rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-sm text-slate-700">
+            <span className="font-semibold">Invitations paused (mode: off).</span> No invitations or access-link reminders will be sent. Password reset is unaffected.
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -505,23 +531,52 @@ export default function AdminWaitlistClient({
                           })}`}
                         </p>
 
-                        {activeTab === 'invited' && entry.lifecycle && (
+                        {activeTab === 'invited' && (entry.inviteStatus || entry.lifecycle) && (() => {
+                          const st = entry.inviteStatus
+                          // "Blocked" is only the bad-address danger states (bounced/blocked/complained).
+                          // Pending states (sending/accepted/deferred) are do-not-resend but NOT bad-address blocks.
+                          const blockedResend = !!st && !st.canResend && !st.canRetry && !st.needsConfirmResend && !st.noAction
+                            && st.key !== 'sending' && st.key !== 'accepted' && st.key !== 'deferred'
+                          return (
+                          <>
                           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-                            <span className="font-semibold text-slate-700 bg-slate-200 px-2 py-0.5 rounded-full">
-                              {entry.lifecycle.label}
-                            </span>
-                            <span className="text-slate-500">
-                              Last: {entry.lifecycle.lastEmail ? `${entry.lifecycle.lastEmail.replace('_', ' ')} · ${shortDate(entry.lifecycle.lastEmailAt)}` : 'none'}
-                            </span>
-                            <span className="text-slate-400">•</span>
-                            <span className="text-slate-500">
-                              Next: {entry.lifecycle.nextEmail ? `${entry.lifecycle.nextEmail.replace('_', ' ')} · due ${shortDate(entry.lifecycle.nextDueAt)}` : 'none'}
-                            </span>
-                            {entry.lifecycle.receivedFirstMatching && (
-                              <span className="text-[#C4922A] bg-[#FDF3E3] px-2 py-0.5 rounded-full font-medium">July reminder ✓</span>
+                            {st && (
+                              <span title={st.tooltip} className={`font-semibold px-2 py-0.5 rounded-full cursor-help ${INVITE_TONE_CLASS[st.tone]}`}>
+                                {st.label}
+                              </span>
+                            )}
+                            {entry.lifecycle && (
+                              <>
+                                <span className="text-slate-500">
+                                  Last: {entry.lifecycle.lastEmail ? `${entry.lifecycle.lastEmail.replace('_', ' ')} · ${shortDate(entry.lifecycle.lastEmailAt)}` : 'none'}
+                                </span>
+                                <span className="text-slate-400">•</span>
+                                <span className="text-slate-500">
+                                  Next: {entry.lifecycle.nextEmail ? `${entry.lifecycle.nextEmail.replace('_', ' ')} · due ${shortDate(entry.lifecycle.nextDueAt)}` : 'none'}
+                                </span>
+                                {entry.lifecycle.receivedFirstMatching && (
+                                  <span className="text-[#C4922A] bg-[#FDF3E3] px-2 py-0.5 rounded-full font-medium">July reminder ✓</span>
+                                )}
+                              </>
                             )}
                           </div>
-                        )}
+                          {st?.key === 'not_sent' && (
+                            <p className="mt-1 text-[11px] text-amber-700 max-w-md">
+                              This person was reinstated — <span className="font-semibold">no invitation email has been sent yet</span>. Use <span className="font-semibold">Send invitation</span> below — no email has gone out.
+                            </p>
+                          )}
+                          {(st?.key === 'accepted' || st?.key === 'sending' || st?.key === 'deferred') && (
+                            <p className="mt-1 text-[11px] text-sky-700 max-w-md">Delivery {st?.key === 'deferred' ? 'deferred' : 'pending'} — <span className="font-semibold">do not resend</span>. Awaiting the provider result (resolves automatically, or reviewable after 24 hours).</p>
+                          )}
+                          {st?.key === 'stale' && (
+                            <p className="mt-1 text-[11px] text-amber-700 max-w-md">Unconfirmed and past the 24-hour window. <span className="font-semibold">Review</span>, then confirm a new attempt — a fresh secure link (new row, token, and key).</p>
+                          )}
+                          {blockedResend && (
+                            <p className="mt-1 text-[11px] text-red-700 max-w-md">Resend is disabled ({st!.label.toLowerCase()}) — review the address before sending again.</p>
+                          )}
+                          </>
+                          )
+                        })()}
                       </div>
 
                       <div className="flex gap-2">
@@ -620,14 +675,36 @@ export default function AdminWaitlistClient({
                           </div>
                         )}
 
-                        {activeTab === 'invited' && (
+                        {activeTab === 'invited' && (() => {
+                          const st = entry.inviteStatus
+                          const stale = st?.key === 'stale' // claimed PAST the 24h window → explicit new attempt
+                          // Pending (sending/accepted) → DO NOT resend (idempotency window). Danger
+                          // states (bounced/blocked/complained) → bad address. Both disable the button.
+                          const pending = st?.key === 'sending' || st?.key === 'accepted' || st?.key === 'deferred'
+                          const blocked = !!st && !st.canResend && !st.canRetry && !st.needsConfirmResend
+                          const label = st?.canRetry ? 'Retry delivery'
+                            : stale ? 'Review & send new link'
+                            : st?.needsConfirmResend ? 'Send new secure access link'
+                            : st?.key === 'not_sent' ? 'Send invitation'
+                            : pending ? 'Delivery pending'
+                            : 'Send secure access link'
+                          const primary = st?.key === 'not_sent' || !!st?.canRetry
+                          const onSend = () => {
+                            if (stale && !window.confirm('The previous send is unconfirmed and past the 24-hour window. Start a NEW attempt — a fresh secure link (new token & tracking)?')) return
+                            if (st?.needsConfirmResend && !stale && !window.confirm('This person was already delivered an invitation. Send a NEW secure access link?')) return
+                            handleSendInvite(entry.id, stale) // stale → force a new attempt
+                          }
+                          return (
                           <div className="flex flex-col items-end gap-2">
                             <button
-                              onClick={() => handleSendInvite(entry.id)}
-                              disabled={processing === entry.id}
-                              className="px-4 py-2 border border-slate-300 text-slate-700 text-sm font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                              onClick={onSend}
+                              disabled={processing === entry.id || blocked}
+                              title={pending ? 'Do not resend — awaiting the provider result (reviewable after 24 hours).' : blocked ? 'Resend disabled — review the address (bounced/blocked/complained).' : (st?.tooltip ?? '')}
+                              className={`px-4 py-2 text-sm font-semibold rounded-lg disabled:opacity-50 ${
+                                primary ? 'bg-[#1B2850] text-white hover:bg-[#162040]' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                              }`}
                             >
-                              {processing === entry.id ? 'Sending...' : 'Resend Access Email'}
+                              {processing === entry.id ? 'Sending...' : label}
                             </button>
                             {/* Destructive: revoke a mistaken / duplicate / requested-removal invite
                                 before activation. Same button styling as the Approved-tab "Remove". */}
@@ -640,7 +717,8 @@ export default function AdminWaitlistClient({
                               Revoke Invite
                             </button>
                           </div>
-                        )}
+                          )
+                        })()}
 
                         {activeTab === 'declined' && (
                           <button
