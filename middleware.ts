@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { dashboardRedirect } from '@/lib/auth/dashboardGate'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -45,16 +46,12 @@ export async function middleware(request: NextRequest) {
       .from('profiles')
       .select('email_verified, password_reset_required, profile_complete')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
-    // Step 1: Password reset (for invited users)
-    if (profile?.email_verified && profile?.password_reset_required && !request.nextUrl.pathname.startsWith('/dashboard/reset-password')) {
-      return NextResponse.redirect(new URL('/dashboard/reset-password', request.url))
-    }
-
-    // Step 2: Onboarding
-    if (profile?.email_verified && !profile?.password_reset_required && !profile?.profile_complete && !request.nextUrl.pathname.startsWith('/dashboard/onboarding')) {
-      return NextResponse.redirect(new URL('/dashboard/onboarding', request.url))
+    // Single source of truth for the reset/onboarding routing decision (unit-tested).
+    const dest = dashboardRedirect(profile, request.nextUrl.pathname)
+    if (dest) {
+      return NextResponse.redirect(new URL(dest, request.url))
     }
   }
 

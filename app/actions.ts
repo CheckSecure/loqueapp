@@ -327,6 +327,9 @@ export async function completeOnboarding(formData: FormData) {
     meeting_format_preference: (formData.get('meeting_format_preference') as string) || 'both',
     geographic_scope: (formData.get('geographic_scope') as string) || 'us-wide',
     profile_complete: true,
+    // Clear the LEGACY provisioning flag on completion so a user who set their password via the
+    // secure flow can never be looped back to "Set your password" by the middleware.
+    password_reset_required: false,
     updated_at: new Date().toISOString(),
     ...foundingFields,
   }, { onConflict: 'email' })

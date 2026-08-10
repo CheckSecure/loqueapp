@@ -1,81 +1,113 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { emitMetric } from '@/lib/metrics'
 import { Loader2, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-// Magic-link flow: the user clicked a sign-in link from the forgot-password
-// email. Supabase signed them in and redirected here with an active session.
-// This page checks for that session on mount and immediately shows the
-// "set new password" form. No token exchange, no auth-event listening,
-// no recovery-specific URL parsing — just getUser() then updateUser().
+// Secure reset. The password update AND the clearing of the legacy `password_reset_required` flag
+// happen SERVER-SIDE (POST /api/auth/complete-reset), never in the browser:
+//   - the server updates the password using the authenticated recovery session (never logged);
+//   - it clears the flag ONLY as a first-hand result of that update, and issues an HttpOnly,
+//     signed, user-bound continuation cookie so a finalize-only retry needs no password;
+//   - the sessionStorage marker below is DISPLAY ONLY — it decides whether to show the form or the
+//     "finishing…" UI on a refresh, and can NEVER clear the flag (the server ignores it entirely).
 
-type Phase = 'waiting' | 'ready' | 'submitting' | 'success' | 'invalid'
+type Phase = 'waiting' | 'ready' | 'submitting' | 'finalizing' | 'finalize_error' | 'success' | 'invalid'
+
+// Per-tab DISPLAY hint only. Not proof of anything — the server is the sole authority.
+const PW_SET_KEY = 'andrel:reset:pw_set'
+const markPwSet = () => { try { sessionStorage.setItem(PW_SET_KEY, '1') } catch { /* ignore */ } }
+const isPwSet = () => { try { return sessionStorage.getItem(PW_SET_KEY) === '1' } catch { return false } }
+const clearPwSet = () => { try { sessionStorage.removeItem(PW_SET_KEY) } catch { /* ignore */ } }
+
+async function postReset(payload: { mode: 'set'; password: string } | { mode: 'finalize' }) {
+  const res = await fetch('/api/auth/complete-reset', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  const data = await res.json().catch(() => ({} as any))
+  return { status: res.status, data }
+}
 
 export default function ResetPasswordPage() {
-  const router = useRouter()
   const [phase, setPhase] = useState<Phase>('waiting')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const supabase = createClient()
-
-    // The Supabase client processes the URL fragment on initialisation and
-    // establishes the session. Give it a tick to complete before calling
-    // getUser(), then check whether we're authenticated.
-    const check = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        setPhase('ready')
-      } else {
-        // Not authenticated — either a direct visit or the link has expired.
-        setPhase('invalid')
-      }
+  // Stage 2 — finalize WITHOUT the password. Authorized server-side by the continuation cookie; a
+  // stale/forged display marker just triggers this call, which the server rejects (→ finalize_error).
+  const runFinalize = useCallback(async () => {
+    setError(null)
+    setPhase('finalizing')
+    const { data } = await postReset({ mode: 'finalize' })
+    if (data?.ok && data?.dest) {
+      clearPwSet()
+      setPhase('success')
+      setTimeout(() => { window.location.href = data.dest }, 2000)
+      return
     }
-
-    // Small delay lets the Supabase client finish hydrating the session from
-    // the URL fragment before we query it.
-    const timer = setTimeout(check, 500)
-    return () => clearTimeout(timer)
+    setPhase('finalize_error') // includes a 401 when there is no valid server continuation
   }, [])
 
+  useEffect(() => {
+    const supabase = createClient()
+    const check = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setPhase('invalid') // direct visit or expired link
+        return
+      }
+      // DISPLAY decision only: if this tab already submitted a password, show the finishing UI and
+      // let the server (via the continuation cookie) decide — never re-present the form here.
+      if (isPwSet()) runFinalize()
+      else setPhase('ready')
+    }
+    const timer = setTimeout(check, 500) // let the client hydrate the session from the fragment
+    return () => clearTimeout(timer)
+  }, [runFinalize])
+
+  // Stage 1 — password submission. Reachable ONLY from the form (phase 'ready').
   async function handleReset(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
-      return
-    }
-    if (password !== confirm) {
-      setError('Passwords do not match.')
-      return
-    }
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
+    if (password !== confirm) { setError('Passwords do not match.'); return }
 
     setPhase('submitting')
-    const supabase = createClient()
-    const { error: updateError } = await supabase.auth.updateUser({ password })
+    const { status, data } = await postReset({ mode: 'set', password })
 
-    if (updateError) {
-      console.error('[reset-password] updateUser error:', updateError.message)
-      setError(
-        updateError.message.includes('expired') || updateError.message.includes('invalid')
-          ? 'This link has expired. Please request a new one.'
-          : updateError.message
-      )
-      setPhase('ready')
+    if (data?.ok && data?.dest) {
+      // Server updated the password AND cleared the flag in one execution.
+      emitMetric('recovery_password_changed')
+      clearPwSet(); setPassword(''); setConfirm('')
+      setPhase('success')
+      setTimeout(() => { window.location.href = data.dest }, 2000)
       return
     }
 
-    emitMetric('recovery_password_changed')
-    setPhase('success')
-    setTimeout(() => router.push('/dashboard/introductions'), 2500)
+    if (data?.stage === 'update') {
+      // The password was NOT changed → safe to stay on the form and let the user retry.
+      setError(data.message || 'Could not update your password. Please try again.')
+      setPhase(status === 401 ? 'invalid' : 'ready')
+      return
+    }
+
+    if (data?.stage === 'finalize') {
+      // Password WAS changed server-side; only finalization failed. Never show the form again;
+      // retry finalization WITHOUT the password. Mark the tab so a refresh resumes finalization.
+      emitMetric('recovery_password_changed')
+      markPwSet(); setPassword(''); setConfirm('')
+      setPhase('finalize_error')
+      return
+    }
+
+    // Auth/session problem or unexpected shape.
+    setError(data?.message || 'Your session has expired. Please use the link again.')
+    setPhase(status === 401 ? 'invalid' : 'ready')
   }
 
   return (
@@ -129,6 +161,35 @@ export default function ResetPasswordPage() {
             </div>
           )}
 
+          {/* Finalizing — password already set; NO password form is shown here. */}
+          {phase === 'finalizing' && (
+            <div className="flex items-center gap-3 text-sm text-slate-500">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              Finishing setting up your account…
+            </div>
+          )}
+
+          {/* Finalization failed — the password IS set; retry finalization only, never the password. */}
+          {phase === 'finalize_error' && (
+            <div className="space-y-4">
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-4 rounded-lg leading-relaxed">
+                Your password was updated, but we couldn’t finish preparing your account.
+              </div>
+              <button
+                type="button"
+                onClick={() => { runFinalize() }}
+                className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-brand-navy-dark transition-colors"
+              >
+                Try again
+              </button>
+              <p className="text-xs text-slate-500">
+                Your new password is saved. You can also{' '}
+                <Link href="/login" className="font-semibold text-brand-navy hover:underline">sign in</Link>{' '}
+                with it if this keeps happening.
+              </p>
+            </div>
+          )}
+
           {/* Success */}
           {phase === 'success' && (
             <div className="flex items-start gap-3 bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-4 rounded-lg">
@@ -137,7 +198,7 @@ export default function ResetPasswordPage() {
             </div>
           )}
 
-          {/* New password form */}
+          {/* New password form — ONLY before a successful updateUser */}
           {(phase === 'ready' || phase === 'submitting') && (
             <form onSubmit={handleReset} className="space-y-4">
               {error && (

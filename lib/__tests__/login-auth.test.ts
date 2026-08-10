@@ -39,16 +39,21 @@ describe('login form normalizes the email and surfaces the real auth error', () 
   })
 })
 
-describe('middleware: password_reset_required does NOT block initial authentication', () => {
+describe('middleware: routing gated behind /dashboard; legacy temp-password reset enforced', () => {
   const mw = readFileSync('middleware.ts', 'utf8')
+  const gate = readFileSync('lib/auth/dashboardGate.ts', 'utf8')
 
   it('only runs on /dashboard/* — /login and /auth are never intercepted', () => {
     expect(mw).toMatch(/matcher:\s*\[\s*['"]\/dashboard\/:path\*['"]\s*\]/)
   })
-  it('the reset-password redirect is gated behind a /dashboard path (post-login only)', () => {
-    // The forced password change is an in-dashboard step; it cannot prevent the
-    // sign-in itself, so an invited user can always authenticate first.
+  it('all routing is gated behind a /dashboard path (post-login only), so sign-in is never blocked', () => {
     expect(mw).toContain("request.nextUrl.pathname.startsWith('/dashboard')")
-    expect(mw).toMatch(/password_reset_required[\s\S]*reset-password/)
+  })
+  it('delegates the routing decision to the unit-tested dashboardRedirect helper', () => {
+    expect(mw).toContain('dashboardRedirect')
+  })
+  it('LEGACY password_reset_required accounts are STILL forced to the reset form (enforcement preserved)', () => {
+    // The gate lives in the pure helper now, but it must still route flagged accounts to reset.
+    expect(gate).toMatch(/password_reset_required[\s\S]*reset-password/)
   })
 })
