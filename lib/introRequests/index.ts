@@ -1,10 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from '@/lib/supabase/server'
-import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { EXPRESSED_STATUSES, findReusableOutboundIntro } from '@/lib/introRequests/state'
 import { promoteIfResolved } from '@/lib/introductions/queue'
 import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
+import { decideAdminReject, ADMIN_APPROVE_DISABLED_MSG } from '@/lib/introRequests/classify'
 
 async function resolveProfileId(supabase: ReturnType<typeof createClient>, authUserId: string, authUserEmail?: string) {
   const orClause = authUserEmail
@@ -193,196 +193,46 @@ export async function adminGetPendingRequests() {
   return { data: enriched, error: null }
 }
 
-export async function approveIntroRequest(requestId: string) {
-  const supabase = createAdminClient()
-
-  // ── 1. Fetch the intro request ────────────────────────────────────────────
-  const { data: req, error: fetchErr } = await supabase
-    .from('intro_requests')
-    .select('id, requester_id, target_user_id, status')
-    .eq('id', requestId)
-    .single()
-
-  if (fetchErr || !req) {
-    console.error('[approveIntroRequest] fetch failed:', fetchErr?.message)
-    return { error: fetchErr?.message ?? 'Request not found' }
-  }
-
-  // Idempotent — already approved
-  if (req.status === 'approved') {
-    console.log('[approveIntroRequest] already approved, skipping:', requestId)
-    return { success: true, status: 'approved' }
-  }
-
-  // ── 2. Check requester's credit balance ───────────────────────────────────
-  const { data: creditRow } = await supabase
-    .from('meeting_credits')
-    .select('balance')
-    .eq('user_id', req.requester_id)
-    .single()
-
-  const balance = creditRow?.balance ?? 0
-
-  if (balance < 1) {
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-    const { error: holdErr } = await supabase
-      .from('intro_requests')
-      .update({
-        status: 'accepted_pending_payment',
-        accepted_at: new Date().toISOString(),
-        expires_at: expiresAt,
-        credit_hold: true,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', requestId)
-    if (holdErr) {
-      console.error('[approveIntroRequest] credit hold update failed:', holdErr.message)
-      return { error: holdErr.message }
-    }
-    return { success: true, status: 'accepted_pending_payment' }
-  }
-
-  // ── 3. Create the match FIRST (before touching status or credits) ─────────
-  let matchId: string | null = null
-
-  const { data: newMatch, error: matchInsertErr } = await supabase
-    .from('matches')
-    .insert({ user_a_id: req.requester_id, user_b_id: req.target_user_id })
-    .select('id')
-    .single()
-
-  if (newMatch) {
-    matchId = newMatch.id
-    console.log('[approveIntroRequest] match created:', matchId)
-  } else {
-    const { data: existingMatch, error: lookupErr } = await supabase
-      .from('matches')
-      .select('id')
-      .or(
-        buildBidirectionalMatchFilter(req.requester_id, req.target_user_id)
-      )
-      .limit(1)
-      .single()
-
-    if (existingMatch) {
-      matchId = existingMatch.id
-      console.log('[approveIntroRequest] existing match found:', matchId)
-    } else {
-      console.error('[approveIntroRequest] match insert failed:', matchInsertErr?.message, '| lookup failed:', lookupErr?.message)
-      return { error: `Could not create match: ${matchInsertErr?.message ?? 'unknown error'}` }
-    }
-  }
-
-  // ── 3.5. Get both user names for notifications ────────────────────────────
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id, full_name')
-    .in('id', [req.requester_id, req.target_user_id])
-
-  const requesterProfile = profiles?.find(p => p.id === req.requester_id)
-  const targetProfile = profiles?.find(p => p.id === req.target_user_id)
-
-  // ── 4. Ensure a conversation exists for this match ────────────────────────
-  const { data: existingConv, error: convLookupErr } = await supabase
-    .from('conversations')
-    .select('id')
-    .eq('match_id', matchId)
-    .limit(1)
-    .maybeSingle()
-
-  if (convLookupErr) {
-    console.warn('[approveIntroRequest] conversation lookup error (non-fatal):', convLookupErr.message)
-  }
-
-  if (!existingConv) {
-    const { data: newConv, error: convInsertErr } = await supabase
-      .from('conversations')
-      .insert({ match_id: matchId })
-      .select('id')
-      .single()
-
-    if (convInsertErr) {
-      console.error('[approveIntroRequest] conversation insert failed (match still created):', convInsertErr.message, '| match_id:', matchId)
-    } else {
-      console.log('[approveIntroRequest] conversation created:', newConv?.id, 'for match:', matchId)
-    }
-  } else {
-    console.log('[approveIntroRequest] conversation already exists:', existingConv.id)
-  }
-
-  // ── 5. Send notifications to both users ───────────────────────────────────
-  const notifications = [
-    {
-      user_id: req.requester_id,
-      type: 'intro_accepted',
-      title: 'New Connection!',
-      body: `You're now connected with ${targetProfile?.full_name || 'your match'}. Start a conversation in your Network.`,
-      link: '/dashboard/network',
-    },
-    {
-      user_id: req.target_user_id,
-      type: 'intro_accepted',
-      title: 'New Connection!',
-      body: `You're now connected with ${requesterProfile?.full_name || 'your match'}. Start a conversation in your Network.`,
-      link: '/dashboard/network',
-    },
-  ]
-
-  const { error: notifErr } = await supabase
-    .from('notifications')
-    .insert(notifications)
-
-  if (notifErr) {
-    console.warn('[approveIntroRequest] notification insert failed (non-fatal):', notifErr.message)
-  } else {
-    console.log('[approveIntroRequest] notifications sent to both users')
-  }
-
-  // ── 6. Now mark the intro_request as approved ─────────────────────────────
-  const { error: updateErr } = await supabase
-    .from('intro_requests')
-    .update({
-      status: 'approved',
-      accepted_at: new Date().toISOString(),
-      credit_charged: true,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', requestId)
-
-  if (updateErr) {
-    console.error('[approveIntroRequest] status update failed:', updateErr.message)
-    return { error: `Match created but status update failed: ${updateErr.message}` }
-  }
-
-  // ── 7. Deduct 1 credit from the requester ────────────────────────────────
-  const { error: deductErr } = await supabase
-    .from('meeting_credits')
-    .update({ balance: balance - 1 })
-    .eq('user_id', req.requester_id)
-
-  if (deductErr) {
-    console.error('[approveIntroRequest] credit deduction failed (non-fatal):', deductErr.message)
-  }
-
-  // ── 8. Log the credit transaction ─────────────────────────────────────────
-  const { error: txErr } = await supabase.from('credit_transactions').insert({
-    user_id: req.requester_id,
-    amount: -1,
-    type: 'deduction',
-  })
-
-  if (txErr) {
-    console.warn('[approveIntroRequest] credit_transactions insert failed (non-fatal):', txErr.message)
-  }
-
-  console.log('[approveIntroRequest] complete — requestId:', requestId, 'matchId:', matchId)
-  return { success: true, status: 'approved', matchId }
+/**
+ * Admin approval — FULLY DISABLED / FAIL-CLOSED.
+ *
+ * An admin click can NEVER stand in for either member's consent. "Admin initiated" is NOT member
+ * consent, and no product policy authorizes an admin-forced connection. Finalization happens ONLY
+ * through the two member-facing acceptance routes (express-interest / accept-incoming), which each
+ * record one authenticated member's consent; the SECOND acceptance triggers finalizeMutualMatch,
+ * whose pre-RPC revalidation re-checks bothMembersConsented().
+ *
+ * This function therefore performs ZERO reads and ZERO writes and never finalizes — it exists only
+ * so the (defensively-retained) server action and any forged direct call fail closed with a clear,
+ * non-sensitive message.
+ */
+export async function approveIntroRequest(_requestId: string) {
+  return { error: ADMIN_APPROVE_DISABLED_MSG }
 }
 
+/**
+ * Admin reject — scoped archival. Refuses reciprocal (pair-governed) rows so it can never
+ * accidentally mutate pair state (pass/expire is pair-aware and private). For legacy/admin rows it
+ * simply archives the record to 'rejected' with no other side effects.
+ */
 export async function rejectIntroRequest(requestId: string) {
-  const supabase = createAdminClient()
+  const adminClient = createAdminClient()
 
-  const { error } = await supabase
+  const { data: req, error: fetchErr } = await adminClient
+    .from('intro_requests')
+    .select('id, pair_id')
+    .eq('id', requestId)
+    .maybeSingle()
+
+  if (fetchErr) return { error: fetchErr.message }
+  if (!req) return { error: 'Request not found' }
+
+  const decision = decideAdminReject(req)
+  if (!decision.allow) {
+    return { error: 'Reciprocal recommendations are managed automatically and cannot be rejected here.' }
+  }
+
+  const { error } = await adminClient
     .from('intro_requests')
     .update({ status: 'rejected', updated_at: new Date().toISOString() })
     .eq('id', requestId)

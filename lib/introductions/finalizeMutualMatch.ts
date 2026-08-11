@@ -14,6 +14,7 @@ import { createNotificationSafe } from '@/lib/notifications'
 import { generateIcebreakers, generateSystemIntroMessage } from '@/lib/messaging/icebreakers'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { isSameCompany } from '@/lib/matching/same-company'
+import { bothMembersConsented } from '@/lib/introRequests/classify'
 
 export interface FinalizeResult {
   status: number
@@ -94,6 +95,27 @@ export async function finalizeMutualMatch(params: {
         matchAlreadyExists: true,
         matchStatus: existingMatch.status,
       },
+    }
+  }
+
+  // CONSENT REVALIDATION (race-safe, defense-in-depth). Re-read BOTH directional rows from the live
+  // table immediately before the transactional RPC and require that each member has independently
+  // consented — the acting member with an outbound consent row, the counterpart with an outbound
+  // interest row. A stale earlier UI/query check cannot authorize a match after consent is withdrawn
+  // or a row changes; an admin click, is_admin_initiated, admin_pending, or a displayed
+  // recommendation can never satisfy this. Callers must never rely solely on their own pre-check.
+  const { data: consentRows } = await adminClient
+    .from('intro_requests')
+    .select('requester_id, target_user_id, status')
+    .or(
+      `and(requester_id.eq.${actingUserId},target_user_id.eq.${otherUserId}),` +
+      `and(requester_id.eq.${otherUserId},target_user_id.eq.${actingUserId})`,
+    )
+  if (!bothMembersConsented(consentRows ?? [], actingUserId, otherUserId)) {
+    console.warn('[finalizeMutualMatch] consent revalidation failed — not finalizing', { actingUserId, otherUserId })
+    return {
+      status: 409,
+      body: { error: 'Both members must independently express interest before connecting.', mutualInterest: false },
     }
   }
 
