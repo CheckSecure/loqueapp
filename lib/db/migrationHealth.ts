@@ -219,6 +219,13 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Durable invitation-delivery tracking (secure invitations)',
     impact: 'REQUIRED before secure invitations can send. The pre-send delivery claim FAILS CLOSED: until this table exists and is writable, the admin send returns a neutral 503 and generates NO token, mutates NO Auth user, calls NO provider, and never writes invited_at — secure invitations are UNAVAILABLE, not sent-untracked. Delivery tracking never fails open. Apply this before setting INVITATIONS_MODE=test or on.',
   },
+  {
+    migration: '050_member_pairs.sql',
+    kind: 'table',
+    table: 'member_pairs',
+    feature: 'Reciprocal recommendation pairs + create_reciprocal_suggestion RPC',
+    impact: 'REQUIRED before deploying the reciprocal generators. The onboarding + weekly generators route through the create_reciprocal_suggestion RPC (this migration); until it is applied the RPC is missing and automatic recommendation generation produces ZERO recommendations (the RPC call errors and is skipped). Apply 050 BEFORE deploying the reciprocal-recommendation code.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {

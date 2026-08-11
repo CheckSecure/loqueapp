@@ -150,6 +150,16 @@ export async function finalizeMutualMatch(params: {
     userB: otherUserId,
   })
 
+  // Reciprocal-pair lifecycle: a formed match is terminal for the pair — mark it 'matched' in the
+  // PRIMARY match path (not only later during rotation), so a late pass/rotation never treats it as
+  // active. Canonical (user_a_id < user_b_id). Best-effort + tolerant of member_pairs being absent
+  // (pre-migration / admin pairs): a failure here must never fail the match.
+  try {
+    const lo = actingUserId < otherUserId ? actingUserId : otherUserId
+    const hi = actingUserId < otherUserId ? otherUserId : actingUserId
+    await adminClient.from('member_pairs').update({ status: 'matched' }).eq('user_a_id', lo).eq('user_b_id', hi)
+  } catch { /* member_pairs may not exist yet; never block the match */ }
+
   // Post-RPC low/no-credits nudge for the acting user based on their new balance.
   const { data: postCredits } = await adminClient
     .from('meeting_credits')

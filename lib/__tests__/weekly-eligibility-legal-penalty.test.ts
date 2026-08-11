@@ -219,7 +219,7 @@ describe('PART 3 notification wiring + PART 2 cron (structural)', () => {
     expect(cron).toContain('if (elig.unresolvedCount > 0)')
     // generation only happens AFTER the eligibility check passes (never in the skip branch)
     const skipIdx = cron.indexOf('notifyPendingIntrosActionNeeded')
-    const genIdx = cron.indexOf('generateBatchForMember(user.id')
+    const genIdx = cron.indexOf('generateReciprocalBatchForMember(user.id')
     expect(genIdx).toBeGreaterThan(skipIdx)
     expect(cron).toContain('reminderSent')
     expect(cron).toContain('reminderAlreadyHandled')

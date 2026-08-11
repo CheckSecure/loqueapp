@@ -150,7 +150,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`),
     supabase
       .from('intro_requests')
-      .select('id, target_user_id, created_at, match_reason, target:profiles!target_user_id(id, full_name, title, exact_job_title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes, account_status)')
+      .select('id, target_user_id, created_at, match_reason, pair_id, target:profiles!target_user_id(id, full_name, title, exact_job_title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes, account_status)')
       .eq('requester_id', profileId)
       .eq('status', 'suggested')
       .order('created_at', { ascending: false }),
@@ -290,6 +290,9 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       rowId: intro.id,
       profile: intro.target,
       matchReason: intro.match_reason || null,
+      // Structured label source: a reciprocal auto-pair carries pair_id → "Introduced by Andrel"
+      // (independent of match_reason, which stays a genuine compatibility explanation).
+      introducedByAndrel: !!intro.pair_id,
       // Derive from persisted outbound state so a suggested card whose target
       // already has a pending/approved interest shows Pending, not "Express
       // interest" (fixes duplicate-row reappearance).

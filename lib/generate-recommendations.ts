@@ -6,8 +6,11 @@ import { isBusinessSolutionProvider, maxBusinessSolutionCount } from '@/lib/matc
 import { isSameCompany } from '@/lib/matching/same-company'
 import { applyVerticalBoost } from '@/lib/matching/vertical-boost'
 import { applyExposureBalancing, exposureBalancingEnabled } from '@/lib/matching/exposure-balancing'
+import { readScoringSignals } from '@/lib/matching/profileScoring'
+import { selectFairCounterparts } from '@/lib/matching/reciprocalPair'
+import { createReciprocalSuggestion } from '@/lib/matching/createReciprocalSuggestion'
 import { legalSameSidePenalty, crossMarketFirstForLawFirm } from '@/lib/matching/legalSameSidePenalty'
-import { getActiveIntroCap } from '@/lib/introductions/limits'
+import { getActiveIntroCap, RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { applyMemberEligibility, filterEligible, assertAllEligible } from '@/lib/matching/eligibility'
@@ -460,11 +463,12 @@ function calculateFinalScore(userProfile: any, candidate: any, userTier: string 
   const alignmentNormalized = calculateAlignmentScore(userProfile, candidate) // 0-100
   const alignmentWeighted = (alignmentNormalized / 100) * 55
   
-  const networkValueRaw = candidate.networkValueScore || 50
-  const networkValueWeighted = (networkValueRaw / 100) * 30
-  
-  const responsivenessRaw = candidate.responsivenessScore || 50
-  const responsivenessWeighted = (responsivenessRaw / 100) * 15
+  // Typed DB-boundary mapping: read the REAL snake_case columns (network_value_score /
+  // responsiveness_score). The prior camelCase reads were always undefined → a constant 50.
+  const signals = readScoringSignals(candidate)
+  const networkValueWeighted = (signals.networkValueScore / 100) * 30
+
+  const responsivenessWeighted = (signals.responsivenessScore / 100) * 15
   
   const priorityBonus = candidate.is_priority ? 5 : 0
   const boostBonus = (candidate.boost_score || 0) * 0.5
@@ -915,6 +919,61 @@ export async function generateBatchForMember(
  * upholding the active-window invariant. Returns { count } = recommendations placed.
  */
 export async function generateOnboardingRecommendations(userId: string, maxCount?: number) {
-  const result = await generateBatchForMember(userId, 'onboarding', maxCount)
-  return { count: result.count ?? 0 }
+  // Routed through the ONE reciprocal, concurrency-safe path (not the legacy one-sided enqueue).
+  const result = await generateReciprocalBatchForMember(userId, 'onboarding', maxCount)
+  return { count: result.count }
+}
+
+// Default number of reciprocal pairs to create per member batch.
+const RECIPROCAL_BATCH_SIZE = 5
+// Broad fit-ranked pool to fair-select from, so live exposure can influence WHICH members pair
+// (not just their order) — this is what spreads new members across good-fit counterparts.
+const RECIPROCAL_CANDIDATE_POOL = 50
+
+/**
+ * THE single automatic-generation path (onboarding + weekly). Ranks the eligible pool for fit
+ * (viewer-specific, with the corrected snake_case signals), then fair-selects up to N counterparts
+ * using LIVE inbound exposure as a bounded tie-breaker, and creates each as a canonical reciprocal
+ * pair via the transactional RPC (eligibility re-checked in-transaction; both directions atomic).
+ * Honest empty state when no eligible candidate exists. Never calls the legacy one-sided enqueue.
+ */
+export async function generateReciprocalBatchForMember(
+  userId: string,
+  source: 'onboarding' | 'weekly',
+  maxCount?: number,
+): Promise<{ count: number; considered: number }> {
+  const adminClient = createAdminClient()
+
+  // Respect THIS member's own visible-card limit: only fill remaining slots (never exceed / evict).
+  const target = maxCount ?? RECOMMENDATIONS_PER_BATCH
+  const { count: aActive } = await adminClient
+    .from('intro_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('requester_id', userId)
+    .in('status', ['suggested', 'queued'])
+  const remaining = Math.max(0, target - (aActive ?? 0))
+  if (remaining === 0) return { count: 0, considered: 0 } // member already at capacity
+
+  const { candidates } = await rankCandidatesForUser(userId, RECIPROCAL_CANDIDATE_POOL)
+  if (!candidates.length) return { count: 0, considered: 0 } // honest empty state — never a forced match
+
+  const exposure = await getActiveInboundExposure(adminClient)
+  // Fair ORDER over the whole ranked pool; we walk it and skip counterparts the RPC reports full,
+  // so an at-capacity or ineligible top pick is safely replaced by the next fair candidate.
+  const ordered = selectFairCounterparts(
+    candidates.map((c: any) => ({ id: c.id, score: c.finalScore ?? 0, inbound: exposure.get(c.id) ?? 0 })),
+    candidates.length,
+  )
+
+  let count = 0
+  let considered = 0
+  for (const cp of ordered) {
+    if (count >= remaining) break
+    considered++
+    // The RPC re-validates eligibility/privacy/CAPACITY transactionally; 'capacity'/'exists_active'/
+    // 'cooldown'/'ineligible' are safe skips (try the next fair candidate), not errors.
+    const r = await createReciprocalSuggestion(adminClient, userId, cp.id, { source })
+    if (r.ok) count++
+  }
+  return { count, considered }
 }

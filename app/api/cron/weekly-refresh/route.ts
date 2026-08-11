@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { generateBatchForMember } from '@/lib/generate-recommendations'
+import { generateReciprocalBatchForMember } from '@/lib/generate-recommendations'
+import { expireStaleReciprocalPairs } from '@/lib/matching/createReciprocalSuggestion'
 import { evaluateWeeklyEligibility } from '@/lib/introductions/queue'
 import { notifyPendingIntrosActionNeeded, isoWeekKey } from '@/lib/notifications/engagement'
 
@@ -42,6 +43,12 @@ export async function GET(req: Request) {
 
   if (!users) return NextResponse.json({ error: 'No users found' }, { status: 500 })
 
+  // ROTATION FIRST: expire untouched, stale reciprocal pairs (both directions atomically) BEFORE
+  // generation, so freed capacity is available this run and two idle cards can never block a member
+  // forever. Pairs with member activity are protected in SQL.
+  const { expired: rotatedPairs } = await expireStaleReciprocalPairs(adminClient)
+  console.log(`[Weekly Generation] Rotation: expired ${rotatedPairs} stale reciprocal pair(s).`)
+
   let generated = 0
   let generationDisabledSkipped = 0 // eligible but generation gated off (admin batch is canonical)
   let skippedUnresolved = 0   // ineligible because they still have unresolved introductions
@@ -80,8 +87,9 @@ export async function GET(req: Request) {
       // ELIGIBLE. Generation is the admin batch's job (canonical); only generate here when
       // explicitly re-enabled. Otherwise the member's new batch comes from the admin Send.
       if (!WEEKLY_REFRESH_GENERATION) { generationDisabledSkipped++; continue }
-      const result = await generateBatchForMember(user.id, 'weekly')
-      if (result.placed) generated++
+      // Routed through the ONE reciprocal, concurrency-safe path (not the legacy one-sided enqueue).
+      const result = await generateReciprocalBatchForMember(user.id, 'weekly')
+      if (result.count > 0) generated++
       else placedNothing++
     } catch (err) {
       console.error(`[Weekly Generation] Error for ${user.email}:`, err)

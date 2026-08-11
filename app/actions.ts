@@ -922,15 +922,29 @@ export async function passOnSuggestion(rowId: string, permanent: boolean) {
   if (!user) return { error: 'Not authenticated' }
 
   // Recommendations live in the unified queue (intro_requests). Pass = 'passed'
-  // (75-day cooldown); permanent = 'hidden_permanent'. Ownership-scoped to the
-  // member's own still-visible ('suggested') row.
+  // (cooldown); permanent = 'hidden_permanent'. Ownership-scoped to the member's own
+  // still-visible ('suggested') row.
   const admin = createAdminClient()
-  await admin
+  // A RECIPROCAL pair card (pair_id set) must be closed pair-aware, transactionally, so the
+  // counterpart's card is neutrally closed too and both members' capacity is released — never two
+  // independent client updates. Legacy (non-pair) suggestions keep their existing behavior.
+  const { data: passRow } = await admin
     .from('intro_requests')
-    .update({ status: permanent ? 'hidden_permanent' : 'passed', updated_at: new Date().toISOString() })
+    .select('id, pair_id, status')
     .eq('id', rowId)
     .eq('requester_id', user.id)
-    .eq('status', 'suggested')
+    .maybeSingle()
+
+  if (passRow?.pair_id && passRow.status === 'suggested') {
+    await admin.rpc('pass_reciprocal_pair', { p_pair_id: passRow.pair_id, p_passer_id: user.id })
+  } else {
+    await admin
+      .from('intro_requests')
+      .update({ status: permanent ? 'hidden_permanent' : 'passed', updated_at: new Date().toISOString() })
+      .eq('id', rowId)
+      .eq('requester_id', user.id)
+      .eq('status', 'suggested')
+  }
 
   // Resolving the active batch's last open recommendation promotes the queued
   // batch (if one is waiting) — reveal only, never generation. When a queued
