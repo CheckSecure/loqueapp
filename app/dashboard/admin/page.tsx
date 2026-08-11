@@ -2,469 +2,269 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, GitBranch, UserPlus, TrendingUp, MessageSquare, Calendar, Network, Search, Wrench, AlertCircle, AlertTriangle, Briefcase, Zap, ThumbsUp, Sparkles, Building2 } from 'lucide-react'
-import { getQueueHealthMetrics, type QueueHealthMetrics } from '@/lib/introductions/queue-metrics'
-import { checkMigrationHealth, type MigrationHealth } from '@/lib/db/migrationHealth'
+import {
+  Users, GitBranch, UserPlus, TrendingUp, Search, Wrench, AlertCircle, Sparkles,
+  Building2, Network, Mail, Send, Activity, ShieldAlert, ChevronRight, CircleAlert,
+} from 'lucide-react'
+import { loadAdminDashboard } from '@/lib/admin/dashboardData'
 
 export const metadata = { title: 'Admin Dashboard | Andrel' }
+// Admin-only + never cached: this page renders one operator's sensitive operational data.
+export const dynamic = 'force-dynamic'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
+
+// ── Presentational primitives (server components; no client JS) ──────────────────────
+type Tone = 'neutral' | 'red' | 'amber' | 'sky'
+const dotCls: Record<'high' | 'medium' | 'low', string> = { high: 'bg-red-500', medium: 'bg-amber-500', low: 'bg-sky-400' }
+const accentCls: Record<Tone, string> = {
+  neutral: 'border-slate-200', red: 'border-red-300', amber: 'border-amber-300', sky: 'border-sky-200',
+}
+
+/** Compact metric card. `tip` becomes an accessible tooltip (numerator/denominator/timeframe/rules). */
+function Stat({ label, value, tip, sub, href, tone = 'neutral' }: {
+  label: string; value: string | number; tip: string; sub?: string | null; href?: string; tone?: Tone
+}) {
+  const inner = (
+    <div className={`h-full bg-white rounded-xl border ${accentCls[tone]} p-4`} title={tip} aria-label={`${label}: ${value}. ${tip}`}>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-2xl font-bold text-slate-900 leading-none">{value}</p>
+        <span className="text-slate-300" aria-hidden="true">ⓘ</span>
+      </div>
+      <p className="text-[11px] text-slate-500 mt-1.5 leading-tight">{label}</p>
+      {sub != null && <p className="text-[11px] text-slate-400 mt-0.5 leading-tight">{sub}</p>}
+      {href && <p className="text-[11px] text-[#1B2850] mt-1 font-medium">View →</p>}
+    </div>
+  )
+  return href ? <Link href={href} className="block hover:opacity-90 transition-opacity">{inner}</Link> : inner
+}
+
+function SectionHeader({ title, note }: { title: string; note?: string }) {
+  return (
+    <div className="flex items-baseline justify-between mb-2">
+      <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">{title}</h2>
+      {note && <span className="text-[11px] text-slate-400">{note}</span>}
+    </div>
+  )
+}
+
+function Unavailable({ label }: { label: string }) {
+  return <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-sm text-slate-400">{label}: unavailable</p></div>
+}
 
 export default async function AdminDashboard() {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user || user.email !== ADMIN_EMAIL) redirect('/dashboard')
 
-  // Get key metrics
-  const { count: totalMembers } = await supabase
-    .from('profiles')
-    .select('id', { count: 'exact', head: true })
-    .eq('account_status', 'active')
-
-  const { count: pendingIntros } = await supabase
-    .from('intro_requests')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'admin_pending')
-
-  // Issue reports — uses admin client so RLS doesn't restrict to admin's own reports
   const adminClient = createAdminClient()
-  const { count: newIssueCount } = await adminClient
-    .from('issue_reports')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'new')
+  const now = Date.now()
 
-  // Pending Concierge requests awaiting triage
-  const { count: pendingConciergeCount } = await adminClient
-    .from('concierge_requests')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'pending')
+  // Single consolidated load: the loader owns the shared fetch, operational counts, and the
+  // (cached) migration-health check — invoked EXACTLY ONCE here, so no data loader runs twice.
+  const dash = await loadAdminDashboard(adminClient, {
+    now,
+    adminEmail: user.email, // loader re-checks admin authorization (defense-in-depth)
+    env: { deployedSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null },
+  })
+  const { waitlistPending, concierge: pendingConciergeCount, issues: newIssueCount } = dash.operational
 
-  // Recommendation-queue health (operational; never shown to members). Resilient to
-  // the recommendation_batches table not existing yet (pre-migration → all zeros).
-  let queueHealth: QueueHealthMetrics | null = null
-  try {
-    queueHealth = await getQueueHealthMetrics(adminClient)
-  } catch (err) {
-    console.warn('[admin] queue health metrics unavailable (apply migration 020):', (err as any)?.message)
-  }
+  const inv = dash.invitations
+  const rec = dash.recommendations
+  const mem = dash.members
+  const p = dash.platform
 
-  // Schema/migration health — warns when the deployed code expects a migration
-  // that hasn't been applied yet (compatibility mode). Read-only + resilient;
-  // never blocks the dashboard. Also logged so it's visible in server logs.
-  let migrationHealth: MigrationHealth | null = null
-  try {
-    migrationHealth = await checkMigrationHealth(adminClient)
-    if (migrationHealth && !migrationHealth.ok) {
-      console.warn(`[admin] pending migrations: ${migrationHealth.pending.map((p) => p.migration).join(', ')}`)
-    }
-  } catch (err) {
-    console.warn('[admin] migration health check failed:', (err as any)?.message)
-  }
-
-  // Shared time windows
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-
-  // Opportunities activity (last 7 days) — read-only metrics, no navigation
-  const { count: opportunitiesCreated7d } = await adminClient
-    .from('opportunities')
-    .select('id', { count: 'exact', head: true })
-    .gte('created_at', sevenDaysAgo)
-  const { count: opportunityResponses7d } = await adminClient
-    .from('opportunity_responses')
-    .select('id', { count: 'exact', head: true })
-    .gte('created_at', sevenDaysAgo)
-
-  // Platform health counts — all adminClient to avoid RLS silent-zero failures
-  const { count: totalMatches } = await adminClient
-    .from('matches')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'active')
-    .is('removed_at', null)
-
-  const { count: totalRegistered } = await adminClient
-    .from('profiles')
-    .select('id', { count: 'exact', head: true })
-
-  const { count: activeUsers7d } = await adminClient
-    .from('member_presence')
-    .select('user_id', { count: 'exact', head: true })
-    .gte('last_active_at', sevenDaysAgo)
-
-  // Waitlist Pipeline — all statuses with breakdown
-  const { data: allWaitlistEntries } = await adminClient
-    .from('waitlist')
-    .select('status')
-  const waitlistTotal = allWaitlistEntries?.length || 0
-  const waitlistByStatus = {
-    pending:   allWaitlistEntries?.filter(w => w.status === 'pending').length   || 0,
-    approved:  allWaitlistEntries?.filter(w => w.status === 'approved').length  || 0,
-    contacted: allWaitlistEntries?.filter(w => w.status === 'contacted').length || 0,
-    invited:   allWaitlistEntries?.filter(w => w.status === 'invited').length   || 0,
-    declined:  allWaitlistEntries?.filter(w => w.status === 'declined').length  || 0,
-  }
-
-  // Card 5: Intros Suggested (7d)
-  const { count: introsSuggested7d } = await adminClient
-    .from('batch_suggestions')
-    .select('id', { count: 'exact', head: true })
-    .gte('created_at', sevenDaysAgo)
-
-  // Card 6: Interest Expressed (7d) — user-initiated only
-  const { count: interestExpressed7d } = await adminClient
-    .from('intro_requests')
-    .select('id', { count: 'exact', head: true })
-    .gte('created_at', sevenDaysAgo)
-    .eq('is_admin_initiated', false)
-
-  // Card 7: Messages Sent (7d, non-system)
-  const { count: messagesSent7d } = await adminClient
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('is_system', false)
-    .gte('created_at', sevenDaysAgo)
-
-  // Card 8: Meetings Scheduled (7d, all statuses)
-  const { count: meetingsScheduled7d } = await adminClient
-    .from('meetings')
-    .select('id', { count: 'exact', head: true })
-    .gte('created_at', sevenDaysAgo)
-
-  // Get current batch info. Approval state is tracked via status:
-  // generated -> active (approved) -> completed. No approved_at column exists.
-  const { data: currentBatch } = await supabase
-    .from('introduction_batches')
-    .select('id, status, created_at')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const { count: batchSuggestions } = currentBatch ? await adminClient
-    .from('batch_suggestions')
-    .select('id', { count: 'exact', head: true })
-    .eq('batch_id', currentBatch.id)
-    : { count: 0 }
-
-  // ── Derived-only values (no new queries — all sources fetched above) ──
-  // Weekly-active percentage: both numerator (activeUsers7d) and denominator
-  // (totalRegistered) are already fetched, so the % is safe to derive.
-  const weeklyActivePct = (totalRegistered && totalRegistered > 0)
-    ? Math.round(((activeUsers7d || 0) / totalRegistered) * 100)
-    : null
-
-  const batchNeedsReview = Boolean(currentBatch && currentBatch.status !== 'active')
-
-  // Needs Attention — reuses existing counts only; zero-value rows are excluded.
-  const attentionItems = [
-    { label: `${waitlistByStatus.pending} awaiting approval`, href: '/dashboard/admin/waitlist', show: waitlistByStatus.pending > 0, tone: 'red' as const },
-    { label: `${pendingConciergeCount} concierge request${(pendingConciergeCount || 0) === 1 ? '' : 's'}`, href: '/dashboard/admin/concierge', show: (pendingConciergeCount || 0) > 0, tone: 'yellow' as const },
-    { label: `${newIssueCount} issue report${(newIssueCount || 0) === 1 ? '' : 's'}`, href: '/dashboard/admin/issues', show: (newIssueCount || 0) > 0, tone: 'red' as const },
-    { label: `${pendingIntros} admin intro${(pendingIntros || 0) === 1 ? '' : 's'} awaiting response`, href: '/dashboard/admin/members', show: (pendingIntros || 0) > 0, tone: 'yellow' as const },
-    { label: 'Current batch needs review', href: '/dashboard/admin/batches', show: batchNeedsReview, tone: 'yellow' as const },
-  ].filter(i => i.show)
-
-  // Status accent classes keyed by real state.
-  const toneTop: Record<string, string> = {
-    red: 'border-t-red-400', yellow: 'border-t-amber-400', green: 'border-t-emerald-400', blue: 'border-t-sky-300', neutral: 'border-t-slate-200',
-  }
-  const toneDot: Record<string, string> = {
-    red: 'bg-red-500', yellow: 'bg-amber-500', green: 'bg-emerald-500', blue: 'bg-sky-400', neutral: 'bg-slate-300',
-  }
-  const oppsHasActivity = (opportunitiesCreated7d || 0) > 0 || (opportunityResponses7d || 0) > 0
-
-  const navCardBase = 'bg-white rounded-xl border border-slate-200 border-t-2 p-5 hover:border-[#1B2850]/30 hover:shadow-md transition-all group'
-  const iconChip = 'w-11 h-11 rounded-lg bg-[#F5F6FB] flex items-center justify-center group-hover:bg-[#1B2850] transition-colors'
-  const iconCls = 'w-5 h-5 text-[#1B2850] group-hover:text-white transition-colors'
+  const navLinks: Array<{ href: string; label: string; icon: any; badge?: number }> = [
+    { href: '/dashboard/admin/waitlist', label: 'Waitlist', icon: UserPlus, badge: waitlistPending ?? 0 },
+    { href: '/dashboard/admin/batches', label: 'Batches', icon: GitBranch },
+    { href: '/dashboard/admin/members', label: 'Members', icon: Users },
+    { href: '/dashboard/admin/concierge', label: 'Concierge', icon: Sparkles, badge: pendingConciergeCount ?? 0 },
+    { href: '/dashboard/admin/match-inspector', label: 'Match Inspector', icon: Search },
+    { href: '/dashboard/admin/operations', label: 'Operations', icon: Wrench },
+    { href: '/dashboard/admin/issues', label: 'Issue Reports', icon: AlertCircle, badge: newIssueCount ?? 0 },
+    { href: '/dashboard/admin/companies', label: 'Companies', icon: Building2 },
+    { href: '/dashboard/admin/metrics', label: 'Launch Metrics', icon: TrendingUp },
+    { href: '/dashboard/admin/referral-campaign', label: 'Referral Campaign', icon: Network },
+  ]
 
   return (
     <div className="min-h-screen bg-slate-50 p-5 sm:p-6 lg:px-8">
-      <div className="max-w-content mx-auto space-y-5">
-
-        {/* Header */}
+      <div className="max-w-content mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Admin Dashboard</h1>
           <p className="text-sm text-slate-500 mt-0.5">Launch operations console</p>
         </div>
 
-        {/* Pending-migration warning — deployed code expects a migration that
-            hasn't been applied to this database (running in compatibility mode). */}
-        {migrationHealth && migrationHealth.pending.length > 0 && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" aria-hidden="true" />
-              <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-amber-900">
-                  Pending database migration{migrationHealth.pending.length === 1 ? '' : 's'}
-                </h2>
-                <ul className="mt-1.5 space-y-2">
-                  {migrationHealth.pending.map((w) => (
-                    <li key={w.migration}>
-                      <p className="text-sm font-medium text-amber-900">{w.message}</p>
-                      <p className="text-xs text-amber-700">{w.impact}</p>
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-2 text-xs text-amber-700/90">
-                  Apply the migration in Supabase (SQL editor) to exit compatibility mode.
-                </p>
-              </div>
-            </div>
+        {/* 1 ── NEEDS ATTENTION (first) ─────────────────────────────────────────────── */}
+        <div>
+          <SectionHeader title="Needs Attention" note={`${dash.needsAttention.length} item${dash.needsAttention.length === 1 ? '' : 's'}`} />
+          <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+            {dash.needsAttention.length === 0 ? (
+              <p className="px-4 py-3 text-sm text-slate-500">No actionable items right now. Monitoring gaps below are informational.</p>
+            ) : dash.needsAttention.map((item) => (
+              <Link key={item.id} href={item.href} className="flex items-start gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors" title={item.explanation}>
+                <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${dotCls[item.severity]}`} aria-hidden="true" />
+                <span className="flex-1 min-w-0">
+                  <span className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-800">{item.title}</span>
+                    <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">{item.count}</span>
+                  </span>
+                  <span className="block text-[11px] text-slate-500 mt-0.5 leading-tight">{item.explanation}</span>
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-300 flex-shrink-0 mt-1" aria-hidden="true" />
+              </Link>
+            ))}
           </div>
-        )}
-
-        {/* Recommendation queue health — operational, member-invisible */}
-        {queueHealth && (
-          <div>
-            <h2 className="text-sm font-semibold text-slate-700 mb-2">Recommendation queue health</h2>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              {[
-                { label: 'No active batch', value: queueHealth.noActiveBatch },
-                { label: 'Active only', value: queueHealth.activeBatchOnly },
-                { label: 'Queued batch waiting', value: queueHealth.withQueuedBatch },
-                { label: 'Awaiting weekly gen', value: queueHealth.waitingForWeeklyGeneration },
-                { label: 'Awaiting admin batch', value: queueHealth.waitingOnAdminBatch },
-              ].map((m) => (
-                <div key={m.label} className="bg-white rounded-xl border border-slate-200 p-4">
-                  <p className="text-2xl font-bold text-slate-900">{m.value}</p>
-                  <p className="text-[11px] text-slate-500 mt-1 leading-tight">{m.label}</p>
-                </div>
+          {/* Monitoring gaps — honestly surfaced, never a fake-green status. */}
+          <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Monitoring not connected</p>
+            <ul className="space-y-1">
+              {dash.monitoringGaps.map((g) => (
+                <li key={g.id} className="text-[11px] text-slate-500 flex items-start gap-1.5">
+                  <CircleAlert className="w-3.5 h-3.5 text-slate-400 flex-shrink-0 mt-px" aria-hidden="true" />
+                  <span><span className="font-medium text-slate-600">{g.label}:</span> {g.reason}</span>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
-        )}
+        </div>
 
-        {/* Top metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <Users className="w-5 h-5 text-[#1B2850]" />
+        {/* 2 ── INVITATIONS & ACTIVATION ────────────────────────────────────────────── */}
+        <div>
+          <SectionHeader title="Invitations & Activation" note="counts unique people, not attempts" />
+          {!inv.ok ? <Unavailable label="Invitation metrics" /> : (
+            <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Stat label="Awaiting review" value={inv.data.awaitingReview} href="/dashboard/admin/waitlist" tip="Waitlist entries with status 'pending' — applicants awaiting an approval decision." />
+              <Stat label="Invited (people)" value={inv.data.invited} href="/dashboard/admin/waitlist" tip="Unique invited invitees: waitlist entries with status 'invited' and a non-null invited_at." />
+              <Stat label="Delivery pending (people)" value={inv.data.deliveryPending} tone={inv.data.deliveryStuck > 0 ? 'amber' : 'neutral'} href="/dashboard/admin/waitlist" tip={`Unique invitees whose CURRENT delivery state is in-flight (claimed/accepted/deferred). ${inv.data.deliveryStuck} stuck > ${24}h.`} sub={inv.data.deliveryStuck > 0 ? `${inv.data.deliveryStuck} stuck` : null} />
+              <Stat label="Delivered (people)" value={inv.data.delivered} tip="Unique invitees whose CURRENT collapsed state is 'delivered' (a later resend can flip an earlier bounce to delivered)." />
+              <Stat label="Bounced / blocked / failed (people)" value={inv.data.failed} tone={inv.data.failed > 0 ? 'red' : 'neutral'} href="/dashboard/admin/waitlist" tip="Unique invitees whose CURRENT state is terminal-failure (bounced/blocked/complained/failed) — a later bounce after a delivery counts here." />
+              <Stat label="Activated (people)" value={inv.data.activated ?? '—'} tone={inv.data.activationAvailable ? 'neutral' : 'amber'} tip="Unique DELIVERED invitees who have signed in (auth last_sign_in_at not null). Denominator of conversion = unique delivered invitees." sub={!inv.data.activationAvailable ? 'unavailable (Auth listing incomplete)' : inv.data.conversionRate != null ? `${inv.data.conversionRate}% of delivered` : null} />
+              <Stat label="Not activated 24h / 3d / 7d" value={inv.data.activationAvailable ? `${inv.data.notActivated24h} / ${inv.data.notActivated3d} / ${inv.data.notActivated7d}` : 'unavailable'} tone={(inv.data.notActivated7d ?? 0) > 0 ? 'amber' : 'neutral'} tip="Unique delivered invitees, delivered ≥24h/3d/7d ago, never signed in (cumulative). Unavailable when the Auth listing is incomplete." />
+              <Stat label="Historical (status unknown)" value={inv.data.historicalUnknown} tip="Invited invitees with NO delivery record (pre-tracking sends) — delivery status is genuinely unavailable, not a failure." />
             </div>
-            <p className="text-3xl font-bold text-slate-900 leading-none">{totalRegistered || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Members</p>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <TrendingUp className="w-5 h-5 text-amber-600" />
-              <span className="text-[11px] text-slate-400">7d</span>
-            </div>
-            <p className="text-3xl font-bold text-slate-900 leading-none">{activeUsers7d || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">
-              Weekly Active{weeklyActivePct !== null && <span className="text-slate-400"> · {weeklyActivePct}% of members</span>}
+            <p className="mt-2 text-[11px] text-slate-400">
+              Attempts (operational, not people): {inv.data.attempts.total} total · {inv.data.attempts.delivered} delivered · {inv.data.attempts.failed} failed
+              {Object.entries(inv.data.attempts.byPurpose).length > 0 && <> · {Object.entries(inv.data.attempts.byPurpose).map(([k, v]) => `${v} ${k}`).join(' · ')}</>}
+              {inv.data.unattributableAttempts > 0 && <> · {inv.data.unattributableAttempts} unattributable</>}
+              {inv.data.manualReview > 0 && <> · <span className="text-amber-600">{inv.data.manualReview} manual-review (email reassigned)</span></>}
             </p>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <Network className="w-5 h-5 text-green-600" />
-            </div>
-            <p className="text-3xl font-bold text-slate-900 leading-none">{totalMatches || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Active Matches</p>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <UserPlus className="w-5 h-5 text-sky-500" />
-            </div>
-            <p className="text-3xl font-bold text-slate-900 leading-none">{waitlistByStatus.pending}</p>
-            <p className="text-xs text-slate-500 mt-1">Waitlist · awaiting review</p>
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
-              <span>{waitlistByStatus.approved} approved</span>
-              <span>{waitlistByStatus.contacted} contacted</span>
-              <span>{waitlistByStatus.invited} invited</span>
-              <span>{waitlistByStatus.declined} declined</span>
-            </div>
-          </div>
+            </>
+          )}
         </div>
 
-        {/* Needs Attention */}
+        {/* 3 ── RECOMMENDATIONS & MATCHING ──────────────────────────────────────────── */}
         <div>
-          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">Needs Attention</h2>
-          <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-            {attentionItems.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-slate-500">No items currently require attention.</p>
-            ) : (
-              attentionItems.map((item) => (
-                <Link key={item.label} href={item.href} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors">
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${toneDot[item.tone]}`} aria-hidden="true" />
-                  <span className="flex-1 text-sm font-medium text-slate-800">{item.label}</span>
-                  <span className="text-slate-300 group-hover:text-slate-400">→</span>
-                </Link>
-              ))
-            )}
-          </div>
+          <SectionHeader title="Recommendations & Matching" />
+          {!rec.ok ? <Unavailable label="Recommendation metrics" /> : (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Stat label="Eligible without a recommendation" value={rec.data.eligibleWithoutRec} tone={rec.data.eligibleWithoutRec > 0 ? 'amber' : 'neutral'} href="/dashboard/admin/batches" tip="Eligible members (active, complete, non-test/non-admin) with zero active suggestion cards (status suggested/queued)." />
+              <Stat label="Reciprocal pairs created" value={rec.data.reciprocalPairsCreated} tip="Total member_pairs rows — canonical two-person auto-introduction pairs created all-time." />
+              <Stat label="Active reciprocal suggestions" value={rec.data.activeReciprocalSuggestions} tip="Directional intro_requests cards with a pair_id and status 'suggested' (both sides of a live pair)." />
+              <Stat label="One-sided legacy suggestions" value={rec.data.oneSidedLegacySuggestions} tone={rec.data.oneSidedLegacySuggestions > 0 ? 'sky' : 'neutral'} tip="Suggested intro_requests with NO pair_id — legacy batch-model one-directional cards." />
+              <Stat label="Members at capacity" value={rec.data.membersAtCapacity} tip={`Eligible members holding the max ${2} active suggestion cards (RECOMMENDATIONS_PER_BATCH).`} />
+              <Stat label="Pairs nearing rotation" value={rec.data.nearingRotation} tip={`Active pairs last recommended ${11}–${14} days ago — due to rotate soon.`} />
+              <Stat label="Pairs overdue for rotation" value={rec.data.staleOverdue} tone={rec.data.staleOverdue > 0 ? 'amber' : 'neutral'} href="/dashboard/admin/operations" tip={`Active pairs untouched > ${14} days — rotation should have expired them.`} />
+              <Stat label="Interest expressed" value={rec.data.interestExpressed} tip="intro_requests in an expressed-interest status (pending/accepted/admin_pending/approved)." />
+              <Stat label="Mutual matches" value={rec.data.mutualMatches} href="/dashboard/admin/match-inspector" tip="Unique canonical matched pairs (active, not removed) — reverse rows de-duplicated." />
+              <Stat label="Upcoming meetings (from matches)" value={rec.data.upcomingMeetingsFromMatches} tip="Future meetings (scheduled/confirmed/requested) whose two participants form a matched pair." />
+              <Stat label="Exposure — median / max inbound" value={`${rec.data.exposure.median} / ${rec.data.exposure.max}`} tone={rec.data.exposure.concentrationAlert ? 'red' : 'neutral'} tip="Median and highest inbound active-suggestion count across eligible members. Alert if the top is ≥4 and ≥3× the median." sub={rec.data.exposure.concentrationAlert ? 'concentration alert' : null} />
+            </div>
+          )}
         </div>
 
-        {/* Engagement — Last 7 Days */}
+        {/* 4 ── MEMBERS & ENGAGEMENT ────────────────────────────────────────────────── */}
         <div>
-          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">Last 7 Days</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <SectionHeader title="Members & Engagement" note="7-day windows" />
+          {!mem.ok ? <Unavailable label="Member metrics" /> : (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Stat label="Total members" value={mem.data.totalMembers} tip="Real people: profiles EXCLUDING test accounts and admin. The superset — Active is a subset." />
+              <Stat label="Active members" value={mem.data.activeMembers} tip="Real members with account_status = 'active'. Subset of Total members (same excluded populations)." />
+              <Stat label="Onboarding incomplete" value={mem.data.onboardingIncomplete} tone={mem.data.onboardingIncomplete > 0 ? 'sky' : 'neutral'} tip="Real active members with profile_complete = false — not yet eligible for matching." />
+              <Stat label="Active last 7 days" value={mem.data.activeLast7d} tip="Real active members with member_presence last_active_at within 7 days. Numerator ⊆ Active members." sub={mem.data.weeklyActivePct != null ? `${mem.data.weeklyActivePct}% of active members` : null} />
+              <Stat label="Active connections (unique pairs)" value={mem.data.activeConnections} tip="Unique canonical matched pairs (active, not removed) — labeled as pairs, not match rows." />
+              <Stat label="Messages sent (7d)" value={mem.data.messages7d} tip="Non-system messages created in the last 7 days." />
+              <Stat label="Meetings created (7d)" value={mem.data.meetingsCreated7d} tip="meetings rows created in the last 7 days (all statuses)." />
+              <Stat label="Upcoming meetings" value={mem.data.upcomingMeetings} tip="Meetings with scheduled_at in the future and status requested/scheduled/confirmed." />
+            </div>
+          )}
+        </div>
+
+        {/* 5 ── PLATFORM HEALTH ─────────────────────────────────────────────────────── */}
+        <div>
+          <SectionHeader title="Platform Health" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {/* Migrations */}
             <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center justify-between mb-1.5"><Zap className="w-5 h-5 text-amber-500" /></div>
-              <p className="text-3xl font-bold text-slate-900 leading-none">{introsSuggested7d || 0}</p>
-              <p className="text-xs text-slate-500 mt-1">Intros Suggested</p>
+              <div className="flex items-center gap-2 mb-1.5"><GitBranch className="w-4 h-4 text-slate-400" /><p className="text-xs font-semibold text-slate-600">Schema migrations</p></div>
+              {p.migration == null ? <p className="text-sm text-slate-400">Unavailable</p> : p.migration.ok ? (
+                <p className="text-sm text-emerald-600 font-medium">All applied</p>
+              ) : (
+                <div>
+                  <p className="text-sm text-amber-600 font-medium">{p.migration.pending.length} pending</p>
+                  <ul className="mt-1 space-y-0.5">
+                    {p.migration.pending.map((m) => (
+                      <li key={m.migration} className="text-[11px] text-slate-500 truncate" title={m.impact}>{m.migration}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            {/* Webhook health */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-2 mb-1.5"><Mail className="w-4 h-4 text-slate-400" /><p className="text-xs font-semibold text-slate-600">Invitation webhook (7d)</p></div>
+              {!p.webhook.ok ? <p className="text-sm text-slate-400">Unavailable</p> : (
+                <p className={`text-sm font-medium ${p.webhook.data.errorEvents > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  {p.webhook.data.totalEvents} events · {p.webhook.data.errorEvents} errors
+                </p>
+              )}
+            </div>
+            {/* Deployed SHA */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-2 mb-1.5"><Activity className="w-4 h-4 text-slate-400" /><p className="text-xs font-semibold text-slate-600">Deployed commit</p></div>
+              <p className="text-sm font-mono text-slate-700">{p.deployedSha ? p.deployedSha.slice(0, 7) : 'Unavailable (local)'}</p>
+            </div>
+            {/* Auth listing completeness — activation figures depend on a COMPLETE Auth scan */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-2 mb-1.5"><Users className="w-4 h-4 text-slate-400" /><p className="text-xs font-semibold text-slate-600">Auth activation source</p></div>
+              <p className={`text-sm font-medium ${dash.activation.complete ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {dash.activation.complete ? `Complete · ${dash.activation.pages} page${dash.activation.pages === 1 ? '' : 's'}` : 'Incomplete — activation figures unavailable'}
+              </p>
+            </div>
+            {/* Cron / Auth / Supabase — no supported live source → honest "Not connected" + link */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-2 mb-1.5"><Send className="w-4 h-4 text-slate-400" /><p className="text-xs font-semibold text-slate-600">Weekly cron</p></div>
+              <p className="text-sm text-slate-400">Not connected</p>
+              <a href="https://vercel.com/dashboard" className="text-[11px] text-[#1B2850] font-medium">Vercel cron logs →</a>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center justify-between mb-1.5"><ThumbsUp className="w-5 h-5 text-green-500" /></div>
-              <p className="text-3xl font-bold text-slate-900 leading-none">{interestExpressed7d || 0}</p>
-              <p className="text-xs text-slate-500 mt-1">Interest Expressed</p>
+              <div className="flex items-center gap-2 mb-1.5"><ShieldAlert className="w-4 h-4 text-slate-400" /><p className="text-xs font-semibold text-slate-600">Auth / service 5xx</p></div>
+              <p className="text-sm text-slate-400">Not connected</p>
+              <a href="https://vercel.com/dashboard" className="text-[11px] text-[#1B2850] font-medium">Runtime logs →</a>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center justify-between mb-1.5"><MessageSquare className="w-5 h-5 text-blue-500" /></div>
-              <p className="text-3xl font-bold text-slate-900 leading-none">{messagesSent7d || 0}</p>
-              <p className="text-xs text-slate-500 mt-1">Messages Sent</p>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center justify-between mb-1.5"><Calendar className="w-5 h-5 text-indigo-500" /></div>
-              <p className="text-3xl font-bold text-slate-900 leading-none">{meetingsScheduled7d || 0}</p>
-              <p className="text-xs text-slate-500 mt-1">Meetings Scheduled</p>
+              <div className="flex items-center gap-2 mb-1.5"><Activity className="w-4 h-4 text-slate-400" /><p className="text-xs font-semibold text-slate-600">Supabase resources</p></div>
+              <p className="text-sm text-slate-400">Not connected</p>
+              <a href="https://supabase.com/dashboard" className="text-[11px] text-[#1B2850] font-medium">Supabase dashboard →</a>
             </div>
           </div>
         </div>
 
-        {/* Main Navigation Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-
-          {/* Waitlist */}
-          <Link href="/dashboard/admin/waitlist" className={`${navCardBase} ${toneTop[waitlistByStatus.pending > 0 ? 'red' : 'green']}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={iconChip}><UserPlus className={iconCls} /></div>
-              {(waitlistByStatus.pending || 0) > 0 && (
-                <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
-                  {(waitlistByStatus.pending || 0) > 9 ? '9+' : waitlistByStatus.pending}
-                </span>
-              )}
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Waitlist</h3>
-            <p className="text-xs text-slate-500 mb-2.5">Approve new members, send invites, manage access</p>
-            <div className="text-xs text-slate-600"><span>{waitlistByStatus.pending || 0} pending approval</span></div>
-          </Link>
-
-          {/* Batch Management */}
-          <Link href="/dashboard/admin/batches" className={`${navCardBase} ${toneTop[batchNeedsReview ? 'yellow' : 'green']}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={iconChip}><GitBranch className={iconCls} /></div>
-              {batchNeedsReview && (
-                <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded">Needs Review</span>
-              )}
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Batch Management</h3>
-            <p className="text-xs text-slate-500 mb-2.5">Generate weekly batches, review suggestions, approve recommendations</p>
-            <div className="text-xs text-slate-600">{currentBatch && <span>{batchSuggestions || 0} suggestions in current batch</span>}</div>
-          </Link>
-
-          {/* Members */}
-          <Link href="/dashboard/admin/members" className={`${navCardBase} ${toneTop[(pendingIntros || 0) > 0 ? 'yellow' : 'neutral']}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={iconChip}><Users className={iconCls} /></div>
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Members</h3>
-            <p className="text-xs text-slate-500 mb-2.5">Manage users, boost priority, force matches, edit tiers and credits</p>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-              <span>{totalMembers || 0} active</span>
-              {(pendingIntros || 0) > 0 && <span className="text-amber-600 font-medium">{pendingIntros} admin intro{pendingIntros === 1 ? '' : 's'} awaiting response</span>}
-            </div>
-          </Link>
-
-          {/* Concierge Queue */}
-          <Link href="/dashboard/admin/concierge" className={`${navCardBase} ${toneTop[(pendingConciergeCount || 0) > 0 ? 'yellow' : 'green']}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={iconChip}><Sparkles className={iconCls} /></div>
-              {(pendingConciergeCount || 0) > 0 && (
-                <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
-                  {(pendingConciergeCount || 0) > 9 ? '9+' : pendingConciergeCount}
-                </span>
-              )}
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Concierge Queue</h3>
-            <p className="text-xs text-slate-500 mb-2.5">Member-requested introductions — triage pending requests</p>
-            <div className="text-xs text-slate-600"><span>{(pendingConciergeCount || 0) > 0 ? `${pendingConciergeCount} pending` : 'No pending requests'}</span></div>
-          </Link>
-
-          {/* Opportunities — read-only metrics card */}
-          <div className={`bg-white rounded-xl border border-slate-200 border-t-2 ${toneTop.blue} p-5`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className="w-11 h-11 rounded-lg bg-[#F5F6FB] flex items-center justify-center"><Briefcase className="w-5 h-5 text-[#1B2850]" /></div>
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-2.5">Opportunities</h3>
-            {oppsHasActivity ? (
-              <div className="flex gap-6">
-                <div>
-                  <p className="text-2xl font-bold text-slate-900 leading-none">{opportunitiesCreated7d || 0}</p>
-                  <p className="text-xs text-slate-500 mt-1">Created (7d)</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-slate-900 leading-none">{opportunityResponses7d || 0}</p>
-                  <p className="text-xs text-slate-500 mt-1">Responses (7d)</p>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-slate-400">No activity this week</p>
-            )}
+        {/* 6 ── COMPACT NAV LINKS ───────────────────────────────────────────────────── */}
+        <div>
+          <SectionHeader title="Console" />
+          <div className="flex flex-wrap gap-2">
+            {navLinks.map(({ href, label, icon: Icon, badge }) => (
+              <Link key={href} href={href} className="inline-flex items-center gap-2 bg-white rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:border-[#1B2850]/30 hover:text-[#1B2850] transition-colors">
+                <Icon className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                <span>{label}</span>
+                {badge != null && badge > 0 && (
+                  <span className="ml-0.5 min-w-5 h-5 px-1 bg-red-500 text-white text-[11px] font-bold rounded-full inline-flex items-center justify-center">{badge > 9 ? '9+' : badge}</span>
+                )}
+              </Link>
+            ))}
           </div>
-
-          {/* Launch Metrics */}
-          <Link href="/dashboard/admin/metrics" className={`${navCardBase} ${toneTop.blue}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={iconChip}><TrendingUp className={iconCls} /></div>
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Launch Metrics</h3>
-            <p className="text-xs text-slate-500">Founding member activation, intros, matches, meetings, and opportunities</p>
-          </Link>
-
-          {/* Match Inspector */}
-          <Link href="/dashboard/admin/match-inspector" className={`${navCardBase} ${toneTop.blue}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={iconChip}><Search className={iconCls} /></div>
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Match Inspector</h3>
-            <p className="text-xs text-slate-500 mb-2.5">Inspect any pair — relationship state, eligibility, insights, and override tools</p>
-            <div className="text-xs text-slate-600"><span>Pair lookup &amp; manual actions</span></div>
-          </Link>
-
-          {/* Platform Operations */}
-          <Link href="/dashboard/admin/operations" className={`${navCardBase} ${toneTop.blue}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={iconChip}><Wrench className={iconCls} /></div>
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Platform Operations</h3>
-            <p className="text-xs text-slate-500 mb-2.5">Advanced tools for debugging, manual overrides, and system support.</p>
-            <div className="text-xs text-slate-600"><span>Support &amp; debug tools</span></div>
-          </Link>
-
-          {/* Issue Reports */}
-          <Link href="/dashboard/admin/issues" className={`${navCardBase} ${toneTop[(newIssueCount || 0) > 0 ? 'red' : 'green']}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={iconChip}><AlertCircle className={iconCls} /></div>
-              {(newIssueCount || 0) > 0 && (
-                <span className="w-6 h-6 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center">
-                  {(newIssueCount || 0) > 9 ? '9+' : newIssueCount}
-                </span>
-              )}
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Issue Reports</h3>
-            <p className="text-xs text-slate-500 mb-2.5">User-submitted bug reports and support questions</p>
-            <div className="text-xs text-slate-600"><span>{(newIssueCount || 0) > 0 ? `${newIssueCount} unreviewed` : 'No new reports'}</span></div>
-          </Link>
-
-          {/* Companies */}
-          <Link href="/dashboard/admin/companies" className={`${navCardBase} ${toneTop.blue}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={iconChip}><Building2 className={iconCls} /></div>
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Companies</h3>
-            <p className="text-xs text-slate-500 mb-2.5">Edit company profiles, enrich missing logos &amp; descriptions, import enrichment CSV</p>
-            <div className="text-xs text-slate-600"><span>Company data &amp; enrichment</span></div>
-          </Link>
-
-          {/* Referral Campaign */}
-          <Link href="/dashboard/admin/referral-campaign" className={`${navCardBase} ${toneTop.blue}`}>
-            <div className="flex items-start justify-between mb-3">
-              <div className={iconChip}><Network className={iconCls} /></div>
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Referral Campaign</h3>
-            <p className="text-xs text-slate-500">Invite active members to recommend high-quality additions to Andrel.</p>
-          </Link>
-
         </div>
       </div>
     </div>
