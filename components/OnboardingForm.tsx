@@ -13,6 +13,7 @@ import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { isValidFullName, FULL_NAME_ERROR } from '@/lib/validation/fullName'
 import CurrentFocusAreasInput from '@/components/CurrentFocusAreasInput'
+import { onboardingStepList, initialOnboardingStep } from '@/lib/onboarding/steps'
 
 // Role-type picker — Phase B replaces the flat A-1 button list with a
 // category → title picker (components/RoleCategoryPicker.tsx) sourced from
@@ -48,11 +49,14 @@ const PURPOSES = [
 
 type Step = 'password' | 'profile' | 'preferences'
 
-export default function OnboardingForm({ initialFullName = '' }: { initialFullName?: string }) {
+// `needsPassword` is REQUIRED (no default) so every caller must decide explicitly and fail closed —
+// it is the server-confirmed gate: only a genuine legacy temp-password account (flag true, password
+// not yet server-confirmed) starts at the password step; everyone else starts at the profile step.
+export default function OnboardingForm({ initialFullName = '', needsPassword }: { initialFullName?: string; needsPassword: boolean }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [step, setStep] = useState<Step>('password')
+  const [step, setStep] = useState<Step>(initialOnboardingStep(needsPassword))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -102,11 +106,19 @@ export default function OnboardingForm({ initialFullName = '' }: { initialFullNa
     if (newPassword.length < 8) { setError('Password must be at least 8 characters'); return }
     if (newPassword !== confirmPassword) { setError('Passwords do not match'); return }
     setSaving(true)
-    const supabase = createClient()
-    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+    // Reuse the SERVER-AUTHORIZED reset completion path: it updates the password server-side AND
+    // clears password_reset_required in the same request (issuing a signed continuation cookie).
+    // This clears the flag IMMEDIATELY — not only at the end of onboarding — so a refresh can never
+    // re-show this password form and reject the same password. No client-authorized flag clear.
+    const res = await fetch('/api/auth/complete-reset', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'set', password: newPassword }),
+    })
+    const data = await res.json().catch(() => ({} as any))
     setSaving(false)
-    if (updateError) { setError(updateError.message); return }
-    setStep('profile')
+    // ok → flag cleared; finalize → password set but flag-clear deferred (a valid continuation
+    // cookie was issued, which the onboarding page honors on refresh). Both mean the password is set.
+    if (data?.ok || data?.stage === 'finalize') { setNewPassword(''); setConfirmPassword(''); setStep('profile'); return }
+    setError(data?.message || 'Could not set your password. Please try again.')
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -194,7 +206,8 @@ export default function OnboardingForm({ initialFullName = '' }: { initialFullNa
     router.push('/dashboard/introductions')
   }
 
-  const stepIndex = step === 'password' ? 0 : step === 'profile' ? 1 : 2
+  const steps = onboardingStepList(needsPassword)
+  const stepIndex = steps.indexOf(step)
 
   return (
     <div className="min-h-screen bg-[#F5F6FB] flex items-center justify-center px-4 py-12">
@@ -212,9 +225,9 @@ export default function OnboardingForm({ initialFullName = '' }: { initialFullNa
           </p>
         </div>
 
-        {/* Step indicator */}
+        {/* Step indicator — one dot per active step (the password step is omitted when not needed). */}
         <div className="flex items-center justify-center gap-2 mb-6">
-          {[0, 1, 2].map(i => (
+          {steps.map((_, i) => (
             <div key={i} className={cn('h-1.5 w-14 rounded-full transition-colors',
               i < stepIndex ? 'bg-[#C4922A]' : i === stepIndex ? 'bg-[#1B2850]' : 'bg-slate-200'
             )} />
