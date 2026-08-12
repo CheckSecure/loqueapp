@@ -25,7 +25,7 @@ export async function claimInviteDelivery(admin: any, args: {
   authUserId: string | null
   email: string
   purpose: 'first_invite' | 'access_resend' | 'reminder'
-}): Promise<{ deliveryId: string | null; isNew: boolean; claimFailed?: boolean; existingStatus?: string | null; stale?: boolean }> {
+}): Promise<{ deliveryId: string | null; isNew: boolean; claimFailed?: boolean; existingStatus?: string | null; stale?: boolean; existingRecipient?: string | null }> {
   const now = new Date().toISOString()
   const { data, error } = await admin
     .from('invitation_deliveries')
@@ -46,7 +46,7 @@ export async function claimInviteDelivery(admin: any, args: {
     // If we cannot READ it, fail closed rather than send blind.
     const { data: existing, error: selErr } = await admin
       .from('invitation_deliveries')
-      .select('id, status, attempted_at')
+      .select('id, status, attempted_at, recipient_email')
       .eq('waitlist_id', args.waitlistId).eq('purpose', args.purpose).in('status', ['claimed', 'accepted', 'deferred'])
       .order('attempted_at', { ascending: false }).limit(1).maybeSingle()
     if (selErr || !existing?.id) {
@@ -55,11 +55,13 @@ export async function claimInviteDelivery(admin: any, args: {
     }
     // In-flight statuses (claimed/accepted/deferred) block a blind send. Past the review window an
     // unresolved in-flight attempt is `stale` — eligible only for an explicit admin-reviewed new
-    // attempt (a lost webhook must not leave it stuck forever).
+    // attempt (a lost webhook must not leave it stuck forever). The existing claim's STORED recipient
+    // is returned so a caller changing the address can prove the in-flight send is (or is not) bound
+    // to the same recipient — it is NEVER rewritten here.
     const attempted = existing.attempted_at ? Date.parse(existing.attempted_at) : NaN
     const inFlight = existing.status === 'claimed' || existing.status === 'accepted' || existing.status === 'deferred'
     const stale = inFlight && Number.isFinite(attempted) && (Date.now() - attempted) >= INVITE_RETRY_WINDOW_MS
-    return { deliveryId: existing.id, isNew: false, existingStatus: existing.status ?? null, stale }
+    return { deliveryId: existing.id, isNew: false, existingStatus: existing.status ?? null, stale, existingRecipient: existing.recipient_email ?? null }
   }
   // ANY other error — missing table (42P01, 049 pending), permission (42501), or transient —
   // FAILS CLOSED. Never fall back to an untracked send.

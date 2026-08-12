@@ -64,6 +64,45 @@ function fakeAdmin() {
   return { from: q, _deliveries: deliveries, _events: events, _control: control }
 }
 
+// The (waitlist_id, purpose) active-claim index is NOT keyed on recipient. Prove that a NEW-address
+// claim against an existing OLD-address access_resend behaves safely for EVERY prior status, and that
+// the existing row's recipient/id are surfaced but never rewritten.
+describe('claimInviteDelivery — recipient binding across an existing old-address access_resend', () => {
+  const OLDR = 'robert.broadbent@wbd-us.com'
+  const NEWR = 'broadbent2@hotmail.com'
+  const seed = (admin: any, status: string) => admin._deliveries.push({
+    id: 'old_del', waitlist_id: 'w1', purpose: 'access_resend', recipient_email: OLDR, status,
+    attempted_at: new Date().toISOString(),
+  })
+  const claimNew = (admin: any) => claimInviteDelivery(admin as any, { waitlistId: 'w1', authUserId: 'u', email: NEWR, purpose: 'access_resend' })
+
+  for (const status of ['claimed', 'accepted', 'deferred']) {
+    it(`ACTIVE '${status}' old-address delivery BLOCKS a new-address claim (isNew=false, old recipient surfaced, row untouched)`, async () => {
+      const admin = fakeAdmin(); seed(admin, status)
+      const r = await claimNew(admin)
+      expect(r.isNew).toBe(false)
+      expect(r.deliveryId).toBe('old_del')          // resolves onto the EXISTING row, never a new one
+      expect(r.existingStatus).toBe(status)
+      expect(r.existingRecipient).toBe(OLDR)        // stored recipient surfaced …
+      expect(admin._deliveries).toHaveLength(1)     // … no new row inserted …
+      expect(admin._deliveries[0].recipient_email).toBe(OLDR) // … and never rewritten.
+    })
+  }
+  for (const status of ['delivered', 'bounced', 'failed']) {
+    it(`TERMINAL '${status}' old-address delivery ALLOWS a fresh new-address claim (isNew=true, new row bound to new recipient, old row immutable)`, async () => {
+      const admin = fakeAdmin(); seed(admin, status)
+      const r = await claimNew(admin)
+      expect(r.isNew).toBe(true)
+      expect(admin._deliveries).toHaveLength(2)     // a NEW row alongside the untouched old one
+      const oldRow = admin._deliveries.find((d: any) => d.id === 'old_del')
+      expect(oldRow.recipient_email).toBe(OLDR); expect(oldRow.status).toBe(status) // immutable history
+      const newRow = admin._deliveries.find((d: any) => d.id !== 'old_del')
+      expect(newRow.recipient_email).toBe(NEWR)     // fresh delivery bound to the NEW recipient
+      expect(newRow.status).toBe('claimed')
+    })
+  }
+})
+
 describe('claimInviteDelivery — pre-send atomic claim (one active attempt / waitlist+purpose)', () => {
   it('first claim is new; a concurrent second resolves onto the SAME claim (no duplicate send)', async () => {
     const admin = fakeAdmin()

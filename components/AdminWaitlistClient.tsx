@@ -119,6 +119,52 @@ export default function AdminWaitlistClient({
     setRevokeEntry(entry)
   }
 
+  // Change-invitation-email modal state (invited, never-activated records only).
+  const [changeEntry, setChangeEntry] = useState<WaitlistEntry | null>(null)
+  const [changeNewEmail, setChangeNewEmail] = useState('')
+  const [changing, setChanging] = useState(false)
+  const [changeMsg, setChangeMsg] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(null)
+
+  const openChangeEmail = (entry: WaitlistEntry) => {
+    setChangeMsg(null)
+    setChangeNewEmail('')
+    setChangeEntry(entry)
+  }
+
+  const doChangeEmail = async () => {
+    if (!changeEntry || changing) return // guard double-submit while in flight
+    const next = changeNewEmail.trim()
+    if (!next) { setChangeMsg({ tone: 'error', text: 'Enter the replacement email address.' }); return }
+    setChanging(true)
+    setChangeMsg(null)
+    try {
+      const res = await fetch('/api/admin/waitlist/change-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ waitlistId: changeEntry.id, newEmail: next }), // immutable id + one email
+      })
+      const data = await res.json().catch(() => ({}))
+      const msg: string = data.message || data.error || 'Could not complete the request.'
+      if (data.success && (data.state === 'changed_and_sent' || data.state === 'already_current')) {
+        setChangeEntry(null)
+        router.refresh() // row now shows the new address + a fresh access_resend delivery
+        alert('Email changed and a secure access link was sent to the new address.')
+        return
+      }
+      if (data.state === 'changed_send_failed' || data.state === 'changed_send_uncertain') {
+        // Identity WAS updated; only the send needs a retry. Refresh so the new address shows.
+        router.refresh()
+        setChangeMsg({ tone: 'warn', text: msg })
+        return
+      }
+      // conflict / already_activated / ambiguous / needs_review / pending / paused / critical / error.
+      setChangeMsg({ tone: data.state === 'critical' ? 'error' : 'warn', text: msg })
+    } catch {
+      setChangeMsg({ tone: 'error', text: 'Network error. Please try again.' })
+    }
+    setChanging(false)
+  }
+
   // Reinstate-declined confirmation modal state (correct an accidental decline).
   const [reinstateEntry, setReinstateEntry] = useState<WaitlistEntry | null>(null)
   const [reinstating, setReinstating] = useState(false)
@@ -706,6 +752,16 @@ export default function AdminWaitlistClient({
                             >
                               {processing === entry.id ? 'Sending...' : label}
                             </button>
+                            {/* Correct a wrong invitation address BEFORE activation: change the email
+                                on the same auth user + waitlist row and send a new secure link. */}
+                            <button
+                              onClick={() => openChangeEmail(entry)}
+                              disabled={processing === entry.id}
+                              className="flex items-center gap-1.5 px-4 py-1.5 bg-white text-[#1B2850] border border-slate-300 text-xs font-medium rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                              Change invitation email
+                            </button>
                             {/* Destructive: revoke a mistaken / duplicate / requested-removal invite
                                 before activation. Same button styling as the Approved-tab "Remove". */}
                             <button
@@ -856,6 +912,67 @@ export default function AdminWaitlistClient({
               >
                 <XCircle className="w-4 h-4" />
                 {revoking ? 'Revoking…' : 'Revoke Invite'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {changeEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50" onClick={() => !changing && setChangeEntry(null)} />
+          <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">Change invitation email?</h3>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <p className="text-sm text-slate-600">
+                Replace the invitation email for{' '}
+                <span className="font-semibold text-slate-800">{changeEntry.full_name || 'this person'}</span>{' '}
+                and send a new secure access link to the new address.
+              </p>
+              <div className="text-xs text-slate-500 space-y-1">
+                <div>Current: <span className="font-mono text-slate-700">{changeEntry.email}</span></div>
+              </div>
+              <label className="block text-xs font-medium text-slate-600">
+                New email address
+                <input
+                  type="email"
+                  autoComplete="off"
+                  value={changeNewEmail}
+                  onChange={(e) => setChangeNewEmail(e.target.value)}
+                  disabled={changing}
+                  placeholder="name@example.com"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-[#1B2850] focus:outline-none disabled:opacity-50"
+                />
+              </label>
+              <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                Allowed ONLY before this person activates their account. It updates the existing account +
+                record and sends a new secure link — it never sends a password.
+              </p>
+              {changeMsg && (
+                <p className={`rounded-lg border px-3 py-2.5 text-xs ${
+                  changeMsg.tone === 'ok' ? 'border-green-300 bg-green-50 text-green-900'
+                    : changeMsg.tone === 'warn' ? 'border-amber-300 bg-amber-50 text-amber-900'
+                      : 'border-red-300 bg-red-50 text-red-900'
+                }`}>{changeMsg.text}</p>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setChangeEntry(null)}
+                disabled={changing}
+                className="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doChangeEmail}
+                disabled={changing || !changeNewEmail.trim()}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-[#1B2850] rounded-lg hover:bg-[#162040] disabled:opacity-50"
+              >
+                <Mail className="w-4 h-4" />
+                {changing ? 'Working…' : 'Change email & send link'}
               </button>
             </div>
           </div>
