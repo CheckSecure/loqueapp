@@ -31,7 +31,11 @@ export async function createReciprocalSuggestion(
     p_max_cards: opts?.maxCards ?? RECOMMENDATIONS_PER_BATCH,
   })
   if (error) {
-    console.error('[reciprocal-suggestion] rpc failed:', error.message)
+    // A deadline-cancelled RPC surfaces as an AbortError — never log the raw abort/payload. All
+    // errors (incl. abort) map to the transient 'error' outcome; the caller retries idempotently
+    // (the RPC's exists_active/canonical-pair guards make a re-attempt safe even if it committed).
+    const aborted = error.name === 'AbortError' || /abort/i.test(error.message ?? '')
+    if (!aborted) console.error('[reciprocal-suggestion] rpc failed (class):', error.code ?? 'unknown')
     return { ok: false, outcome: 'error' }
   }
   const outcome = (data as ReciprocalOutcome) ?? 'error'

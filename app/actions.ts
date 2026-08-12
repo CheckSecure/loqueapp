@@ -351,12 +351,17 @@ export async function completeOnboarding(formData: FormData) {
     scheduleEnrichment(adminClient, companySlug(company), company.trim())
   }
 
-  // Generate initial recommendations for new user
+  // Generate initial recommendations for new user. Awaited before the action returns. The generator
+  // returns an unambiguous outcome (created / empty_pool / capacity / no_compatible_candidate /
+  // ineligible / transient_error) which we log structurally (no identifiers). A non-created outcome
+  // is NOT reported as success, but onboarding is never blocked by the absence of a compatible
+  // candidate. Recovery for a retryable outcome is a separately-authorized, explicitly-targeted
+  // operation (there is no automatic global sweep).
   try {
     const result = await generateOnboardingRecommendations(user.id)
-    console.log('[completeOnboarding] Generated recommendations:', result.count)
-  } catch (err) {
-    console.error('[completeOnboarding] Error generating recommendations:', err)
+    console.log('[completeOnboarding] recs', JSON.stringify({ outcome: result.outcome, created: result.count, retryable: result.retryable }))
+  } catch (err: any) {
+    console.error('[completeOnboarding] recs generation error (non-blocking):', err?.message)
   }
 
   // Assign initial credits — tier-aware. Read the just-upserted profile to

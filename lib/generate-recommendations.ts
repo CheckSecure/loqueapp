@@ -8,12 +8,12 @@ import { applyVerticalBoost } from '@/lib/matching/vertical-boost'
 import { applyExposureBalancing, exposureBalancingEnabled } from '@/lib/matching/exposure-balancing'
 import { readScoringSignals } from '@/lib/matching/profileScoring'
 import { selectFairCounterparts } from '@/lib/matching/reciprocalPair'
-import { createReciprocalSuggestion } from '@/lib/matching/createReciprocalSuggestion'
+import { createReciprocalSuggestion, type ReciprocalOutcome } from '@/lib/matching/createReciprocalSuggestion'
 import { legalSameSidePenalty, crossMarketFirstForLawFirm } from '@/lib/matching/legalSameSidePenalty'
 import { getActiveIntroCap, RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
-import { applyMemberEligibility, filterEligible, assertAllEligible } from '@/lib/matching/eligibility'
+import { applyMemberEligibility, filterEligible, assertAllEligible, isEligibleMember, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { classifyIntroHistory, exhaustionThreshold } from '@/lib/introRequests/history'
 import { shouldNotifyVisibleBatch, notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 
@@ -633,8 +633,10 @@ async function getActiveInboundExposure(adminClient: ReturnType<typeof createAdm
   return exposure
 }
 
-export async function rankCandidatesForUser(userId: string, maxCount?: number) {
-  const adminClient = createAdminClient()
+export async function rankCandidatesForUser(userId: string, maxCount?: number, admin?: ReturnType<typeof createAdminClient>) {
+  // A caller may inject a deadline-bound admin client so ALL of this function's reads are cancelled
+  // when the caller's generation budget expires (see generateReciprocalBatchForMember).
+  const adminClient = admin ?? createAdminClient()
 
   const { data: newUserProfile, error: profileError } = await adminClient
     .from('profiles')
@@ -921,7 +923,7 @@ export async function generateBatchForMember(
 export async function generateOnboardingRecommendations(userId: string, maxCount?: number) {
   // Routed through the ONE reciprocal, concurrency-safe path (not the legacy one-sided enqueue).
   const result = await generateReciprocalBatchForMember(userId, 'onboarding', maxCount)
-  return { count: result.count }
+  return { count: result.count, outcome: result.outcome, retryable: result.retryable }
 }
 
 // Default number of reciprocal pairs to create per member batch.
@@ -931,49 +933,224 @@ const RECIPROCAL_BATCH_SIZE = 5
 const RECIPROCAL_CANDIDATE_POOL = 50
 
 /**
- * THE single automatic-generation path (onboarding + weekly). Ranks the eligible pool for fit
- * (viewer-specific, with the corrected snake_case signals), then fair-selects up to N counterparts
- * using LIVE inbound exposure as a bounded tie-breaker, and creates each as a canonical reciprocal
- * pair via the transactional RPC (eligibility re-checked in-transaction; both directions atomic).
- * Honest empty state when no eligible candidate exists. Never calls the legacy one-sided enqueue.
+ * HARD limits on a single interactive generation — bound candidate count, RPC calls, and wall time
+ * so onboarding can never burst the DB or hang. `maxCandidateAttempts=2` (initial + one retry).
+ *
+ * `maxRpcCalls=8` — rationale: the onboarding target is RECOMMENDATIONS_PER_BATCH (2) cards, so 8 is
+ * 4× the target. The candidate list is FAIR-ORDERED (exposure-weighted), which is what prevents the
+ * global-top concentration bug — NOT the cap size — so a smaller cap does not reconcentrate. 8 lets
+ * a brand-new member absorb up to ~6 capacity/ineligible skips while still creating 2 pairs, and
+ * bounds worst-case interactive latency (≤8 sequential RPCs + one transient retry) well under the
+ * time budget. No measurement justified the previous 12; lowered to the safer 8.
+ */
+export const GEN_TIME_BUDGET_MS = 4000
+export const WALK_LIMITS = { maxRpcCalls: 8, maxCandidateAttempts: 2, timeBudgetMs: GEN_TIME_BUDGET_MS, backoffMs: 100 } as const
+
+/**
+ * Unambiguous, privacy-safe generation outcomes (derived ONLY from counts + RPC codes, never from
+ * any identity):
+ *   created              — ≥1 reciprocal pair created
+ *   noop_at_capacity     — the member already holds the allowed number of visible cards
+ *   empty_pool           — candidate selection returned zero candidates
+ *   capacity             — candidates existed but every safe attempt was blocked by capacity/exists_active
+ *   no_compatible_candidate — candidates existed but eligibility/history/blocking/cooldown rejected all
+ *   ineligible           — the NEW member itself is ineligible (no RPC attempted)
+ *   transient_error      — a real DB/RPC exception or 'error' response prevented a conclusive result
+ */
+export type GenerationOutcome =
+  | 'created' | 'noop_at_capacity' | 'empty_pool' | 'capacity' | 'no_compatible_candidate' | 'ineligible' | 'transient_error'
+
+export interface GenerationResult {
+  count: number
+  considered: number
+  outcome: GenerationOutcome
+  /** True when the result is not definitive/terminal — the member may be retried later by a
+   *  SEPARATELY-AUTHORIZED, explicitly-targeted operation (no automatic global sweep exists). */
+  retryable: boolean
+  rpcCalls: number
+}
+
+/** Whether an outcome is a candidate for a later, explicitly-targeted retry (never an auto-sweep). */
+export function retryableFor(outcome: GenerationOutcome): boolean {
+  return outcome === 'transient_error' || outcome === 'capacity' ||
+    outcome === 'empty_pool' || outcome === 'no_compatible_candidate'
+}
+
+/**
+ * Reduce the FINAL per-candidate outcomes (after the bounded transient-retry) to ONE outcome. A
+ * residual transient 'error' — even mixed with deterministic skips — yields transient_error, never a
+ * false empty/definitive result. Pure + fully unit-tested.
+ */
+export function classifyGenerationOutcome(
+  finalOutcomes: ReciprocalOutcome[],
+  opts: { createdCount: number; candidatesEmpty: boolean; memberIneligible: boolean; timedOut: boolean },
+): GenerationOutcome {
+  if (opts.createdCount > 0) return 'created'
+  if (opts.memberIneligible) return 'ineligible'
+  if (opts.candidatesEmpty) return 'empty_pool'
+  if (opts.timedOut) return 'transient_error'                 // uncertain — never a definitive empty
+  if (finalOutcomes.includes('error')) return 'transient_error' // residual/mixed transient uncertainty
+  if (finalOutcomes.length === 0) return 'empty_pool'
+  if (finalOutcomes.every((o) => o === 'capacity' || o === 'exists_active')) return 'capacity'
+  return 'no_compatible_candidate'                            // deterministic non-capacity rejections
+}
+
+/** Structured, privacy-safe log line. NEVER includes email, UUID, name, candidate identity, profile
+ *  data, or raw errors. `cid` is an ephemeral, non-identifying per-invocation correlation token. */
+function logReciprocalGeneration(event: string, source: string, fields: Record<string, unknown> = {}) {
+  console.log('[reciprocal-gen]', JSON.stringify({ event, source, ...fields }))
+}
+
+// Ephemeral, non-identifying per-invocation correlation token (ties the invoked + outcome log lines
+// of one generation together). NOT derived from any member/candidate identity.
+let genSeq = 0
+function nextCorrelationId(): string { genSeq = (genSeq + 1) % 1_000_000; return genSeq.toString(36) }
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+export interface WalkResult { created: number; considered: number; rpcCalls: number; finalOutcomes: ReciprocalOutcome[]; timedOut: boolean }
+
+/**
+ * Bounded candidate traversal — the testable core. Walks the fair-ordered candidate ids ONCE,
+ * calling createFn per candidate; a per-candidate 'error' is TRANSIENT and its id is retried ONCE
+ * afterwards (never the whole list). Deterministic skips (capacity/exists_active/cooldown/ineligible/
+ * invalid) are NEVER retried. Every pass is bounded by remaining slots, `maxRpcCalls`, and a wall-clock
+ * `timeBudgetMs` (via the injected clock) — on expiry it stops and reports timedOut. Fully injectable
+ * (createFn / clock / sleep) so limits, timeouts, and continue-past-capacity are unit-tested.
+ */
+export async function walkCandidates(
+  candidateIds: string[],
+  remaining: number,
+  createFn: (id: string) => Promise<ReciprocalOutcome>,
+  clock: () => number,
+  sleepFn: (ms: number) => Promise<void>,
+  limits: { maxRpcCalls: number; maxCandidateAttempts: number; timeBudgetMs: number; backoffMs: number },
+  signal?: AbortSignal,
+): Promise<WalkResult> {
+  const deadline = clock() + limits.timeBudgetMs
+  const outcomeById = new Map<string, ReciprocalOutcome>()
+  const transientIds: string[] = []
+  let created = 0, considered = 0, rpcCalls = 0, timedOut = false
+  // Never START a DB op with no budget left (point 4): out of time OR the deadline signal fired.
+  const outOfBudget = () => clock() >= deadline || signal?.aborted === true
+
+  // Pass 1 — each candidate once, in fair order.
+  for (const id of candidateIds) {
+    if (created >= remaining) break
+    if (rpcCalls >= limits.maxRpcCalls) break
+    if (outOfBudget()) { timedOut = true; break }
+    considered++; rpcCalls++
+    const o = await createFn(id)
+    outcomeById.set(id, o)
+    if (o === 'created') created++
+    else if (o === 'error') transientIds.push(id)   // ONLY transient errors are retry-eligible
+  }
+
+  // Pass 2 — retry ONLY the transient-failed candidates, once, within the remaining time + RPC budget.
+  if (created < remaining && transientIds.length > 0 && !timedOut &&
+      !outOfBudget() && limits.maxCandidateAttempts > 1) {
+    const remainingMs = deadline - clock()
+    if (remainingMs > 0) await sleepFn(Math.min(limits.backoffMs, remainingMs)) // short bounded backoff
+    for (const id of transientIds) {
+      if (created >= remaining) break
+      if (rpcCalls >= limits.maxRpcCalls) break
+      if (outOfBudget()) { timedOut = true; break }
+      rpcCalls++
+      const o = await createFn(id)
+      outcomeById.set(id, o) // final outcome supersedes the transient one (aborted RPC → exists_active on retry)
+      if (o === 'created') created++
+    }
+  }
+
+  return { created, considered, rpcCalls, finalOutcomes: Array.from(outcomeById.values()), timedOut }
+}
+
+/**
+ * THE single idempotent automatic-generation entry point (onboarding + weekly). Ranks the eligible
+ * pool for fit, fair-selects counterparts using LIVE inbound exposure, and creates each as a canonical
+ * reciprocal pair via the transactional RPC (both directions atomic; concurrency-safe advisory locks).
+ * It NEVER creates a one-sided intro_request.
+ *
+ * INCIDENT NOTE: the prior implementation collapsed errors, deterministic skips, and an empty pool
+ * into `count:0` with no reason. Root cause of the reported zero-result: generation produced no rows
+ * and the old code erased the reason.
+ *
+ * DEADLINE ENFORCEMENT: one AbortController is established at entry and a timer aborts it at
+ * GEN_TIME_BUDGET_MS. A deadline-bound admin client (createAdminClient({signal})) attaches that signal
+ * to EVERY request it issues — eligibility read, capacity read, all ranker/profile reads (the ranker
+ * receives this client), and every create_reciprocal_suggestion RPC — so a hung operation is genuinely
+ * cancelled, not merely un-awaited. The walk also refuses to START an op past the deadline. On
+ * abort/timeout the outer catch maps to transient_error, retryable:true (never a false empty pool).
+ * The timer is always cleared and the controller aborted in `finally`, so no promise or timer lingers
+ * after the function returns. An aborted RPC is outcome-ambiguous (it may have committed server-side);
+ * the idempotent RPC makes any retry safe — a re-attempt returns exists_active rather than duplicating.
  */
 export async function generateReciprocalBatchForMember(
   userId: string,
   source: 'onboarding' | 'weekly',
   maxCount?: number,
-): Promise<{ count: number; considered: number }> {
-  const adminClient = createAdminClient()
-
-  // Respect THIS member's own visible-card limit: only fill remaining slots (never exceed / evict).
+): Promise<GenerationResult> {
+  const cid = nextCorrelationId()
+  logReciprocalGeneration('invoked', source, { cid })
   const target = maxCount ?? RECOMMENDATIONS_PER_BATCH
-  const { count: aActive } = await adminClient
-    .from('intro_requests')
-    .select('id', { count: 'exact', head: true })
-    .eq('requester_id', userId)
-    .in('status', ['suggested', 'queued'])
-  const remaining = Math.max(0, target - (aActive ?? 0))
-  if (remaining === 0) return { count: 0, considered: 0 } // member already at capacity
 
-  const { candidates } = await rankCandidatesForUser(userId, RECIPROCAL_CANDIDATE_POOL)
-  if (!candidates.length) return { count: 0, considered: 0 } // honest empty state — never a forced match
+  // ONE overall deadline for the whole generation; the signal cancels every DB op via the client.
+  const controller = new AbortController()
+  const deadlineAt = Date.now() + GEN_TIME_BUDGET_MS
+  const timer = setTimeout(() => controller.abort(), GEN_TIME_BUDGET_MS)
+  const adminClient = createAdminClient({ signal: controller.signal })
 
-  const exposure = await getActiveInboundExposure(adminClient)
-  // Fair ORDER over the whole ranked pool; we walk it and skip counterparts the RPC reports full,
-  // so an at-capacity or ineligible top pick is safely replaced by the next fair candidate.
-  const ordered = selectFairCounterparts(
-    candidates.map((c: any) => ({ id: c.id, score: c.finalScore ?? 0, inbound: exposure.get(c.id) ?? 0 })),
-    candidates.length,
-  )
-
-  let count = 0
-  let considered = 0
-  for (const cp of ordered) {
-    if (count >= remaining) break
-    considered++
-    // The RPC re-validates eligibility/privacy/CAPACITY transactionally; 'capacity'/'exists_active'/
-    // 'cooldown'/'ineligible' are safe skips (try the next fair candidate), not errors.
-    const r = await createReciprocalSuggestion(adminClient, userId, cp.id, { source })
-    if (r.ok) count++
+  const finish = (outcome: GenerationOutcome, count: number, considered: number, rpcCalls: number): GenerationResult => {
+    logReciprocalGeneration(outcome, source, { cid, created: count, considered, rpcCalls })
+    return { count, considered, outcome, retryable: retryableFor(outcome), rpcCalls }
   }
-  return { count, considered }
+
+  try {
+    // The NEW member's own eligibility — if ineligible, make NO RPC calls. (deadline-bound read)
+    const { data: me, error: meErr } = await adminClient
+      .from('profiles').select(`id, ${ELIGIBILITY_COLUMNS}`).eq('id', userId).maybeSingle()
+    if (meErr) return finish('transient_error', 0, 0, 0)         // uncertain read → retryable
+    if (!me || !isEligibleMember(me)) return finish('ineligible', 0, 0, 0)
+
+    // Respect the member's own visible-card limit: only fill remaining slots. (deadline-bound read)
+    const { count: aActive, error: capErr } = await adminClient
+      .from('intro_requests').select('id', { count: 'exact', head: true })
+      .eq('requester_id', userId).in('status', ['suggested', 'queued'])
+    if (capErr) return finish('transient_error', 0, 0, 0)        // uncertain read → retryable
+    const remaining = Math.max(0, target - (aActive ?? 0))
+    if (remaining === 0) return finish('noop_at_capacity', 0, 0, 0) // idempotent re-run — already has cards
+
+    if (Date.now() >= deadlineAt || controller.signal.aborted) return finish('transient_error', 0, 0, 0)
+
+    // Ranker + exposure use the SAME deadline-bound client → all their reads are cancellable.
+    const { candidates } = await rankCandidatesForUser(userId, RECIPROCAL_CANDIDATE_POOL, adminClient)
+    if (!candidates.length) return finish('empty_pool', 0, 0, 0)
+
+    const exposure = await getActiveInboundExposure(adminClient)
+    const ordered = selectFairCounterparts(
+      candidates.map((c: any) => ({ id: c.id, score: c.finalScore ?? 0, inbound: exposure.get(c.id) ?? 0 })),
+      candidates.length,
+    ).map((c) => c.id)
+
+    // Each RPC is issued through the deadline-bound client (cancelled at the deadline) and the walk
+    // refuses to start one past the deadline. Remaining budget bounds the walk's own clock check.
+    const walk = await walkCandidates(
+      ordered, remaining,
+      (id) => createReciprocalSuggestion(adminClient, userId, id, { source }).then((r) => r.outcome),
+      () => Date.now(), sleep,
+      { ...WALK_LIMITS, timeBudgetMs: Math.max(0, deadlineAt - Date.now()) },
+      controller.signal,
+    )
+    const outcome = classifyGenerationOutcome(walk.finalOutcomes, {
+      createdCount: walk.created, candidatesEmpty: false, memberIneligible: false, timedOut: walk.timedOut,
+    })
+    return finish(outcome, walk.created, walk.considered, walk.rpcCalls)
+  } catch {
+    // Any exception incl. an AbortError from a cancelled op → conclusive uncertainty, never empty pool.
+    return finish('transient_error', 0, 0, 0)
+  } finally {
+    // No timer or in-flight request may outlive the response (point 7).
+    clearTimeout(timer)
+    controller.abort()
+  }
 }

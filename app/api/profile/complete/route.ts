@@ -46,12 +46,15 @@ export async function POST() {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Generate initial recommendations (idempotent — generator should de-dupe internally)
+  // Generate initial recommendations (idempotent). Awaited; the unambiguous outcome is logged
+  // structurally (no identifiers). A non-created outcome is retryable via a separately-authorized,
+  // explicitly-targeted operation and is NOT reported as success — onboarding still completes so the
+  // member is never blocked by an absent compatible candidate.
   try {
     const result = await generateOnboardingRecommendations(user.id)
-    console.log('[profile/complete] Generated recommendations:', result.count)
+    console.log('[profile/complete] recs', JSON.stringify({ outcome: result.outcome, created: result.count, retryable: result.retryable }))
   } catch (err: any) {
-    console.error('[profile/complete] Recommendations error:', err?.message || err)
+    console.error('[profile/complete] recs generation error (non-blocking):', err?.message || err)
   }
 
   // Tier-aware credit assignment + safety-net floor correction.

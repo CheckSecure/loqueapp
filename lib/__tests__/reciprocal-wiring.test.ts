@@ -19,10 +19,12 @@ describe('automatic generators route through the reciprocal path', () => {
     expect(weekly).not.toContain('generateBatchForMember')
   })
   it('the reciprocal batch fn creates canonical pairs via createReciprocalSuggestion + fair selection', () => {
-    const fn = gen.slice(gen.indexOf('export async function generateReciprocalBatchForMember'))
+    // Reciprocal-generation logic (classify + attempt + generator) that the entry point drives.
+    const fn = gen.slice(gen.indexOf('export function classifyGenerationOutcome'))
     expect(fn).toContain('selectFairCounterparts')
     expect(fn).toContain('createReciprocalSuggestion')
-    expect(fn).toMatch(/return \{ count: 0, considered: 0 \}/) // honest empty state
+    expect(fn).toContain("'empty_pool'")           // honest empty state (no forced/one-sided match)
+    expect(fn).toContain('candidatesEmpty')        // empty pool detected structurally
     expect(fn).toContain('getActiveInboundExposure') // live exposure feeds fair selection
   })
 })
