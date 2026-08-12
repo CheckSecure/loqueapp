@@ -54,7 +54,7 @@ describe('isActionableIncoming — the shared definition', () => {
 function fakeDb(tables: Record<string, any>) {
   const builder = (result: any): any => {
     const p: any = {
-      select: () => p, eq: () => p, order: () => p, or: () => p, in: () => p, lte: () => p,
+      select: () => p, eq: () => p, order: () => p, or: () => p, in: () => p, lte: () => p, is: () => p,
       maybeSingle: () => Promise.resolve(result),
       then: (res: any, rej: any) => Promise.resolve(result).then(res, rej),
     }

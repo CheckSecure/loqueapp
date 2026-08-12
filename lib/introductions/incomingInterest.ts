@@ -60,7 +60,13 @@ export function isActionableIncoming(args: {
   hasMatch: boolean
   requesterActive: boolean
   sameCompany: boolean
+  /** True when the expresser's row belongs to a reciprocal pair (pair_id set). */
+  isReciprocalPair?: boolean
 }): boolean {
+  // PRIVACY: a reciprocal pair NEVER surfaces one member's interest to the other. Both members act
+  // on their OWN "Introduced by Andrel" card; the pair finalizes only when both independently
+  // express interest (via express-interest's reverse check), never through this one-sided surface.
+  if (args.isReciprocalPair) return false
   if (args.isAdminInitiated) return false // has its own surface + nudge
   if (args.status !== EXPRESSER_EXPRESSED_STATUS) return false // not (or no longer) expressed
   if (args.hasMatch) return false // already connected — nothing to respond to
@@ -84,15 +90,18 @@ export async function fetchActionableIncomingInterest(
   db: any,
   viewerId: string,
 ): Promise<IncomingInterestItem[]> {
-  // 1. Candidate rows: member-initiated interest expressed AT the viewer.
+  // 1. Candidate rows: member-initiated interest expressed AT the viewer. RECIPROCAL pairs
+  //    (pair_id set) are EXCLUDED at the query so one member's interest never reaches the other
+  //    through this surface — reciprocal pairs finalize only via each member's own card.
   const { data: rows } = await db
     .from('intro_requests')
     .select(
-      `id, requester_id, target_user_id, status, created_at, is_admin_initiated, match_reason, requester:profiles!requester_id(${REQUESTER_COLS})`,
+      `id, requester_id, target_user_id, status, created_at, is_admin_initiated, pair_id, match_reason, requester:profiles!requester_id(${REQUESTER_COLS})`,
     )
     .eq('target_user_id', viewerId)
     .eq('is_admin_initiated', false)
     .eq('status', EXPRESSER_EXPRESSED_STATUS)
+    .is('pair_id', null)
     .order('created_at', { ascending: false })
 
   const candidates = (rows ?? []) as any[]
@@ -134,6 +143,7 @@ export async function fetchActionableIncomingInterest(
       hasMatch: matchedWithViewer.has(r.requester_id),
       requesterActive: (requester.account_status ?? 'active') === 'active',
       sameCompany: isSameCompany({ company: viewerCompany }, { company: requester.company }),
+      isReciprocalPair: r.pair_id != null, // defense-in-depth alongside the query's .is('pair_id', null)
     })
     if (!actionable) continue
     seen.add(r.requester_id)

@@ -96,7 +96,7 @@ export default function AdminIntroCard({ introRequestId, otherUser, otherAlready
 
   return (
     <div className="bg-white border border-[#C4922A]/20 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col gap-3">
-      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-gold">Introduced by Andrel</p>
+      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-gold">Andrel Concierge</p>
       <div className="flex items-start gap-3">
         <EnlargeableAvatar src={otherUser.avatar_url} name={otherUser.full_name} className="flex-shrink-0">
           {otherUser.avatar_url ? (

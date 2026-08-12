@@ -23,10 +23,12 @@ describe('introductions page — one-sided recommendations read as recommendatio
     expect(page).not.toContain('Why we introduced you')
   })
 
-  it('adds the one-sided-until-mutual clarifier under the heading', () => {
-    expect(page).toContain('People we think you should meet')
-    expect(page).toContain('let them know')
-    expect(page).toContain('we make the introduction only when it') // "…when it’s mutual"
+  it('the clarifier states interest stays PRIVATE until mutual (no "we’ll let them know" leak)', () => {
+    // Privacy correction: reciprocal interest is never revealed one-sided, so the copy must not
+    // imply the other member is notified.
+    expect(page).not.toContain('let them know')
+    expect(page).toContain('Your interest stays private')
+    expect(page).toContain('we connect you only when it') // "…when it’s mutual"
   })
 
   it('preserves genuinely mutual states unchanged', () => {

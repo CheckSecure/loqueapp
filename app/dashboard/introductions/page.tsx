@@ -11,6 +11,7 @@ import WithdrawInterestButton from '@/components/WithdrawInterestButton'
 import IntroductionCard from '@/components/IntroductionCard'
 import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
+import { buildIntroSections } from '@/lib/introductions/andrelSection'
 import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
 import ImproveRecommendationsCard from '@/components/ImproveRecommendationsCard'
 import IncomingInterestCard from '@/components/IncomingInterestCard'
@@ -334,12 +335,17 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   const featuredSuggestion = allSuggestions[0] ?? null
   const additionalSuggestions = allSuggestions.slice(1)
 
-  // UI Review overlay — when isDevReview, swap to the static demo data. When
-  // NOT isDevReview (i.e. always in production), these alias to the real
-  // values by reference and the downstream JSX is byte-identical to the
-  // pre-gate path.
-  const effectiveFeatured: any = isDevReview ? DEMO_FEATURED : featuredSuggestion
-  const effectiveAdditional: any[] = isDevReview ? DEMO_ADDITIONAL : additionalSuggestions
+  // STRUCTURAL split of the visible suggestions by pair_id (via introducedByAndrel) — never inferred
+  // from match_reason or display text. Reciprocal Andrel pairs → "Introduced by Andrel"; ordinary/
+  // legacy (pair_id NULL) → "Recommended for you". Each card is in EXACTLY ONE section.
+  const introSections = buildIntroSections(allSuggestions as any[])
+
+  // UI Review overlay — when isDevReview, swap to static demo data (routed into the Andrel section
+  // for preview). In production these alias the real per-section splits by reference.
+  const effectiveAndrelFeatured: any = isDevReview ? DEMO_FEATURED : introSections.andrel.featured
+  const effectiveAndrelAdditional: any[] = isDevReview ? DEMO_ADDITIONAL : introSections.andrel.additional
+  const effectiveOrdinaryFeatured: any = isDevReview ? null : introSections.ordinary.featured
+  const effectiveOrdinaryAdditional: any[] = isDevReview ? [] : introSections.ordinary.additional
 
   // ── Match Intelligence (Phase B) context — bulk, fail-open, NO N+1 ──────────
   // One query per data type for EVERY profile shown on this page (viewer + all
@@ -735,7 +741,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
 
             {adminIntrosVisible.length > 0 && (
               <section className="p-5 rounded-xl border border-brand-gold/30 bg-brand-gold/5">
-                <h3 className="text-sm font-semibold text-brand-navy mb-3">Introduced by Andrel</h3>
+                <h3 className="text-sm font-semibold text-brand-navy mb-3">Andrel Concierge</h3>
                 <div className="grid sm:grid-cols-2 gap-4">
                   {adminIntrosVisible.map((intro: any) => (
                     <IntroductionCard key={intro.id} targetId={intro.other.id}>
@@ -769,28 +775,46 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             )}
 
             {/* FEATURED + ADDITIONAL */}
-            {effectiveFeatured ? (
-              <section>
-                {/* Eyebrow now lives inside the featured card — see renderFeatured */}
-                {renderFeatured(effectiveFeatured)}
-
-                {effectiveAdditional.length > 0 && (
-                  <div className="mt-10">
-                    <div className="flex items-end justify-between gap-4 mb-1.5">
-                      <h3 className="text-base font-bold text-brand-navy tracking-tight">Recommended for you</h3>
-                      <Pill variant="gold">{effectiveAdditional.length}</Pill>
-                    </div>
-                    <p className="text-xs text-slate-500 mb-4">People we think you should meet. Express interest and we&rsquo;ll let them know — we make the introduction only when it&rsquo;s mutual.</p>
+            {/* INTRODUCED BY ANDREL — reciprocal pair_id cards ONLY (featured + additional in one
+                clearly-labeled section). Rendered only when a reciprocal card exists (no empty section). */}
+            {effectiveAndrelFeatured && (
+              <section className="p-5 sm:p-6 rounded-2xl border border-brand-gold/30 bg-brand-gold/[0.04]">
+                <div className="mb-4">
+                  <h3 className="text-base font-bold text-brand-navy tracking-tight">Introduced by Andrel</h3>
+                  <p className="text-xs text-slate-500 mt-1">Andrel recommended you to each other. Your interest stays private&mdash;we connect you only when it&rsquo;s mutual.</p>
+                </div>
+                {renderFeatured(effectiveAndrelFeatured)}
+                {effectiveAndrelAdditional.length > 0 && (
+                  <div className="mt-8">
                     <div className="grid sm:grid-cols-2 gap-4">
-                      {effectiveAdditional.map(renderAdditional)}
+                      {effectiveAndrelAdditional.map(renderAdditional)}
                     </div>
                   </div>
                 )}
               </section>
-            ) : incomingInterest.length > 0 ? null : (
-              /* Single neutral empty state — the one guidance card above owns any
-                 profile prompt; the empty state carries no separate CTA. Suppressed
-                 when there's incoming interest to act on. */
+            )}
+
+            {/* RECOMMENDED FOR YOU — ordinary/legacy suggestions (pair_id IS NULL) ONLY. */}
+            {effectiveOrdinaryFeatured && (
+              <section>
+                {renderFeatured(effectiveOrdinaryFeatured)}
+                {effectiveOrdinaryAdditional.length > 0 && (
+                  <div className="mt-10">
+                    <div className="flex items-end justify-between gap-4 mb-1.5">
+                      <h3 className="text-base font-bold text-brand-navy tracking-tight">Recommended for you</h3>
+                      <Pill variant="gold">{effectiveOrdinaryAdditional.length}</Pill>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-4">People we think you should meet.</p>
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      {effectiveOrdinaryAdditional.map(renderAdditional)}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Empty state — ONLY when neither section renders and there is no incoming interest. */}
+            {!effectiveAndrelFeatured && !effectiveOrdinaryFeatured && incomingInterest.length === 0 && (
               <section className="rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-7">
                 <div className="flex items-start gap-4">
                   <div className="w-10 h-10 rounded-xl bg-brand-navy/[0.04] text-brand-gold flex items-center justify-center flex-shrink-0">

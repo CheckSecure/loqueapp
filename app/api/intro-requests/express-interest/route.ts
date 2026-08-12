@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     // both members' private columns for any caller).
     const { data: introRequest } = await supabase
       .from('intro_requests')
-      .select('id, requester_id, target_user_id, is_admin_initiated, status')
+      .select('id, requester_id, target_user_id, is_admin_initiated, status, pair_id')
       .eq('id', introRequestId)
       .single()
 
@@ -104,26 +104,27 @@ export async function POST(request: Request) {
       .eq('id', expresserId)
       .single()
 
-    // For admin intros, fire admin_intro_nudge instead of interest_received so the other
-    // user gets a contextual nudge pointing to the Introductions page.
-    if (introRequest.is_admin_initiated) {
-      await createNotificationSafe({
-        userId: otherUserId,
-        type: 'admin_intro_nudge',
-        data: {
-          fromUserId: expresserId,
-          fromUserName: expresserProfile?.full_name
-        }
-      })
-    } else {
-      await createNotificationSafe({
-        userId: otherUserId,
-        type: 'interest_received',
-        data: {
-          fromUserId: expresserId,
-          fromUserName: expresserProfile?.full_name
-        }
-      })
+    // PRIVACY — reciprocal pairs (pair_id set): one member's interest MUST stay private until the
+    // other independently expresses interest. Both already hold the "Introduced by Andrel" card
+    // because Andrel recommended the pair, so we send NO one-sided signal here — the other member is
+    // notified only on MUTUAL finalization (finalizeMutualMatch → mutual_match). This structurally
+    // separates reciprocal pairs from the legacy/admin one-sided flows by pair_id.
+    if (!introRequest.pair_id) {
+      // For admin intros, fire admin_intro_nudge instead of interest_received so the other
+      // user gets a contextual nudge pointing to the Introductions page. (Legacy/admin only.)
+      if (introRequest.is_admin_initiated) {
+        await createNotificationSafe({
+          userId: otherUserId,
+          type: 'admin_intro_nudge',
+          data: { fromUserId: expresserId, fromUserName: expresserProfile?.full_name },
+        })
+      } else {
+        await createNotificationSafe({
+          userId: otherUserId,
+          type: 'interest_received',
+          data: { fromUserId: expresserId, fromUserName: expresserProfile?.full_name },
+        })
+      }
     }
 
     // STEP 3: Check for mutual interest (reverse intro request)
