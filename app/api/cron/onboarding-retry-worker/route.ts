@@ -17,6 +17,10 @@ import { hasActiveReciprocalOpportunity } from '@/lib/introductions/activeRecipr
  * It stops cleanly before an overall time budget and returns aggregate counts only — no identities.
  * It creates no notifications/email; pair creation stays atomic/idempotent via the migration-050 RPC.
  */
+// Narrow platform timeout, just above the worker's internal 25s deadline (WORKER_DEADLINE_MS), so a
+// hung generation can never run away — the worker always stops itself first.
+export const maxDuration = 30
+
 export async function GET(req: Request) {
   if (req.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
