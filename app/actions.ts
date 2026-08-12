@@ -15,6 +15,7 @@ import {
 } from '@/lib/introRequests'
 import { sendNewMessageEmail } from '@/lib/email'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
+import { enqueueOnboardingRetry } from '@/lib/onboarding/retryQueue'
 import { promoteIfResolved } from '@/lib/introductions/queue'
 import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
@@ -359,7 +360,10 @@ export async function completeOnboarding(formData: FormData) {
   // operation (there is no automatic global sweep).
   try {
     const result = await generateOnboardingRecommendations(user.id)
-    console.log('[completeOnboarding] recs', JSON.stringify({ outcome: result.outcome, created: result.count, retryable: result.retryable }))
+    // Durable retry: enqueue THIS member only when the outcome is retryable. Fail-open, but the log
+    // distinguishes a genuinely-scheduled retry from an enqueue failure (never falsely claims durable).
+    const durableRetryScheduled = result.retryable ? await enqueueOnboardingRetry(adminClient, user.id, result.outcome) : false
+    console.log('[completeOnboarding] recs', JSON.stringify({ outcome: result.outcome, created: result.count, retryable: result.retryable, durableRetryScheduled }))
   } catch (err: any) {
     console.error('[completeOnboarding] recs generation error (non-blocking):', err?.message)
   }

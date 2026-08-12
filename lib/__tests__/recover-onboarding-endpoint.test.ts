@@ -7,6 +7,9 @@ const requireAdmin = vi.fn()
 const generateReciprocalBatchForMember = vi.fn()
 vi.mock('@/lib/admin/requireAdmin', () => ({ requireAdmin: () => requireAdmin() }))
 vi.mock('@/lib/generate-recommendations', () => ({ generateReciprocalBatchForMember: (...a: any[]) => generateReciprocalBatchForMember(...a) }))
+// The endpoint enqueues a retryable outcome via a fresh admin client; stub it so enqueue fails open
+// (returns false) without touching the network — the response/outcome is unaffected.
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ rpc: async () => ({ data: null, error: { code: 'test-no-op' } }) }) }))
 
 import { POST, GET } from '@/app/api/admin/recommendations/recover-onboarding/route'
 

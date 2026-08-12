@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
+import { enqueueOnboardingRetry } from '@/lib/onboarding/retryQueue'
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
@@ -52,7 +53,10 @@ export async function POST() {
   // member is never blocked by an absent compatible candidate.
   try {
     const result = await generateOnboardingRecommendations(user.id)
-    console.log('[profile/complete] recs', JSON.stringify({ outcome: result.outcome, created: result.count, retryable: result.retryable }))
+    // Durable retry: enqueue THIS member only when retryable. Fail-open; log distinguishes a
+    // genuinely-scheduled retry from an enqueue failure (never falsely claims durable retry).
+    const durableRetryScheduled = result.retryable ? await enqueueOnboardingRetry(createAdminClient(), user.id, result.outcome) : false
+    console.log('[profile/complete] recs', JSON.stringify({ outcome: result.outcome, created: result.count, retryable: result.retryable, durableRetryScheduled }))
   } catch (err: any) {
     console.error('[profile/complete] recs generation error (non-blocking):', err?.message || err)
   }

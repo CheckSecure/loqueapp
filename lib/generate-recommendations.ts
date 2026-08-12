@@ -1087,12 +1087,15 @@ export async function walkCandidates(
  */
 export async function generateReciprocalBatchForMember(
   userId: string,
-  source: 'onboarding' | 'weekly',
+  source: 'onboarding' | 'weekly' | 'onboarding_retry',
   maxCount?: number,
 ): Promise<GenerationResult> {
   const cid = nextCorrelationId()
   logReciprocalGeneration('invoked', source, { cid })
   const target = maxCount ?? RECOMMENDATIONS_PER_BATCH
+  // member_pairs.source only permits a fixed set (migration 050 CHECK); an onboarding retry is still
+  // an 'onboarding' pair. Map for the RPC while logging the true generation source above.
+  const pairSource = source === 'weekly' ? 'weekly' : 'onboarding'
 
   // ONE overall deadline for the whole generation; the signal cancels every DB op via the client.
   const controller = new AbortController()
@@ -1136,7 +1139,7 @@ export async function generateReciprocalBatchForMember(
     // refuses to start one past the deadline. Remaining budget bounds the walk's own clock check.
     const walk = await walkCandidates(
       ordered, remaining,
-      (id) => createReciprocalSuggestion(adminClient, userId, id, { source }).then((r) => r.outcome),
+      (id) => createReciprocalSuggestion(adminClient, userId, id, { source: pairSource }).then((r) => r.outcome),
       () => Date.now(), sleep,
       { ...WALK_LIMITS, timeBudgetMs: Math.max(0, deadlineAt - Date.now()) },
       controller.signal,

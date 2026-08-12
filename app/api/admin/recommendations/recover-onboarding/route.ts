@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin/requireAdmin'
 import { assertSameOrigin } from '@/lib/http/sameOrigin'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { generateReciprocalBatchForMember } from '@/lib/generate-recommendations'
+import { enqueueOnboardingRetry } from '@/lib/onboarding/retryQueue'
 
 // Never cache a state-changing admin response.
 const NO_STORE = { 'Cache-Control': 'no-store' }
@@ -55,9 +57,14 @@ export async function POST(req: Request) {
   try {
     const result = await generateReciprocalBatchForMember(trimmed, 'onboarding')
 
+    // Durable retry: a retryable capacity/empty/no-compatible/transient outcome persists THIS member
+    // (only) so the worker re-attempts later. No-op on created/noop/ineligible. Fail-open; the flag
+    // reflects whether durable retry was actually scheduled (never falsely claimed).
+    const durableRetryScheduled = result.retryable ? await enqueueOnboardingRetry(createAdminClient(), trimmed, result.outcome) : false
+
     // 11. Audit log — records the admin-triggered recovery + outcome, NO uuid/email/name/candidate.
     console.log('[admin-recover-onboarding]', JSON.stringify({
-      event: 'recovery_invoked', outcome: result.outcome, created: result.count, rpcCalls: result.rpcCalls,
+      event: 'recovery_invoked', outcome: result.outcome, created: result.count, rpcCalls: result.rpcCalls, durableRetryScheduled,
     }))
 
     // 10. Privacy-safe result — outcome + counts only. No identity/email/uuid/score/profile.
