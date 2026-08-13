@@ -180,7 +180,16 @@ export async function sendSecureInvite(deps: SecureInviteDeps, input: SecureInvi
   const send = await deps.sendEmail({ to: email, toName: input.fullName || 'there', link, idempotencyKey })
 
   if (send.success) {
-    await deps.markAccepted(claim.deliveryId, send.messageId ?? null, userId ?? user?.id ?? null)
+    // AT-MOST-ONCE: the provider ACCEPTED the send. Recording that locally is best-effort — a failure
+    // here (DB error/timeout/crash) must NEVER surface as a retryable `error`, or a re-run would send a
+    // SECOND email. Swallow it and still report sent=true: the claim row simply stays `claimed`, which
+    // (a) blocks any resend within the 24h window (→ pending) and (b) is reconciled by the delivery
+    // webhook (or admin review after 24h). Post-dispatch bookkeeping never triggers another email.
+    try {
+      await deps.markAccepted(claim.deliveryId, send.messageId ?? null, userId ?? user?.id ?? null)
+    } catch {
+      /* provider already accepted — do not downgrade to a retryable failure */
+    }
     return { ok: true, state: plan === 'create' ? 'invited' : 'link_sent', sent: true, deliveryId: claim.deliveryId, authUserId: userId ?? user?.id ?? null }
   }
   if (send.uncertain) {

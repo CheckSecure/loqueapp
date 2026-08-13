@@ -45,6 +45,9 @@ export interface DeliveryLite {
   status: string | null
   /** when the attempt was claimed — used to age a stuck `claimed` past the retry window. */
   attemptedAt?: string | null
+  /** the send had additional recipients (CC/BCC): the provider cannot attribute delivery events
+   *  per-mailbox, so this row is FROZEN at provider-accepted and is never auto-resent. */
+  hasAdditionalRecipients?: boolean
 }
 
 const M = (
@@ -75,6 +78,16 @@ export function inviteStatusModel(args: {
   }
 
   const s = args.delivery?.status ?? null
+
+  // MULTI-RECIPIENT (CC/BCC) invite: the provider cannot attribute delivery events per-mailbox, so this
+  // send is FROZEN at provider-accepted (webhook fail-safe). Show that honestly and NEVER offer resend/
+  // retry (a resend would re-mail the nominee AND re-CC the extra recipient). Takes precedence over the
+  // in-flight aging below so it never ages into a "review needed / resend" state.
+  if (s && args.delivery?.hasAdditionalRecipients) {
+    return M('accepted', 'Accepted by provider', 'info',
+      'Accepted by provider. Recipient-level delivery is unavailable because the invitation included a CC (the provider cannot confirm delivery per-mailbox). Do not automatically resend — review manually if the recipient reports no email.')
+  }
+
   if (s) {
     // In-flight statuses (claimed/accepted/deferred) age into a review window. WITHIN it: DO NOT
     // resend (a lost webhook resolves, or the send is still pending); a same-key re-send with a

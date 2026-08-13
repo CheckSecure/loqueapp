@@ -185,6 +185,21 @@ describe('sendSecureInvite — claim → generate → send, durable + concurrenc
     expect(r2.state).toBe('pending')
     expect(api).toHaveLength(1) // EXACTLY ONE provider request across both calls — no silent duplicate
   })
+  it('AT-MOST-ONCE: provider ACCEPTED but the local accepted-state write FAILS → still sent, NOT a retryable error, NO second send', async () => {
+    // The email already went out; a failure to record `accepted` locally must never become a retryable
+    // `error` (which a re-run would treat as send-again). It stays sent=true; the claim row is left
+    // `claimed` and reconciled by the webhook / after the 24h window — a second email is never sent.
+    const { deps: d, calls } = deps({
+      authCount: 0,
+      sendResult: { success: true, messageId: 'msg_x' },
+      markAccepted: async () => { throw new Error('db write failed post-dispatch') },
+    })
+    const r = await sendSecureInvite(d, { email: 'x@y.co', fullName: null, waitlistId: 'w1' })
+    expect(r.state).toBe('invited')     // NOT 'error'
+    expect(r.sent).toBe(true)           // provider accepted; honestly reported
+    expect(calls.emails).toHaveLength(1)  // exactly one provider request
+    expect(calls.failed).toHaveLength(0)  // never marked failed → never auto-retried as a fresh send
+  })
   it('DEFINITE failure → markFailed, state error, retryable message', async () => {
     const { deps: d, calls } = deps({ authCount: 0, sendResult: { success: false, errorClass: 'provider_error' } })
     const r = await sendSecureInvite(d, { email: 'x@y.co', fullName: null, waitlistId: 'w1' })

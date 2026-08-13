@@ -411,6 +411,61 @@ export async function sendSecureInviteEmail(args: {
   }
 }
 
+/**
+ * NOMINATION invitation — one individual nominee in To, the nominator CC'd. SECURE + PASSWORDLESS: the
+ * `link` is a single-purpose /auth/recover setup link built by the trusted server (never a password, a
+ * shared link, or a token echoed/logged). Exactly ONE nominee per send (no other nominee in To/CC/BCC).
+ * The nominator (CC) is a courtesy copy only — delivery state is tracked against the To recipient (the
+ * webhook applies events by `data.to`, ignoring the CC). Wording is preserved verbatim per the campaign.
+ */
+export async function sendNominationInviteEmail(args: {
+  to: string
+  cc: string          // the nominator (courtesy copy) — NEVER interpreted as the nominee's delivery state
+  firstName: string
+  link: string
+  idempotencyKey?: string
+}): Promise<{ success: boolean; messageId?: string; errorClass?: string; uncertain?: boolean }> {
+  const firstName = (args.firstName || '').trim() || 'there'
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'Andrel <hello@andrel.app>',
+      to: args.to,
+      cc: args.cc,
+      subject: 'James Kahrs invited you to join Andrel',
+      html: `
+        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; color:#334155;">
+          <h2 style="color:#1B2850; margin-bottom:16px;">You're invited to Andrel</h2>
+          <p style="font-size:16px; line-height:1.6;">Hi ${escapeHtml(firstName)},</p>
+          <p style="font-size:16px; line-height:1.6;">James Kahrs invited you to join Andrel, a private network for senior leaders across legal, government affairs, business, and executive leadership.</p>
+          <p style="font-size:16px; line-height:1.6;">Members are connected through selective introductions based on their experience, interests, and goals. There are no public feeds and no cold outreach.</p>
+          <p style="font-size:16px; line-height:1.6;">The secure link below will set up your account:</p>
+          <p style="margin:28px 0;">
+            <a href="${args.link}" style="display:inline-block; background:#1B2850; color:#ffffff; text-decoration:none; font-size:16px; font-weight:600; padding:14px 32px; border-radius:10px;">Create your Andrel account</a>
+          </p>
+          <p style="font-size:16px; line-height:1.6; margin-top:24px;">Best,<br/>Daniel<br/><span style="color:#64748b;">Founder, Andrel</span></p>
+          <p style="font-size:13px; color:#94a3b8; line-height:1.6; margin-top:20px;">This link is personal to you — please don't forward it. It expires for your protection; if it no longer works, request a new one from the Andrel sign-in page.</p>
+        </div>`,
+      text:
+        `You're invited to Andrel.\n\n` +
+        `Hi ${firstName},\n\n` +
+        `James Kahrs invited you to join Andrel, a private network for senior leaders across legal, government affairs, business, and executive leadership.\n\n` +
+        `Members are connected through selective introductions based on their experience, interests, and goals. There are no public feeds and no cold outreach.\n\n` +
+        `The secure link below will set up your account:\n\n` +
+        `Create your Andrel account: ${args.link}\n\n` +
+        `Best,\nDaniel\nFounder, Andrel\n\n` +
+        `This link is personal to you — please don't forward it. It expires for your protection.`,
+    }, args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : undefined)
+    if (error) {
+      console.error('[sendNominationInviteEmail] Resend error:', error.message)
+      return { success: false, errorClass: /rate|limit/i.test(error.message || '') ? 'rate_limited' : 'provider_error' }
+    }
+    return { success: true, messageId: data?.id }
+  } catch (e: any) {
+    console.error('[sendNominationInviteEmail] exception (uncertain):', e?.message)
+    return { success: false, uncertain: true, errorClass: 'timeout' }
+  }
+}
+
 
 // Warm recommendation-introduction email — sent by the founder BEFORE any account
 // is provisioned, to start the relationship. Deliberately plain-text with NO

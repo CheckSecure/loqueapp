@@ -226,6 +226,14 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Reciprocal recommendation pairs + create_reciprocal_suggestion RPC',
     impact: 'REQUIRED before deploying the reciprocal generators. The onboarding + weekly generators route through the create_reciprocal_suggestion RPC (this migration); until it is applied the RPC is missing and automatic recommendation generation produces ZERO recommendations (the RPC call errors and is skipped). Apply 050 BEFORE deploying the reciprocal-recommendation code.',
   },
+  {
+    migration: '054_invitation_delivery_additional_recipients.sql',
+    kind: 'column',
+    table: 'invitation_deliveries',
+    column: 'has_additional_recipients',
+    feature: 'Multi-recipient (CC/BCC) delivery fail-safe',
+    impact: 'REQUIRED before EXECUTING any invitation that CC/BCCs an additional mailbox (the James Kahrs nomination CCs the nominator). Marks that a send shared one provider message with additional recipients so the Resend webhook FREEZES that delivery at provider-accepted (Resend cannot attribute a bounce/complaint/delivery to a specific mailbox on a multi-recipient message). Until applied, the nomination route FAILS CLOSED on execute (503, nothing sent); single-recipient invites and the delivery read path fail open (unaffected). NO CC/BCC address is stored — only the boolean fact.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {

@@ -105,6 +105,34 @@ describe('inviteStatusModel — durable delivery states', () => {
   })
 })
 
+describe('inviteStatusModel — multi-recipient (CC/BCC) invites are frozen, never resent', () => {
+  it('a CC\'d accepted invite → "Accepted by provider", honest CC copy, NO resend/retry', () => {
+    const m = model({ delivery: { status: 'accepted', hasAdditionalRecipients: true } })
+    expect(m.label).toBe('Accepted by provider')
+    expect(m.canResend).toBe(false)
+    expect(m.canRetry).toBe(false)
+    expect(m.needsConfirmResend).toBe(false)
+    expect(m.tooltip).toMatch(/recipient-level delivery is unavailable/i)
+    expect(m.tooltip).toMatch(/included a CC/i)
+    expect(m.tooltip).toMatch(/do not automatically resend/i)
+  })
+  it('a CC\'d invite NEVER ages into a stale/review-needed resend, even past the 24h window', () => {
+    const old = new Date(NOW - INVITE_RETRY_WINDOW_MS - 1000).toISOString()
+    for (const status of ['claimed', 'accepted', 'deferred']) {
+      const m = model({ delivery: { status, attemptedAt: old, hasAdditionalRecipients: true } })
+      expect(m.key).not.toBe('stale')           // does not become a "resend" prompt
+      expect(m.canResend).toBe(false)
+      expect(m.canRetry).toBe(false)
+      expect(m.needsConfirmResend).toBe(false)
+    }
+  })
+  it('a CC\'d invite never shows "Delivered" off another mailbox\'s event', () => {
+    const m = model({ delivery: { status: 'delivered', hasAdditionalRecipients: true } })
+    expect(m.label).not.toMatch(/^delivered$/i)  // frozen at accepted — delivery not attributable per-mailbox
+    expect(m.canResend).toBe(false)
+  })
+})
+
 describe('inviteStatusModel — records absent (privacy invariant)', () => {
   it('invited WITH invited_at but no durable record → "Delivery status unavailable" (NOT Delivered)', () => {
     const m = model({ waitlistStatus: 'invited', invitedAt: '2026-01-01T00:00:00Z', delivery: null })

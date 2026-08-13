@@ -25,17 +25,23 @@ export async function claimInviteDelivery(admin: any, args: {
   authUserId: string | null
   email: string
   purpose: 'first_invite' | 'access_resend' | 'reminder'
+  /** True when the send has additional recipients (CC/BCC) on the same provider message. When set, the
+   *  webhook applier fails safe (state frozen at provider-accepted). NO address is stored — only the fact. */
+  hasAdditionalRecipients?: boolean
 }): Promise<{ deliveryId: string | null; isNew: boolean; claimFailed?: boolean; existingStatus?: string | null; stale?: boolean; existingRecipient?: string | null }> {
   const now = new Date().toISOString()
-  const { data, error } = await admin
-    .from('invitation_deliveries')
-    .insert({
-      waitlist_id: args.waitlistId, auth_user_id: args.authUserId, recipient_email: args.email,
-      purpose: args.purpose, provider: 'resend', status: 'claimed',
-      attempted_at: now, created_at: now, updated_at: now,
-    })
-    .select('id')
-    .single()
+  const baseRow: Record<string, unknown> = {
+    waitlist_id: args.waitlistId, auth_user_id: args.authUserId, recipient_email: args.email,
+    purpose: args.purpose, provider: 'resend', status: 'claimed',
+    attempted_at: now, created_at: now, updated_at: now,
+  }
+  const row = args.hasAdditionalRecipients ? { ...baseRow, has_additional_recipients: true } : baseRow
+  let { data, error } = await admin.from('invitation_deliveries').insert(row).select('id').single()
+  // Fail OPEN on a missing has_additional_recipients column (migration 054 not yet applied): retry
+  // without it so the claim still succeeds (webhook then treats it as single-recipient until applied).
+  if (error && args.hasAdditionalRecipients && isMissingColumnError(error)) {
+    ;({ data, error } = await admin.from('invitation_deliveries').insert(baseRow).select('id').single())
+  }
   if (!error) {
     if (!data?.id) { console.error('[invitation_deliveries] claim insert returned no id — failing closed'); return { deliveryId: null, isNew: false, claimFailed: true } }
     return { deliveryId: data.id, isNew: true }
@@ -137,12 +143,20 @@ export async function applyDeliveryEvent(admin: any, e: {
   }
 
   const { data: row, error } = await admin.from('invitation_deliveries')
-    .select('id, status, last_event_at').eq('provider_message_id', e.providerMessageId).maybeSingle()
+    .select('id, status, last_event_at, has_additional_recipients').eq('provider_message_id', e.providerMessageId).maybeSingle()
   if (error) { await finalize('error'); return 'error' }
   // Unknown message id: RETRYABLE, not terminal. The message id may not be persisted yet (webhook
   // raced ahead of markDeliveryAccepted). Leave result 'not_found' so a redelivery re-applies once
   // the delivery row appears; the caller returns a retryable 500.
   if (!row) { await finalize('not_found'); return 'not_found' }
+
+  // MULTI-RECIPIENT FAIL-SAFE: this delivery shares ONE Resend message with additional recipients
+  // (CC/BCC). Resend does NOT reliably attribute a bounce/complaint/delivery to a specific mailbox on a
+  // multi-recipient message, so we NEVER let an ambiguous event change the primary recipient's state:
+  // keep the provider-'accepted' state set at send time (never mark delivered on another mailbox, never
+  // mark bounced/failed on another mailbox's bounce) and NEVER trigger a resend. Column absent
+  // (pre-migration) → treated as single-recipient (legacy apply).
+  if (row.has_additional_recipients) { await finalize('ignored'); return 'ignored' }
 
   // Ordering guard: an older event never overwrites a newer applied state. Uses PROVIDER time only.
   const older = row.last_event_at && new Date(e.eventCreatedAt as string) < new Date(row.last_event_at)

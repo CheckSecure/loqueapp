@@ -87,15 +87,29 @@ export default async function AdminWaitlistPage() {
   // and rows render as "unavailable"/"not sent". The SEND side fails CLOSED (no send without a
   // persisted claim), so no untracked invitations are ever created.
   const invitedIds = withLifecycle.filter(w => w.status === 'invited').map(w => w.id)
-  const latestDelivery: Record<string, { status: string | null; attemptedAt: string | null }> = {}
+  const latestDelivery: Record<string, { status: string | null; attemptedAt: string | null; hasAdditionalRecipients: boolean }> = {}
   if (invitedIds.length > 0) {
-    const { data: deliveries } = await adminClient
+    // Try to include the multi-recipient marker (migration 054). If that column is missing, PostgREST
+    // fails the WHOLE query — which would drop delivery status for every legacy invite — so fall open to
+    // the pre-054 select. A CC'd invite then just shows without the "recipient-level unavailable" nuance.
+    let deliveries: any[] | null = null
+    const withCol = await adminClient
       .from('invitation_deliveries')
-      .select('waitlist_id, status, attempted_at')
+      .select('waitlist_id, status, attempted_at, has_additional_recipients')
       .in('waitlist_id', invitedIds)
       .order('attempted_at', { ascending: false })
+    if (withCol.error) {
+      const legacy = await adminClient
+        .from('invitation_deliveries')
+        .select('waitlist_id, status, attempted_at')
+        .in('waitlist_id', invitedIds)
+        .order('attempted_at', { ascending: false })
+      deliveries = legacy.data ?? null
+    } else {
+      deliveries = withCol.data ?? null
+    }
     for (const d of (deliveries ?? []) as any[]) {
-      if (d.waitlist_id && !(d.waitlist_id in latestDelivery)) latestDelivery[d.waitlist_id] = { status: d.status, attemptedAt: d.attempted_at ?? null }
+      if (d.waitlist_id && !(d.waitlist_id in latestDelivery)) latestDelivery[d.waitlist_id] = { status: d.status, attemptedAt: d.attempted_at ?? null, hasAdditionalRecipients: !!d.has_additional_recipients }
     }
   }
   const withStatus = withLifecycle.map(w => ({
