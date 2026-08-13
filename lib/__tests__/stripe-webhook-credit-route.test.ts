@@ -81,6 +81,23 @@ describe('canonical webhook — credit fulfillment path', () => {
     expect(eventsInserted.find((e) => e.t === 'stripe_events')?.row).toEqual({ event_id: 'evt_sub' })
     expect(res.status).toBe(200)
   })
+
+  it('subscription.created/updated/deleted NEVER touch meeting_credits (anniversary refill is authoritative)', async () => {
+    for (const type of ['customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted']) {
+      eventsInserted.length = 0
+      constructEvent.mockReturnValue({ id: `evt_${type}`, type, data: { object: { customer: 'cus_1', status: 'active', id: 'sub_1', items: { data: [{ price: { id: 'price_x' }, current_period_end: 0 }] } } } })
+      const res = await POST(req())
+      expect(res.status).toBe(200)
+      expect(eventsInserted.find((e) => e.t === 'meeting_credits'), type).toBeUndefined() // no included-credit mutation
+    }
+  })
+
+  it('the webhook source contains no meeting_credits write on any subscription path', () => {
+    const src = require('node:fs').readFileSync('app/api/stripe/webhook/route.ts', 'utf8')
+    // The only meeting_credits interaction in the whole file is via the fulfillment module (purchases).
+    expect(src).not.toMatch(/from\('meeting_credits'\)/)
+    expect(src).not.toMatch(/getMonthlyCredits/) // no included-credit floor logic remains here
+  })
 })
 
 describe('retired apex route delegates to the canonical handler (no independent grant, shared idempotency)', () => {

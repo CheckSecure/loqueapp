@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Stripe from 'stripe'
-import { getMonthlyCredits } from '@/lib/tier-override'
 import { fulfillCreditPurchase, realFulfillDeps, type SessionLike } from '@/lib/stripe/fulfillCreditPurchase'
 
 /**
@@ -98,48 +97,20 @@ export async function POST(req: NextRequest) {
         // Only set active tier if subscription is active
         const activeTier = ['active', 'trialing'].includes(status) ? tier : 'free'
 
-        const { data: profile } = await adminClient
-          .from('profiles')
-          .select('id, subscription_tier')
-          .eq('stripe_customer_id', customerId)
-          .maybeSingle()
+        // SUBSCRIPTION/TIER STATE ONLY. Included (free) credits are NOT touched here: the
+        // anniversary-cycle system (migration 053) is the SOLE recurring included-credit refill
+        // authority. A tier upgrade/downgrade takes effect at the member's NEXT anniversary, when the
+        // worker reads this stored subscription_tier via getEffectiveTier. This removes the former
+        // top-up-to-floor mutation that could double-grant or reset included credits mid-cycle.
+        // Purchased (premium) credits are never read or written on this path.
+        await adminClient.from('profiles').update({
+          subscription_tier: activeTier,
+          stripe_subscription_id: sub.id,
+          subscription_status: status,
+          current_period_end: periodEnd,
+        }).eq('stripe_customer_id', customerId)
 
-        if (profile) {
-          await adminClient.from('profiles').update({
-            subscription_tier: activeTier,
-            stripe_subscription_id: sub.id,
-            subscription_status: status,
-            current_period_end: periodEnd,
-          }).eq('stripe_customer_id', customerId)
-
-          const newFloor = getMonthlyCredits(activeTier)
-
-          const { data: currentCredits } = await adminClient
-            .from('meeting_credits')
-            .select('free_credits, premium_credits')
-            .eq('user_id', profile.id)
-            .maybeSingle()
-
-          const currentFree = currentCredits?.free_credits ?? 0
-          const currentPremium = currentCredits?.premium_credits ?? 0
-          // TOP-UP-ONLY renewal model (intentional): credits only increase to the
-          // tier floor on subscription creation, upgrade, or renewal. Unused credits
-          // above the floor carry forward indefinitely. There is no monthly hard-reset.
-          // invoice.payment_succeeded is intentionally NOT handled — subscription
-          // renewal fires customer.subscription.updated (current_period_end advances)
-          // which lands here and applies the same top-up logic.
-          const newFree = Math.max(currentFree, newFloor)
-
-          await adminClient.from('meeting_credits')
-            .upsert({
-              user_id: profile.id,
-              free_credits: newFree,
-              premium_credits: currentPremium,
-              balance: newFree + currentPremium,
-            }, { onConflict: 'user_id' })
-
-          console.log(`[webhook] updated ${customerId} to tier: ${activeTier}`)
-        }
+        console.log(`[webhook] updated ${customerId} to tier: ${activeTier} (credits unchanged; anniversary refill authoritative)`)
         break
       }
 
@@ -147,6 +118,9 @@ export async function POST(req: NextRequest) {
         const sub = event.data.object as Stripe.Subscription
         const customerId = sub.customer as string
 
+        // SUBSCRIPTION/TIER STATE ONLY — do NOT reset included (free) credits here. Downgrade to free
+        // takes effect for included credits at the member's NEXT anniversary refill (the worker reads
+        // this tier). Purchased (premium) credits are untouched. No mid-cycle credit mutation.
         await adminClient.from('profiles').update({
           subscription_tier: 'free',
           subscription_status: 'canceled',
@@ -154,32 +128,7 @@ export async function POST(req: NextRequest) {
           current_period_end: null,
         }).eq('stripe_customer_id', customerId)
 
-        // Reset credits to free tier
-        const { data: profile } = await adminClient
-          .from('profiles')
-          .select('id')
-          .eq('stripe_customer_id', customerId)
-          .maybeSingle()
-
-        if (profile) {
-          const { data: currentCredits } = await adminClient
-            .from('meeting_credits')
-            .select('premium_credits')
-            .eq('user_id', profile.id)
-            .maybeSingle()
-
-          const currentPremium = currentCredits?.premium_credits ?? 0
-
-          await adminClient.from('meeting_credits')
-            .upsert({
-              user_id: profile.id,
-              free_credits: 3,
-              premium_credits: currentPremium,
-              balance: 3 + currentPremium,
-            }, { onConflict: 'user_id' })
-        }
-
-        console.log(`[webhook] subscription deleted for ${customerId}, downgraded to free`)
+        console.log(`[webhook] subscription deleted for ${customerId}, downgraded to free (credits unchanged)`)
         break
       }
 

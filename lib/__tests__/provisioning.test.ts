@@ -76,8 +76,8 @@ describe('provisionMemberRecords — happy path', () => {
     expect(r.created.sort()).toEqual(['credit_transaction', 'credits', 'profile'])
     expect(db._tables.profiles).toHaveLength(1)
     expect(db._tables.profiles[0]).toMatchObject({ id: 'u1', password_reset_required: true, email_verified: true, is_founding_member: true, account_status: 'active' })
-    expect(db._tables.meeting_credits[0]).toMatchObject({ user_id: 'u1', balance: 30 })
-    expect(db._tables.credit_transactions[0]).toMatchObject({ user_id: 'u1', amount: 30, note: 'founding_signup_bonus' })
+    expect(db._tables.meeting_credits[0]).toMatchObject({ user_id: 'u1', balance: 15 })
+    expect(db._tables.credit_transactions[0]).toMatchObject({ user_id: 'u1', amount: 15, note: 'founding_signup_bonus' })
   })
 
   it('non-founding member gets 3 credits + signup_bonus note', async () => {
@@ -197,7 +197,7 @@ describe('computeAffected — audit reconciliation', () => {
     const affected = computeAffected(users, new Set(['half', 'done']), new Set(['done']), wl)
     const emails = affected.map(a => a.email).sort()
     expect(emails).toEqual(['half@x.com', 'real@x.com'])
-    expect(affected.find(a => a.email === 'real@x.com')!.recommendedAction).toMatch(/profile \+ 30 founding/)
+    expect(affected.find(a => a.email === 'real@x.com')!.recommendedAction).toMatch(/profile \+ 15 founding/)
     expect(affected.find(a => a.email === 'half@x.com')!.recommendedAction).toMatch(/3 credits only/)
     // seed@fake.com (not in waitlist) is never included
     expect(emails).not.toContain('seed@fake.com')

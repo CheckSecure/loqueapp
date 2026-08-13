@@ -30,7 +30,7 @@ export function getMonthlyCredits(effectiveTier: string): number {
     free: 3,
     professional: 10,
     executive: 20,
-    founding: 30  // Higher credit allocation for founding members
+    founding: 15  // Founding included allowance (reduced from 30; monthly-refill policy)
   }
   
   return MONTHLY_CREDITS[effectiveTier] || 3

@@ -81,7 +81,7 @@ const TIER_VALUE: Record<string, string> = {
 
 const FOUNDING_BENEFITS = [
   'Founding Member status',
-  '30 credits per month',
+  '15 credits per month',
   'Higher credit balance (up to 60)',
   'Priority matching',
   'Create hiring and business development opportunities',
