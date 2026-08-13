@@ -2,12 +2,28 @@ import { NextRequest, NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Stripe from 'stripe'
-import { getMonthlyCredits, getEffectiveTier, getCreditCap } from '@/lib/tier-override'
+import { getMonthlyCredits } from '@/lib/tier-override'
+import { fulfillCreditPurchase, realFulfillDeps, type SessionLike } from '@/lib/stripe/fulfillCreditPurchase'
 
+/**
+ * CANONICAL Stripe webhook (https://www.andrel.app/api/stripe/webhook).
+ *
+ * Credit purchases are fulfilled by the shared, atomic, idempotent `fulfillCreditPurchase` (server-side
+ * pack resolution + migration-052 grant_credit_pack RPC). Its idempotency marker (credit_grants) and
+ * the balance mutation commit in ONE transaction, so a failed grant stays RETRYABLE — it is never
+ * marked processed before the grant is durable. Subscription/invoice events (which are naturally
+ * idempotent top-up/downgrade operations) keep the INSERT-first `stripe_events` guard.
+ */
 export async function POST(req: NextRequest) {
   const body = await req.text()
   const sig = req.headers.get('stripe-signature')!
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
+  // Verify against THIS (canonical www) endpoint's OWN signing secret. Prefer the clearly-named
+  // canonical variable; fall back to the legacy name only if the canonical one is unset. This resolves
+  // to exactly ONE secret — it never tries "either secret", so verification is never weakened. A retry
+  // that was originally delivered to the OLD apex endpoint is signed with the OLD endpoint's secret and
+  // will therefore FAIL here (400) — that is expected; Jesse is fulfilled via the controlled recovery,
+  // not by trusting the old retry.
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET_CANONICAL || process.env.STRIPE_WEBHOOK_SECRET!
 
   let event: Stripe.Event
   try {
@@ -19,17 +35,28 @@ export async function POST(req: NextRequest) {
 
   const adminClient = createAdminClient()
 
+  // CREDIT PURCHASES: fulfilled atomically + idempotently via credit_grants (NOT the stripe_events
+  // marker), so a partial/DB failure returns a retryable 500 with nothing recorded → Stripe retries →
+  // grants exactly once. A wrong price/owner/amount/unpaid session is terminal (200, no retry storm).
+  if (event.type === 'checkout.session.completed') {
+    try {
+      const res = await fulfillCreditPurchase(
+        realFulfillDeps(adminClient, stripe),
+        { eventId: event.id, session: event.data.object as unknown as SessionLike },
+      )
+      console.log('[webhook]', JSON.stringify({ event: 'credit_fulfillment', outcome: res.outcome }))
+      return res.retryable
+        ? NextResponse.json({ error: 'retry' }, { status: 500 })
+        : NextResponse.json({ received: true })
+    } catch {
+      return NextResponse.json({ error: 'retry' }, { status: 500 })
+    }
+  }
+
   try {
-    // Idempotency: atomic INSERT — only one delivery of a given event ID can
-    // proceed. A 23505 unique-violation means a prior or concurrent delivery
-    // already claimed this slot; return 200 immediately without processing.
-    //
-    // INSERT-first (rather than SELECT-then-INSERT) eliminates the race window
-    // where two concurrent deliveries both pass a SELECT check and both proceed
-    // to process. The trade-off: if the handler crashes after claiming the slot
-    // but before completing a credit grant, the next Stripe retry will see the
-    // existing row and skip — credits would not be granted. At pre-launch volume
-    // this can be resolved manually via the Stripe Dashboard events list.
+    // Idempotency for the remaining (idempotent) subscription/invoice events: atomic INSERT — only one
+    // delivery of a given event ID proceeds; a 23505 means a prior/concurrent delivery already claimed
+    // the slot → return 200. These operations are top-up/downgrade upserts (safe to skip on retry).
     const { error: idempotencyError } = await adminClient
       .from('stripe_events')
       .insert({ event_id: event.id })
@@ -166,79 +193,8 @@ export async function POST(req: NextRequest) {
         break
       }
 
-      case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session
-
-        if (session.mode !== 'payment' || session.metadata?.type !== 'credit_purchase') break
-
-        const customerId = session.customer as string // assumes non-expanded customer
-
-        // Strict parse: only accept pure integer strings from metadata
-        const creditsRaw = session.metadata?.credits ?? ''
-        const creditsPurchased = /^\d+$/.test(creditsRaw) ? parseInt(creditsRaw, 10) : 0
-
-        if (!creditsPurchased) {
-          console.error(
-            `[webhook] CRITICAL: credit purchase has zero/missing credits in metadata ` +
-            `for event ${event.id} customer ${customerId} — checkout metadata may be malformed`
-          )
-          break
-        }
-
-        const { data: profile } = await adminClient
-          .from('profiles')
-          .select('id, subscription_tier, is_founding_member, founding_member_expires_at')
-          .eq('stripe_customer_id', customerId)
-          .maybeSingle()
-
-        if (!profile) {
-          console.error(`[webhook] checkout.session.completed: no profile for customer ${customerId}`)
-          break
-        }
-
-        // Profile now includes is_founding_member + founding_member_expires_at, so
-        // getEffectiveTier resolves founding members to the founding cap (60).
-        const effectiveTier = getEffectiveTier(profile)
-        const cap = getCreditCap(effectiveTier)
-
-        const { data: currentCredits } = await adminClient
-          .from('meeting_credits')
-          .select('free_credits, premium_credits')
-          .eq('user_id', profile.id)
-          .maybeSingle()
-
-        const currentFree = currentCredits?.free_credits ?? 0
-        const currentPremium = currentCredits?.premium_credits ?? 0
-
-        // Headroom: how many more credits fit before the cap, zero-floored to
-        // guard against currentFree + currentPremium already exceeding the cap.
-        const headroom = Math.max(0, cap - currentFree - currentPremium)
-        const grantedCredits = Math.min(creditsPurchased, headroom)
-        const newPremium = currentPremium + grantedCredits
-        const newBalance = currentFree + newPremium
-        const clamped = grantedCredits < creditsPurchased
-
-        await adminClient.from('meeting_credits')
-          .upsert({
-            user_id: profile.id,
-            free_credits: currentFree,
-            premium_credits: newPremium,
-            balance: newBalance,
-          }, { onConflict: 'user_id' })
-
-        if (clamped) {
-          console.error(
-            `[webhook] CRITICAL: credit purchase clamped for user ${profile.id}: ` +
-            `paid ${creditsPurchased}, granted ${grantedCredits}, ` +
-            `tier=${effectiveTier} cap=${cap} prior_free=${currentFree} prior_premium=${currentPremium}`
-          )
-        } else {
-          console.log(
-            `[webhook] credit purchase for ${profile.id}: +${grantedCredits}, balance: ${newBalance} (tier: ${effectiveTier})`
-          )
-        }
-        break
-      }
+      // checkout.session.completed is handled BEFORE this switch (credit fulfillment) — it never
+      // reaches here.
     }
 
   } catch (err: any) {
