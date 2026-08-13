@@ -4,6 +4,13 @@ import { generateReciprocalBatchForMember } from '@/lib/generate-recommendations
 import { expireStaleReciprocalPairs } from '@/lib/matching/createReciprocalSuggestion'
 import { evaluateWeeklyEligibility } from '@/lib/introductions/queue'
 import { notifyPendingIntrosActionNeeded, isoWeekKey } from '@/lib/notifications/engagement'
+import {
+  coverageEnabled, coverageEventForOutcome,
+  COVERAGE_MEMBER_LIMIT, COVERAGE_DEADLINE_MS, type CoverageEvent,
+} from '@/lib/introductions/coverageGeneration'
+
+// Bounded generation may run per member (4s + 8-RPC internal caps); give the platform margin.
+export const maxDuration = 60
 
 /**
  * Weekly cron for the unified queue.
@@ -49,6 +56,19 @@ export async function GET(req: Request) {
   const { expired: rotatedPairs } = await expireStaleReciprocalPairs(adminClient)
   console.log(`[Weekly Generation] Rotation: expired ${rotatedPairs} stale reciprocal pair(s).`)
 
+  // COVERAGE INPUT: the set of members who currently hold an ACTIVE card (suggested/queued only — legacy
+  // status='approved' is NOT a card and never counts as capacity). One bounded query, no N+1/scan. A
+  // member absent from this set is a coverage gap and is filled below via the reciprocal generator.
+  const { data: activeCardRows } = await adminClient
+    .from('intro_requests').select('requester_id').in('status', ['suggested', 'queued'])
+  const withActiveCard = new Set((activeCardRows ?? []).map((r: any) => r.requester_id))
+  const coverageOn = coverageEnabled()
+  const coverageDeadlineAt = Date.now() + COVERAGE_DEADLINE_MS
+  let coverageStarted = 0
+  const coverage: Record<CoverageEvent | 'deferred', number> = {
+    covered: 0, no_candidate: 0, at_capacity: 0, transient: 0, ineligible: 0, deferred: 0,
+  }
+
   let generated = 0
   let generationDisabledSkipped = 0 // eligible but generation gated off (admin batch is canonical)
   let skippedUnresolved = 0   // ineligible because they still have unresolved introductions
@@ -84,23 +104,47 @@ export async function GET(req: Request) {
         }
         continue
       }
-      // ELIGIBLE. Generation is the admin batch's job (canonical); only generate here when
-      // explicitly re-enabled. Otherwise the member's new batch comes from the admin Send.
+      // ELIGIBLE. COVERAGE FIRST: a member with NO active suggested/queued card is a coverage gap →
+      // fill it via the canonical reciprocal generator (atomic two-sided, all guards, idempotent, no
+      // notification). Bounded by member cap + wall-clock deadline; work never continues past it.
+      if (coverageOn && !withActiveCard.has(user.id)) {
+        if (coverageStarted >= COVERAGE_MEMBER_LIMIT || Date.now() >= coverageDeadlineAt) {
+          coverage.deferred++ // bound/deadline reached → picked up next weekly run (no partial work)
+          continue
+        }
+        coverageStarted++
+        const result = await generateReciprocalBatchForMember(user.id, 'weekly')
+        coverage[coverageEventForOutcome(result.outcome)]++ // coarse, non-identifying tally
+        continue
+      }
+      // Broad organic generation (members WITH cards, or coverage off) stays admin-canonical: only
+      // when explicitly re-enabled. Otherwise the member's new batch comes from the admin Send.
       if (!WEEKLY_REFRESH_GENERATION) { generationDisabledSkipped++; continue }
       // Routed through the ONE reciprocal, concurrency-safe path (not the legacy one-sided enqueue).
       const result = await generateReciprocalBatchForMember(user.id, 'weekly')
       if (result.count > 0) generated++
       else placedNothing++
     } catch (err) {
-      console.error(`[Weekly Generation] Error for ${user.email}:`, err)
+      // Privacy-safe: coarse error class only — never an email/uuid/name/raw payload.
+      console.error('[Weekly Generation] member error (class):', (err as any)?.name ?? 'error')
     }
   }
 
-  console.log(`[Weekly Generation] Complete (cycle ${cycleKey}, generation=${WEEKLY_REFRESH_GENERATION ? 'ON' : 'OFF (admin canonical)'}). Generated ${generated}; ${generationDisabledSkipped} eligible-not-generated; skipped ${skippedUnresolved} (unresolved) + ${skippedOther} (other); ${placedNothing} no candidates. Reminders: ${reminderSent} sent/handled, ${reminderAlreadyHandled} already-handled (dedup), ${reminderFailed} failed (retryable).`)
+  console.log('[Weekly Generation]', JSON.stringify({
+    event: 'complete', cycleKey,
+    broadGeneration: WEEKLY_REFRESH_GENERATION ? 'on' : 'off_admin_canonical',
+    coverage: coverageOn ? 'on' : 'off',
+    coverageStarted, coverageResult: coverage,
+    generated, generationDisabledSkipped, skippedUnresolved, skippedOther, placedNothing,
+    reminderSent, reminderAlreadyHandled, reminderFailed,
+  }))
   return NextResponse.json({
     success: true,
     cycleKey,
     generationEnabled: WEEKLY_REFRESH_GENERATION,
+    coverageEnabled: coverageOn,
+    coverageStarted,
+    coverage,               // { covered, no_candidate, at_capacity, transient, ineligible, deferred }
     generated,
     generationDisabledSkipped,
     skippedUnresolved,
