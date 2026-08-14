@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { assertSameOrigin } from '@/lib/http/sameOrigin'
 import { isMissingColumnError } from '@/lib/db/isMissingColumn'
 
 export const runtime = 'nodejs'
@@ -12,12 +14,15 @@ export const dynamic = 'force-dynamic'
  * profile data. Fails open if migration 039 isn't applied yet (the card still hides
  * for the session client-side; it just won't persist across visits).
  */
-export async function POST() {
+export async function POST(req: Request) {
+  const crossOrigin = assertSameOrigin(req)
+  if (crossOrigin) return crossOrigin
+
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { error } = await supabase
+  const { error } = await createAdminClient()
     .from('profiles')
     .update({ intro_profile_prompt_dismissed_at: new Date().toISOString() })
     .eq('id', user.id)

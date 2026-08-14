@@ -40,6 +40,18 @@ vi.mock('@/lib/supabase/server', () => ({
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: () => ({
+      // Main profile write now runs as service_role: .update(payload).eq('id',..).select('id, company')
+      // AND the company-link update .update({company_id}).eq('id',..) (awaited, no .select()).
+      update: () => ({ eq: () => {
+        const res = {
+          data: state.updateError ? null : (state.updatedRows === null ? null : state.updatedRows.map(r => ({ ...r, company: state.persistedCompany }))),
+          error: state.updateError,
+        }
+        const thenable: any = Promise.resolve(res)
+        thenable.select = async () => res
+        return thenable
+      } }),
+      // companies incomplete-check + any read chain
       select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: state.companyRow, error: null }) }) }),
     }),
   }),
@@ -57,7 +69,8 @@ import { POST } from '@/app/api/profile/update/route'
 function post(fields: Record<string, string>) {
   const fd = new FormData()
   for (const [k, v] of Object.entries(fields)) fd.set(k, v)
-  return POST(new Request('http://localhost/api/profile/update', { method: 'POST', body: fd }) as any)
+  // Same-origin header — the route now enforces assertSameOrigin before any work.
+  return POST(new Request('http://localhost/api/profile/update', { method: 'POST', body: fd, headers: { 'sec-fetch-site': 'same-origin' } }) as any)
 }
 
 beforeEach(() => {

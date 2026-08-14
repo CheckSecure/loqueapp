@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 interface VerificationResult {
   status: 'high_confidence' | 'flagged' | 'pending'
@@ -86,15 +87,19 @@ export async function verifyLinkedInConsistency(
     finalStatus = 'pending'
   }
 
-  // Update profile with verification status
-  await supabase
-    .from('profiles')
-    .update({
-      verification_status: finalStatus,
-      verification_metadata: metadata,
-      verified_method: 'auto'
-    })
-    .eq('id', userId)
+  // Update profile with verification status. Defense in depth: only ever write the CALLER'S OWN row
+  // (userId must equal the session user), and as service_role since browser UPDATE on profiles is
+  // revoked (migration 055). A foreign userId is a no-op — never a cross-user verification write.
+  if (user?.id === userId) {
+    await createAdminClient()
+      .from('profiles')
+      .update({
+        verification_status: finalStatus,
+        verification_metadata: metadata,
+        verified_method: 'auto'
+      })
+      .eq('id', userId)
+  }
 
   return { status: finalStatus, metadata }
 }

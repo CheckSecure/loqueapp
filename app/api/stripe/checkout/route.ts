@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { stripe, CREDIT_PACKS } from '@/lib/stripe'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getEffectiveTier } from '@/lib/tier-override'
 
 export async function POST(req: NextRequest) {
@@ -36,7 +37,9 @@ export async function POST(req: NextRequest) {
         metadata: { supabase_user_id: user.id },
       })
       customerId = customer.id
-      await supabase.from('profiles').update({ stripe_customer_id: customerId }).eq('id', user.id)
+      // Browser UPDATE on profiles is revoked (migration 055); persist the Stripe customer id as
+      // service_role, scoped to the authenticated user's own row.
+      await createAdminClient().from('profiles').update({ stripe_customer_id: customerId }).eq('id', user.id)
     }
 
     // For credit-pack purchases (mode=payment), resolve the credit count from the

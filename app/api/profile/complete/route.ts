@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { assertSameOrigin } from '@/lib/http/sameOrigin'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { enqueueOnboardingRetry } from '@/lib/onboarding/retryQueue'
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
 
-export async function POST() {
+export async function POST(req: Request) {
+  const crossOrigin = assertSameOrigin(req)
+  if (crossOrigin) return crossOrigin
+
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -38,7 +42,8 @@ export async function POST() {
     return NextResponse.json({ error: 'Company or organization is required.' }, { status: 400 })
   }
 
-  const { error } = await supabase
+  // service_role write, scoped to the caller's own row (browser UPDATE on profiles revoked, migration 055).
+  const { error } = await createAdminClient()
     .from('profiles')
     .update({ profile_complete: true, onboarding_step: 2 })
     .eq('id', user.id)

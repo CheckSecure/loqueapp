@@ -13,7 +13,6 @@ import {
   approveIntroRequest,
   rejectIntroRequest,
 } from '@/lib/introRequests'
-import { sendNewMessageEmail } from '@/lib/email'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { enqueueOnboardingRetry } from '@/lib/onboarding/retryQueue'
 import { promoteIfResolved } from '@/lib/introductions/queue'
@@ -28,6 +27,7 @@ import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
 import { provisionMemberRecords } from '@/lib/provisioning'
 import { validateFullName } from '@/lib/validation/fullName'
 import { persistFocusAreas } from '@/lib/profile/focusAreas'
+import { sendMessageCore } from '@/lib/messages/sendMessageCore'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -161,10 +161,12 @@ export async function updateProfile(formData: FormData) {
 }
 
 export async function requestIntroduction(targetId: string) {
-  const { supabase, user } = await getSupabaseAndUser()
+  const { user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { error } = await supabase.from('intro_requests').insert({
+  // requester_id is server-derived; write as service_role (browser DML on intro_requests revoked, migration 055).
+  const admin = createAdminClient()
+  const { error } = await admin.from('intro_requests').insert({
     requester_id: user.id,
     target_user_id: targetId,
   })
@@ -432,10 +434,12 @@ export async function completeOnboarding(formData: FormData) {
 }
 
 export async function saveAvatarUrl(avatarUrl: string) {
-  const { supabase, user } = await getSupabaseAndUser()
+  const { user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { error } = await supabase
+  // Write only the avatar_url column, scoped to the caller's own row, as service_role (browser UPDATE
+  // on profiles is revoked, migration 055).
+  const { error } = await createAdminClient()
     .from('profiles')
     .update({ avatar_url: avatarUrl })
     .eq('id', user.id)
@@ -456,8 +460,12 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
+  // Browser DML on intro_requests is revoked (migration 055); write as service_role, scoped to rows the
+  // caller is the TARGET of (authorization is the .eq('target_user_id', user.id) filter / the fetch below).
+  const adminClient = createAdminClient()
+
   if (status === 'declined') {
-    const { error } = await supabase
+    const { error } = await adminClient
       .from('intro_requests')
       .update({ status: 'declined', updated_at: new Date().toISOString() })
       .eq('id', id)
@@ -467,7 +475,7 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
     return { success: true, status: 'declined' }
   }
 
-  // Accepting — fetch the request to find the requester
+  // Accepting — fetch the request to find the requester (scoped to the caller as target).
   const { data: intro, error: fetchErr } = await supabase
     .from('intro_requests')
     .select('id, requester_id, target_user_id, is_admin_initiated')
@@ -480,7 +488,6 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
   // Charge both users + create match + create conversation atomically via the
   // RPC. Same path as express-interest mutual completion (commit 663265f).
   // p_user_a = accepter (current user); p_user_b = requester.
-  const adminClient = createAdminClient()
   const { data: rpcRows, error: rpcError } = await adminClient.rpc(
     'consume_credits_and_create_match',
     {
@@ -512,8 +519,8 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
   // RPC rolled back its own no-op deducts. Mark the intro accepted anyway —
   // the user-visible outcome is they're connected.
 
-  // Mark intro_request as accepted
-  const { error: updateErr } = await supabase
+  // Mark intro_request as accepted (authorized above: caller is the target of this id). service_role.
+  const { error: updateErr } = await adminClient
     .from('intro_requests')
     .update({
       status: 'accepted',
@@ -531,10 +538,12 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
 }
 
 export async function adminAdjustCredits(userId: string, delta: number, reason: string) {
-  const { supabase, user } = await getSupabaseAndUser()
+  const { user } = await getSupabaseAndUser()
   if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
 
-  const { data: current } = await supabase
+  // Admin-authorized; write as service_role (browser DML on credit_transactions is revoked, migration 055).
+  const adminClient = createAdminClient()
+  const { data: current } = await adminClient
     .from('meeting_credits')
     .select('balance')
     .eq('user_id', userId)
@@ -542,13 +551,13 @@ export async function adminAdjustCredits(userId: string, delta: number, reason: 
 
   const newBalance = Math.max(0, (current?.balance ?? 0) + delta)
 
-  const { error: updateErr } = await supabase
+  const { error: updateErr } = await adminClient
     .from('meeting_credits')
     .upsert({ user_id: userId, balance: newBalance }, { onConflict: 'user_id' })
 
   if (updateErr) return { error: updateErr.message }
 
-  await supabase.from('credit_transactions').insert({
+  await adminClient.from('credit_transactions').insert({
     user_id: userId,
     amount: delta,
     description: reason || `Manual admin adjustment (${delta > 0 ? '+' : ''}${delta})`,
@@ -559,82 +568,29 @@ export async function adminAdjustCredits(userId: string, delta: number, reason: 
 }
 
 export async function sendMessage(conversationId: string, content: string) {
-  const { supabase, user } = await getSupabaseAndUser()
+  const { user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  console.log('[sendMessage] conversationId:', conversationId, 'sender_id:', user.id)
-
-  // Insert the message
-  const { error } = await supabase.from('messages').insert({
-    conversation_id: conversationId,
-    sender_id: user.id,
-    content,
-  })
-
-  console.log('[sendMessage] insert error:', JSON.stringify(error))
-
-  if (error) return { error: error.message }
-
-  // Get sender's name
-  const { data: senderProfile } = await supabase
-    .from('profiles')
-    .select('full_name')
-    .eq('id', user.id)
-    .single()
-
-  // Get conversation to find the match
-  const { data: conversation } = await supabase
-    .from('conversations')
-    .select('match_id')
-    .eq('id', conversationId)
-    .single()
-
-  if (conversation?.match_id) {
-    // Get the match to find the other user
-    const { data: match } = await supabase
-      .from('matches')
-      .select('user_a_id, user_b_id')
-      .eq('id', conversation.match_id)
-      .single()
-
-    if (match) {
-      // Determine recipient (the user who is NOT the sender)
-      const recipientId = match.user_a_id === user.id ? match.user_b_id : match.user_a_id
-
-      // Get recipient's profile
-      const { data: recipientProfile } = await supabase
-        .from('profiles')
-        .select('full_name, email')
-        .eq('id', recipientId)
-        .single()
-
-      // Send email notification
-      if (recipientProfile?.email && senderProfile?.full_name) {
-        try {
-          await sendNewMessageEmail(
-            recipientProfile.email,
-            recipientProfile.full_name || 'there',
-            senderProfile.full_name,
-            content
-          )
-          console.log('[sendMessage] email sent to:', recipientProfile.email)
-        } catch (emailError) {
-          console.error('[sendMessage] failed to send email:', emailError)
-          // Don't fail the message send if email fails
-        }
-      }
-    }
-  }
+  // Browser INSERT on messages is revoked (migration 055). Authorization + the insert + notification/
+  // email run server-side through the SHARED sendMessageCore so this action and /api/messages/send can
+  // never diverge: it rejects inactive senders, removed/closed matches, and blocked pairs (generic 403,
+  // no side effects). Server actions are same-origin-enforced by Next.js.
+  const admin = createAdminClient()
+  const result = await sendMessageCore(admin, { senderId: user.id, conversationId, content })
+  if (!result.ok) return { error: 'This conversation is unavailable.' }
 
   revalidatePath('/dashboard/messages')
   return { success: true }
 }
 
 export async function createConversation(otherUserId: string) {
-  const { supabase, user } = await getSupabaseAndUser()
+  const { user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { data: conv, error: convErr } = await supabase
+  // Superseded by POST /api/conversations/create (which enforces the match/removed checks). Kept for
+  // compatibility; writes as service_role since browser DML on conversations is revoked (migration 055).
+  const admin = createAdminClient()
+  const { data: conv, error: convErr } = await admin
     .from('conversations')
     .insert({})
     .select('id')
@@ -642,7 +598,7 @@ export async function createConversation(otherUserId: string) {
 
   if (convErr || !conv) return { error: convErr?.message }
 
-  await supabase.from('conversation_participants').insert([
+  await admin.from('conversation_participants').insert([
     { conversation_id: conv.id, user_id: user.id },
     { conversation_id: conv.id, user_id: otherUserId },
   ])
@@ -854,26 +810,27 @@ export async function scheduleMeeting(formData: FormData) {
     zoom_link: (formData.get('zoom_link') as string) || null,
   }
 
-  let { error } = await supabase.from('meetings').insert({ ...meetingRow, scheduled_timezone: scheduledTimezone })
+  // requester_id is server-derived (user.id); write as service_role — browser DML on meetings is
+  // revoked (migration 055). Any authenticated member may still request a meeting they initiate.
+  const adminClient = createAdminClient()
+  let { error } = await adminClient.from('meetings').insert({ ...meetingRow, scheduled_timezone: scheduledTimezone })
   if (error && isMissingColumnError(error)) {
     // Compatibility: the scheduled_timezone migration (027) isn't applied yet —
     // insert without it so meeting creation still works. Apply 027 to enable.
     console.warn('[scheduleMeeting] scheduled_timezone column missing; inserting without it (apply migration 027)')
-    ;({ error } = await supabase.from('meetings').insert(meetingRow))
+    ;({ error } = await adminClient.from('meetings').insert(meetingRow))
   }
 
   if (error) return { error: error.message }
-  
+
   // Create notification for recipient
   const { data: requesterProfile } = await supabase
     .from('profiles')
     .select('full_name')
     .eq('id', user.id)
     .single()
-  
+
   const requesterName = requesterProfile?.full_name || user.email
-  
-  const adminClient = createAdminClient()
   const notifInsert = await adminClient.from('notifications').insert({
     user_id: recipientId,
     type: 'meeting_request',
@@ -1001,7 +958,8 @@ export async function acceptMeeting(meetingId: string) {
     updates.proposed_notes = null
   }
 
-  const { error } = await supabase
+  // Authorized above (participant); write as service_role (browser DML on meetings revoked, migration 055).
+  const { error } = await createAdminClient()
     .from('meetings')
     .update(updates)
     .eq('id', meetingId)
@@ -1149,7 +1107,8 @@ export async function declineMeeting(meetingId: string) {
     updates.proposed_notes = null
   }
 
-  const { error } = await supabase
+  // Authorized above (participant); write as service_role (browser DML on meetings revoked, migration 055).
+  const { error } = await createAdminClient()
     .from('meetings')
     .update(updates)
     .eq('id', meetingId)
@@ -1246,7 +1205,8 @@ export async function deleteMeeting(meetingId: string) {
     console.error('[deleteMeeting] calendar cancel error:', (calErr as any)?.message)
   }
 
-  const { error } = await supabase
+  // Authorized above (participant); write as service_role (browser DML on meetings revoked, migration 055).
+  const { error } = await createAdminClient()
     .from('meetings')
     .delete()
     .eq('id', meetingId)
@@ -1301,19 +1261,21 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
   const rescheduleTimezone = normalizeIanaTimeZone(formData.get('timezone') as string)
   if (rescheduleTimezone) rescheduleUpdate.scheduled_timezone = rescheduleTimezone
 
-  let { error } = await supabase.from('meetings').update(rescheduleUpdate).eq('id', meetingId)
+  // Authorized above (caller is a participant); write as service_role — browser DML on meetings is
+  // revoked (migration 055).
+  const adminClient = createAdminClient()
+  let { error } = await adminClient.from('meetings').update(rescheduleUpdate).eq('id', meetingId)
   if (error && rescheduleTimezone && isMissingColumnError(error)) {
     // Compatibility: migration 027 not applied yet — retry without the timezone.
     console.warn('[rescheduleMeeting] scheduled_timezone column missing; updating without it (apply migration 027)')
     const { scheduled_timezone, ...withoutTz } = rescheduleUpdate
-    ;({ error } = await supabase.from('meetings').update(withoutTz).eq('id', meetingId))
+    ;({ error } = await adminClient.from('meetings').update(withoutTz).eq('id', meetingId))
   }
 
   if (error) return { error: error.message }
 
   // Notify the other party
   const otherUserId = meeting.requester_id === user.id ? meeting.recipient_id : meeting.requester_id
-  const adminClient = createAdminClient()
   await adminClient.from('notifications').insert({
     user_id: otherUserId,
     type: 'meeting_request',
@@ -1372,8 +1334,9 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
 
   if (existing) return { error: 'Match already exists' }
 
-  // Create match
-  const { data: match, error: matchError } = await supabase
+  // Admin-authorized; write as service_role (browser DML on matches/conversations is revoked, migration 055).
+  const adminClient = createAdminClient()
+  const { data: match, error: matchError } = await adminClient
     .from('matches')
     .insert({
       user_a_id: userAId,
@@ -1388,7 +1351,7 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
   if (matchError) return { error: matchError.message }
 
   // Create conversation
-  await supabase.from('conversations').insert({
+  await adminClient.from('conversations').insert({
     match_id: match.id
   })
 
@@ -1403,7 +1366,6 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
 
   // Create notifications for both users
   if (profileA && profileB) {
-    const adminClient = createAdminClient()
     await adminClient.from('notifications').insert([
       {
         user_id: userAId,
@@ -1468,8 +1430,13 @@ export async function adminUpdateUser(userId: string, updates: {
   current_status?: string
   launch_cohort?: string | null
 }) {
-  const { supabase, user } = await getSupabaseAndUser()
+  const { user } = await getSupabaseAndUser()
   if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
+
+  // Admin-authorized privileged writes (tier/account_status/verification/etc). service_role — browser
+  // DML on profiles is revoked (migration 055), and these are exactly the fields it must never accept
+  // from an ordinary member; only this admin-gated action may set them.
+  const admin = createAdminClient()
 
   const profileUpdates: any = {}
   if (updates.tier !== undefined) profileUpdates.subscription_tier = updates.tier
@@ -1481,7 +1448,7 @@ export async function adminUpdateUser(userId: string, updates: {
   if (updates.current_status !== undefined) profileUpdates.current_status = updates.current_status
 
   if (Object.keys(profileUpdates).length > 0) {
-    const { error } = await supabase
+    const { error } = await admin
       .from('profiles')
       .update(profileUpdates)
       .eq('id', userId)
@@ -1491,7 +1458,7 @@ export async function adminUpdateUser(userId: string, updates: {
 
   // Update credits if provided
   if (updates.credits !== undefined) {
-    const { error } = await supabase
+    const { error } = await admin
       .from('meeting_credits')
       .upsert({
         user_id: userId,
@@ -1511,10 +1478,13 @@ export async function adminUpdateUser(userId: string, updates: {
 // Manual resend path: nullify profiles.founding_member_email_sent_at via
 // Supabase Dashboard, then re-grant from the admin UI.
 export async function adminSetFoundingMember(userId: string, isFoundingMember: boolean) {
-  const { supabase, user } = await getSupabaseAndUser()
+  const { user } = await getSupabaseAndUser()
   if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
 
-  const { data: current, error: readError } = await supabase
+  // Admin-authorized; read + write as service_role (browser DML on profiles revoked, migration 055; and
+  // the target row may not be discoverable to the admin's own authenticated role).
+  const admin = createAdminClient()
+  const { data: current, error: readError } = await admin
     .from('profiles')
     .select('id, full_name, email, is_founding_member, founding_member_email_sent_at')
     .eq('id', userId)
@@ -1525,7 +1495,7 @@ export async function adminSetFoundingMember(userId: string, isFoundingMember: b
 
   if (!isFoundingMember) {
     // Removal: drop the flag, preserve sent_at as audit trail.
-    const { error } = await supabase
+    const { error } = await admin
       .from('profiles')
       .update({ is_founding_member: false })
       .eq('id', userId)
@@ -1536,7 +1506,7 @@ export async function adminSetFoundingMember(userId: string, isFoundingMember: b
 
   // Grant. Send the email only on the first grant (sent_at IS NULL).
   if (current.founding_member_email_sent_at) {
-    const { error } = await supabase
+    const { error } = await admin
       .from('profiles')
       .update({ is_founding_member: true })
       .eq('id', userId)
@@ -1560,7 +1530,7 @@ export async function adminSetFoundingMember(userId: string, isFoundingMember: b
     console.warn('[adminSetFoundingMember] granting without email — no profile.email for', userId)
   }
 
-  const { error } = await supabase
+  const { error } = await admin
     .from('profiles')
     .update({
       is_founding_member: true,

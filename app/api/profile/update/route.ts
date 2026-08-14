@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
+import { assertSameOrigin } from '@/lib/http/sameOrigin'
 import { buildProfileUpdate } from '@/lib/profile/updatePayload'
 import { persistFocusAreas } from '@/lib/profile/focusAreas'
 import { createClient } from '@/lib/supabase/server'
@@ -12,9 +13,12 @@ import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
 
 export async function POST(req: NextRequest) {
   try {
+    const crossOrigin = assertSameOrigin(req)
+    if (crossOrigin) return crossOrigin
+
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
@@ -39,7 +43,12 @@ export async function POST(req: NextRequest) {
       priorCompany = (prior?.company as string | null) ?? null
     }
 
-    const { data: updatedRows, error } = await supabase
+    // Browser UPDATE on profiles is revoked (migration 055). Write as service_role, scoped to the
+    // caller's own row (user.id from getUser — never a client id). SAFE because buildProfileUpdate is a
+    // strict column allowlist (no is_admin / subscription_tier / account_status / credits /
+    // password_reset_required / verification / trust fields can ever be set here).
+    const writeClient = createAdminClient()
+    const { data: updatedRows, error } = await writeClient
       .from('profiles')
       .update({ ...built.payload, updated_at: new Date().toISOString() })
       .eq('id', user.id)
@@ -50,7 +59,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
     if (!updatedRows || updatedRows.length === 0) {
-      // Row not updated (missing profile / RLS) — never report a false success.
+      // Row not updated (missing profile) — never report a false success.
       console.error('[profile/update] update affected 0 rows for', user.id)
       return NextResponse.json({ error: 'Could not save your changes. Please try again.' }, { status: 409 })
     }

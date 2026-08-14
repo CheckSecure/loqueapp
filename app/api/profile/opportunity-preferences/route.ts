@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { assertSameOrigin } from '@/lib/http/sameOrigin';
 
 /**
  * PATCH /api/profile/opportunity-preferences
@@ -28,6 +30,9 @@ const ALLOWED_FIELDS = [
 type AllowedField = (typeof ALLOWED_FIELDS)[number];
 
 async function updatePreferences(req: Request) {
+  const crossOrigin = assertSameOrigin(req);
+  if (crossOrigin) return crossOrigin;
+
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
@@ -62,7 +67,9 @@ async function updatePreferences(req: Request) {
     );
   }
 
-  const { data, error } = await supabase
+  // Allowlisted boolean fields only; service_role write scoped to the caller's own row (browser UPDATE
+  // on profiles revoked, migration 055).
+  const { data, error } = await createAdminClient()
     .from('profiles')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', user.id)

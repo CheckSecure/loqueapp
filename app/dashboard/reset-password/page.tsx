@@ -1,8 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { Loader2, CheckCircle, Key } from 'lucide-react'
 
 export default function ResetPasswordPage() {
@@ -10,8 +8,6 @@ export default function ResetPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const router = useRouter()
-  const supabase = createClient()
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -29,35 +25,23 @@ export default function ResetPasswordPage() {
 
     setLoading(true)
 
-    const { error: updateError } = await supabase.auth.updateUser({
-      password: password
+    // Delegate to the secure server flow: it performs the password update server-side AND clears
+    // password_reset_required in the SAME request (browser UPDATE on profiles is revoked, migration
+    // 055). No client value can clear the flag without a server-verified password change.
+    const res = await fetch('/api/auth/complete-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'set', password }),
     })
-
-    if (updateError) {
-      setError(updateError.message)
+    const data = await res.json().catch(() => ({} as any))
+    if (!res.ok || !data?.ok) {
+      setError(data?.message || 'Could not update your password. Please try again.')
       setLoading(false)
       return
     }
 
-    // Mark password reset as complete
-    // Mark password reset as complete
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ password_reset_required: false })
-        .eq('id', user.id)
-      
-      if (profileError) {
-        console.error('Failed to update password_reset_required:', profileError)
-        setError('Password updated but profile update failed. Please try again.')
-        setLoading(false)
-        return
-      }
-    }
-
     // Force full page reload to refresh middleware
-    window.location.href = '/dashboard/onboarding'
+    window.location.href = data.dest || '/dashboard/onboarding'
   }
 
   return (

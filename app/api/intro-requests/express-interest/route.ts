@@ -72,7 +72,7 @@ export async function POST(request: Request) {
 
     // STEP 2: Update intro request status to 'approved'. Check the result — a
     // failed/blocked write must surface an error, never a false success.
-    const { error: statusUpdateErr } = await supabase
+    const { error: statusUpdateErr } = await adminClient
       .from('intro_requests')
       .update({ status: 'approved', updated_at: new Date().toISOString() })
       .eq('id', introRequestId)

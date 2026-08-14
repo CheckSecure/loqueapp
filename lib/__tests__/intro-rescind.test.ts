@@ -6,8 +6,8 @@ import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 // ── In-memory intro_requests mock behind the rescind route ────────────────────
 const h = vi.hoisted(() => ({ user: { id: 'me' } as any, rows: [] as any[] }))
 
-vi.mock('@/lib/supabase/server', () => {
-  function from(_table: string) {
+function makeFrom() {
+  return function from(_table: string) {
     let op: 'select' | 'delete' | 'update' = 'select'
     let payload: any = null
     const filters: ((r: any) => boolean)[] = []
@@ -39,15 +39,19 @@ vi.mock('@/lib/supabase/server', () => {
     }
     return b
   }
-  return { createClient: () => ({ auth: { getUser: async () => ({ data: { user: h.user } }) }, from }) }
-})
+}
+// The route reads the session via the server client and WRITES via the admin (service_role) client
+// (browser DML on intro_requests is revoked). Both share the same in-memory table so the test observes
+// the writes. `from` ignores the table arg, so one factory serves both.
+vi.mock('@/lib/supabase/server', () => ({ createClient: () => ({ auth: { getUser: async () => ({ data: { user: h.user } }) }, from: makeFrom() }) }))
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ from: makeFrom() }) }))
 
 import { POST } from '@/app/api/intro/rescind/route'
 
 const req = (targetId: string) =>
   new Request('http://x/api/intro/rescind', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' },
     body: JSON.stringify({ targetId }),
   })
 

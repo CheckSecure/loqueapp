@@ -35,9 +35,13 @@ const h = vi.hoisted(() => ({
   updateError: null as any,
 }))
 
+// Session comes from the server client; the profiles WRITE runs via the admin (service_role) client
+// (browser UPDATE on profiles is revoked, migration 055).
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: () => ({
-    auth: { getUser: async () => ({ data: { user: h.user } }) },
+  createClient: () => ({ auth: { getUser: async () => ({ data: { user: h.user } }) } }),
+}))
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({
     from: (table: string) => ({
       update: (payload: any) => {
         h.lastUpdate = { table, payload, eq: null as any }
@@ -49,11 +53,14 @@ vi.mock('@/lib/supabase/server', () => ({
 
 import { POST as DISMISS } from '@/app/api/profile/dismiss-intro-prompt/route'
 
+// Same-origin request — the route now enforces assertSameOrigin.
+const dreq = () => new Request('http://x/api/profile/dismiss-intro-prompt', { method: 'POST', headers: { 'sec-fetch-site': 'same-origin' } })
+
 beforeEach(() => { h.user = { id: 'u1' }; h.lastUpdate = null; h.updateError = null })
 
 describe('dismiss endpoint — persists per member, touches nothing else', () => {
   it('writes ONLY intro_profile_prompt_dismissed_at on the member profile', async () => {
-    const res = await DISMISS()
+    const res = await DISMISS(dreq())
     expect(res.status).toBe(200)
     expect((await res.json())).toMatchObject({ ok: true, persisted: true })
     expect(h.lastUpdate.table).toBe('profiles')
@@ -62,7 +69,7 @@ describe('dismiss endpoint — persists per member, touches nothing else', () =>
   })
 
   it('does not alter matching eligibility (no other table/column written)', async () => {
-    await DISMISS()
+    await DISMISS(dreq())
     expect(h.lastUpdate.table).toBe('profiles')
     expect(h.lastUpdate.payload).not.toHaveProperty('account_status')
     expect(h.lastUpdate.payload).not.toHaveProperty('matching_paused')
@@ -71,12 +78,12 @@ describe('dismiss endpoint — persists per member, touches nothing else', () =>
 
   it('rejects unauthenticated callers', async () => {
     h.user = null
-    expect((await DISMISS()).status).toBe(401)
+    expect((await DISMISS(dreq())).status).toBe(401)
   })
 
   it('fails open when migration 039 is not applied (missing column → best-effort no-op)', async () => {
     h.updateError = { code: '42703', message: 'column profiles.intro_profile_prompt_dismissed_at does not exist' }
-    const res = await DISMISS()
+    const res = await DISMISS(dreq())
     expect(res.status).toBe(200)
     expect((await res.json())).toMatchObject({ ok: true, persisted: false })
   })

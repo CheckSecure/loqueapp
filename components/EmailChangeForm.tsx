@@ -27,9 +27,12 @@ export default function EmailChangeForm() {
       password: emailPassword,
     })
     if (signInError) { setEmailError('Incorrect password'); setEmailSaving(false); return }
+    // Supabase Auth owns the account email: this sends a confirmation link to the NEW address. The
+    // account email (and the profile mirror) only change AFTER the user clicks that link — the mirror is
+    // reconciled server-side from the verified auth email (in /auth/callback and /api/profile/change-email),
+    // never from this client value.
     const { error: updateError } = await supabase.auth.updateUser({ email: newEmail })
     if (updateError) { setEmailError(updateError.message); setEmailSaving(false); return }
-    await supabase.from('profiles').update({ email: newEmail }).eq('id', user.id)
     setEmailSuccess(true)
     setNewEmail('')
     setEmailPassword('')
