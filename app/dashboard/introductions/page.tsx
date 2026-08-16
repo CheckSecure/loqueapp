@@ -92,24 +92,23 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     user.email === 'alexandra@horizoncapital.com' &&
     searchParams?.demo === 'full'
 
-  const { data: profileRows } = await supabase
+  // A3: server-component SELF read via service_role, scoped to the caller's own id (base-table SELECT is
+  // revoked). Explicit columns only — includes the tier + dismissal fields this page needs that are not
+  // in the minimal browser self RPC.
+  const { data: myProfileRows } = await createAdminClient()
     .from('profiles')
-    .select('id, full_name, email, subscription_tier, is_founding_member, founding_member_expires_at, created_at, role_type, seniority, interests, intro_preferences, mentorship_role, location, expertise, purposes, avatar_url, company, bio, linkedin_url')
-    .or(`id.eq.${user.id},email.eq.${user.email}`)
+    .select('id, full_name, subscription_tier, is_founding_member, founding_member_expires_at, expertise, interests, intro_preferences, purposes, intro_profile_prompt_dismissed_at, created_at')
+    .eq('id', user.id)
     .limit(1)
-
-  const profileRow = profileRows?.[0] ?? null
+  const profileRow = (Array.isArray(myProfileRows) ? myProfileRows[0] : myProfileRows) ?? null
   // Single recommendation-improvement prompt: driven by the matching-relevant
   // fields (matchProfileCompletion), dismissible per member, and it retires
   // automatically once the matching profile is complete. The dismissal flag is read
   // fail-open so the page never breaks if migration 039 isn't applied yet.
   const mc = matchProfileCompletion(profileRow)
-  const introPromptDismissed = await supabase
-    .from('profiles')
-    .select('intro_profile_prompt_dismissed_at')
-    .eq('id', user.id)
-    .maybeSingle()
-    .then((r) => (r.data as any)?.intro_profile_prompt_dismissed_at != null, () => false)
+  // The dismissal flag lives on the same self row already fetched above (fail-open when the column /
+  // migration 039 isn't present → undefined, treated as not-dismissed).
+  const introPromptDismissed = (profileRow as any)?.intro_profile_prompt_dismissed_at != null
   const showImproveCard = mc.missing.length > 0 && !introPromptDismissed
   const profileId = profileRow?.id ?? user.id
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
@@ -151,13 +150,13 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`),
     supabase
       .from('intro_requests')
-      .select('id, target_user_id, created_at, match_reason, pair_id, target:profiles!target_user_id(id, full_name, title, exact_job_title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes, account_status)')
+      .select('id, target_user_id, created_at, match_reason, pair_id')
       .eq('requester_id', profileId)
       .eq('status', 'suggested')
       .order('created_at', { ascending: false }),
     supabase
       .from('intro_requests')
-      .select('id, requester_id, target_user_id, status, created_at, is_admin_initiated, match_reason, other:profiles!requester_id(id, full_name, title, exact_job_title, company, location, bio, seniority, role_type, avatar_url, account_status, expertise, interests, mentorship_role, purposes)')
+      .select('id, requester_id, target_user_id, status, created_at, is_admin_initiated, match_reason')
       .eq('target_user_id', profileId)
       .eq('is_admin_initiated', true)
       .in('status', ['admin_pending', 'approved'])
@@ -182,7 +181,9 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     // Opportunities for this user (receiver side). Same query shape as
     // app/dashboard/opportunities/page.tsx:33-42 BUT via the user-scoped
     // client — RLS-policed, no service-role on member surface.
-    supabase
+    // A3: this nests profiles (the opportunity creator) through an embed; scoped to the viewer's own
+    // candidate rows (user_id = user.id) → read server-side via service_role (base SELECT revoked).
+    createAdminClient()
       .from('opportunity_candidates')
       .select('id, opportunity_id, role, opportunities!inner(id, creator_id, type, title, description, urgency, status, expires_at, profiles!opportunities_creator_id_fkey(full_name, company, exact_job_title, title, role_type))')
       .eq('user_id', user.id)
@@ -204,11 +205,73 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     // stays visible even after its suggested row is gone.
     supabase
       .from('intro_requests')
-      .select('id, target_user_id, status, created_at, match_reason, target:profiles!target_user_id(id, full_name, title, exact_job_title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes, account_status)')
+      .select('id, target_user_id, status, created_at, match_reason')
       .eq('requester_id', profileId)
       .in('status', ['pending', 'approved'])
       .order('created_at', { ascending: false }),
   ])
+
+  // A3: the `target` profile is no longer embedded via profiles!target_user_id (authenticated SELECT on
+  // public.profiles is revoked). These targets are the viewer's OWN suggested/pending intro counterparts
+  // (rows scoped to profileId), so read their fields — including the internal account_status used by the
+  // deactivated filter below — server-side via service_role, and join them back so every downstream
+  // `.target` read is unchanged.
+  const targetIds = [
+    ...(((suggestedIntros as any[]) || []).map((r) => r.target_user_id)),
+    ...(((pendingIntrosRaw as any[]) || []).map((r) => r.target_user_id)),
+  ]
+  const targetProfiles = new Map<string, any>()
+  {
+    const uniqTargetIds = Array.from(new Set(targetIds.filter(Boolean)))
+    if (uniqTargetIds.length > 0) {
+      const { data: tp } = await createAdminClient()
+        .from('profiles')
+        .select('id, full_name, title, exact_job_title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes, account_status')
+        .in('id', uniqTargetIds)
+      for (const p of (tp ?? []) as any[]) if (p?.id) targetProfiles.set(p.id, p)
+    }
+  }
+  const attachTarget = (r: any) => {
+    const p = r?.target_user_id ? targetProfiles.get(r.target_user_id) : null
+    // Not discoverable / absent → target null, exactly matching a missing embed (downstream
+    // code filters on target truthiness). Discoverable → the SAME fields the embed returned.
+    r.target = p
+      ? {
+          id: p.id,
+          full_name: p.full_name,
+          title: p.title,
+          exact_job_title: p.exact_job_title,
+          company: p.company,
+          location: p.location,
+          bio: p.bio,
+          interests: p.interests,
+          seniority: p.seniority,
+          role_type: p.role_type,
+          mentorship_role: p.mentorship_role,
+          avatar_url: p.avatar_url,
+          expertise: p.expertise,
+          purposes: p.purposes,
+          account_status: p.account_status,
+        }
+      : null
+  }
+  for (const r of ((suggestedIntros as any[]) || [])) attachTarget(r)
+  for (const r of ((pendingIntrosRaw as any[]) || [])) attachTarget(r)
+
+  // A3: decouple the admin-initiated `other` (requester) embed the same way — server-side via
+  // service_role incl account_status (rows scoped to profileId as the target).
+  {
+    const otherIds = Array.from(new Set(((adminIntrosRaw as any[]) || []).map((r) => r.requester_id).filter(Boolean)))
+    const otherProfiles = new Map<string, any>()
+    if (otherIds.length > 0) {
+      const { data: op } = await createAdminClient()
+        .from('profiles')
+        .select('id, full_name, title, exact_job_title, company, location, bio, seniority, role_type, avatar_url, account_status, expertise, interests, mentorship_role, purposes')
+        .in('id', otherIds)
+      for (const p of (op ?? []) as any[]) if (p?.id) otherProfiles.set(p.id, p)
+    }
+    for (const r of ((adminIntrosRaw as any[]) || [])) r.other = r.requester_id ? (otherProfiles.get(r.requester_id) ?? null) : null
+  }
 
   const balance = creditRow?.balance ?? 0
   const activeConciergeStatus =
@@ -230,7 +293,10 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // (fetchActionableIncomingInterest). Read-only; drives the "Interested in you"
   // section. A person shown here is excluded from the suggestion/pending sections
   // below so they render in exactly one place.
-  const incomingInterest = await fetchActionableIncomingInterest(supabase, profileId)
+  // A3: server component → read incoming-interest requesters server-side via service_role (they expressed
+  // approved interest AT the viewer, so they are authorized to surface; requesterActive needs the
+  // internal account_status, not in public_profiles).
+  const incomingInterest = await fetchActionableIncomingInterest(createAdminClient(), profileId, { viaServiceRole: true })
   const incomingRequesterIds = new Set(incomingInterest.map((i) => i.requesterId))
 
   // For each admin intro, check if the reverse intro is approved
@@ -269,7 +335,9 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   ]))
   const deactivatedIds = new Set<string>()
   if (allOtherPartyIds.length > 0) {
-    const { data: statusRows } = await supabase
+    // A3: account_status is an internal field (removed from public_profiles) — read it server-side via
+    // service_role for the viewer's own intro counterparts to compute the deactivated filter.
+    const { data: statusRows } = await createAdminClient()
       .from('profiles')
       .select('id, account_status')
       .in('id', allOtherPartyIds)

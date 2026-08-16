@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import ProfileEditForm from '@/components/ProfileEditForm'
 import EmailChangeForm from '@/components/EmailChangeForm'
@@ -24,7 +25,8 @@ export default async function SettingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
+  // A3: server-component self read via service_role, scoped to the caller's own id (base SELECT revoked).
+  const { data: profile } = await createAdminClient()
     .from('profiles')
     .select('*')
     .eq('id', user.id)

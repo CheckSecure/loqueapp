@@ -23,11 +23,10 @@ export default function OnboardingPage() {
         return
       }
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
+      // A3: self read of the caller's OWN full row via get_my_profile() (base-table SELECT revoked;
+      // no member-facing SELECT * on profiles).
+      const { data: myRows } = await supabase.rpc('get_my_profile')
+      const profile = Array.isArray(myRows) ? (myRows[0] ?? null) : (myRows ?? null)
 
       if (profile?.profile_complete) {
         window.location.href = '/dashboard'

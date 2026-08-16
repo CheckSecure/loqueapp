@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import MeetingsClient from '@/components/MeetingsClient'
@@ -41,7 +42,11 @@ export default async function MeetingsPage() {
   // ── Phase 2: one batched profiles read + mark meeting notifs read (parallel) ──
   const [{ data: profiles }] = await Promise.all([
     profileIds.length > 0
-      ? supabase.from('profiles').select('id, full_name, email, title, company, avatar_url').in('id', profileIds)
+      // A3: participant identities for the viewer's OWN meetings, read server-side via service_role
+      // (authorized by the meeting relationship; base-table SELECT is revoked for the browser role).
+      // Preserves past-meeting display even when a match was later removed (public_profiles' discovery
+      // filter would drop those). Email intentionally dropped — the meetings UI does not use it.
+      ? createAdminClient().from('profiles').select('id, full_name, title, company, avatar_url').in('id', profileIds)
       : Promise.resolve({ data: [] as any[] }),
     // Clears the Meetings unread badge. Independent of the read above; runs in
     // parallel so it is not an extra sequential round-trip on the render path.

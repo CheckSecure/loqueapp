@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   // definition the page renders and the reminder gate uses. This rejects rows that
   // are admin-initiated, no longer approved, already matched, same-company, or from
   // a deactivated expresser — without re-implementing the rules here.
-  const actionable = await fetchActionableIncomingInterest(adminClient, viewerId)
+  const actionable = await fetchActionableIncomingInterest(adminClient, viewerId, { viaServiceRole: true })
   if (!actionable.some((i) => i.introRequestId === introRequestId)) {
     return NextResponse.json(
       { error: 'This request is no longer available.', message: 'This introduction is no longer available. No credit was used.' },

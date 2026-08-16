@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import ProfileForm from '@/components/ProfileForm'
 import MatchProfileCompletionCard from '@/components/MatchProfileCompletionCard'
@@ -10,7 +11,8 @@ export default async function ProfilePage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profile } = await supabase
+  // A3: server-component self read via service_role, scoped to the caller's own id (base SELECT revoked).
+  const { data: profile } = await createAdminClient()
     .from('profiles')
     .select('*')
     .eq('id', user.id)

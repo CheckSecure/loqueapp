@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { fetchPublicProfilesByIds } from '@/lib/profiles/publicProfile'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
@@ -46,14 +47,34 @@ export async function GET(request: Request) {
       }, { status: 403 })
     }
 
-    // Get messages
-    const { data: messages, error } = await supabase
+    // Get messages. A3: the sender profile is no longer embedded via profiles(...)
+    // (authenticated SELECT on public.profiles is revoked). Fetch base message rows
+    // (including sender_id), then join safe sender fields via the discovery-scoped
+    // public_profiles view so the downstream `sender` shape is identical.
+    const { data: rawMessages, error } = await supabase
       .from('messages')
-      .select('*, sender:profiles(id, full_name, title, company)')
+      .select('*')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
 
     if (error) throw error
+
+    const senderProfiles = await fetchPublicProfilesByIds(
+      supabase,
+      (rawMessages || []).map((m: any) => m.sender_id),
+    )
+    const messages = (rawMessages || []).map((m: any) => {
+      const p = m.sender_id ? senderProfiles.get(m.sender_id) : null
+      return {
+        ...m,
+        // Discoverable sender → the same {id, full_name, title, company} the embed
+        // returned; sender present but not discoverable → minimal {id}; no sender
+        // (system message, sender_id null) → null, matching the old embed behavior.
+        sender: p
+          ? { id: p.id, full_name: p.full_name, title: p.title, company: p.company }
+          : (m.sender_id ? { id: m.sender_id } : null),
+      }
+    })
 
     // Get suggested prompts from conversation
     const suggestedPrompts = conversation.suggested_prompts || []
@@ -62,8 +83,10 @@ export async function GET(request: Request) {
     let matchInsights: { text: string; kind: string }[] = []
     try {
       const otherUserId = match.user_a_id === user.id ? match.user_b_id : match.user_a_id
+      // A3: all fields read here are in the public_profiles safe column set, so this
+      // discovery-scoped view replaces the (revoked) authenticated SELECT on profiles.
       const { data: bothProfiles } = await supabase
-        .from('profiles')
+        .from('public_profiles')
         .select('id, full_name, title, company, bio, seniority, role_type, purposes, intro_preferences, interests, expertise, open_to_mentorship')
         .in('id', [user.id, otherUserId])
       if (bothProfiles && bothProfiles.length === 2) {

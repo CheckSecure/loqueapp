@@ -79,7 +79,7 @@ export async function GET(req: Request) {
     // admin rows). If it isn't surfaced, no reminder — ever.
     let actionable = actionableByWaiter.get(waiterId)
     if (!actionable) {
-      const items = await fetchActionableIncomingInterest(admin, waiterId)
+      const items = await fetchActionableIncomingInterest(admin, waiterId, { viaServiceRole: true })
       actionable = new Set(items.map((i) => i.introRequestId))
       actionableByWaiter.set(waiterId, actionable)
     }

@@ -39,7 +39,7 @@ vi.mock('@/lib/supabase/server', () => ({
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
-    from: () => ({
+    from: (table: string) => ({
       // Main profile write now runs as service_role: .update(payload).eq('id',..).select('id, company')
       // AND the company-link update .update({company_id}).eq('id',..) (awaited, no .select()).
       update: () => ({ eq: () => {
@@ -51,8 +51,12 @@ vi.mock('@/lib/supabase/admin', () => ({
         thenable.select = async () => res
         return thenable
       } }),
-      // companies incomplete-check + any read chain
-      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: state.companyRow, error: null }) }) }),
+      // A3: the prior-company self read also runs as service_role now (.from('profiles').select('company')).
+      // Return the prior company for the profiles read, and the companies row for the incomplete-check.
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({
+        data: table === 'companies' ? state.companyRow : { company: state.priorCompany },
+        error: null,
+      }) }) }),
     }),
   }),
 }))

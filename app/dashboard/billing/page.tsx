@@ -110,10 +110,13 @@ function BillingInner() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const [{ data: profile }, { data: creditRow }] = await Promise.all([
-        supabase.from('profiles').select('subscription_tier, current_period_end, is_founding_member, founding_member_expires_at').eq('id', user.id).single(),
+      // A3: billing/tier fields are PRIVATE self fields — read the caller's own row via get_my_profile()
+      // (browser SELECT on the base profiles table is revoked).
+      const [{ data: myRows }, { data: creditRow }] = await Promise.all([
+        supabase.rpc('get_my_profile'),
         supabase.from('meeting_credits').select('balance').eq('user_id', user.id).single(),
       ])
+      const profile = Array.isArray(myRows) ? (myRows[0] ?? null) : (myRows ?? null)
       setCurrentTier(profile?.subscription_tier ?? 'free')
       setEffectiveTier(profile ? getEffectiveTier(profile) : 'free')
       setIsFoundingMember(Boolean(profile?.is_founding_member))

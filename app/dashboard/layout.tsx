@@ -57,13 +57,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
     adminBadgeCount,
     presenceRow,
   ] = await Promise.all([
-    supabase.from('profiles').select('profile_complete, full_name, avatar_url').eq('id', user.id).single(),
-    supabase
+    // A3: both are SELF reads. Server component → read the caller's OWN row via service_role scoped to
+    // user.id (base-table SELECT is revoked for the browser/authenticated role; the legal-acceptance
+    // fields are not in the minimal self RPC allowlist, so admin is the right server-side path here).
+    createAdminClient().from('profiles').select('profile_complete, full_name, avatar_url').eq('id', user.id).single(),
+    createAdminClient()
       .from('profiles')
       .select('terms_version_accepted, privacy_version_accepted, terms_grandfathered_through_version, privacy_grandfathered_through_version')
-      .eq('id', user.id)
-      .single()
-      .then((r) => r.data as any, () => null),
+      .eq('id', user.id).single().then((r) => r.data as any, () => null),
     supabase.from('meeting_credits').select('balance').eq('user_id', user.id).single(),
 
     // Unread message count — dependent 3-hop chain, isolated so a failure

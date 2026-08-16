@@ -23,11 +23,9 @@ export default function VerifyEmailPage() {
       return
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email_verified')
-      .eq('id', user.id)
-      .single()
+    // A3: self read via get_my_profile() (base-table SELECT revoked).
+    const { data: myRows } = await supabase.rpc('get_my_profile')
+    const profile = Array.isArray(myRows) ? (myRows[0] ?? null) : (myRows ?? null)
 
     if (profile?.email_verified) {
       setStatus('verified')

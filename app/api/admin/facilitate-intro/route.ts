@@ -17,7 +17,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Request ID required' }, { status: 400 })
   }
 
-  const { data: introRequest, error: reqError } = await supabase
+  // A3: admin route — read the intro + embedded participant profiles via service_role (the admin's
+  // authenticated role no longer holds base SELECT on profiles once 058 is applied). Authorized above by requireAdmin().
+  const { data: introRequest, error: reqError } = await createAdminClient()
     .from('intro_requests')
     .select('id, requester_id, target_user_id, created_at, requester:profiles!intro_requests_requester_id_fkey(id, full_name, email, role_type, company), target:profiles!intro_requests_target_user_id_fkey(id, full_name, email, role_type, company)')
     .eq('id', requestId)

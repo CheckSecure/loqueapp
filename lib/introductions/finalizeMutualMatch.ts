@@ -196,8 +196,10 @@ export async function finalizeMutualMatch(params: {
   }
 
   if (conversationId) {
-    const { data: actingProfileFull } = await supabase.from('profiles').select('*').eq('id', actingUserId).single()
-    const { data: otherProfileFull } = await supabase.from('profiles').select('*').eq('id', otherUserId).single()
+    // A3: read full profiles server-side via service_role (icebreaker generation needs private fields;
+    // base-table SELECT is revoked for the browser/authenticated role). adminClient is already supplied.
+    const { data: actingProfileFull } = await adminClient.from('profiles').select('*').eq('id', actingUserId).single()
+    const { data: otherProfileFull } = await adminClient.from('profiles').select('*').eq('id', otherUserId).single()
 
     const icebreakers = generateIcebreakers({
       userA: actingProfileFull || ({} as any),

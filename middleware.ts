@@ -42,11 +42,9 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email_verified, password_reset_required, profile_complete')
-      .eq('id', user.id)
-      .maybeSingle()
+    // A3: read the caller's OWN gate fields via the self-only RPC (base-table SELECT is revoked).
+    const { data: myRows } = await supabase.rpc('get_my_profile')
+    const profile = Array.isArray(myRows) ? (myRows[0] ?? null) : (myRows ?? null)
 
     // Single source of truth for the reset/onboarding routing decision (unit-tested).
     const dest = dashboardRedirect(profile, request.nextUrl.pathname)

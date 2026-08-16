@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import NetworkList from '@/components/NetworkList'
 import PageHint from '@/components/PageHint'
@@ -12,10 +13,12 @@ export default async function NetworkPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: profileRows } = await supabase
+  // A3: self id resolution via service_role (base-table SELECT revoked; prod preflight reports 0 id/email
+  // mismatches, so the auth user id is authoritative).
+  const { data: profileRows } = await createAdminClient()
     .from('profiles')
     .select('id')
-    .or(`id.eq.${user.id},email.eq.${user.email}`)
+    .eq('id', user.id)
     .limit(1)
 
   const profileId = profileRows?.[0]?.id ?? user.id
@@ -73,16 +76,17 @@ export default async function NetworkPage() {
   // Fetch matched-user profiles and own profile in parallel
   let profileMap: Record<string, any> = {}
   const [{ data: matchedProfiles }, { data: selfProfile }] = await Promise.all([
+    // A3: connections (the viewer's matched counterparts — authorized) and the viewer's own profile are
+    // read server-side via service_role (base-table SELECT revoked). These need internal fields the
+    // member-facing view excludes (account_status for the deactivated badge, linkedin_url); the read is
+    // authorized by the match relationship. company_rel embed stays (companies is a public directory).
     matchedUserIds.length > 0
-      ? supabase
+      ? createAdminClient()
           .from('profiles')
-          // company_id + canonical company joined in the SAME query (companies is
-          // authenticated-readable) so the EXPANDED connection detail can show the
-          // company logo. No N+1. Null when company_id is absent → free-text.
           .select('id, full_name, title, company, company_id, location, city, state, bio, role_type, seniority, avatar_url, purposes, intro_preferences, interests, expertise, open_to_mentorship, open_to_business_solutions, linkedin_url, account_status, company_rel:companies!company_id(id, name, slug, logo_url)')
           .in('id', matchedUserIds)
       : Promise.resolve({ data: [] as any[], error: null }),
-    supabase
+    createAdminClient()
       .from('profiles')
       .select('id, full_name, title, company, bio, seniority, role_type, purposes, intro_preferences, interests, expertise, open_to_mentorship')
       .eq('id', profileId)

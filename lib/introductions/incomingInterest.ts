@@ -89,14 +89,23 @@ const REQUESTER_COLS =
 export async function fetchActionableIncomingInterest(
   db: any,
   viewerId: string,
+  opts: { viaServiceRole?: boolean } = {},
 ): Promise<IncomingInterestItem[]> {
+  // A3: choose the profile-read source by caller context. An AUTHENTICATED (user-session) caller reads
+  // the discovery-scoped `public_profiles` view (base-table SELECT is revoked). A SERVICE-ROLE caller
+  // (cron / accept-incoming) has NO auth.uid(), so the view would return nothing — it reads base
+  // `profiles` directly (service_role retains SELECT and is authorized server-side).
+  const profileSource = opts.viaServiceRole ? 'profiles' : 'public_profiles'
   // 1. Candidate rows: member-initiated interest expressed AT the viewer. RECIPROCAL pairs
   //    (pair_id set) are EXCLUDED at the query so one member's interest never reaches the other
   //    through this surface — reciprocal pairs finalize only via each member's own card.
+  // A3: the requester profile is no longer embedded via profiles!requester_id (authenticated
+  // SELECT on public.profiles is revoked). Fetch the base intro_requests rows, then join the
+  // safe requester fields (REQUESTER_COLS ⊆ public_profiles) back in below.
   const { data: rows } = await db
     .from('intro_requests')
     .select(
-      `id, requester_id, target_user_id, status, created_at, is_admin_initiated, pair_id, match_reason, requester:profiles!requester_id(${REQUESTER_COLS})`,
+      `id, requester_id, target_user_id, status, created_at, is_admin_initiated, pair_id, match_reason`,
     )
     .eq('target_user_id', viewerId)
     .eq('is_admin_initiated', false)
@@ -108,6 +117,10 @@ export async function fetchActionableIncomingInterest(
   if (candidates.length === 0) return []
 
   const requesterIds = Array.from(new Set(candidates.map((r) => r.requester_id)))
+  // Requester profiles (safe REQUESTER_COLS only), keyed by id, from the context-appropriate source.
+  const { data: rpRows } = await db.from(profileSource).select(REQUESTER_COLS).in('id', requesterIds)
+  const requesterProfiles = new Map<string, any>()
+  for (const p of (rpRows ?? []) as any[]) if (p?.id) requesterProfiles.set(p.id, p)
 
   // 2. Existing matches between the viewer and any candidate expresser (either
   //    direction) — a matched pair has nothing to respond to.
@@ -121,9 +134,10 @@ export async function fetchActionableIncomingInterest(
     if (m.user_b_id === viewerId) matchedWithViewer.add(m.user_a_id)
   }
 
-  // 3. Viewer's own company, for the same-company gate.
+  // 3. Viewer's own company, for the same-company gate. Same context-appropriate source (self is
+  //    discoverable to itself via can_discover_profile in the view; service-role reads base directly).
   const { data: viewerRow } = await db
-    .from('profiles')
+    .from(profileSource)
     .select('company')
     .eq('id', viewerId)
     .maybeSingle()
@@ -135,8 +149,24 @@ export async function fetchActionableIncomingInterest(
   const items: IncomingInterestItem[] = []
   for (const r of candidates) {
     if (seen.has(r.requester_id)) continue
-    const requester = r.requester as IncomingInterestRequesterProfile | null
-    if (!requester) continue
+    const p = requesterProfiles.get(r.requester_id)
+    if (!p) continue // not discoverable / absent — same as a missing embed (skipped)
+    // Attach exactly the REQUESTER_COLS fields so the returned shape is identical to the old embed.
+    const requester: IncomingInterestRequesterProfile = {
+      id: p.id,
+      full_name: p.full_name,
+      title: p.title,
+      exact_job_title: p.exact_job_title,
+      company: p.company,
+      location: p.location,
+      bio: p.bio,
+      avatar_url: p.avatar_url,
+      seniority: p.seniority,
+      role_type: p.role_type,
+      expertise: p.expertise,
+      interests: p.interests,
+      account_status: p.account_status,
+    }
     const actionable = isActionableIncoming({
       status: r.status,
       isAdminInitiated: r.is_admin_initiated === true,
@@ -156,6 +186,5 @@ export async function fetchActionableIncomingInterest(
       requester,
     })
   }
-  void requesterIds // referenced for clarity; matches fetch is viewer-scoped
   return items
 }

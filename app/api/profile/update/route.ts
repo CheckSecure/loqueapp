@@ -39,7 +39,8 @@ export async function POST(req: NextRequest) {
     const companySubmitted = 'company' in built.payload
     let priorCompany: string | null = null
     if (companySubmitted) {
-      const { data: prior } = await supabase.from('profiles').select('company').eq('id', user.id).maybeSingle()
+      // A3: self read via service_role, scoped to the caller's own id (base-table SELECT revoked).
+      const { data: prior } = await createAdminClient().from('profiles').select('company').eq('id', user.id).maybeSingle()
       priorCompany = (prior?.company as string | null) ?? null
     }
 

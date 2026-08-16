@@ -51,6 +51,9 @@ describe('isActionableIncoming — the shared definition', () => {
 })
 
 // ── DB fetch: exclusions, dedupe, and the "no reciprocal card" (33-case) proof ─
+// A3: incomingInterest now reads the requester profiles separately from the discovery-scoped profile
+// source (`.in()` → array) and the viewer's own company (`.eq().maybeSingle()` → single). This mock is
+// terminator-aware for that source: provide `requesterProfiles` (array) + `viewerCompany` (string).
 function fakeDb(tables: Record<string, any>) {
   const builder = (result: any): any => {
     const p: any = {
@@ -60,7 +63,21 @@ function fakeDb(tables: Record<string, any>) {
     }
     return p
   }
-  return { from: (t: string) => builder(tables[t] ?? { data: null }) }
+  const profileSourceBuilder = (): any => {
+    let usedIn = false
+    const p: any = {
+      select: () => p, eq: () => p,
+      in: () => { usedIn = true; return p },
+      maybeSingle: () => Promise.resolve({ data: { company: tables.viewerCompany ?? null } }),
+      then: (res: any, rej: any) =>
+        Promise.resolve({ data: usedIn ? (tables.requesterProfiles ?? []) : [] }).then(res, rej),
+    }
+    return p
+  }
+  return {
+    from: (t: string) =>
+      (t === 'public_profiles' || t === 'profiles') ? profileSourceBuilder() : builder(tables[t] ?? { data: null }),
+  }
 }
 
 const requester = (id: string, over: any = {}) => ({
@@ -76,10 +93,11 @@ describe('fetchActionableIncomingInterest — surface source of truth', () => {
     // reciprocal card still get an actionable item.
     const db = fakeDb({
       intro_requests: { data: [
-        { id: 'ir1', requester_id: 'A', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-30T00:00:00Z', match_reason: 'why', requester: requester('A', { company: 'Acme' }) },
+        { id: 'ir1', requester_id: 'A', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-30T00:00:00Z', match_reason: 'why' },
       ] },
       matches: { data: [] },
-      profiles: { data: { company: 'Globex' } }, // viewer company (cross-company)
+      requesterProfiles: [requester('A', { company: 'Acme' })],
+      viewerCompany: 'Globex', // cross-company
     })
     const items = await fetchActionableIncomingInterest(db, 'V')
     expect(items).toHaveLength(1)
@@ -90,13 +108,19 @@ describe('fetchActionableIncomingInterest — surface source of truth', () => {
   it('excludes matched, same-company, and deactivated-expresser rows', async () => {
     const db = fakeDb({
       intro_requests: { data: [
-        { id: 'm1', requester_id: 'MATCHED', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-30T00:00:00Z', match_reason: null, requester: requester('MATCHED', { company: 'Globex' }) },
-        { id: 's1', requester_id: 'SAMECO', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-30T00:00:00Z', match_reason: null, requester: requester('SAMECO', { company: 'Acme' }) },
-        { id: 'd1', requester_id: 'GONE', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-30T00:00:00Z', match_reason: null, requester: requester('GONE', { company: 'Globex', account_status: 'deactivated' }) },
-        { id: 'ok', requester_id: 'GOOD', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-30T00:00:00Z', match_reason: null, requester: requester('GOOD', { company: 'Initech' }) },
+        { id: 'm1', requester_id: 'MATCHED', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-30T00:00:00Z', match_reason: null },
+        { id: 's1', requester_id: 'SAMECO', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-30T00:00:00Z', match_reason: null },
+        { id: 'd1', requester_id: 'GONE', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-30T00:00:00Z', match_reason: null },
+        { id: 'ok', requester_id: 'GOOD', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-30T00:00:00Z', match_reason: null },
       ] },
       matches: { data: [{ user_a_id: 'V', user_b_id: 'MATCHED' }] },
-      profiles: { data: { company: 'Acme' } }, // viewer at Acme → SAMECO excluded
+      requesterProfiles: [
+        requester('MATCHED', { company: 'Globex' }),
+        requester('SAMECO', { company: 'Acme' }),
+        requester('GONE', { company: 'Globex', account_status: 'deactivated' }),
+        requester('GOOD', { company: 'Initech' }),
+      ],
+      viewerCompany: 'Acme', // viewer at Acme → SAMECO excluded
     })
     const items = await fetchActionableIncomingInterest(db, 'V')
     expect(items.map((i) => i.requesterId)).toEqual(['GOOD'])
@@ -105,11 +129,12 @@ describe('fetchActionableIncomingInterest — surface source of truth', () => {
   it('de-dupes multiple approved rows from the same expresser into one card', async () => {
     const db = fakeDb({
       intro_requests: { data: [
-        { id: 'newer', requester_id: 'A', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-31T00:00:00Z', match_reason: null, requester: requester('A', { company: 'Globex' }) },
-        { id: 'older', requester_id: 'A', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-01T00:00:00Z', match_reason: null, requester: requester('A', { company: 'Globex' }) },
+        { id: 'newer', requester_id: 'A', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-31T00:00:00Z', match_reason: null },
+        { id: 'older', requester_id: 'A', target_user_id: 'V', status: 'approved', is_admin_initiated: false, created_at: '2026-07-01T00:00:00Z', match_reason: null },
       ] },
       matches: { data: [] },
-      profiles: { data: { company: 'Acme' } },
+      requesterProfiles: [requester('A', { company: 'Globex' })],
+      viewerCompany: 'Acme',
     })
     const items = await fetchActionableIncomingInterest(db, 'V')
     expect(items).toHaveLength(1)
