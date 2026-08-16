@@ -57,10 +57,27 @@ export function isEligibleForMatching(f: MatchingEligibilityFacts): boolean {
   )
 }
 
+/**
+ * Whether a member may VIEW the read-only Thursday schedule banner. This is DELIBERATELY separate
+ * from isEligibleForMatching (matching eligibility) and must never be read as "eligible for matching":
+ *  - Ordinary members: identical to matching eligibility (active + complete + not test + not paused).
+ *  - Admins (is_admin === true): may see the banner as a read-only schedule preview EVEN IF flagged as
+ *    a test account — but only when active + complete + not matching-paused. An admin is still NOT
+ *    matching-eligible (isEligibleForMatching stays false for them) and only ever sees the neutral
+ *    schedule state (the caller passes scheduleOnly: true so they never get "New introductions are
+ *    here" and are never queried against a candidate pool).
+ */
+export function canViewThursdayBanner(f: MatchingEligibilityFacts): boolean {
+  if (f.isAdmin === true) {
+    return f.accountStatus === 'active' && f.profileComplete === true && f.matchingPaused !== true
+  }
+  return isEligibleForMatching(f)
+}
+
 export interface ResolveThursdayBannerInput {
   now: Date
-  /** Server-decided (isEligibleForMatching). */
-  eligible: boolean
+  /** Server-decided banner VISIBILITY (canViewThursdayBanner) — NOT matching eligibility. */
+  canView: boolean
   /**
    * Did the member get a newly-created ACTIVE suggestion in the current cycle?
    *   true  → a suggestion created at/after this cycle's window exists (server-proven, durable)
@@ -70,6 +87,12 @@ export interface ResolveThursdayBannerInput {
    * the neutral Thursday countdown — absence is never treated as a completed-run negative outcome.
    */
   receivedThisCycle: boolean | null
+  /**
+   * Schedule-only view: always render the neutral "before" countdown and NEVER "New introductions are
+   * here", regardless of receivedThisCycle. Used for admins, who may preview the schedule but are not
+   * matching-eligible and must never see an after_received state from their own suggestions.
+   */
+  scheduleOnly?: boolean
 }
 
 const COPY = {
@@ -87,14 +110,15 @@ const COPY = {
  * Resolve the banner view, or null when the banner must be hidden entirely (ineligible member).
  */
 export function resolveThursdayBanner(input: ResolveThursdayBannerInput): ThursdayBannerView | null {
-  if (!input.eligible) return null
+  if (!input.canView) return null
 
   const target = nextBatch(input.now)
   const targetIso = target.toISOString()
 
-  // Only a PROVEN new active suggestion upgrades the banner. Everything else (false or null) shows
-  // the neutral Thursday countdown — never a "still looking" negative.
-  if (input.receivedThisCycle === true) {
+  // Only a PROVEN new active suggestion upgrades the banner, and never in a schedule-only (admin)
+  // view. Everything else (false or null, or scheduleOnly) shows the neutral Thursday countdown —
+  // never a "still looking" negative.
+  if (!input.scheduleOnly && input.receivedThisCycle === true) {
     return {
       kind: 'after_received', ...COPY.received,
       targetIso, showCountdown: false, initialCountdownText: '',

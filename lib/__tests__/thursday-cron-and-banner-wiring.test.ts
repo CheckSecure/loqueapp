@@ -87,18 +87,27 @@ describe('ThursdayCountdownBanner — client-side countdown, NEVER polls the dat
   })
 })
 
-describe('introductions page — server-gated banner incl. admin, privacy-preserving props', () => {
-  it('reads all eligibility columns server-side, including is_admin', () => {
+describe('introductions page — server-gated banner, admin schedule-only, privacy-preserving props', () => {
+  it('reads all visibility columns server-side, including is_admin', () => {
     for (const col of ['account_status', 'profile_complete', 'is_test_account', 'matching_paused', 'is_admin']) {
       expect(PAGE).toMatch(new RegExp(col))
     }
     expect(PAGE).toMatch(/isAdmin:\s*\(profileRow as any\)\?\.is_admin/)
   })
-  it('decides eligibility server-side and only renders a resolved banner', () => {
-    expect(PAGE).toMatch(/isEligibleForMatching\(/)
+  it('gates visibility on canViewThursdayBanner (NOT isEligibleForMatching) and renders only a resolved banner', () => {
+    expect(PAGE).toMatch(/canViewThursdayBanner\(bannerFacts\)/)
+    expect(PAGE).not.toMatch(/isEligibleForMatching\(/) // matching-eligibility helper is not reused for visibility
     expect(PAGE).toMatch(/thursdayBanner &&/)
   })
-  it('reads evidence via service_role and treats a query error as null (→ neutral before, never false negative)', () => {
+  it('admins get a schedule-only view — no suggestion query, forced neutral (scheduleOnly: true)', () => {
+    expect(PAGE).toMatch(/isAdminViewer/)
+    expect(PAGE).toMatch(/scheduleOnly: true/)
+    // the admin branch must NOT run the intro_requests evidence query
+    const adminBranch = (PAGE.match(/if \(isAdminViewer\) \{[\s\S]*?\} else \{/) || [''])[0]
+    expect(adminBranch).toBeTruthy()
+    expect(adminBranch).not.toMatch(/from\('intro_requests'\)/)
+  })
+  it('ordinary members: reads evidence via service_role, query error → null (neutral, never false negative)', () => {
     expect(PAGE).toMatch(/receivedThisCycle = evErr \? null :/)
     expect(PAGE).toMatch(/createAdminClient\(\)\s*\n\s*\.from\('intro_requests'\)/)
   })
@@ -107,5 +116,15 @@ describe('introductions page — server-gated banner incl. admin, privacy-preser
     expect(propBlock).toBeTruthy()
     expect(propBlock).toMatch(/kind=\{thursdayBanner\.kind\}/)
     expect(propBlock).not.toMatch(/score|reason|pair|created_at|target_user|requester/i)
+  })
+})
+
+describe('introductions page — empty-state copy makes no notification promise', () => {
+  it('the "notify you when a strong match is ready" promise is gone', () => {
+    expect(PAGE).not.toMatch(/notify you when a strong match/i)
+    expect(PAGE).not.toMatch(/notify you/i)
+  })
+  it('uses the neutral Thursday check-back copy instead', () => {
+    expect(PAGE).toMatch(/Check back Thursday for the next curated introduction batch\./)
   })
 })

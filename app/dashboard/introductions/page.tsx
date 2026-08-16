@@ -14,7 +14,7 @@ import RequestIntroButton from '@/components/RequestIntroButton'
 import { buildIntroSections } from '@/lib/introductions/andrelSection'
 import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
 import ThursdayCountdownBanner from '@/components/ThursdayCountdownBanner'
-import { resolveThursdayBanner, isEligibleForMatching, type ThursdayBannerView } from '@/lib/introductions/thursdayBanner'
+import { resolveThursdayBanner, canViewThursdayBanner, type ThursdayBannerView } from '@/lib/introductions/thursdayBanner'
 import { currentCycleBatch } from '@/lib/introductions/thursdaySchedule'
 import ImproveRecommendationsCard from '@/components/ImproveRecommendationsCard'
 import IncomingInterestCard from '@/components/IncomingInterestCard'
@@ -736,39 +736,48 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   const oppCount = (oppCandidateRows ?? []).length
 
   // ── Weekly Thursday introduction countdown ──────────────────────────────────────────────────
-  // Eligibility is decided SERVER-SIDE and mirrors the real matching gate (active + complete +
-  // not test + not matching-paused); ineligible members get no banner. Only a state kind, two copy
-  // strings, and an absolute target instant ever reach the browser — never IDs/scores/reasons.
+  // Banner VISIBILITY (canViewThursdayBanner) is decided SERVER-SIDE and is deliberately SEPARATE
+  // from matching eligibility (isEligibleForMatching). Ordinary members must be matching-eligible;
+  // admins may see a READ-ONLY schedule preview (even if flagged as a test account) when active +
+  // complete + not matching-paused, but are NEVER matching-eligible and only ever see the neutral
+  // schedule state. Only a state kind, copy strings, and an absolute target instant reach the browser.
   const bannerNow = new Date()
-  const eligibleForCountdown = isEligibleForMatching({
+  const bannerFacts = {
     accountStatus: (profileRow as any)?.account_status,
     profileComplete: (profileRow as any)?.profile_complete,
     isTestAccount: (profileRow as any)?.is_test_account,
     matchingPaused: (profileRow as any)?.matching_paused,
     isAdmin: (profileRow as any)?.is_admin,
-  })
+  }
+  const isAdminViewer = (profileRow as any)?.is_admin === true
   let thursdayBanner: ThursdayBannerView | null = null
-  if (eligibleForCountdown) {
-    // Durable "new suggestion arrived" evidence: does an ACTIVE suggestion created at/after THIS
-    // cycle's Thursday window exist? Read authoritatively via service_role (independent of RLS). Only
-    // a proven TRUE upgrades the banner to "New introductions are here"; false OR a query ERROR (null)
-    // both fall back to the neutral Thursday countdown — never a false "new introductions" and never a
-    // "still looking" negative (absence of a card is not proof the run completed). Boolean/null only.
-    let receivedThisCycle: boolean | null = null
-    try {
-      const cycleStartIso = currentCycleBatch(bannerNow).toISOString()
-      const { data: cycleSuggested, error: evErr } = await createAdminClient()
-        .from('intro_requests')
-        .select('id')
-        .eq('requester_id', profileId)
-        .eq('status', 'suggested')
-        .gte('created_at', cycleStartIso)
-        .limit(1)
-      receivedThisCycle = evErr ? null : (cycleSuggested?.length ?? 0) > 0
-    } catch {
-      receivedThisCycle = null
+  if (canViewThursdayBanner(bannerFacts)) {
+    if (isAdminViewer) {
+      // Admin: read-only schedule preview. Do NOT query admin suggestions (admins are excluded from
+      // candidate pools) and force the neutral schedule state — never "New introductions are here".
+      thursdayBanner = resolveThursdayBanner({ now: bannerNow, canView: true, receivedThisCycle: false, scheduleOnly: true })
+    } else {
+      // Durable "new suggestion arrived" evidence: does an ACTIVE suggestion created at/after THIS
+      // cycle's Thursday window exist? Read authoritatively via service_role (independent of RLS).
+      // Only a proven TRUE upgrades the banner to "New introductions are here"; false OR a query ERROR
+      // (null) both fall back to the neutral Thursday countdown — never a false "new introductions" and
+      // never a "still looking" negative (absence of a card is not proof the run completed).
+      let receivedThisCycle: boolean | null = null
+      try {
+        const cycleStartIso = currentCycleBatch(bannerNow).toISOString()
+        const { data: cycleSuggested, error: evErr } = await createAdminClient()
+          .from('intro_requests')
+          .select('id')
+          .eq('requester_id', profileId)
+          .eq('status', 'suggested')
+          .gte('created_at', cycleStartIso)
+          .limit(1)
+        receivedThisCycle = evErr ? null : (cycleSuggested?.length ?? 0) > 0
+      } catch {
+        receivedThisCycle = null
+      }
+      thursdayBanner = resolveThursdayBanner({ now: bannerNow, canView: true, receivedThisCycle, scheduleOnly: false })
     }
-    thursdayBanner = resolveThursdayBanner({ now: bannerNow, eligible: true, receivedThisCycle })
   }
 
   return (
@@ -942,7 +951,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                     <p className="text-[11px] uppercase tracking-[0.15em] text-brand-gold font-semibold mb-1.5">Curating</p>
                     <h2 className="text-lg sm:text-xl font-bold text-brand-navy tracking-tight leading-tight">Your next introduction is being curated</h2>
                     <p className="text-sm text-slate-600 mt-2 leading-relaxed max-w-xl">
-                      We&rsquo;ll notify you when a strong match is ready.
+                      Check back Thursday for the next curated introduction batch.
                     </p>
                   </div>
                 </div>

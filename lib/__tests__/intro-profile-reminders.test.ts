@@ -114,9 +114,10 @@ describe('Introductions page + card structure', () => {
     expect(page).not.toContain('perRecipientIntroLimit')
   })
 
-  it('empty state is neutral with NO duplicate "Complete your profile" CTA', () => {
+  it('empty state is neutral with NO duplicate "Complete your profile" CTA and no notification promise', () => {
     expect(page).toContain('Your next introduction is being curated')
-    expect(page).toContain('We&rsquo;ll notify you when a strong match is ready.')
+    expect(page).toContain('Check back Thursday for the next curated introduction batch.')
+    expect(page).not.toContain('notify you') // no notification promise
     expect(page).not.toContain('Complete your profile')
   })
 
