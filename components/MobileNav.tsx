@@ -18,7 +18,7 @@ const bottomNavItems = [
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
 ]
 
-export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0, opportunityBadgeCount = 0, adminBadgeCount = 0 }: { credits: number; unreadCount?: number; meetingNotifCount?: number; opportunityBadgeCount?: number; adminBadgeCount?: number }) {
+export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0, opportunityBadgeCount = 0, adminBadgeCount = 0 }: { credits: number | null; unreadCount?: number; meetingNotifCount?: number; opportunityBadgeCount?: number; adminBadgeCount?: number }) {
   const pathname = usePathname()
   const router = useRouter()
   const [showMore, setShowMore] = useState(false)
@@ -38,9 +38,11 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
     router.refresh()
   }
 
-  // Compact credit chip styling
+  // Compact credit chip styling. null = balance failed to load (NOT zero) → neutral placeholder.
   const creditStyle =
-    credits === 0
+    credits === null
+      ? 'bg-slate-50 text-slate-400 border-slate-200'
+      : credits === 0
       ? 'bg-red-50 text-red-600 border-red-200'
       : credits < 5
       ? 'bg-amber-50 text-amber-600 border-amber-200'
@@ -61,7 +63,7 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
               creditStyle
             )}
           >
-            ✦ {credits}
+            {credits === null ? '✦ —' : `✦ ${credits}`}
           </Link>
           
           <NotificationBell />

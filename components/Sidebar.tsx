@@ -27,7 +27,7 @@ interface SidebarProps {
   initials: string
   avatarColor: string
   avatarUrl?: string | null
-  credits: number
+  credits: number | null
   unreadCount: number
   networkNotifCount: number
   meetingNotifCount: number
@@ -35,16 +35,21 @@ interface SidebarProps {
   adminBadgeCount: number
 }
 
-function CreditsChip({ credits }: { credits: number }) {
+function CreditsChip({ credits }: { credits: number | null }) {
+  // null = the balance failed to load (NOT zero). Never render "No credits remaining" for a load error.
   const chipStyle =
-    credits === 0
+    credits === null
+      ? 'text-slate-400'
+      : credits === 0
       ? 'text-red-300'
       : credits < 5
       ? 'text-amber-300'
       : 'text-brand-gold'
 
   const label =
-    credits === 0
+    credits === null
+      ? 'Credits unavailable'
+      : credits === 0
       ? 'No credits remaining'
       : `✦ ${credits} credit${credits === 1 ? '' : 's'}`
 

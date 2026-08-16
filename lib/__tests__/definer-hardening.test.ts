@@ -54,11 +54,21 @@ describe('059 — exact privilege matrix (explicit, not relying on existing ACLs
   it('delete_user_account: GRANT EXECUTE to authenticated + service_role', () => {
     expect(sqlOnly).toMatch(/GRANT EXECUTE ON FUNCTION public\.delete_user_account\(\) TO authenticated, service_role/)
   })
-  it('is_admin / sync_email_verification: GRANT EXECUTE to service_role ONLY (no authenticated)', () => {
-    for (const fn of ['is_admin', 'sync_email_verification']) {
+  it('sync_email_verification: GRANT EXECUTE to service_role ONLY (no authenticated)', () => {
+    // NOTE: is_admin is intentionally NOT in this loop. Within the 059 FILE it is (correctly) revoked
+    // from authenticated, but that was the migration-059 INCIDENT: production RLS policies on core
+    // member tables call public.is_admin() and are evaluated as the authenticated role, so authenticated
+    // MUST retain EXECUTE. Migration 060 restores that grant (the final chain). The 059 file itself is
+    // immutable; the authenticated-can-execute-is_admin assertions live in migration-060.test.ts.
+    for (const fn of ['sync_email_verification']) {
       expect(sqlOnly).toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\(\\) TO service_role`))
       expect(sqlOnly).not.toMatch(new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\(\\) TO[^;]*authenticated`))
     }
+  })
+  it('059 FILE (intermediate/incident state) still revokes authenticated on is_admin — corrected by 060', () => {
+    // Documents that the bug lives in 059 and is fixed forward, NOT by editing the immutable 059 file.
+    expect(sqlOnly).toMatch(/REVOKE ALL ON FUNCTION public\.is_admin\(\) FROM PUBLIC, anon, authenticated/)
+    expect(sqlOnly).not.toMatch(/GRANT EXECUTE ON FUNCTION public\.is_admin\(\) TO[^;]*authenticated/)
   })
 })
 

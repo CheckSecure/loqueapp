@@ -49,7 +49,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const [
     { data: profile },
     acceptance,
-    { data: creditRow },
+    { data: creditRow, error: creditError },
     unreadCount,
     networkNotifCount,
     meetingNotifCount,
@@ -205,7 +205,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const initials = displayName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
   const avatarColor = pickColor(user.id)
   const avatarUrl: string | null = (profile as any)?.avatar_url ?? null
-  const credits: number = creditRow?.balance ?? 0
+  // A FAILED credits read is NOT a zero balance. meeting_credits RLS calls is_admin(); when that
+  // helper was unexecutable (migration-059 incident) this read errored and `?? 0` rendered "No credits
+  // remaining" as if authoritative. null = load failed (nav renders an unavailable state, never 0);
+  // a genuinely-missing row (PGRST116) is a real 0. Any other error → null.
+  const credits: number | null =
+    creditError && (creditError as any).code !== 'PGRST116'
+      ? null
+      : (creditRow?.balance ?? 0)
+  if (creditError && (creditError as any).code !== 'PGRST116') {
+    console.error('[layout] credits read failed', { uid: user.id, code: (creditError as any).code, msg: (creditError as any).message })
+  }
 
   // Throttled activity tracking — at most one write per 5 minutes per user. Writes go to
   // the PRIVATE member_presence table (self-only RLS), NOT profiles, so an opted-out

@@ -25,7 +25,7 @@ export default async function NetworkPage() {
 
   // Fetch matches, blocks, and notifications in parallel
   const [
-    { data: rawMatches },
+    { data: rawMatches, error: matchesError },
     { data: blocks },
     { data: unreadNotifs },
   ] = await Promise.all([
@@ -44,6 +44,24 @@ export default async function NetworkPage() {
       .in('type', ['intro_accepted', 'new_connection'])
       .is('read_at', null),
   ])
+
+  // A FAILED query is NOT an empty network. If the matches read errored (e.g. an RLS policy helper
+  // like is_admin() was unexecutable — the migration-059 incident), surface a retryable error state
+  // instead of silently rendering "No connections yet".
+  if (matchesError) {
+    console.error('[network] matches read failed', { code: (matchesError as any).code, msg: (matchesError as any).message })
+    return (
+      <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
+        <div className="max-w-content-narrow mx-auto w-full">
+          <h1 className="text-2xl font-bold text-slate-900 mb-6">Network</h1>
+          <div className="bg-white border border-red-200/70 rounded-2xl p-14 text-center shadow-sm">
+            <p className="text-slate-900 font-semibold mb-1.5">We couldn&apos;t load your network</p>
+            <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">Something went wrong loading your connections. Please refresh the page — your data is safe.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // Filter out removed matches from network view
   const activeMatches = (rawMatches || []).filter((m: any) => m.status !== 'removed')

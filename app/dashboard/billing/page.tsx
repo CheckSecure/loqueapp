@@ -95,6 +95,10 @@ function BillingInner() {
   const [isFoundingMember, setIsFoundingMember] = useState(false)
   const [foundingExpiresAt, setFoundingExpiresAt] = useState<string | null>(null)
   const [credits, setCredits] = useState(0)
+  // A failed credits read is NOT a zero balance. Track load failure separately so the UI never
+  // renders "0 credits" for a query error (migration-059 incident: meeting_credits RLS calls
+  // is_admin(); when that helper lost EXECUTE the read errored and 0 was shown as if authoritative).
+  const [creditsError, setCreditsError] = useState(false)
   const [periodEnd, setPeriodEnd] = useState<string | null>(null)
   const [annual, setAnnual] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -112,7 +116,7 @@ function BillingInner() {
       if (!user) return
       // A3: billing/tier fields are PRIVATE self fields — read the caller's own row via get_my_profile()
       // (browser SELECT on the base profiles table is revoked).
-      const [{ data: myRows }, { data: creditRow }] = await Promise.all([
+      const [{ data: myRows }, { data: creditRow, error: creditError }] = await Promise.all([
         supabase.rpc('get_my_profile'),
         supabase.from('meeting_credits').select('balance').eq('user_id', user.id).single(),
       ])
@@ -121,7 +125,15 @@ function BillingInner() {
       setEffectiveTier(profile ? getEffectiveTier(profile) : 'free')
       setIsFoundingMember(Boolean(profile?.is_founding_member))
       setFoundingExpiresAt(profile?.founding_member_expires_at ?? null)
-      setCredits(creditRow?.balance ?? 0)
+      // A missing row (no credits record) is a legitimate 0 (PGRST116 = no rows from .single()).
+      // Any OTHER error is a query failure — surface it instead of silently rendering 0.
+      if (creditError && (creditError as any).code !== 'PGRST116') {
+        console.error('[billing] credits read failed', { code: (creditError as any).code, msg: (creditError as any).message })
+        setCreditsError(true)
+      } else {
+        setCreditsError(false)
+        setCredits(creditRow?.balance ?? 0)
+      }
       if (profile?.current_period_end) {
         setPeriodEnd(new Date(profile.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }))
       }
@@ -238,7 +250,11 @@ function BillingInner() {
                   ))}
                 </ul>
               )}
-              <p className="text-xs text-slate-400 mt-2">{credits} credit{credits !== 1 ? 's' : ''} remaining</p>
+              {creditsError ? (
+                <p className="text-xs text-red-600 mt-2">Balance unavailable — please refresh</p>
+              ) : (
+                <p className="text-xs text-slate-400 mt-2">{credits} credit{credits !== 1 ? 's' : ''} remaining</p>
+              )}
               {/* Paid Stripe subscribers only — founding members and free users have no
                   Stripe subscription to manage, so no cancellation copy is shown to them. */}
               {!isFoundingMember && currentTier !== 'free' && (
@@ -345,9 +361,15 @@ function BillingInner() {
           highlightCredits ? 'border-brand-gold ring-2 ring-brand-gold/40' : 'border-slate-100'
         )}>
           <p className="text-[10px] uppercase tracking-[0.18em] text-brand-gold font-bold">Your balance</p>
-          <p className="mt-1.5 text-3xl font-bold text-brand-navy tracking-tight">
-            {credits} <span className="text-base font-semibold text-slate-400">credit{credits !== 1 ? 's' : ''}</span>
-          </p>
+          {creditsError ? (
+            <p className="mt-1.5 text-lg font-semibold text-red-600">
+              Couldn&apos;t load your balance — please refresh.
+            </p>
+          ) : (
+            <p className="mt-1.5 text-3xl font-bold text-brand-navy tracking-tight">
+              {credits} <span className="text-base font-semibold text-slate-400">credit{credits !== 1 ? 's' : ''}</span>
+            </p>
+          )}
 
           {/* Membership summary — allowance & cap from lib/tier-override.ts */}
           <div className="mt-4 rounded-xl bg-brand-cream/40 border border-brand-gold/15 p-3.5 sm:p-4">
