@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/weekly-refresh",
-      "schedule": "0 9 * * 1"
+      "schedule": "0 14 * * 4"
     },
     {
       "path": "/api/cron/opportunities-maintain",

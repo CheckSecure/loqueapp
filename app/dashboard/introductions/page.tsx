@@ -13,6 +13,9 @@ import HideSuggestionButton from '@/components/HideSuggestionButton'
 import RequestIntroButton from '@/components/RequestIntroButton'
 import { buildIntroSections } from '@/lib/introductions/andrelSection'
 import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
+import ThursdayCountdownBanner from '@/components/ThursdayCountdownBanner'
+import { resolveThursdayBanner, isEligibleForMatching, type ThursdayBannerView } from '@/lib/introductions/thursdayBanner'
+import { currentCycleBatch } from '@/lib/introductions/thursdaySchedule'
 import ImproveRecommendationsCard from '@/components/ImproveRecommendationsCard'
 import IncomingInterestCard from '@/components/IncomingInterestCard'
 import PageHint from '@/components/PageHint'
@@ -97,7 +100,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // in the minimal browser self RPC.
   const { data: myProfileRows } = await createAdminClient()
     .from('profiles')
-    .select('id, full_name, subscription_tier, is_founding_member, founding_member_expires_at, expertise, interests, intro_preferences, purposes, intro_profile_prompt_dismissed_at, created_at')
+    .select('id, full_name, subscription_tier, is_founding_member, founding_member_expires_at, expertise, interests, intro_preferences, purposes, intro_profile_prompt_dismissed_at, created_at, account_status, profile_complete, is_test_account, matching_paused, is_admin')
     .eq('id', user.id)
     .limit(1)
   const profileRow = (Array.isArray(myProfileRows) ? myProfileRows[0] : myProfileRows) ?? null
@@ -732,6 +735,42 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // Opportunity panel — receiver side. Empty state = "Opportunity Concierge".
   const oppCount = (oppCandidateRows ?? []).length
 
+  // ── Weekly Thursday introduction countdown ──────────────────────────────────────────────────
+  // Eligibility is decided SERVER-SIDE and mirrors the real matching gate (active + complete +
+  // not test + not matching-paused); ineligible members get no banner. Only a state kind, two copy
+  // strings, and an absolute target instant ever reach the browser — never IDs/scores/reasons.
+  const bannerNow = new Date()
+  const eligibleForCountdown = isEligibleForMatching({
+    accountStatus: (profileRow as any)?.account_status,
+    profileComplete: (profileRow as any)?.profile_complete,
+    isTestAccount: (profileRow as any)?.is_test_account,
+    matchingPaused: (profileRow as any)?.matching_paused,
+    isAdmin: (profileRow as any)?.is_admin,
+  })
+  let thursdayBanner: ThursdayBannerView | null = null
+  if (eligibleForCountdown) {
+    // Durable "new suggestion arrived" evidence: does an ACTIVE suggestion created at/after THIS
+    // cycle's Thursday window exist? Read authoritatively via service_role (independent of RLS). Only
+    // a proven TRUE upgrades the banner to "New introductions are here"; false OR a query ERROR (null)
+    // both fall back to the neutral Thursday countdown — never a false "new introductions" and never a
+    // "still looking" negative (absence of a card is not proof the run completed). Boolean/null only.
+    let receivedThisCycle: boolean | null = null
+    try {
+      const cycleStartIso = currentCycleBatch(bannerNow).toISOString()
+      const { data: cycleSuggested, error: evErr } = await createAdminClient()
+        .from('intro_requests')
+        .select('id')
+        .eq('requester_id', profileId)
+        .eq('status', 'suggested')
+        .gte('created_at', cycleStartIso)
+        .limit(1)
+      receivedThisCycle = evErr ? null : (cycleSuggested?.length ?? 0) > 0
+    } catch {
+      receivedThisCycle = null
+    }
+    thursdayBanner = resolveThursdayBanner({ now: bannerNow, eligible: true, receivedThisCycle })
+  }
+
   return (
     <div className="relative min-h-screen bg-[#FAF6EE] p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
       <div className="relative max-w-content mx-auto">
@@ -742,6 +781,17 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
           <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight leading-[1.1]">Your next valuable relationship</h1>
           <p className="text-slate-600 text-sm sm:text-[15px] mt-2 leading-snug max-w-2xl">High-signal introductions across the Andrel network. We facilitate when interest is mutual.</p>
         </div>
+
+        {thursdayBanner && (
+          <ThursdayCountdownBanner
+            kind={thursdayBanner.kind}
+            title={thursdayBanner.title}
+            subtitle={thursdayBanner.subtitle}
+            targetIso={thursdayBanner.targetIso}
+            showCountdown={thursdayBanner.showCountdown}
+            initialCountdownText={thursdayBanner.initialCountdownText}
+          />
+        )}
 
         <FoundingMemberWelcomeBanner show={showFoundingWelcome} />
 

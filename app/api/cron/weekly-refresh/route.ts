@@ -4,6 +4,7 @@ import { generateReciprocalBatchForMember } from '@/lib/generate-recommendations
 import { expireStaleReciprocalPairs } from '@/lib/matching/createReciprocalSuggestion'
 import { evaluateWeeklyEligibility } from '@/lib/introductions/queue'
 import { notifyPendingIntrosActionNeeded, isoWeekKey } from '@/lib/notifications/engagement'
+import { weeklyRunKey } from '@/lib/introductions/thursdaySchedule'
 import {
   coverageEnabled, coverageEventForOutcome,
   COVERAGE_MEMBER_LIMIT, COVERAGE_DEADLINE_MS, type CoverageEvent,
@@ -37,6 +38,14 @@ export async function GET(req: Request) {
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  // SCHEDULE: this is the SINGLE weekly invocation (vercel.json `0 14 * * 4` — Hobby plan allows one
+  // run per day, invoked anywhere within the 14:00 UTC hour = 09:xx ET under EST / 10:xx ET under
+  // EDT). There is therefore no NY-hour execution guard and no exactly-once claim: correctness rests
+  // on this single invocation plus the existing idempotent generation protections (rotation is
+  // idempotent, generation is gated + guarded, reminders dedupe durably per ISO week). runKey is a
+  // non-authoritative per-week LOG LABEL only — it is not a durable claim/lease.
+  const runKey = weeklyRunKey(new Date())
 
   const adminClient = createAdminClient()
   console.log('[Weekly Generation] Starting weekly recommendation generation...')
@@ -131,7 +140,7 @@ export async function GET(req: Request) {
   }
 
   console.log('[Weekly Generation]', JSON.stringify({
-    event: 'complete', cycleKey,
+    event: 'complete', runKey, cycleKey,
     broadGeneration: WEEKLY_REFRESH_GENERATION ? 'on' : 'off_admin_canonical',
     coverage: coverageOn ? 'on' : 'off',
     coverageStarted, coverageResult: coverage,
