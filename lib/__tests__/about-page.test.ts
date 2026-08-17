@@ -14,14 +14,14 @@ describe('About page — hero + section headings', () => {
   it('has the correct eyebrow, hero heading, and hero body', () => {
     expect(TEXT).toContain('About Andrel')
     expect(TEXT).toContain('A private network built around mutual, curated introductions')
-    expect(TEXT).toContain('Andrel introduces senior legal professionals it believes could benefit from knowing one another.')
+    expect(TEXT).toContain('Andrel introduces senior professionals and executives it believes could benefit from knowing one another.')
     expect(TEXT).toContain('The goal is simple: create a better starting point for professional relationships.')
   })
   it('has all six section headings', () => {
     for (const h of [
       'Why Andrel exists',
       'How it works',
-      'Who is in the network',
+      'Who Andrel is for',
       'What members are expected to do',
       'Why I built Andrel',
       'Build relationships worth maintaining',
@@ -49,10 +49,73 @@ describe('About page — Thursday cadence with NO weekly guarantee', () => {
   })
 })
 
-describe('About page — current network composition (not aspirational)', () => {
-  it('describes the network as it is today', () => {
-    expect(TEXT).toContain('currently centered on senior in-house counsel and law-firm partners')
+describe('About page — cross-functional executive positioning', () => {
+  it('leads with senior professionals and executives, not a legal-only audience', () => {
+    expect(TEXT).toContain('Andrel introduces senior professionals and executives')
+    expect(TEXT).toContain('Andrel is built for senior professionals and executives across')
+    expect(TEXT).toContain('accomplished professionals and executives wanted to expand their networks')
+  })
+
+  it('names leadership across multiple functions, not one profession', () => {
+    for (const fn of [
+      'legal',
+      'government affairs',
+      'business',
+      'finance',
+      'operations',
+      'technology',
+      'entrepreneurship',
+      'organizational leadership',
+    ]) {
+      expect(TEXT).toContain(fn)
+    }
+    expect(TEXT).toContain('accomplished leaders across functions and industries')
+    expect(TEXT).toContain('not a particular profession or title')
+  })
+
+  it('states the legal-leadership origin honestly, as a foundation rather than the definition', () => {
+    expect(TEXT).toContain(
+      'The network began with a strong foundation of senior in-house counsel and law-firm partners and is expanding thoughtfully'
+    )
+    // Every mention of the legal-leadership base must sit inside that origins sentence — never as a
+    // statement of what the network currently is.
+    const legalBaseMentions = (TEXT.match(/in-house counsel|law-firm partners/g) || []).length
+    expect(legalBaseMentions).toBe(2) // both inside the single "began with" sentence
+    expect(TEXT).not.toMatch(/currently centered on senior in-house counsel/i)
+  })
+
+  it('retains the invite-only + selective-admission line', () => {
     expect(TEXT).toContain('Membership is invite-only, and admission remains selective as the network grows.')
+    expect(TEXT).not.toMatch(/(everyone|all applicants|every applicant)[^.]{0,30}(is |are )?(admitted|accepted|approved)/i)
+  })
+
+  it('does NOT claim membership is already evenly distributed across functions', () => {
+    expect(TEXT).not.toMatch(/even(ly)? (distributed|split|balanced|represented)/i)
+    expect(TEXT).not.toMatch(/equal(ly)? (represent|distribut|balanc)/i)
+    expect(TEXT).not.toMatch(/(members|leaders|executives) (from|in|across) (all|every) (function|industry|sector|field)/i)
+    expect(TEXT).not.toMatch(/across all (functions|industries|sectors)/i)
+    expect(TEXT).not.toMatch(/(equal|even) (mix|balance) of/i)
+    // "expanding" must stay forward-looking, never asserted as already complete
+    expect(TEXT).not.toMatch(/(now|already) (a |an )?(fully |truly )?(cross-functional|multi-disciplinary)/i)
+  })
+
+  it('publishes NO composition statistics', () => {
+    expect(TEXT).not.toMatch(/\d+\s*%/)
+    expect(TEXT).not.toMatch(/\bpercent\b/i)
+    expect(TEXT).not.toMatch(/\b(majority|minority|half|two-thirds|a third) of (our |the )?(members|network)/i)
+    expect(TEXT).not.toMatch(/\b\d[\d,]*\+?\s*(members|executives|professionals|leaders|companies|firms)\b/i)
+  })
+
+  it('carries NO legal-only platform positioning anywhere on the page', () => {
+    expect(TEXT).not.toMatch(/senior legal professionals/i)
+    expect(TEXT).not.toMatch(/\b(legal|lawyer|attorney)[- ]only\b/i)
+    expect(TEXT).not.toMatch(/network (of|for) (senior )?(legal professionals|lawyers|attorneys|counsel)/i)
+    expect(TEXT).not.toMatch(/(exclusively|only) for (lawyers|attorneys|legal|in-house counsel)/i)
+    expect(TEXT).not.toMatch(/areas of legal practice/i)
+    expect(TEXT).not.toMatch(/\bthe legal (industry|community|profession|world)\b/i)
+    expect(TEXT).not.toMatch(/\blegal network\b/i)
+    // "legal" survives only as one entry in the list of functions Andrel serves
+    expect((TEXT.match(/\blegal\b/gi) || []).length).toBe(1)
   })
 })
 
@@ -220,5 +283,19 @@ describe('About page — metadata is accurate, not inflated', () => {
     expect(SRC).toMatch(/title:\s*'About Andrel'/)
     expect(DESCRIPTION.length).toBeGreaterThan(20)
     expect(DESCRIPTION).not.toMatch(/#1|\bbest\b|\bleading\b|top-rated|world-class|revolutionary/i)
+  })
+
+  it('the description positions Andrel across professions, with no legal-only framing', () => {
+    expect(DESCRIPTION).toContain(
+      'Andrel is a private professional network that creates curated, mutual introductions among senior professionals and executives.'
+    )
+    expect(DESCRIPTION).not.toMatch(/legal|lawyer|attorney|counsel|law.firm/i)
+    // no keyword-stuffed function list in the meta description
+    expect((DESCRIPTION.match(/,/g) || []).length).toBeLessThan(6)
+  })
+
+  it('the page title carries no profession-specific positioning', () => {
+    const title = (SRC.match(/title:\s*'([^']*)'/) || [, ''])[1]
+    expect(title).not.toMatch(/legal|lawyer|attorney|counsel|law.firm/i)
   })
 })

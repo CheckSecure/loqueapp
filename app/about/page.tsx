@@ -5,7 +5,7 @@ import { ClipboardList, Sparkles, Handshake, ArrowRight, ArrowDown } from 'lucid
 export const metadata: Metadata = {
   title: 'About Andrel',
   description:
-    'A private network of curated, mutual introductions for senior legal professionals. Andrel selects each potential introduction; interest stays private, and a connection opens only when both people choose to meet.',
+    'Andrel is a private professional network that creates curated, mutual introductions among senior professionals and executives. Andrel selects each potential introduction; interest stays private, and a connection opens only when both people choose to meet.',
 }
 
 // Shared CTA pair — "Request an invitation" (the home-page waitlist form) + "Member sign in" (/login).
@@ -148,7 +148,8 @@ export default function AboutPage() {
             </h1>
             <div className="space-y-5 text-slate-600 leading-relaxed text-[1.0625rem] text-pretty">
               <p>
-                Andrel introduces senior legal professionals it believes could benefit from knowing one another.
+                Andrel introduces senior professionals and executives it believes could benefit from knowing one
+                another.
               </p>
               <p>
                 Members do not browse a directory or send cold connection requests. Andrel selects each potential
@@ -222,7 +223,7 @@ export default function AboutPage() {
           </div>
         </section>
 
-        {/* ── Who is in the network ────────────────────────────────────────────────────── */}
+        {/* ── Who Andrel is for ────────────────────────────────────────────────────────── */}
         {/*
           Untinted on purpose. The tinted band marks the two sections that explain Andrel's reasoning
           ("Why Andrel exists" and "Why I built Andrel"); tinting every other section instead turned
@@ -231,14 +232,21 @@ export default function AboutPage() {
         <section className="px-4 sm:px-6 py-16 lg:py-24" aria-labelledby="network-heading">
           <div className="max-w-2xl mx-auto">
             <h2 id="network-heading" className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight text-balance mb-6">
-              Who is in the network
+              Who Andrel is for
             </h2>
             <div className="space-y-5 text-slate-600 leading-relaxed text-[1.0625rem] text-pretty">
-              <p>Andrel’s network is currently centered on senior in-house counsel and law-firm partners.</p>
               <p>
-                Members bring experience across companies, firms, industries, and areas of legal practice. What
-                connects them is not a particular title or employer, but the potential to contribute perspective,
-                judgment, and value to the people they meet.
+                Andrel is built for senior professionals and executives across legal, government affairs, business,
+                finance, operations, technology, entrepreneurship, and organizational leadership.
+              </p>
+              <p>
+                The network began with a strong foundation of senior in-house counsel and law-firm partners and is
+                expanding thoughtfully to include accomplished leaders across functions and industries.
+              </p>
+              <p>
+                Members bring different experience, judgment, relationships, and perspectives. What connects them is
+                not a particular profession or title, but the potential to contribute meaningful value to the people
+                they meet.
               </p>
               <p>Membership is invite-only, and admission remains selective as the network grows.</p>
               <p>
@@ -281,9 +289,9 @@ export default function AboutPage() {
             </h2>
             <div className="space-y-5 text-slate-600 leading-relaxed text-[1.0625rem] text-pretty">
               <p>
-                I built Andrel after seeing the same pattern repeatedly: accomplished professionals wanted to expand
-                their networks, but they had little interest in more cold outreach, superficial connection requests,
-                or conversations that began with a sales agenda.
+                I built Andrel after seeing the same pattern repeatedly: accomplished professionals and executives
+                wanted to expand their networks, but they had little interest in more cold outreach, superficial
+                connection requests, or conversations that began with a sales agenda.
               </p>
               <p>
                 The problem was not a lack of people to contact. It was a lack of context, trust, and a meaningful
