@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import OnboardingForm from '@/components/OnboardingForm'
 import { pickOnboardingPrefillName } from '@/lib/validation/fullName'
-import { resolveOnboardingGate } from '@/lib/onboarding/steps'
+import { resolveOnboardingGate, selfProfileFromRpc, type OnboardingProfileLite } from '@/lib/onboarding/steps'
 import { verifyContinuationToken, CONTINUATION_COOKIE } from '@/lib/auth/resetContinuation'
 
 export const metadata = { title: 'Complete your profile | Andrel' }
@@ -32,12 +32,15 @@ export default async function OnboardingPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // maybeSingle → distinguish a CONFIRMED absent profile (null, no error) from a DB/permission error.
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('profile_complete, full_name, password_reset_required')
-    .eq('id', user.id)
-    .maybeSingle()
+  // A3: read the caller's OWN gate fields via the self-only get_my_profile() RPC — authenticated
+  // SELECT on the base profiles table is REVOKED (migration 058), so a direct base-table read here
+  // fails with permission-denied for a valid confirmed invitee and gets mis-rendered as "couldn't load
+  // your account". get_my_profile() RETURNS TABLE → a SETOF (array of 0 or 1 self row). ZERO rows is a
+  // CONFIRMED-absent profile (the expected pre-onboarding invitee state), NOT an error — selfProfileFromRpc
+  // encodes that contract (never use .single(), which would PGRST116-error on no rows). A genuine
+  // RPC/permission/auth failure sets `profileError` → the gate fails closed to a retryable error.
+  const { data: myRows, error: profileError } = await supabase.rpc('get_my_profile')
+  const profile = selfProfileFromRpc<OnboardingProfileLite>(myRows as any)
 
   // Server-authorized evidence that the password was just set (e.g. the onboarding password step's
   // flag-clear was deferred): a valid, signed, user-bound continuation cookie. Never a client marker.

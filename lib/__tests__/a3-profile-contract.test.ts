@@ -113,12 +113,23 @@ describe('A3 migration 058 — revoke base SELECT, preserve service_role', () =>
 })
 
 describe('A3 self-facing surfaces no longer read base profiles via a browser/user client', () => {
-  const browserSelf = ['app/dashboard/billing/page.tsx', 'app/dashboard/onboarding/page.tsx', 'app/dashboard/verify-email/page.tsx', 'middleware.ts']
-  it('browser/edge self surfaces use get_my_profile and do not touch the base table', () => {
+  // NOTE: app/onboarding/page.tsx (the TOP-LEVEL server onboarding page reached via the auth-callback
+  // `next=/onboarding`) is included here. It was previously MISSING from this list, which is exactly why
+  // a regression slipped through: it read base public.profiles via the authenticated server client, and
+  // once migration 058 revoked that SELECT the read failed with permission-denied for a valid confirmed
+  // no-profile invitee — rendered as "We couldn't load your account". It must read via get_my_profile().
+  const browserSelf = [
+    'app/dashboard/billing/page.tsx',
+    'app/dashboard/onboarding/page.tsx',
+    'app/onboarding/page.tsx',
+    'app/dashboard/verify-email/page.tsx',
+    'middleware.ts',
+  ]
+  it('browser/edge self surfaces use get_my_profile and do not read the base profiles table', () => {
     for (const f of browserSelf) {
       const src = readFileSync(f, 'utf8')
-      expect(src).not.toMatch(/\.from\(\s*['"]profiles['"]\s*\)/)
-      expect(src).toMatch(/get_my_profile/)
+      expect(src, `${f} must not touch base public.profiles`).not.toMatch(/\.from\(\s*['"]profiles['"]\s*\)/)
+      expect(src, `${f} must self-read via get_my_profile`).toMatch(/get_my_profile/)
     }
   })
 })

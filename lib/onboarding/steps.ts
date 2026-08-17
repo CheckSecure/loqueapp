@@ -21,6 +21,19 @@ export function initialOnboardingStep(needsPassword: boolean): OnboardingStep {
 export interface OnboardingProfileLite {
   profile_complete?: boolean | null
   password_reset_required?: boolean | null
+  full_name?: string | null
+}
+
+/**
+ * get_my_profile() (the A3 self-read RPC) RETURNS TABLE → PostgREST returns a SETOF, i.e. an ARRAY of
+ * 0 or 1 self row. Extract the single row, treating ZERO rows as a CONFIRMED-absent profile (null) —
+ * the expected pre-onboarding invitee state — NOT an error. This is the explicit RPC result contract:
+ * callers MUST NOT use .single() on the RPC (which turns "no rows" into a PGRST116 error and would
+ * misclassify a confirmed no-profile invitee as a load failure). Never throws.
+ */
+export function selfProfileFromRpc<T>(rows: T[] | T | null | undefined): T | null {
+  if (Array.isArray(rows)) return rows[0] ?? null
+  return (rows as T | null | undefined) ?? null
 }
 
 export type OnboardingGate =
