@@ -29,7 +29,22 @@ export async function POST(req: NextRequest) {
     // built by a shared, unit-tested helper so no form can wipe fields it didn't
     // submit. Returns a validation error for the matcher's required-when-present
     // fields (role_type / seniority / expertise).
-    const built = buildProfileUpdate(formData)
+    // The location rule depends on the row's CURRENT completion state (a draft may
+    // save without a location; a complete profile may never have one cleared), which
+    // the pure builder cannot read. Fetch it only when this request actually submits
+    // a location-bearing field. A3: self read via service_role, scoped to user.id.
+    const submitsLocation = formData.has('location') || formData.has('city') || formData.has('state')
+    let profileComplete = false
+    if (submitsLocation) {
+      const { data: current } = await createAdminClient()
+        .from('profiles')
+        .select('profile_complete')
+        .eq('id', user.id)
+        .maybeSingle()
+      profileComplete = current?.profile_complete === true
+    }
+
+    const built = buildProfileUpdate(formData, { profileComplete })
     if ('error' in built) {
       return NextResponse.json({ error: built.error }, { status: 400 })
     }

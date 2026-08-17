@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
+import { validateLocation, LOCATION_HELP_TEXT } from '@/lib/validation/location'
 import { useRouter } from 'next/navigation'
 import { normalizeExpertise } from '@/lib/expertise'
 import { shouldShowRecentRoleHint } from '@/lib/professionalIdentity'
@@ -29,6 +30,10 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
   const [company, setCompany] = useState(initialData.company || '')
   const [city, setCity] = useState(initialData.city || '')
   const [state, setState] = useState(initialData.state || '')
+  // Location is required; the server (/api/profile/update) is authoritative and
+  // additionally refuses to let an already-complete profile clear it.
+  const cityInputRef = useRef<HTMLInputElement>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
   const [seniority, setSeniority] = useState(initialData.seniority || '')
   const [roleType, setRoleType] = useState(initialData.role_type || '')
   const [exactJobTitle, setExactJobTitle] = useState<string | null>(initialData.exact_job_title ?? null)
@@ -90,6 +95,20 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
     setError(null)
     setSuccess(false)
     setSaving(true)
+
+    // Mirrors the server's city/state -> location derivation exactly.
+    const derivedLocation = city.trim() && state.trim()
+      ? `${city.trim()}, ${state.trim()}`
+      : city.trim() || state.trim() || ''
+    const locationCheck = validateLocation(derivedLocation)
+    if (!locationCheck.ok) {
+      setLocationError(locationCheck.error)
+      setError(locationCheck.error)
+      cityInputRef.current?.focus()
+      setSaving(false)
+      return
+    }
+    setLocationError(null)
 
     const formData = new FormData()
     formData.append('full_name', fullName)
@@ -246,25 +265,46 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">City</label>
+            <label htmlFor="edit-city" className="block text-xs font-semibold text-slate-700 mb-1.5">
+              City <span className="text-red-500" aria-hidden="true">*</span>
+              <span className="sr-only">(required)</span>
+            </label>
             <input
+              id="edit-city"
+              ref={cityInputRef}
               type="text"
               value={city}
-              onChange={e => setCity(e.target.value)}
+              onChange={e => { setCity(e.target.value); if (locationError) setLocationError(null) }}
               placeholder="e.g., New York"
+              required
+              aria-required="true"
+              aria-invalid={locationError ? true : undefined}
+              aria-describedby={locationError ? 'edit-location-error edit-location-help' : 'edit-location-help'}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">State</label>
+            <label htmlFor="edit-region" className="block text-xs font-semibold text-slate-700 mb-1.5">
+              State, region, or country
+            </label>
             <input
+              id="edit-region"
               type="text"
               value={state}
-              onChange={e => setState(e.target.value)}
-              placeholder="e.g., NY"
+              onChange={e => { setState(e.target.value); if (locationError) setLocationError(null) }}
+              placeholder="e.g., NY, UK, or Singapore"
+              aria-invalid={locationError ? true : undefined}
+              aria-describedby={locationError ? 'edit-location-error edit-location-help' : 'edit-location-help'}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
             />
+          </div>
+
+          <div className="col-span-2 -mt-2">
+            <p id="edit-location-help" className="text-xs text-slate-500">{LOCATION_HELP_TEXT}</p>
+            {locationError && (
+              <p id="edit-location-error" role="alert" className="mt-1 text-xs text-red-600">{locationError}</p>
+            )}
           </div>
 
           <div className="col-span-2">

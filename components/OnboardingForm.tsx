@@ -12,6 +12,7 @@ import { Loader2, User, Camera, Eye, EyeOff } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { isValidFullName, FULL_NAME_ERROR } from '@/lib/validation/fullName'
+import { validateLocation, LOCATION_HELP_TEXT } from '@/lib/validation/location'
 import CurrentFocusAreasInput from '@/components/CurrentFocusAreasInput'
 import { onboardingStepList, initialOnboardingStep } from '@/lib/onboarding/steps'
 
@@ -55,6 +56,11 @@ type Step = 'password' | 'profile' | 'preferences'
 export default function OnboardingForm({ initialFullName = '', needsPassword }: { initialFullName?: string; needsPassword: boolean }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Location is required to finish onboarding. Its error is rendered next to the
+  // field (not only in the shared banner) and the input is focused on failure, so
+  // keyboard and screen-reader users are taken straight to what needs fixing.
+  const cityInputRef = useRef<HTMLInputElement>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
 
   const [step, setStep] = useState<Step>(initialOnboardingStep(needsPassword))
   const [saving, setSaving] = useState(false)
@@ -130,11 +136,32 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
     reader.readAsDataURL(file)
   }
 
+  // Mirrors completeOnboarding's derivation EXACTLY, so what the member sees
+  // validated here is the same string the server validates and stores.
+  const derivedLocation = () => {
+    const c = city.trim(), s = state.trim()
+    return c && s ? `${c}, ${s}` : c || s || ''
+  }
+
+  /** Client-side location gate. UX only — the server re-validates and is authoritative. */
+  const checkLocation = (): boolean => {
+    const check = validateLocation(derivedLocation())
+    if (!check.ok) {
+      setLocationError(check.error)
+      setError(check.error)
+      cityInputRef.current?.focus()
+      return false
+    }
+    setLocationError(null)
+    return true
+  }
+
   const handleProfileNext = (e: React.FormEvent) => {
     e.preventDefault()
     if (!isValidFullName(fullName)) { setError(FULL_NAME_ERROR); return }
     if (title.trim().length < 2) { setError('Please enter your title or role'); return }
     if (company.trim().length < 2) { setError('Please enter your company or organization'); return }
+    if (!checkLocation()) return
     if (!roleType.trim()) { setError('Please select your professional role'); return }
     if (!seniority.trim()) { setError('Please select your seniority level'); return }
     if (expertise.filter(Boolean).length === 0) { setError('Please select at least one area of expertise'); return }
@@ -150,6 +177,15 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
     if (!isValidFullName(fullName)) { setError(FULL_NAME_ERROR); return }
     if (title.trim().length < 2) { setError('Please enter your title or role'); return }
     if (company.trim().length < 2) { setError('Please enter your company or organization'); return }
+    // Location can only have been entered on the previous step, so send the member
+    // back there rather than showing an error next to a field they cannot see.
+    const locationCheck = validateLocation(derivedLocation())
+    if (!locationCheck.ok) {
+      setLocationError(locationCheck.error)
+      setError(locationCheck.error)
+      setStep('profile')
+      return
+    }
     if (!roleType.trim()) { setError('Please select your professional role'); return }
     if (!seniority.trim()) { setError('Please select your seniority level'); return }
     if (expertise.filter(Boolean).length === 0) { setError('Please select at least one area of expertise'); return }
@@ -282,16 +318,59 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
               <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Acme Corp, Independent, Self-employed, Retired, or Between roles" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
             </div>
             
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-semibold text-slate-800 mb-1.5">City</label>
-                <input type="text" value={city} onChange={e => setCity(e.target.value)} placeholder="New York" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
+            {/*
+              Location is required to finish onboarding. Kept as City + a second
+              free-text box (rather than one input) because profiles.city feeds the
+              same-city matching signal — but the second box accepts a state, region
+              OR country, so no international member is forced into a US state.
+            */}
+            <fieldset aria-describedby="onboarding-location-help">
+              <legend className="block text-sm font-semibold text-slate-800 mb-1.5">
+                Location <span className="text-red-500" aria-hidden="true">*</span>
+                <span className="sr-only">(required)</span>
+              </legend>
+              <p id="onboarding-location-help" className="text-xs text-slate-500 mb-2">
+                {LOCATION_HELP_TEXT} For example: New York, NY · London, UK · Singapore.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="onboarding-city" className="block text-xs font-medium text-slate-600 mb-1">City</label>
+                  <input
+                    id="onboarding-city"
+                    ref={cityInputRef}
+                    type="text"
+                    value={city}
+                    onChange={e => { setCity(e.target.value); if (locationError) setLocationError(null) }}
+                    placeholder="New York"
+                    required
+                    aria-required="true"
+                    aria-invalid={locationError ? true : undefined}
+                    aria-describedby={locationError ? 'onboarding-location-error' : undefined}
+                    className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="onboarding-region" className="block text-xs font-medium text-slate-600 mb-1">
+                    State, region, or country
+                  </label>
+                  <input
+                    id="onboarding-region"
+                    type="text"
+                    value={state}
+                    onChange={e => { setState(e.target.value); if (locationError) setLocationError(null) }}
+                    placeholder="NY, UK, or Singapore"
+                    aria-invalid={locationError ? true : undefined}
+                    aria-describedby={locationError ? 'onboarding-location-error' : undefined}
+                    className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-800 mb-1.5">State</label>
-                <input type="text" value={state} onChange={e => setState(e.target.value)} placeholder="NY" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
-              </div>
-            </div>
+              {locationError && (
+                <p id="onboarding-location-error" role="alert" className="mt-1.5 text-xs text-red-600">
+                  {locationError}
+                </p>
+              )}
+            </fieldset>
 
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-2">Role title</label>

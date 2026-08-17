@@ -1,5 +1,6 @@
 import { parseMultiSelectField } from '@/lib/profile/multiSelect'
 import { validateFullName } from '@/lib/validation/fullName'
+import { resolveLocationUpdate } from '@/lib/validation/location'
 
 /**
  * Builds the /api/profile/update write payload from submitted FormData as a
@@ -13,7 +14,22 @@ import { validateFullName } from '@/lib/validation/fullName'
  */
 export type ProfileUpdateResult = { error: string } | { payload: Record<string, unknown> }
 
-export function buildProfileUpdate(formData: FormData): ProfileUpdateResult {
+/**
+ * Caller-supplied context the pure builder cannot read for itself.
+ * `profileComplete` is the CURRENT stored value for the row being updated; it
+ * decides whether a submitted-but-blank location is an allowed draft state or an
+ * illegal clear of a complete profile. Defaults to false so an omitted context is
+ * the permissive draft case, never a silent bypass of a real completed profile —
+ * routes must pass the real value.
+ */
+export interface ProfileUpdateContext {
+  profileComplete?: boolean
+}
+
+export function buildProfileUpdate(
+  formData: FormData,
+  ctx: ProfileUpdateContext = {},
+): ProfileUpdateResult {
   const has = (k: string) => formData.has(k)
   const raw = (k: string) => formData.get(k) as string | null
   const trimmed = (k: string) => (raw(k) ?? '').trim()
@@ -37,18 +53,27 @@ export function buildProfileUpdate(formData: FormData): ProfileUpdateResult {
   if (has('current_status')) payload.current_status = trimmed('current_status') || null
 
   // --- Location precedence (present-only, never touches an omitted field) ---
-  //   1. explicit `location` submitted  → write it (empty → null clears)
+  //   1. explicit `location` submitted  → write it
   //   2. else `city`/`state` submitted  → derive location from submitted values
   //   3. else                           → leave location untouched
   // city/state are each written only when submitted, independent of location.
+  //
+  // Whatever value this produces is then run through the shared physical-location
+  // authority (lib/validation/location): a placeholder such as "Remote" or "N/A" is
+  // rejected outright, and a blank is allowed ONLY while the profile is still a
+  // draft — a complete profile can never have its location cleared through an edit.
+  // Normalization is trim + whitespace-collapse only; nothing is geocoded.
   const hasLocation = has('location'), hasCity = has('city'), hasState = has('state')
   const cityVal = trimmed('city'), stateVal = trimmed('state'), locationVal = trimmed('location')
   if (hasCity) payload.city = cityVal || null
   if (hasState) payload.state = stateVal || null
-  if (hasLocation) {
-    payload.location = locationVal || null
-  } else if (hasCity || hasState) {
-    payload.location = cityVal && stateVal ? `${cityVal}, ${stateVal}` : cityVal || stateVal || null
+  if (hasLocation || hasCity || hasState) {
+    const submitted = hasLocation
+      ? locationVal
+      : cityVal && stateVal ? `${cityVal}, ${stateVal}` : cityVal || stateVal || ''
+    const resolved = resolveLocationUpdate(submitted, { profileComplete: ctx.profileComplete === true })
+    if (!resolved.ok) return { error: resolved.error }
+    payload.location = resolved.value
   }
 
   // --- Present-only multi-selects (shared normalizer) ---

@@ -26,6 +26,7 @@ import { resolveCanonicalCompanyLink } from '@/lib/company/canonicalLink'
 import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
 import { provisionMemberRecords } from '@/lib/provisioning'
 import { validateFullName } from '@/lib/validation/fullName'
+import { validateLocation, resolveLocationUpdate } from '@/lib/validation/location'
 import { persistFocusAreas } from '@/lib/profile/focusAreas'
 import { sendMessageCore } from '@/lib/messages/sendMessageCore'
 
@@ -85,10 +86,24 @@ export async function updateProfile(formData: FormData) {
   const adminClient = createAdminClient()
   const { data: priorRow } = await adminClient
     .from('profiles')
-    .select('desired_connections')
+    .select('desired_connections, profile_complete')
     .eq('id', user.id)
     .maybeSingle()
   const priorDesired = priorRow?.desired_connections ?? {}
+
+  // Location on a profile EDIT. This action never sets profile_complete, so a draft
+  // may still save with the field blank — but an ALREADY-COMPLETE profile can never
+  // have its location cleared here, and a placeholder ("Remote", "N/A") is refused
+  // whatever the completion state. Present-only: a form that omits `location`
+  // entirely leaves the stored value untouched. Shared authority, no rewriting.
+  let locationPatch: { location: string | null } | Record<string, never> = {}
+  if (formData.has('location')) {
+    const resolved = resolveLocationUpdate(formData.get('location') as string | null, {
+      profileComplete: priorRow?.profile_complete === true,
+    })
+    if (!resolved.ok) return { error: resolved.error }
+    locationPatch = { location: resolved.value }
+  }
 
   // Phase C: desired_connections capture-only. Phase D: cap-on-add via
   // validateSelectionWithCaps (5 categories / 15 titles), preserving any
@@ -117,7 +132,7 @@ export async function updateProfile(formData: FormData) {
     exact_job_title: ((formData.get('exact_job_title') as string) || '').trim() || null,
     company: formData.get('company') as string || null,
     ...(companyLink.action !== 'preserve' && { company_id: companyLink.action === 'set' ? companyLink.companyId : null }),
-    location: formData.get('location') as string || null,
+    ...locationPatch,
     bio: formData.get('bio') as string || null,
     expertise,
     intro_preferences: introPref,
@@ -242,7 +257,7 @@ export async function completeOnboarding(formData: FormData) {
 
   const city = (formData.get('city') as string || '').trim()
   const state = (formData.get('state') as string || '').trim()
-  const location = city && state ? `${city}, ${state}` : city || state || null
+  const derivedLocation = city && state ? `${city}, ${state}` : city || state || null
 
   // Require a real first + last name (shared authority; matches client + all
   // other write paths). Rejects one-word names before the profile is created.
@@ -267,6 +282,15 @@ export async function completeOnboarding(formData: FormData) {
   const company = ((formData.get('company') as string) || '').trim()
   if (title.length < 2) return { error: 'Please enter your title or role' }
   if (company.length < 2) return { error: 'Please enter your company or organization' }
+
+  // Physical location is REQUIRED here because this write sets profile_complete=true.
+  // Shared authority (lib/validation/location) — blank, placeholder-only ("Remote",
+  // "N/A", "Anywhere") and over-long values are rejected; no comma or US state is
+  // required, so "Boston", "London, UK" and "Singapore" all pass. The stored value
+  // is the member's own text, trimmed only — never geocoded or expanded.
+  const locationCheck = validateLocation(derivedLocation)
+  if (!locationCheck.ok) return { error: locationCheck.error }
+  const location = locationCheck.value
 
   // Use admin client to bypass RLS
   const adminClient = createAdminClient()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { serializeMultiSelectField } from '@/lib/profile/multiSelect'
 import { normalizeExpertise } from '@/lib/expertise'
@@ -13,6 +13,7 @@ import AdditionalRolesEditor from '@/components/AdditionalRolesEditor'
 import { Linkedin, Twitter, Link as LinkIcon, Loader2, CheckCircle } from 'lucide-react'
 import { updateProfile } from '@/app/actions'
 import AvatarUpload from '@/components/AvatarUpload'
+import { validateLocation, LOCATION_HELP_TEXT } from '@/lib/validation/location'
 
 interface Profile {
   id: string
@@ -46,6 +47,10 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // A member editing an already-complete profile cannot clear or placeholder their
+  // location; the server (updateProfile) is authoritative, this mirrors it for UX.
+  const locationInputRef = useRef<HTMLInputElement>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
   const [introPref, setIntroPref] = useState<string[]>(profile?.intro_preferences || [])
   const [purposes, setPurposes] = useState<string[]>(profile?.purposes || [])
   const [interests, setInterests] = useState<string[]>(profile?.interests || [])
@@ -75,6 +80,15 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
     // Always send exact_job_title (empty string = clear). Server treats "" as null.
     formData.set('exact_job_title', exactJobTitle ?? '')
     formData.set('desired_connections', JSON.stringify(desiredConnections))
+    const locationCheck = validateLocation(formData.get('location') as string)
+    if (!locationCheck.ok) {
+      setLocationError(locationCheck.error)
+      setError(locationCheck.error)
+      locationInputRef.current?.focus()
+      setLoading(false)
+      return
+    }
+    setLocationError(null)
     const result = await updateProfile(formData)
     setLoading(false)
     if (result.error) {
@@ -144,14 +158,28 @@ export default function ProfileForm({ profile, email }: { profile: Profile | nul
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Location</label>
+          <label htmlFor="profile-location" className="block text-xs font-medium text-slate-600 mb-1">
+            Location <span className="text-red-500" aria-hidden="true">*</span>
+            <span className="sr-only">(required)</span>
+          </label>
           <input
+            id="profile-location"
+            ref={locationInputRef}
             name="location"
             type="text"
             defaultValue={profile?.location || ''}
-            placeholder="San Francisco, CA"
+            placeholder="New York, NY or London, UK"
+            required
+            aria-required="true"
+            aria-invalid={locationError ? true : undefined}
+            aria-describedby={locationError ? 'profile-location-error profile-location-help' : 'profile-location-help'}
+            onChange={() => { if (locationError) setLocationError(null) }}
             className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
           />
+          <p id="profile-location-help" className="mt-1 text-xs text-slate-500">{LOCATION_HELP_TEXT}</p>
+          {locationError && (
+            <p id="profile-location-error" role="alert" className="mt-1 text-xs text-red-600">{locationError}</p>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Bio</label>

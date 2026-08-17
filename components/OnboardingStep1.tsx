@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { normalizeExpertise } from '@/lib/expertise'
 import { isValidFullName, FULL_NAME_ERROR, pickOnboardingPrefillName } from '@/lib/validation/fullName'
+import { validateLocation, LOCATION_HELP_TEXT } from '@/lib/validation/location'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Loader2, ArrowRight } from 'lucide-react'
@@ -42,6 +43,12 @@ export default function OnboardingStep1({
 }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Location is required before this step can advance. The error is rendered beside
+  // the field and the input is focused, so the association survives keyboard and
+  // screen-reader use. The form is uncontrolled, so returning early on a validation
+  // failure leaves every other entered value exactly as the member typed it.
+  const locationInputRef = useRef<HTMLInputElement>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
   // Unified: every previously-saved value loads into one removable selected list.
   const [expertise, setExpertise] = useState<string[]>(normalizeExpertise(profile?.expertise))
   const [roleType, setRoleType] = useState<string>(profile?.role_type || '')
@@ -74,6 +81,17 @@ export default function OnboardingStep1({
     if (!isValidFullName(formData.get('full_name') as string)) {
       setError(FULL_NAME_ERROR); setLoading(false); return
     }
+    // Physical location (mirrors the shared server authority). UX only — both
+    // /api/profile/update and the /api/profile/complete gate re-validate.
+    const locationCheck = validateLocation(formData.get('location') as string)
+    if (!locationCheck.ok) {
+      setLocationError(locationCheck.error)
+      setError(locationCheck.error)
+      locationInputRef.current?.focus()
+      setLoading(false)
+      return
+    }
+    setLocationError(null)
     formData.set('expertise', expertise.join(','))
     formData.set('role_type', roleType)
     // Derived title (selected role label, or custom role text for 'Other').
@@ -141,14 +159,28 @@ export default function OnboardingStep1({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Location</label>
+          <label htmlFor="step1-location" className="block text-xs font-medium text-slate-600 mb-1">
+            Location <span className="text-red-500" aria-hidden="true">*</span>
+            <span className="sr-only">(required)</span>
+          </label>
           <input
+            id="step1-location"
+            ref={locationInputRef}
             name="location"
             type="text"
             defaultValue={profile?.location || ''}
-            placeholder="San Francisco, CA"
+            placeholder="New York, NY or London, UK"
+            required
+            aria-required="true"
+            aria-invalid={locationError ? true : undefined}
+            aria-describedby={locationError ? 'step1-location-error step1-location-help' : 'step1-location-help'}
+            onChange={() => { if (locationError) setLocationError(null) }}
             className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
           />
+          <p id="step1-location-help" className="mt-1 text-xs text-slate-500">{LOCATION_HELP_TEXT}</p>
+          {locationError && (
+            <p id="step1-location-error" role="alert" className="mt-1 text-xs text-red-600">{locationError}</p>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Bio</label>

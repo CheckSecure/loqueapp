@@ -7,6 +7,7 @@ import { enqueueOnboardingRetry } from '@/lib/onboarding/retryQueue'
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
+import { validateLocation } from '@/lib/validation/location'
 
 export async function POST(req: Request) {
   const crossOrigin = assertSameOrigin(req)
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
   // unaffected and already-complete users are never retroactively validated.
   const { data: identity } = await supabase
     .from('profiles')
-    .select('title, company')
+    .select('title, company, location')
     .eq('id', user.id)
     .single()
 
@@ -40,6 +41,16 @@ export async function POST(req: Request) {
   }
   if (company.length < 2) {
     return NextResponse.json({ error: 'Company or organization is required.' }, { status: 400 })
+  }
+
+  // Physical location is required to become complete. Validated against the STORED
+  // value — not the request body — so skipping or tampering with the client cannot
+  // reach profile_complete=true: OnboardingStep1 must have successfully persisted a
+  // real location via /api/profile/update first. Same shared authority as the
+  // top-level completeOnboarding path (lib/validation/location).
+  const locationCheck = validateLocation(identity?.location)
+  if (!locationCheck.ok) {
+    return NextResponse.json({ error: locationCheck.error }, { status: 400 })
   }
 
   // service_role write, scoped to the caller's own row (browser UPDATE on profiles revoked, migration 055).

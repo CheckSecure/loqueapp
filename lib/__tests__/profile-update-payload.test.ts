@@ -72,8 +72,11 @@ describe('location precedence', () => {
     expect(p).toMatchObject({ city: 'San Francisco', state: 'CA', location: 'San Francisco, CA' })
   })
   it('explicit location wins even when city/state are also submitted', () => {
-    const p = payloadOf(fd({ location: 'Remote', city: 'San Francisco', state: 'CA' }))
-    expect(p.location).toBe('Remote')
+    // Uses a real place: `location` is now run through the shared physical-location
+    // authority, so the old "Remote" fixture would (correctly) be rejected. The
+    // behaviour under test is precedence, not the placeholder rule.
+    const p = payloadOf(fd({ location: 'Austin, TX', city: 'San Francisco', state: 'CA' }))
+    expect(p.location).toBe('Austin, TX')
     expect(p.city).toBe('San Francisco')
     expect(p.state).toBe('CA')
   })
