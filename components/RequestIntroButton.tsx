@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 
 import { useState } from 'react'
 import { submitIntroRequest, passOnSuggestion } from '@/app/actions'
-import { CheckCircle, Loader2, X, EyeOff, Sparkles } from 'lucide-react'
+import { isPermanentDismissal, type DismissChoice } from '@/lib/introRequests/dismissal'
+import { CheckCircle, Loader2, X, EyeOff, Sparkles, UserCheck } from 'lucide-react'
 
 export default function RequestIntroButton({
   targetId,
@@ -95,11 +96,15 @@ export default function RequestIntroButton({
     router.refresh()
   }
 
-  const handlePass = async (permanent: boolean) => {
+  // All three menu choices resolve the card the same way from the member's point of view; only the
+  // recorded status/reason differ (lib/introRequests/dismissal). "I already know them" reuses the
+  // permanent path so the card disappears exactly like "Don't show again" — it never creates a
+  // match, introduction, conversation, message, email or notification.
+  const handlePass = async (choice: DismissChoice) => {
     setPassing(true)
     setShowPassMenu(false)
-    if (rowId) await passOnSuggestion(rowId, permanent)
-    setState(permanent ? 'hidden' : 'passed')
+    if (rowId) await passOnSuggestion(rowId, choice)
+    setState(isPermanentDismissal(choice) ? 'hidden' : 'passed')
     setPassing(false)
   }
 
@@ -191,14 +196,21 @@ export default function RequestIntroButton({
           {showPassMenu && (
             <div className="absolute bottom-full right-0 mb-2 w-48 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden z-10">
               <button
-                onClick={() => handlePass(false)}
+                onClick={() => handlePass('not_for_me')}
                 className="w-full text-left px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-2"
               >
                 <X className="w-3.5 h-3.5 text-slate-400" />
                 Not for me
               </button>
               <button
-                onClick={() => handlePass(true)}
+                onClick={() => handlePass('already_know')}
+                className="w-full text-left px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-2 border-t border-slate-50"
+              >
+                <UserCheck className="w-3.5 h-3.5 text-slate-400" />
+                I already know them
+              </button>
+              <button
+                onClick={() => handlePass('never_show')}
                 className="w-full text-left px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-2 border-t border-slate-50"
               >
                 <EyeOff className="w-3.5 h-3.5 text-slate-400" />

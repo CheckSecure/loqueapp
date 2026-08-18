@@ -7,6 +7,7 @@ import { emitMetric } from '@/lib/metrics'
 import { Loader2, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { passwordSetupCopy, isPasswordSetupMode, DEFAULT_MODE, type PasswordSetupDisplayMode } from '@/lib/auth/passwordSetupCopy'
+import { RequiredMark } from '@/components/ui/RequiredMark'
 
 // Secure reset. The password update AND the clearing of the legacy `password_reset_required` flag
 // happen SERVER-SIDE (POST /api/auth/complete-reset), never in the browser:
@@ -236,7 +237,7 @@ export default function ResetPasswordPage() {
               )}
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1.5">
-                  New password
+                  New password<RequiredMark />
                 </label>
                 <input
                   id="password"
@@ -251,7 +252,7 @@ export default function ResetPasswordPage() {
               </div>
               <div>
                 <label htmlFor="confirm" className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Confirm password
+                  Confirm password<RequiredMark />
                 </label>
                 <input
                   id="confirm"

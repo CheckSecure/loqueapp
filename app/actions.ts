@@ -29,6 +29,7 @@ import { validateFullName } from '@/lib/validation/fullName'
 import { validateLocation, resolveLocationUpdate } from '@/lib/validation/location'
 import { persistFocusAreas } from '@/lib/profile/focusAreas'
 import { sendMessageCore } from '@/lib/messages/sendMessageCore'
+import { isDismissChoice, statusForDismissal, type DismissChoice } from '@/lib/introRequests/dismissal'
 
 async function getSupabaseAndUser() {
   const supabase = createClient()
@@ -915,16 +916,20 @@ export async function scheduleMeeting(formData: FormData) {
   return { success: true }
 }
 
-export async function passOnSuggestion(rowId: string, permanent: boolean) {
+export async function passOnSuggestion(rowId: string, choice: DismissChoice) {
   const { user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
+  // Never trust a client-supplied reason: an unrecognised value would violate the column's CHECK
+  // and, worse, silently poison the funnel data. Reject before any write.
+  if (!isDismissChoice(choice)) return { error: 'Invalid dismissal reason' }
 
-  // Recommendations live in the unified queue (intro_requests). Pass = 'passed'
-  // (cooldown); permanent = 'hidden_permanent'. Ownership-scoped to the member's own
-  // still-visible ('suggested') row.
+  // Recommendations live in the unified queue (intro_requests). The STATUS decides whether the
+  // pair may be recommended again (see lib/introRequests/dismissal); the REASON is durable
+  // analytics recorded for all three choices, so a rejected fit, a never-show, and an existing
+  // relationship stay distinguishable. Ownership-scoped to the member's own visible row.
   const admin = createAdminClient()
   // A RECIPROCAL pair card (pair_id set) must be closed pair-aware, transactionally, so the
-  // counterpart's card is neutrally closed too and both members' capacity is released — never two
+  // counterpart's card is closed too and both members' capacity is released — never two
   // independent client updates. Legacy (non-pair) suggestions keep their existing behavior.
   const { data: passRow } = await admin
     .from('intro_requests')
@@ -934,14 +939,41 @@ export async function passOnSuggestion(rowId: string, permanent: boolean) {
     .maybeSingle()
 
   if (passRow?.pair_id && passRow.status === 'suggested') {
-    await admin.rpc('pass_reciprocal_pair', { p_pair_id: passRow.pair_id, p_passer_id: user.id })
+    if (choice === 'already_know') {
+      // ONE transaction closes BOTH directions permanently (migration 062). The actor id is
+      // server-derived from the verified session — never a client value — and the RPC itself
+      // refuses a pair the actor is not part of.
+      await admin.rpc('mark_pair_known', { p_pair_id: passRow.pair_id, p_actor_id: user.id })
+    } else {
+      // Unchanged pair-pass semantics.
+      await admin.rpc('pass_reciprocal_pair', { p_pair_id: passRow.pair_id, p_passer_id: user.id })
+      // Stamp the member's OWN row with why they dismissed it. This is metadata only — it never
+      // touches status, so the pass RPC's carefully-chosen lifecycle (passer 'passed', counterpart
+      // neutrally 'expired') is preserved exactly as it was.
+      await admin
+        .from('intro_requests')
+        .update({ resolution_reason: choice })
+        .eq('id', rowId)
+        .eq('requester_id', user.id)
+    }
   } else {
-    await admin
+    const { error: dismissError } = await admin
       .from('intro_requests')
-      .update({ status: permanent ? 'hidden_permanent' : 'passed', updated_at: new Date().toISOString() })
+      .update({
+        status: statusForDismissal(choice),
+        resolution_reason: choice,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', rowId)
       .eq('requester_id', user.id)
       .eq('status', 'suggested')
+    // This write has a HARD dependency on migration 062: without the column PostgREST rejects it
+    // with PGRST204 and the card silently fails to resolve. The migration must be applied BEFORE
+    // this code is deployed — log loudly rather than swallow, so a sequencing mistake is visible
+    // in the logs instead of looking like a member whose dismissal simply did nothing.
+    if (dismissError) {
+      console.error('[passOnSuggestion] dismissal write failed', { code: dismissError.code, msg: dismissError.message })
+    }
   }
 
   // Resolving the active batch's last open recommendation promotes the queued

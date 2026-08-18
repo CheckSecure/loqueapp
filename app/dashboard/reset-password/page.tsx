@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Loader2, CheckCircle, Key } from 'lucide-react'
+import { RequiredMark } from '@/components/ui/RequiredMark'
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
@@ -58,7 +59,7 @@ export default function ResetPasswordPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">New Password</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">New Password<RequiredMark /></label>
             <input
               type="password"
               value={password}
@@ -70,7 +71,7 @@ export default function ResetPasswordPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Confirm Password</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Confirm Password<RequiredMark /></label>
             <input
               type="password"
               value={confirmPassword}

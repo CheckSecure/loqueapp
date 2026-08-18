@@ -397,7 +397,15 @@ describe('onboarding UX — location is required, labelled and accessible', () =
   it('the top-level onboarding form labels the group "Location" and marks it required', () => {
     expect(ONBOARDING_FORM).toMatch(/<legend[^>]*>\s*Location/)
     expect(ONBOARDING_FORM).toMatch(/aria-required="true"/)
-    expect(ONBOARDING_FORM).toMatch(/<span className="sr-only">\(required\)<\/span>/)
+    // The required marker now comes from the ONE shared component (components/ui/RequiredMark),
+    // so every form marks a required field identically instead of hand-rolling the markup. The
+    // accessibility contract this line has always protected is unchanged and is asserted at its
+    // new source: the asterisk is aria-hidden and the requirement is carried by real sr-only text,
+    // so it is never communicated by colour or glyph alone.
+    expect(ONBOARDING_FORM).toMatch(/Location<RequiredMark \/>/)
+    const REQUIRED_MARK = readFileSync('components/ui/RequiredMark.tsx', 'utf8')
+    expect(REQUIRED_MARK).toMatch(/<span className="sr-only">\(required\)<\/span>/)
+    expect(REQUIRED_MARK).toMatch(/aria-hidden="true"/)
     expect(ONBOARDING_FORM).toMatch(/id="onboarding-location-error"/)
     expect(ONBOARDING_FORM).toMatch(/role="alert"/)
     expect(ONBOARDING_FORM).toMatch(/cityInputRef\.current\?\.focus\(\)/)

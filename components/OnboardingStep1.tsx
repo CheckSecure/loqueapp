@@ -9,6 +9,7 @@ import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Loader2, ArrowRight } from 'lucide-react'
 import { Linkedin, Twitter, Link as LinkIcon } from 'lucide-react'
 import AvatarUpload from '@/components/AvatarUpload'
+import { RequiredMark, RequiredLegend } from '@/components/ui/RequiredMark'
 
 interface Profile {
   id: string
@@ -123,6 +124,9 @@ export default function OnboardingStep1({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* One legend for the asterisk, so the marker never has to explain itself per field. */}
+      <RequiredLegend />
+
       {/* Avatar */}
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
         <div className="h-20 bg-gradient-to-r from-[#1B2850] to-[#2E4080]" />
@@ -137,7 +141,7 @@ export default function OnboardingStep1({
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6 space-y-4">
         <h3 className="text-sm font-semibold text-slate-900">Basic information</h3>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Full name</label>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Full name<RequiredMark /></label>
           <input
             name="full_name"
             type="text"
@@ -148,7 +152,7 @@ export default function OnboardingStep1({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Company or organization</label>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Company or organization<RequiredMark /></label>
           <input
             name="company"
             type="text"
@@ -160,8 +164,7 @@ export default function OnboardingStep1({
         </div>
         <div>
           <label htmlFor="step1-location" className="block text-xs font-medium text-slate-600 mb-1">
-            Location <span className="text-red-500" aria-hidden="true">*</span>
-            <span className="sr-only">(required)</span>
+            Location<RequiredMark />
           </label>
           <input
             id="step1-location"
@@ -183,7 +186,7 @@ export default function OnboardingStep1({
           )}
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Bio</label>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Bio<RequiredMark /></label>
           <textarea
             name="bio"
             rows={3}
@@ -199,7 +202,7 @@ export default function OnboardingStep1({
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6 space-y-4">
         <h3 className="text-sm font-semibold text-slate-900">Professional details</h3>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Seniority</label>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Seniority<RequiredMark /></label>
           <select
             name="seniority"
             defaultValue={profile?.seniority || ''}
@@ -214,7 +217,7 @@ export default function OnboardingStep1({
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Role title</label>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Role title<RequiredMark /></label>
           <SearchableTitleSelect
             roleType={roleType}
             exactJobTitle={exactJobTitle}
@@ -229,7 +232,7 @@ export default function OnboardingStep1({
 
       {/* Expertise */}
       <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-6">
-        <h3 className="text-sm font-semibold text-slate-900 mb-1">Expertise</h3>
+        <h3 className="text-sm font-semibold text-slate-900 mb-1">Expertise<RequiredMark /></h3>
         <p className="text-xs text-slate-400 mb-3">Type to search; select multiple areas of expertise.</p>
         <SearchableExpertiseSelect
           selected={expertise}

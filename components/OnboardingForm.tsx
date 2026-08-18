@@ -13,6 +13,7 @@ import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { isValidFullName, FULL_NAME_ERROR } from '@/lib/validation/fullName'
 import { validateLocation, LOCATION_HELP_TEXT } from '@/lib/validation/location'
+import { RequiredMark, RequiredLegend } from '@/components/ui/RequiredMark'
 import CurrentFocusAreasInput from '@/components/CurrentFocusAreasInput'
 import { onboardingStepList, initialOnboardingStep } from '@/lib/onboarding/steps'
 
@@ -290,8 +291,9 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
 
         {step === 'password' && (
           <form onSubmit={handleSetPassword} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-5">
+            <RequiredLegend />
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-1.5">New password <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">New password<RequiredMark /></label>
               <div className="relative">
                 <input type={showNew ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="At least 8 characters" required className="w-full px-3.5 py-2.5 pr-10 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
                 <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -300,7 +302,7 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
               </div>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-1.5">Confirm password <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">Confirm password<RequiredMark /></label>
               <div className="relative">
                 <input type={showConfirm ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Re-enter your password" required className="w-full px-3.5 py-2.5 pr-10 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
                 <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -318,6 +320,7 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
 
         {step === 'profile' && (
           <form onSubmit={handleProfileNext} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-5">
+            <RequiredLegend />
             <div className="flex flex-col items-center gap-2 pb-1">
               <button type="button" onClick={() => fileInputRef.current?.click()} className="relative w-20 h-20 rounded-full bg-slate-100 border-2 border-dashed border-slate-300 hover:border-[#1B2850] transition-colors flex items-center justify-center overflow-hidden group">
                 {avatarPreview ? <Image src={avatarPreview} alt="Preview" fill className="object-cover" /> : <User className="w-8 h-8 text-slate-300" />}
@@ -328,11 +331,11 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-1.5">Full name <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">Full name<RequiredMark /></label>
               <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Smith" required className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-1.5">Company or organization</label>
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">Company or organization<RequiredMark /></label>
               <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Acme Corp, Independent, Self-employed, Retired, or Between roles" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
             </div>
             
@@ -344,8 +347,7 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
             */}
             <fieldset aria-describedby="onboarding-location-help">
               <legend className="block text-sm font-semibold text-slate-800 mb-1.5">
-                Location <span className="text-red-500" aria-hidden="true">*</span>
-                <span className="sr-only">(required)</span>
+                Location<RequiredMark />
               </legend>
               <p id="onboarding-location-help" className="text-xs text-slate-500 mb-2">
                 {LOCATION_HELP_TEXT} For example: New York, NY · London, UK · Singapore.
@@ -391,7 +393,7 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
             </fieldset>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-2">Role title</label>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">Role title<RequiredMark /></label>
               <SearchableTitleSelect
                 roleType={roleType}
                 exactJobTitle={exactJobTitle}
@@ -404,7 +406,7 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-2">Seniority level</label>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">Seniority level<RequiredMark /></label>
               <div className="flex flex-wrap gap-2">
                 {SENIORITY_LEVELS.map(level => (
                   <button key={level} type="button" onClick={() => setSeniority(level === seniority ? '' : level)} className={cn('px-3.5 py-2 rounded-lg text-sm font-medium border transition-all', seniority === level ? 'bg-[#1B2850] text-white border-[#1B2850]' : 'bg-white text-slate-600 border-slate-200 hover:border-[#1B2850]/40 hover:text-[#1B2850]')}>{level}</button>
@@ -413,7 +415,7 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-2">Areas of expertise <span className="text-slate-400 font-normal text-xs ml-1">type to search; select multiple</span></label>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">Areas of expertise<RequiredMark /> <span className="text-slate-400 font-normal text-xs ml-1">type to search; select multiple</span></label>
               <SearchableExpertiseSelect selected={expertise} onChange={setExpertise} />
             </div>
 
