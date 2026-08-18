@@ -231,15 +231,33 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
     fd.append('current_focus_areas', JSON.stringify(focusAreas))
     if (avatarUrl) fd.append('avatar_url', avatarUrl)
 
-    console.log('[OnboardingForm] About to call completeOnboarding')
-    const result = await completeOnboarding(fd)
-    console.log('[OnboardingForm] completeOnboarding returned:', result)
-    if (result.error) { setError(result.error); setSaving(false); return }
-    
-    // Wait a moment for recommendations to finish generating
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    router.push('/dashboard/introductions')
+    // Everything below runs inside a SUBMIT EVENT HANDLER. React error boundaries do not
+    // catch event-handler exceptions or rejected promises, so app/onboarding/error.tsx
+    // would NOT contain a failure here — an unhandled rejection would leave the member
+    // staring at a spinner (or worse) with no idea whether their profile was saved. Handle
+    // it locally: surface a retryable message and re-enable the form. The profile write
+    // itself already happened server-side before any of this can fail.
+    try {
+      console.log('[OnboardingForm] About to call completeOnboarding')
+      const result = await completeOnboarding(fd)
+      console.log('[OnboardingForm] completeOnboarding returned:', result)
+      if (result?.error) { setError(result.error); setSaving(false); return }
+
+      // Wait a moment for recommendations to finish generating
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      router.push('/dashboard/introductions')
+    } catch (err) {
+      // Never swallowed silently: logged locally, and the member gets an explicit,
+      // accurate next step rather than a dead form. Their answers stay in component state,
+      // so "Try again" re-submits exactly what they entered.
+      console.error('[OnboardingForm] submit failed', err)
+      setError(
+        'We couldn’t finish setting up your profile. Your answers are still here — please try again. ' +
+        'If it keeps failing, open your introductions page; your profile may already be saved.',
+      )
+      setSaving(false)
+    }
   }
 
   const steps = onboardingStepList(needsPassword)

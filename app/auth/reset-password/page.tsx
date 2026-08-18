@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { emitMetric } from '@/lib/metrics'
 import { Loader2, CheckCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { passwordSetupCopy, isPasswordSetupMode, DEFAULT_MODE, type PasswordSetupDisplayMode } from '@/lib/auth/passwordSetupCopy'
 
 // Secure reset. The password update AND the clearing of the legacy `password_reset_required` flag
 // happen SERVER-SIDE (POST /api/auth/complete-reset), never in the browser:
@@ -33,6 +34,13 @@ async function postReset(payload: { mode: 'set'; password: string } | { mode: 'f
 
 export default function ResetPasswordPage() {
   const [phase, setPhase] = useState<Phase>('waiting')
+  // DISPLAY-ONLY wording. Derived server-side from the caller's own profile
+  // (GET /api/auth/password-context) so a first-time invitee is not told to "reset" a
+  // password they have never had. Never read from the URL, sessionStorage, or any
+  // client value, and it authorizes nothing — a failed lookup keeps the neutral
+  // default wording. See lib/auth/passwordSetupCopy.ts.
+  const [copyMode, setCopyMode] = useState<PasswordSetupDisplayMode>(DEFAULT_MODE)
+  const copy = passwordSetupCopy(copyMode)
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -60,6 +68,19 @@ export default function ResetPasswordPage() {
         setPhase('invalid') // direct visit or expired link
         return
       }
+      // Server-derived wording (invite vs recovery vs legacy). Best-effort and
+      // non-blocking: any failure leaves the neutral default heading in place.
+      // Best-effort and fully contained: one request, no retry, no loop, and it gates
+      // NOTHING — no phase transition depends on it. The initial state is the neutral
+      // 'unknown' copy, identical on the server render and the first client render (no
+      // hydration mismatch) and true for all three cases, so there is no flash of wrong
+      // wording; it only ever narrows to a MORE specific heading. Any failure, non-OK
+      // status, or unrecognised payload leaves the neutral copy in place. The .catch
+      // means this can never become an unhandled rejection.
+      fetch('/api/auth/password-context')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (isPasswordSetupMode(d?.mode)) setCopyMode(d.mode) })
+        .catch(() => { /* keep neutral copy */ })
       // DISPLAY decision only: if this tab already submitted a password, show the finishing UI and
       // let the server (via the continuation cookie) decide — never re-present the form here.
       if (isPwSet()) runFinalize()
@@ -123,8 +144,8 @@ export default function ResetPasswordPage() {
           </div>
           <div className="h-px w-12 bg-white/20" />
           <div>
-            <p className="text-lg font-medium mb-1.5 text-white">Choose a new password.</p>
-            <p className="text-sm text-white/60">You'll be signed in automatically after resetting.</p>
+            <p className="text-lg font-medium mb-1.5 text-white">{copy.subheading}</p>
+            <p className="text-sm text-white/60">You&apos;ll be signed in automatically when you&apos;re done.</p>
           </div>
         </div>
         <p className="text-white/40 text-sm">© {new Date().getFullYear()} Andrel</p>
@@ -135,7 +156,7 @@ export default function ResetPasswordPage() {
         <div className="w-full max-w-sm">
           <div className="mb-8">
             <Link href="/" className="text-xl font-bold text-brand-navy lg:hidden block mb-6 tracking-tight">Andrel</Link>
-            <h2 className="text-2xl font-bold text-slate-900">Set new password</h2>
+            <h2 className="text-2xl font-bold text-slate-900">{copy.heading}</h2>
           </div>
 
           {/* Checking session */}

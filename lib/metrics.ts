@@ -26,8 +26,25 @@ export const RECOVERY_METRICS = [
   'recovery_password_changed',
 ] as const
 
-export const ALLOWED_METRICS: readonly string[] = [...PROVISIONING_METRICS, ...RECOVERY_METRICS]
-export type MetricName = (typeof PROVISIONING_METRICS)[number] | (typeof RECOVERY_METRICS)[number]
+/**
+ * Client render-error boundaries. Emitted from the browser, so it reaches server logs ONLY
+ * via the /api/metrics beacon — a raw console.error in a client boundary never appears in
+ * Vercel function logs. Dimensions are coarse and categorical by design: the boundary
+ * surface, the error CLASS (e.g. "TypeError"), and Next's opaque digest. Never the error
+ * message, stack, URL, or any profile/form value — sanitizeDims would drop most of those
+ * anyway, and callers must not rely on that as the only defence.
+ */
+export const CLIENT_ERROR_METRICS = [
+  'client_error_boundary',
+] as const
+
+export const ALLOWED_METRICS: readonly string[] = [
+  ...PROVISIONING_METRICS, ...RECOVERY_METRICS, ...CLIENT_ERROR_METRICS,
+]
+export type MetricName =
+  | (typeof PROVISIONING_METRICS)[number]
+  | (typeof RECOVERY_METRICS)[number]
+  | (typeof CLIENT_ERROR_METRICS)[number]
 
 const FORBIDDEN_DIM_KEY = /token|password|secret|hash|authorization|cookie|bearer|key|email|url|uri/i
 // Reject values that look like PII/secrets: emails, URLs, protocol-relative refs, or JWT-ish blobs.

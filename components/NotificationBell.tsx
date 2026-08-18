@@ -86,9 +86,19 @@ export default function NotificationBell() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: realtimeFilterForUser(userId) },
         payload => {
-          const row = payload.new as Notification
-          if (!isOwnNotification(row, userId)) return
-          setNotifications(prev => (prev.some(n => n.id === row.id) ? prev : [row, ...prev]))
+          // Supabase realtime invokes this from a WebSocket callback, which sits OUTSIDE
+          // every React error boundary: a throw here escapes as an uncaught error rather
+          // than rendering app/dashboard/error.tsx. Contain it locally so a single
+          // malformed payload degrades this one notification instead of leaving an
+          // uncaught error on the member's first dashboard session. Not swallowed
+          // silently — it is logged, and the ownership guard is unchanged.
+          try {
+            const row = payload.new as Notification
+            if (!isOwnNotification(row, userId)) return
+            setNotifications(prev => (prev.some(n => n.id === row.id) ? prev : [row, ...prev]))
+          } catch (err) {
+            console.error('[NotificationBell] realtime payload handling failed', err)
+          }
         }
       )
       .subscribe()

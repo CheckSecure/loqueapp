@@ -37,14 +37,27 @@ export default function ThursdayCountdownBanner({
     if (!showCountdown) return
     const target = new Date(targetIso)
 
-    const tick = () => setText(formatCountdown(countdownState(new Date(), target)))
+    // A throw inside setInterval is NOT caught by any React error boundary — it would
+    // surface as an uncaught window error and the clock would keep firing it every
+    // second. countdownState/formatCountdown are total for a valid target (and clamp an
+    // Invalid Date to "Arriving shortly"), but this is the one place on a new member's
+    // first page that runs on a timer, so it degrades explicitly: stop the clock and keep
+    // the last good text. The banner stays on screen; only the live seconds stop.
+    const tick = () => {
+      try {
+        setText(formatCountdown(countdownState(new Date(), target)))
+      } catch (err) {
+        console.error('[ThursdayCountdownBanner] countdown tick failed; stopping the clock', err)
+        stop()
+      }
+    }
 
     const start = () => {
       if (intervalRef.current != null) return
       tick() // immediate refresh so we never show a stale value
       intervalRef.current = setInterval(tick, 1000)
     }
-    const stop = () => {
+    function stop() {
       if (intervalRef.current != null) {
         clearInterval(intervalRef.current)
         intervalRef.current = null
@@ -64,7 +77,15 @@ export default function ThursdayCountdownBanner({
     }
   }, [targetIso, showCountdown])
 
-  const accent = ACCENT[kind]
+  // Defensive lookup. ACCENT is keyed by ThursdayBannerKind, and the server resolver
+  // currently only ever emits 'before' or 'after_received' — so this is NOT the incident's
+  // root cause and is not presented as one. It is a latent render-time crash primitive on
+  // the first page a new member sees: if `kind` ever arrived as undefined or an
+  // unrecognised value (a future banner state, a stale cached RSC payload, a
+  // serialization edge), `ACCENT[kind].Icon` would throw. That throw IS a render error, so
+  // app/dashboard/error.tsx would now catch it — but a member's first view degrading to
+  // neutral styling beats an error page, so it falls back here instead.
+  const accent = ACCENT[kind] ?? ACCENT.before
   const Icon = accent.Icon
 
   return (

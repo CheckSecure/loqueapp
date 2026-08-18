@@ -354,6 +354,14 @@ export async function completeOnboarding(formData: FormData) {
     meeting_format_preference: (formData.get('meeting_format_preference') as string) || 'both',
     geographic_scope: (formData.get('geographic_scope') as string) || 'us-wide',
     profile_complete: true,
+    // Advance the wizard marker in the SAME server-authorized write that completes the profile.
+    // Terminal value 2 is not a guess: POST /api/profile/complete — the other real completion
+    // path — writes `{ profile_complete: true, onboarding_step: 2 }`, and the legacy wizard
+    // (app/dashboard/onboarding) only ever renders steps 1 and 2. Leaving it at 1 here produced
+    // rows that were simultaneously "complete" and "on step 1", which is the state both affected
+    // members were found in. Drafts are unaffected: this line runs only on the completing write,
+    // so a member who abandons onboarding keeps their resumable step.
+    onboarding_step: 2,
     // Clear the LEGACY provisioning flag on completion so a user who set their password via the
     // secure flow can never be looped back to "Set your password" by the middleware.
     password_reset_required: false,

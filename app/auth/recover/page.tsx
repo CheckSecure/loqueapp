@@ -14,7 +14,7 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
 
 /**
  * Intermediate recovery page. Prefetch-safe by construction: the initial GET verifies no
- * token — only the explicit "Continue password reset" click does. The recommended email
+ * token — only the explicit "Continue" click does. The recommended email
  * template carries the token in the URL FRAGMENT, which is never sent to the server, so the
  * token_hash appears in no server/CDN/middleware log. On mount we capture the token from the
  * fragment, then immediately scrub the address bar (removing fragment AND query) so it can't
@@ -70,8 +70,8 @@ function RecoverInner() {
           </div>
           <div className="h-px w-12 bg-white/20" />
           <div>
-            <p className="text-lg font-medium mb-1.5 text-white">Confirm your password reset.</p>
-            <p className="text-sm text-white/60">One click keeps your reset link secure from email scanners.</p>
+            <p className="text-lg font-medium mb-1.5 text-white">Confirm your secure link.</p>
+            <p className="text-sm text-white/60">One click keeps your secure link safe from email scanners.</p>
           </div>
         </div>
         <p className="text-white/40 text-sm">© {new Date().getFullYear()} Andrel</p>
@@ -81,7 +81,12 @@ function RecoverInner() {
         <div className="w-full max-w-sm">
           <div className="mb-8">
             <Link href="/" className="text-xl font-bold text-brand-navy lg:hidden block mb-6 tracking-tight">Andrel</Link>
-            <h2 className="text-2xl font-bold text-slate-900">Confirm password reset</h2>
+            {/* Neutral by necessity: the secure link is verified only on click, so no
+                server-derived invite-vs-recovery signal exists yet. See
+                lib/auth/passwordSetupCopy.ts — the specific wording appears on the
+                NEXT screen, where an authenticated session makes the distinction
+                server-derivable. */}
+            <h2 className="text-2xl font-bold text-slate-900">Confirm it&rsquo;s you</h2>
           </div>
 
           {phase === 'checking' && (
@@ -94,13 +99,13 @@ function RecoverInner() {
             <div className="space-y-5">
               <div className="flex items-start gap-3 bg-slate-50 border border-slate-200 text-slate-600 text-sm px-4 py-4 rounded-lg leading-relaxed">
                 <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-brand-navy" />
-                <span>For your security, click below to continue. Your reset link is verified only when you choose to proceed.</span>
+                <span>For your security, click below to continue. Your secure link is verified only when you choose to proceed.</span>
               </div>
               <button
                 onClick={handleConfirm}
                 className="w-full flex items-center justify-center gap-2 bg-brand-navy text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-brand-navy-dark transition-colors"
               >
-                Continue password reset
+                Continue
               </button>
             </div>
           )}
