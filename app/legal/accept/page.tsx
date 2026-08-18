@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { needsReacceptance } from '@/lib/legal/terms'
 import AcceptTermsForm from '@/components/legal/AcceptTermsForm'
 
@@ -21,9 +22,21 @@ export default async function LegalAcceptPage() {
 
   // Already satisfied (accepted OR grandfathered through the current version)?
   // Don't force acceptance again. Fail open on missing columns.
+  //
+  // A3: this MUST read through the same privilege path as the dashboard layout's clickwrap
+  // gate (service_role, scoped to the caller's own id). Authenticated SELECT on the base
+  // profiles table is REVOKED (migration 058), so reading it with the caller's own client
+  // here returned 42501 for every member; the `if (error)` branch below then treated that
+  // permission failure as "nothing to accept" and redirected to /dashboard — while the
+  // layout, reading the SAME columns as service_role, saw the real (unaccepted) state and
+  // redirected straight back here. Two gates reading one fact through two different
+  // privilege paths is what produced the infinite /dashboard ↔ /legal/accept redirect loop
+  // that stranded every member who was not grandfathered (i.e. every NEW member) on a blank
+  // page after onboarding and on every subsequent login. Sharing one source makes the two
+  // gates agree by construction: if the read ever fails, BOTH fail open and neither loops.
   let mustAccept = true
   try {
-    const { data, error } = await supabase
+    const { data, error } = await createAdminClient()
       .from('profiles')
       .select('terms_version_accepted, privacy_version_accepted, terms_grandfathered_through_version, privacy_grandfathered_through_version')
       .eq('id', user.id)

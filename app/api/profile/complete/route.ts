@@ -28,11 +28,23 @@ export async function POST(req: Request) {
   // Deliberately NOT added to /api/profile/update or updateProfile, so
   // existing-user profile editing (which shares /api/profile/update) is
   // unaffected and already-complete users are never retroactively validated.
-  const { data: identity } = await supabase
+  // A3: self read via service_role, scoped to the caller's own id. Authenticated SELECT on the
+  // base profiles table is REVOKED (migration 058), so reading it with the caller's own client
+  // returned 42501 permission-denied for EVERY caller. The error was discarded, `identity` fell
+  // to null, and the checks below rejected the member's own valid, already-persisted title with
+  // "Professional title is required." — so profile_complete could never be set on this path
+  // (the legacy /dashboard/onboarding wizard, which is where finalizeReset sends new invitees).
+  // A read failure must NOT be reported as a validation error, so it is surfaced separately.
+  const { data: identity, error: identityError } = await createAdminClient()
     .from('profiles')
     .select('title, company, location')
     .eq('id', user.id)
     .single()
+
+  if (identityError) {
+    console.error('[profile/complete] identity read failed', { code: identityError.code, msg: identityError.message })
+    return NextResponse.json({ error: 'Could not verify your profile. Please try again.' }, { status: 503 })
+  }
 
   const title = (identity?.title || '').trim()
   const company = (identity?.company || '').trim()

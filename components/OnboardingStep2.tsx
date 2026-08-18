@@ -44,10 +44,17 @@ export default function OnboardingStep2({ profile }: { profile: Profile | null }
       setError(result.error)
       setLoading(false)
     } else {
-      // Mark profile as complete
-      await fetch('/api/profile/complete', {
-        method: 'POST'
-      })
+      // Mark profile as complete. The response MUST be checked: this call previously ran
+      // fire-and-forget, so when it failed the member was navigated to /dashboard anyway with
+      // profile_complete still false — the middleware then bounced them straight back to
+      // onboarding, with nothing on screen to explain why. Never navigate on a failed completion.
+      const completeRes = await fetch('/api/profile/complete', { method: 'POST' })
+      if (!completeRes.ok) {
+        const detail = await completeRes.json().catch(() => null)
+        setError(detail?.error || 'We could not finish setting up your profile. Please try again.')
+        setLoading(false)
+        return
+      }
       router.push('/dashboard')
     }
   }
