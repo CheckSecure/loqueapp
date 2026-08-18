@@ -217,10 +217,28 @@ describe('structural guarantees', () => {
   it('email sender: exact subject, CC nominator, one To, no password', () => {
     const src = readFileSync('lib/email.ts', 'utf8')
     const fn = src.slice(src.indexOf('export async function sendNominationInviteEmail'), src.indexOf('[sendNominationInviteEmail] exception'))
-    expect(fn).toContain("subject: 'James Kahrs invited you to join Andrel'")
-    expect(fn).toContain('cc: args.cc'); expect(fn).toContain('to: args.to')
-    expect(fn).toContain('Create your Andrel account')
+    // The sender is now shared across campaigns; James's copy is its DEFAULT. Asserted on the
+    // default constants (behaviour) rather than an inline literal, plus the built output below.
+    expect(fn).toContain("args.subject ?? 'James Kahrs invited you to join Andrel'")
+    expect(fn).toContain("args.nominatorName ?? 'James Kahrs'")
+    expect(fn).toContain('args.cc ? { cc: args.cc } : {}'); expect(fn).toContain('to: args.to')
     expect(fn).not.toMatch(/password/i)
+  })
+
+  it('James\'s built email is byte-identical in the ways that matter (subject, attribution, one CTA)', async () => {
+    const { buildNominationInviteEmail } = await import('@/lib/email/nominationInvite')
+    const built = buildNominationInviteEmail({
+      nominatorName: 'James Kahrs',
+      intro: 'a private network for senior leaders across legal, government affairs, business, and executive leadership',
+      firstName: 'Brett',
+      link: 'https://andrel.app/auth/recover#token_hash=x&type=magiclink',
+      subject: 'James Kahrs invited you to join Andrel',
+    })
+    expect(built.subject).toBe('James Kahrs invited you to join Andrel')
+    expect(built.text).toContain('Hi Brett,')
+    expect(built.text).toContain('James Kahrs invited you to join Andrel, a private network for senior leaders')
+    expect((built.html.match(/Create your Andrel account/g) || []).length).toBe(1)
+    expect(built.text).not.toMatch(/password/i)
   })
   it('route: referrals attribution + cc marker, NO campaign ledger, fixed campaign', () => {
     const src = readFileSync('app/api/admin/campaigns/james-nomination/route.ts', 'utf8')

@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { buildRecommendationIntroEmail } from '@/lib/email/recommendationIntro'
 import { introReminderCopy } from '@/lib/notifications/engagement'
 import { formatMeetingTimes } from '@/lib/meetings/formatMeetingTime'
+import { buildNominationInviteEmail } from '@/lib/email/nominationInvite'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -418,42 +419,41 @@ export async function sendSecureInviteEmail(args: {
  * The nominator (CC) is a courtesy copy only — delivery state is tracked against the To recipient (the
  * webhook applies events by `data.to`, ignoring the CC). Wording is preserved verbatim per the campaign.
  */
+export { buildNominationInviteEmail } from '@/lib/email/nominationInvite'
+
+/**
+ * Send a nomination invitation. ONE nominee per send — `cc` is OPTIONAL and is the nominator only.
+ * When omitted (a campaign whose nominator must not be copied) the message has exactly one recipient
+ * and no cc/bcc key is passed to the provider at all. No campaign ever places two nominees on one
+ * message, so a nominee can never be exposed to another.
+ *
+ * Defaults keep the original James Kahrs behaviour for callers that pass neither nominatorName,
+ * intro, nor subject.
+ */
 export async function sendNominationInviteEmail(args: {
   to: string
-  cc: string          // the nominator (courtesy copy) — NEVER interpreted as the nominee's delivery state
+  /** The nominator, courtesy-copied. OMIT entirely for campaigns that must not copy the nominator. */
+  cc?: string
   firstName: string
   link: string
   idempotencyKey?: string
+  nominatorName?: string
+  intro?: string
+  subject?: string
 }): Promise<{ success: boolean; messageId?: string; errorClass?: string; uncertain?: boolean }> {
-  const firstName = (args.firstName || '').trim() || 'there'
+  const nominatorName = args.nominatorName ?? 'James Kahrs'
+  const intro = args.intro ?? 'a private network for senior leaders across legal, government affairs, business, and executive leadership'
+  const subject = args.subject ?? 'James Kahrs invited you to join Andrel'
+  const built = buildNominationInviteEmail({ nominatorName, intro, firstName: args.firstName, link: args.link, subject })
   try {
     const { data, error } = await resend.emails.send({
       from: 'Andrel <hello@andrel.app>',
       to: args.to,
-      cc: args.cc,
-      subject: 'James Kahrs invited you to join Andrel',
-      html: `
-        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; color:#334155;">
-          <h2 style="color:#1B2850; margin-bottom:16px;">You're invited to Andrel</h2>
-          <p style="font-size:16px; line-height:1.6;">Hi ${escapeHtml(firstName)},</p>
-          <p style="font-size:16px; line-height:1.6;">James Kahrs invited you to join Andrel, a private network for senior leaders across legal, government affairs, business, and executive leadership.</p>
-          <p style="font-size:16px; line-height:1.6;">Members are connected through selective introductions based on their experience, interests, and goals. There are no public feeds and no cold outreach.</p>
-          <p style="font-size:16px; line-height:1.6;">The secure link below will set up your account:</p>
-          <p style="margin:28px 0;">
-            <a href="${args.link}" style="display:inline-block; background:#1B2850; color:#ffffff; text-decoration:none; font-size:16px; font-weight:600; padding:14px 32px; border-radius:10px;">Create your Andrel account</a>
-          </p>
-          <p style="font-size:16px; line-height:1.6; margin-top:24px;">Best,<br/>Daniel<br/><span style="color:#64748b;">Founder, Andrel</span></p>
-          <p style="font-size:13px; color:#94a3b8; line-height:1.6; margin-top:20px;">This link is personal to you — please don't forward it. It expires for your protection; if it no longer works, request a new one from the Andrel sign-in page.</p>
-        </div>`,
-      text:
-        `You're invited to Andrel.\n\n` +
-        `Hi ${firstName},\n\n` +
-        `James Kahrs invited you to join Andrel, a private network for senior leaders across legal, government affairs, business, and executive leadership.\n\n` +
-        `Members are connected through selective introductions based on their experience, interests, and goals. There are no public feeds and no cold outreach.\n\n` +
-        `The secure link below will set up your account:\n\n` +
-        `Create your Andrel account: ${args.link}\n\n` +
-        `Best,\nDaniel\nFounder, Andrel\n\n` +
-        `This link is personal to you — please don't forward it. It expires for your protection.`,
+      // Only include a cc key when the campaign actually copies the nominator.
+      ...(args.cc ? { cc: args.cc } : {}),
+      subject: built.subject,
+      html: built.html,
+      text: built.text,
     }, args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : undefined)
     if (error) {
       console.error('[sendNominationInviteEmail] Resend error:', error.message)
