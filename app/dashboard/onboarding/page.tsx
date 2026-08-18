@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import OnboardingStep1 from '@/components/OnboardingStep1'
 import OnboardingStep2 from '@/components/OnboardingStep2'
+import { resolveWizardStartStep } from '@/lib/onboarding/steps'
 import { Loader2 } from 'lucide-react'
 
 export default function OnboardingPage() {
@@ -35,7 +36,12 @@ export default function OnboardingPage() {
 
       setUser(user)
       setProfile(profile)
-      setCurrentStep(profile?.onboarding_step || 1)
+      // Open on the step the DATA supports, not the stored marker alone. A profile parked at
+      // step 2 whose step-1 fields (title / company / physical location) do not yet satisfy
+      // POST /api/profile/complete opens on step 1, where those inputs live — otherwise the
+      // member sees only step 2, which has no location field, and Complete Profile fails on a
+      // value the screen gives them no way to enter. Never advances past the marker.
+      setCurrentStep(resolveWizardStartStep(profile))
       setLoading(false)
     }
 
@@ -97,7 +103,7 @@ export default function OnboardingPage() {
             onNext={() => setCurrentStep(2)}
           />
         ) : (
-          <OnboardingStep2 profile={profile} />
+          <OnboardingStep2 profile={profile} onBack={() => setCurrentStep(1)} />
         )}
       </div>
     </div>

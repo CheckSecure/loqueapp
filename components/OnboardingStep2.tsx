@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { serializeMultiSelectField } from '@/lib/profile/multiSelect'
 import { useRouter } from 'next/navigation'
-import { Loader2, CheckCircle } from 'lucide-react'
+import { Loader2, CheckCircle, ArrowLeft } from 'lucide-react'
 
 const PURPOSE_OPTIONS = ["Find customers", "Raise capital", "Hire talent", "Learn & grow", "Expand network", "Give back / mentor", "Explore opportunities"]
 const INTEREST_OPTIONS = ["Sports", "Travel", "Food & wine", "Arts & culture", "Technology", "Fitness", "Reading", "Music", "Volunteering"]
@@ -15,7 +15,18 @@ interface Profile {
   intro_preferences?: string[]
 }
 
-export default function OnboardingStep2({ profile }: { profile: Profile | null }) {
+export default function OnboardingStep2({
+  profile,
+  onBack,
+}: {
+  profile: Profile | null
+  /**
+   * Return to step 1. Present so a completion failure on a step-1-owned field (title, company,
+   * physical location) is always ACTIONABLE: none of those has an input on this screen, so without
+   * a way back the member would be told to fix something they cannot reach.
+   */
+  onBack?: () => void
+}) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [purposes, setPurposes] = useState<string[]>(profile?.purposes || [])
@@ -139,16 +150,45 @@ export default function OnboardingStep2({ profile }: { profile: Profile | null }
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-lg">{error}</p>}
+      {error && (
+        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-3 rounded-lg space-y-2">
+          <p>{error}</p>
+          {/* Title, company and physical location are all collected on step 1 and have no input on
+              this screen. If completion failed on one of them, saying so without offering a way
+              back would leave the member stuck on an instruction they cannot act on. */}
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="font-semibold underline underline-offset-2 hover:text-red-700"
+            >
+              Go back to edit your details
+            </button>
+          )}
+        </div>
+      )}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full flex items-center justify-center gap-2 bg-[#1B2850] text-white text-sm font-semibold px-6 py-3 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60"
-      >
-        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-        {loading ? 'Completing setup...' : 'Complete Profile'}
-      </button>
+      <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-3">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={loading}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 px-6 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 disabled:opacity-60"
+          >
+            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+            Back
+          </button>
+        )}
+        <button
+          type="submit"
+          disabled={loading}
+          className="flex-1 flex items-center justify-center gap-2 bg-[#1B2850] text-white text-sm font-semibold px-6 py-3 rounded-lg hover:bg-[#2E4080] transition-colors disabled:opacity-60"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+          {loading ? 'Completing setup...' : 'Complete Profile'}
+        </button>
+      </div>
     </form>
   )
 }
