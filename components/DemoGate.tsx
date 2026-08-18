@@ -54,7 +54,8 @@ export default function DemoGate({
 
   useEffect(() => {
     setMounted(true)
-    if (sessionStorage.getItem(STORAGE_KEY) === 'true') {
+    // Use the guarded helper: the property read itself throws in blocked embedded browsers.
+    if (safeGetItem(STORAGE_KEY) === 'true') {
       setUnlocked(true)
     }
   }, [])
@@ -104,7 +105,7 @@ export default function DemoGate({
         body: JSON.stringify({ password }),
       })
       if (res.ok) {
-        sessionStorage.setItem(STORAGE_KEY, 'true')
+        safeSetItem(STORAGE_KEY, 'true')
         setUnlocked(true)
         setPassword('')
       } else {

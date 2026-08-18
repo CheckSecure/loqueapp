@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { RecoveryFlow, RECOVERY_MESSAGES, parseRecoveryParamsFromLocation } from '@/lib/auth/recovery'
 import { emitMetric } from '@/lib/metrics'
+import { safeReplaceState } from '@/lib/browser/safeApis'
 import { Loader2, ShieldCheck } from 'lucide-react'
 
 // Run the scrub before the browser paints (earliest client execution). useLayoutEffect
@@ -30,7 +31,13 @@ function RecoverInner() {
   useIsomorphicLayoutEffect(() => {
     // 1) capture params (fragment preferred), 2) scrub the URL, 3) validate — NO verification.
     const params = parseRecoveryParamsFromLocation(window.location.hash, window.location.search)
-    window.history.replaceState(null, '', window.location.pathname)
+    // Scrub the token out of the address bar. Embedded/in-app browsers (iOS WKWebView) can refuse
+    // the History API with a SecurityError; this page has no segment error boundary, so an unguarded
+    // throw here escaped to app/global-error.tsx and blanked the screen. The params are already
+    // captured in memory above, so a refused scrub degrades to "the fragment stays in the address
+    // bar" — reported via a coarse metric — instead of losing the whole page. A fragment is never
+    // sent to the server, and verification still requires the explicit click below.
+    safeReplaceState(window.location.pathname, 'auth_recover')
 
     const flow = new RecoveryFlow(createClient() as any, params)
     flowRef.current = flow

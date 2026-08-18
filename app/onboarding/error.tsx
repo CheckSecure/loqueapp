@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react'
 import { emitMetric } from '@/lib/metrics'
-import Link from 'next/link'
 
 /**
  * Error boundary for the top-level onboarding surface.
@@ -51,6 +50,13 @@ export default function OnboardingError({
           Your answers may already have been saved. Try again, or go straight to your
           introductions — if your profile is complete, you’ll land there normally.
         </p>
+        {/*
+          Plain anchors, deliberately — NOT next/link. If the host browser is refusing the History
+          API (the SecurityError class this page exists to catch), a client-side router navigation
+          would fail for the same reason and strand the member here. A full page load always works,
+          and neither link requires storage, cookies beyond the existing session, or JavaScript
+          routing to be usable.
+        */}
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
           <button
             type="button"
@@ -59,13 +65,13 @@ export default function OnboardingError({
           >
             Try again
           </button>
-          <Link
-            href="/dashboard/introductions"
-            className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2"
-          >
+          <a href="/dashboard/introductions" className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2">
             Go to Introductions
-          </Link>
+          </a>
         </div>
+        <p className="mt-4 text-xs text-slate-400">
+          Still stuck? <a href="/login" className="font-semibold text-brand-navy underline underline-offset-2">Sign in again</a>
+        </p>
         {error?.digest && (
           <p className="mt-5 text-[11px] text-slate-300">
             Reference: <span className="font-mono">{error.digest}</span>

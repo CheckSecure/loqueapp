@@ -59,11 +59,19 @@ export default function GlobalError({
               >
                 Try again
               </button>
+              {/* Plain anchors only: a client router navigation would depend on the History API,
+                  which is exactly what an embedded browser may be refusing. */}
               <a
                 href="/dashboard/introductions"
                 style={{ background: '#fff', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 20px', fontSize: 14, fontWeight: 600, textDecoration: 'none' }}
               >
                 Go to Introductions
+              </a>
+              <a
+                href="/login"
+                style={{ background: '#fff', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 20px', fontSize: 14, fontWeight: 600, textDecoration: 'none' }}
+              >
+                Sign in again
               </a>
             </div>
             {error?.digest && (

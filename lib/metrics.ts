@@ -36,6 +36,12 @@ export const RECOVERY_METRICS = [
  */
 export const CLIENT_ERROR_METRICS = [
   'client_error_boundary',
+  /**
+   * An OPTIONAL browser capability was refused by the host (embedded/in-app browsers commonly
+   * refuse storage and the History API). Dimensions are a fixed operation label and a fixed surface
+   * label only — see lib/browser/safeApis.ts. Never a URL, id, message, or user agent.
+   */
+  'client_browser_api_unavailable',
 ] as const
 
 export const ALLOWED_METRICS: readonly string[] = [
@@ -92,7 +98,9 @@ export function emitMetric(name: MetricName, dims: Record<string, unknown> = {})
     if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
       navigator.sendBeacon('/api/metrics', new Blob([body], { type: 'application/json' }))
     } else {
-      void fetch('/api/metrics', { method: 'POST', body, keepalive: true, headers: { 'content-type': 'application/json' } })
+      // .catch is required: without it an unreachable endpoint becomes an UNHANDLED REJECTION,
+      // which is exactly the class of failure telemetry must never introduce.
+      void fetch('/api/metrics', { method: 'POST', body, keepalive: true, headers: { 'content-type': 'application/json' } }).catch(() => {})
     }
   } catch {
     /* metrics are best-effort; never surface an error to the caller */
