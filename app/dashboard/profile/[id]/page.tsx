@@ -11,7 +11,7 @@ import { listRoles, ROLE_CATEGORY_LABELS } from '@/lib/profileRoles'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { professionalIdentity } from '@/lib/professionalIdentity'
 import { canViewerDiscoverMember } from '@/lib/privacy/canViewerDiscoverMember'
-import { PUBLIC_PROFILE_SELECT } from '@/lib/privacy/profileColumns'
+import { PUBLIC_PROFILE_SELECT } from '@/lib/profiles/publicProfile'
 import { isLinkableCompany } from '@/lib/company/slug'
 import CompanyLink from '@/components/CompanyLink'
 import IdentityLine from '@/components/IdentityLine'
@@ -78,6 +78,37 @@ function Section({ icon: Icon, title, children }: {
   )
 }
 
+
+/**
+ * Shown ONLY when a query genuinely FAILED (permission, network, timeout, infrastructure) — never
+ * when a member is simply absent or undiscoverable, which stays a 404.
+ *
+ * WHY THIS EXISTS: the production incident was a database error being collapsed into `null` and
+ * then rendered as notFound(). A 404 tells the member "this person does not exist", which was a
+ * lie, and it silently hid an outage behind a believable answer. A failure now says "try again"
+ * and stays distinguishable from absence forever.
+ *
+ * Reveals nothing: no SQL, no error message, no member id, no indication of whether any account
+ * exists. Renders no profile data at all.
+ */
+function ProfileUnavailable() {
+  return (
+    <div className="p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8">
+      <div className="max-w-content-narrow mx-auto w-full">
+        <Link href="/dashboard/network" className="text-sm text-slate-500 hover:text-slate-700 inline-flex items-center gap-1">
+          <ArrowLeft className="w-4 h-4" /> Back
+        </Link>
+        <div className="mt-6 bg-white border border-slate-200/70 rounded-2xl p-10 text-center shadow-sm">
+          <h1 className="text-slate-900 font-semibold mb-1.5">We couldn&apos;t load this profile</h1>
+          <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">
+            Something went wrong on our side. Please try again in a moment — nothing about your account has changed.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default async function MemberProfilePage({ params }: { params: { id: string } }) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -99,15 +130,22 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
     ((presenceRows as any[]) || []).find((r) => r.member_id === params.id)?.label ?? null
 
   const { data: profileRow, error } = await supabase
-    .from('profiles')
+    .from('public_profiles')
     // Canonical company joined in the SAME query via the profiles.company_id FK
     // (companies is authenticated-readable). No second query. Null when company_id
     // is absent → the identity line keeps its exact free-text behavior.
     .select(`${PUBLIC_PROFILE_SELECT}, company_rel:companies!company_id(id, name, slug, logo_url)`)
     .eq('id', params.id)
-    .single()
+    .maybeSingle()
 
-  if (error) console.error('[Profile/[id]] query error:', error.message)
+  // A FAILED query must never become a 404. Only a confirmed, error-free "no discoverable row"
+  // may 404 — which is also what keeps private, blocked, deactivated and nonexistent members
+  // indistinguishable from one another.
+  if (error) {
+    // Coarse class + surface only: no message, no SQL, no member id, nothing identifying.
+    console.error('[profile/[id]] target read failed', { surface: 'profile_target', code: error.code ?? 'unknown' })
+    return <ProfileUnavailable />
+  }
   if (!profileRow) notFound()
   // Safe projection (PUBLIC_PROFILE_SELECT) — a runtime column string, so the typed
   // client can't infer the shape; treat as the display record.
@@ -120,8 +158,8 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
   // Viewer's profile (for computed shared signals) + any active connection
   // between viewer and viewed (for the connection date line).
   const nowIso = new Date().toISOString()
-  const [{ data: viewerProfile }, { data: matchRows }, { data: meetingRows }] = await Promise.all([
-    supabase
+  const [{ data: viewerProfile, error: viewerError }, { data: matchRows }, { data: meetingRows }] = await Promise.all([
+    admin
       .from('profiles')
       .select('role_type, seniority, interests, mentorship_role, location, expertise, purposes')
       .eq('id', user.id)
@@ -143,6 +181,17 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
       .order('scheduled_at', { ascending: false })
       .limit(5),
   ])
+
+  // The viewer's own comparison fields. This read is service_role, so it is deliberately pinned to
+  // .eq('id', user.id) above — the authenticated viewer's OWN uuid, never params.id and never an
+  // unfiltered lookup. A FAILURE here must fail closed rather than silently rendering a profile
+  // whose "shared signals" were computed from nothing: absent shared context would read as
+  // "nothing in common", which is a false statement about another member. Confirmed absence
+  // (no error, no row) is fine and simply yields no computed signals.
+  if (viewerError) {
+    console.error('[profile/[id]] viewer read failed', { surface: 'profile_viewer', code: viewerError.code ?? 'unknown' })
+    return <ProfileUnavailable />
+  }
 
   // "Why connect" — the viewed person's own openness/interests (not computed).
   const whyConnectInterests = toList(profile.interests).slice(0, 8)

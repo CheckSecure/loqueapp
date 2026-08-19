@@ -8,6 +8,7 @@ import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import FormerMemberBadge from '@/components/FormerMemberBadge'
 import IssueReportBanner from '@/components/IssueReportBanner'
 import PresenceBadge from '@/components/presence/PresenceBadge'
+import { memberProfileHref } from '@/lib/profiles/profileHref'
 import { usePresenceLabel } from '@/components/presence/PresenceProvider'
 
 interface ConversationData {
@@ -26,6 +27,23 @@ interface ConversationData {
   isOpportunityInitiated?: boolean
   opportunityTitle?: string | null
   issueReport?: { reportedAt: string; reportText: string } | null
+}
+
+/**
+ * The conversation header's participant control. When a usable profile href exists it is a real
+ * link (normal navigation, cmd-click / new tab, back button, focus ring all unchanged). When the
+ * builder returns null — no id, or a malformed one — it degrades to plain, non-interactive text
+ * rather than sending the member to a fabricated URL that could only 404. It reveals nothing about
+ * whether a private or deactivated account exists; it simply is not a link.
+ */
+function ProfileHeaderLink({ href, children }: { href: string | null; children: React.ReactNode }) {
+  const className = 'flex items-center gap-3 flex-1 rounded -mx-2 px-2 py-1'
+  if (!href) return <div className={className}>{children}</div>
+  return (
+    <Link href={href} className={`${className} hover:bg-slate-50 transition-colors`}>
+      {children}
+    </Link>
+  )
 }
 
 export default function ConversationPage() {
@@ -120,10 +138,7 @@ export default function ConversationPage() {
             </div>
           </div>
         ) : (
-          <Link
-            href={`/dashboard/profile/${conversation.otherUser.id}`}
-            className="flex items-center gap-3 flex-1 hover:bg-slate-50 transition-colors rounded -mx-2 px-2 py-1"
-          >
+          <ProfileHeaderLink href={memberProfileHref(conversation.otherUser?.id)}>
             {conversation.otherUser.avatar_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -144,7 +159,7 @@ export default function ConversationPage() {
               {/* Full coarse presence label for the other participant (green dot when online). */}
               <PresenceBadge label={otherPresence ?? null} className="mt-0.5" />
             </div>
-          </Link>
+          </ProfileHeaderLink>
         )}
         {conversation.isOpportunityInitiated && (
           <div className="flex items-center gap-1.5">
