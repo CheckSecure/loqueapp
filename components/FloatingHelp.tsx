@@ -67,7 +67,7 @@ export default function FloatingHelp() {
   return (
     <div
       ref={containerRef}
-      className="fixed right-4 z-40 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:right-6 md:bottom-6"
+      className="hidden md:block fixed right-4 z-40 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:right-6 md:bottom-6"
     >
       {open && (
         <div

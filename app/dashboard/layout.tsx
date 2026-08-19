@@ -253,7 +253,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           opportunityBadgeCount={opportunityBadgeCount}
           adminBadgeCount={adminBadgeCount}
         />
-        <main className="flex-1 min-w-0 overflow-x-hidden">
+        <main className="flex-1 min-w-0 overflow-x-hidden pb-[env(safe-area-inset-bottom)] md:pb-0">
           {children}
         </main>
       </div>

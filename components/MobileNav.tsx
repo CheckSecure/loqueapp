@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, MessageSquare, Calendar, UserCircle, MoreHorizontal, CreditCard, Settings, ShieldCheck, LogOut, X, Network, Sparkles } from 'lucide-react'
+import { Users, MessageSquare, Calendar, UserCircle, MoreHorizontal, CreditCard, Settings, ShieldCheck, LogOut, X, Network, Sparkles, Compass } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 import { cn } from '@/lib/utils'
+import { OPEN_TUTORIAL_EVENT } from './Tutorial'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -51,7 +52,7 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
   return (
     <>
       {/* Top header - REDESIGNED: Logo + Credits + Bell */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-100 h-14 flex items-center justify-between px-4 gap-3">
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-100 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center justify-between px-4 gap-3">
         <span className="text-lg font-bold text-[#1B2850] tracking-tight flex-shrink-0">Andrel</span>
         
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -77,10 +78,10 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
             className="md:hidden fixed inset-0 z-40 bg-black/30"
             onClick={() => setShowMore(false)}
           />
-          <div className="md:hidden fixed bottom-16 left-0 right-0 z-50 bg-white border-t border-slate-100 rounded-t-2xl shadow-xl p-4 space-y-1">
+          <div className="md:hidden fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] left-0 right-0 z-50 bg-white border-t border-slate-100 rounded-t-2xl shadow-xl p-4 space-y-1 max-h-[70vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-semibold text-slate-900">More</p>
-              <button onClick={() => setShowMore(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowMore(false)} aria-label="Close menu" className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -133,6 +134,15 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
               </Link>
             )}
 
+            <button
+              type="button"
+              onClick={() => { setShowMore(false); window.dispatchEvent(new CustomEvent(OPEN_TUTORIAL_EVENT)) }}
+              className="w-full min-h-[44px] flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Compass className="w-5 h-5 text-slate-400 flex-shrink-0" />
+              <span className="flex-1 text-left">Help &amp; guided tour</span>
+            </button>
+
             <div className="pt-2 border-t border-slate-100 mt-2">
               <button
                 onClick={handleLogout}
@@ -147,7 +157,7 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
       )}
 
       {/* Bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 flex h-16">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 flex h-[calc(4rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)]">
         {bottomNavItems.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
           const isMessages = href === '/dashboard/messages'
@@ -156,7 +166,7 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
             <Link
               key={href}
               href={href}
-              className="flex-1 flex flex-col items-center justify-center gap-0.5 relative py-2"
+              className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 relative py-2"
             >
               {active && (
                 <span className="absolute top-0 left-3 right-3 h-0.5 rounded-full bg-[#C4922A]" />
@@ -169,7 +179,7 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
                   </span>
                 )}
               </span>
-              <span className={cn('text-[10px] font-medium', active ? 'text-[#C4922A]' : 'text-slate-400')}>
+              <span className={cn('text-[10px] font-medium max-w-full truncate', active ? 'text-[#C4922A]' : 'text-slate-400')}>
                 {label}
               </span>
             </Link>
@@ -179,7 +189,7 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
         {/* More button */}
         <button
           onClick={() => setShowMore(v => !v)}
-          className="flex-1 flex flex-col items-center justify-center gap-0.5 relative py-2"
+          className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 relative py-2"
         >
           {showMore && <span className="absolute top-0 left-3 right-3 h-0.5 rounded-full bg-[#C4922A]" />}
           <span className="relative inline-flex">
@@ -188,7 +198,7 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
               <span className="absolute -top-1.5 -right-1.5 w-2 h-2 bg-red-500 rounded-full" />
             )}
           </span>
-          <span className={cn('text-[10px] font-medium', showMore ? 'text-[#C4922A]' : 'text-slate-400')}>More</span>
+          <span className={cn('text-[10px] font-medium max-w-full truncate', showMore ? 'text-[#C4922A]' : 'text-slate-400')}>More</span>
         </button>
       </nav>
     </>

@@ -47,7 +47,7 @@ export default function EarlierIntroductionsBanner({ count, batchId }: Props) {
           <button
             type="button"
             onClick={openEarlierSection}
-            className="text-sm font-semibold text-brand-navy hover:underline whitespace-nowrap"
+            className="inline-flex items-center min-h-[44px] text-sm font-semibold text-brand-navy hover:underline whitespace-normal sm:whitespace-nowrap"
           >
             Review earlier introductions →
           </button>
@@ -55,7 +55,7 @@ export default function EarlierIntroductionsBanner({ count, batchId }: Props) {
             type="button"
             onClick={dismiss}
             disabled={dismissing}
-            className="text-sm text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-50"
+            className="inline-flex items-center min-h-[44px] text-sm text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-50"
           >
             Dismiss
           </button>

@@ -14,3 +14,17 @@
     @apply bg-white text-gray-900 antialiased;
   }
 }
+
+
+/* Mobile form controls: iOS Safari zooms the viewport when a focused input's font-size is under
+   16px, which yanks the layout sideways and is a common source of "the page moves when I tap a
+   field". Raising the FONT SIZE only below the md breakpoint prevents that zoom while leaving the
+   desktop typography scale exactly as designed. Layout impact is verified by the responsive
+   harness (no route's main scrollWidth exceeds its clientWidth at any tested width). */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']),
+  select:not([hidden]),
+  textarea:not([hidden]) {
+    font-size: 16px; /* prevent iOS focus zoom */
+  }
+}

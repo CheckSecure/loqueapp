@@ -104,7 +104,7 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
     <>
       <div
         onClick={handleCardClick}
-        className={`bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col gap-4 ${
+        className={`bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col gap-4 min-w-0 ${
           highlighted ? 'border-brand-gold/40 bg-brand-cream/30' : 'border-slate-200/70'
         }`}
       >
@@ -120,7 +120,7 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
           </EnlargeableAvatar>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-brand-navy truncate">
+              <p className="text-sm font-semibold text-brand-navy break-words sm:truncate">
                 {isDeactivated ? 'Former member' : profile.full_name}
               </p>
               {highlighted && !isDeactivated && (
@@ -129,12 +129,12 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
             </div>
             {!isDeactivated && (() => { const identity = professionalIdentity(profile); return identity.primary ? (
               <div className="mt-0.5">
-                <div className="flex items-center gap-1 text-xs text-slate-500">
+                <div className="flex items-start sm:items-center gap-1 text-xs text-slate-500 min-w-0">
                   <Briefcase className="w-3 h-3 flex-shrink-0" />
-                  <span className="truncate"><IdentityLine profile={profile} guardCardClick /></span>
+                  <span className="min-w-0 break-words sm:truncate"><IdentityLine profile={profile} guardCardClick /></span>
                 </div>
                 {identity.secondary && (
-                  <p className="ml-4 text-[11px] text-slate-400 truncate">{identity.secondary}</p>
+                  <p className="ml-4 text-[11px] text-slate-400 break-words sm:truncate">{identity.secondary}</p>
                 )}
               </div>
             ) : null })()}
@@ -147,40 +147,40 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
             )}
             {isDeactivated && <FormerMemberBadge />}
             {profile.location && (
-              <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
+              <div className="flex items-start sm:items-center gap-1 text-xs text-slate-400 mt-0.5 min-w-0">
                 <MapPin className="w-3 h-3 flex-shrink-0" />
-                <span className="truncate">{profile.location}</span>
+                <span className="min-w-0 break-words sm:truncate">{profile.location}</span>
               </div>
             )}
           </div>
         </div>
 
         {!isDeactivated && profile.bio && (
-          <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{profile.bio}</p>
+          <p className="text-xs text-slate-500 leading-relaxed line-clamp-2 break-words">{profile.bio}</p>
         )}
 
         {connectedRelative && (
-          <div className="text-xs text-slate-400">Introduced through Andrel · Connected {connectedRelative}</div>
+          <div className="text-xs text-slate-400 break-words">Introduced through Andrel · Connected {connectedRelative}</div>
         )}
 
-        <div className="flex gap-2 pt-3 border-t border-slate-100">
+        <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-100">
           <button
             data-card-action
             type="button"
             onClick={handleMessageClick}
             disabled={navigatingToMessage}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-brand-navy text-white text-xs font-semibold rounded-lg hover:bg-brand-navy/90 transition-colors disabled:opacity-75"
+            className="flex-1 basis-28 min-w-0 min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 bg-brand-navy text-white text-xs font-semibold rounded-lg hover:bg-brand-navy/90 transition-colors disabled:opacity-75"
           >
-            <MessageSquare className="w-3.5 h-3.5" />
+            <MessageSquare className="w-3.5 h-3.5 flex-shrink-0" />
             Message
           </button>
           <Link
             data-card-action
             href={`/dashboard/meetings?schedule=1&with=${profile.id}`}
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200/70 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors"
+            className="flex-1 basis-28 min-w-0 min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200/70 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors"
           >
-            <Calendar className="w-3.5 h-3.5" />
+            <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
             Schedule
           </Link>
           <button
@@ -188,9 +188,9 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
             type="button"
             onClick={handleOpenDetails}
             aria-label="View full profile"
-            className="flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200/70 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors"
+            className="flex-1 basis-20 min-w-0 min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200/70 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors"
           >
-            <Eye className="w-3.5 h-3.5" />
+            <Eye className="w-3.5 h-3.5 flex-shrink-0" />
             View
           </button>
         </div>

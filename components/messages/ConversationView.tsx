@@ -305,7 +305,7 @@ export default function ConversationView({ conversationId, isDeactivated }: Conv
                   }`}
                 >
                   {isEditing ? (
-                    <div className="min-w-[220px]">
+                    <div className="min-w-0 sm:min-w-[220px]">
                       <textarea
                         value={editText}
                         onChange={e => setEditText(e.target.value)}

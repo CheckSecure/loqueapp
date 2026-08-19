@@ -53,13 +53,13 @@ export default function SearchableExpertiseSelect({ selected, onChange }: Props)
     <div className="space-y-3">
       {/* Selected tags — one unified, removable chip list */}
       {selected.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-x-1.5 gap-y-5">
           {selected.map((tag) => (
             <button
               key={tag}
               type="button"
               onClick={() => remove(tag)}
-              className="inline-flex items-center gap-1 rounded-full bg-[#1B2850] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#162040] transition-colors"
+              className="relative after:absolute after:left-1/2 after:top-1/2 after:h-11 after:w-full after:min-w-[44px] after:-translate-x-1/2 after:-translate-y-1/2 after:content-[''] inline-flex items-center gap-1 rounded-full bg-[#1B2850] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#162040] transition-colors"
               aria-label={`Remove ${tag}`}
             >
               {tag}
@@ -74,7 +74,7 @@ export default function SearchableExpertiseSelect({ selected, onChange }: Props)
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm hover:border-[#1B2850]/40 transition-colors"
+          className="flex w-full min-h-[44px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm hover:border-[#1B2850]/40 transition-colors"
           aria-expanded={open}
         >
           <Search className="h-4 w-4 text-slate-400" />

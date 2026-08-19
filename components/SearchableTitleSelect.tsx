@@ -194,7 +194,7 @@ function SingleRoleSelect({ roleType, exactJobTitle, onChange }: SingleProps) {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm hover:border-[#1B2850]/40 transition-colors"
+          className="flex w-full min-h-[44px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm hover:border-[#1B2850]/40 transition-colors"
           aria-expanded={open}
         >
           <Search className="h-4 w-4 text-slate-400" />
