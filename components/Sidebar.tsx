@@ -99,9 +99,9 @@ export default function Sidebar({
   }
 
   return (
-    <aside className="hidden md:flex flex-col w-64 bg-[#0A1530] shrink-0 border-r border-white/5">
+    <aside className="hidden md:flex flex-col w-64 h-full min-h-0 bg-[#0A1530] shrink-0 border-r border-white/5">
       {/* Brand mark — premium private-network treatment */}
-      <div className="px-6 py-7 border-b border-white/5 flex items-center justify-between">
+      <div className="shrink-0 px-6 py-7 border-b border-white/5 flex items-center justify-between">
         <div className="flex items-baseline gap-2">
           <span className="text-xl font-bold text-white tracking-tight">Andrel</span>
         </div>
@@ -109,7 +109,7 @@ export default function Sidebar({
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-5 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 min-h-0 px-3 py-5 space-y-0.5 overflow-y-auto">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
           const isMessages = href === '/dashboard/messages'
@@ -164,7 +164,7 @@ export default function Sidebar({
       </nav>
 
       {/* Membership card + identity + sign out */}
-      <div className="px-4 pb-5 pt-4 border-t border-white/5 space-y-4">
+      <div className="shrink-0 px-4 pb-5 pt-4 border-t border-white/5 space-y-4">
         {/* Premium membership card */}
         <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-[#162449] via-[#0F1C3A] to-[#0A1530] border border-brand-gold/15 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/5">
           <div className="absolute top-0 left-3 right-3 h-px bg-gradient-to-r from-transparent via-brand-gold to-transparent" />

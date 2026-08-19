@@ -9,6 +9,7 @@ import MobileNav from '@/components/MobileNav'
 import Tutorial from '@/components/Tutorial'
 import FloatingHelp from '@/components/FloatingHelp'
 import PresenceHeartbeat from '@/components/PresenceHeartbeat'
+import MainScrollReset from '@/components/MainScrollReset'
 
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
@@ -238,8 +239,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <>
       <Tutorial />
+      <MainScrollReset />
       <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} opportunityBadgeCount={opportunityBadgeCount} adminBadgeCount={adminBadgeCount} />
-      <div className="min-h-screen md:flex bg-[#FAF6EE]">
+      <div className="dashboard-shell min-h-screen md:flex bg-[#FAF6EE]">
         <Sidebar
           displayName={displayName}
           email={user.email || ''}
@@ -253,7 +255,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           opportunityBadgeCount={opportunityBadgeCount}
           adminBadgeCount={adminBadgeCount}
         />
-        <main className="flex-1 min-w-0 overflow-x-hidden pb-[env(safe-area-inset-bottom)] md:pb-0">
+        <main id="dashboard-main" className="flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto overflow-x-hidden pb-[env(safe-area-inset-bottom)] md:pb-0">
           {children}
         </main>
       </div>

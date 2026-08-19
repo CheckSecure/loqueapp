@@ -28,3 +28,23 @@
     font-size: 16px; /* prevent iOS focus zoom */
   }
 }
+
+
+/* ── Desktop dashboard shell ────────────────────────────────────────────────────────────────────
+   From md upward the shell is exactly one viewport tall and owns NO scrolling itself, so the
+   sidebar stays put and the main pane becomes the scroll owner. Below md nothing applies: the
+   document keeps scrolling normally, which is what the fixed MobileNav and its safe-area padding
+   are built around.
+
+   The duplicated height declaration is a deliberate fallback, not a mistake: 100dvh tracks the
+   dynamic viewport (Safari's collapsing URL bar) but is unsupported on older browsers, which
+   simply keep the 100vh line above it. Expressed here rather than as two Tailwind classes because
+   utility class ORDER in markup does not decide CSS precedence — source order does, and only a
+   real rule can guarantee it. */
+@media (min-width: 768px) {
+  .dashboard-shell {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden; /* the shell never scrolls; <main> does */
+  }
+}
