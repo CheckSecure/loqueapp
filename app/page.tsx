@@ -3,6 +3,32 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Users, MessageSquare, Calendar, UserCircle, CheckCircle, ShieldCheck, Briefcase, Lightbulb } from 'lucide-react'
 import WaitlistForm from '@/components/WaitlistForm'
+import type { Metadata } from 'next'
+import { canonicalUrl, jsonLdScript, landingJsonLd, SITE_NAME } from '@/lib/seo/site'
+
+export const metadata: Metadata = {
+  title: 'Andrel | Curated Executive & Professional Networking',
+  description:
+    'Andrel is a private professional network connecting executives, legal leaders, and business professionals through curated, mutual introductions.',
+  alternates: { canonical: canonicalUrl('/') },
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    url: canonicalUrl('/'),
+    title: 'Andrel | Curated Executive & Professional Networking',
+    description:
+      'Andrel is a private professional network connecting executives, legal leaders, and business professionals through curated, mutual introductions.',
+  },
+  twitter: {
+    // 'summary', not 'summary_large_image': there is no 1200x630 social image in this repo, and
+    // claiming the large-image card without one renders a broken preview. Switch to
+    // 'summary_large_image' and add og:image only once a real 1200x630 asset exists.
+    card: 'summary',
+    title: 'Andrel | Curated Executive & Professional Networking',
+    description:
+      'Andrel is a private professional network connecting executives, legal leaders, and business professionals through curated, mutual introductions.',
+  },
+}
 
 export default async function Home() {
   const supabase = createClient()
@@ -40,6 +66,13 @@ export default async function Home() {
   ]
 
   return (
+    <>
+      {/* WebSite + Organization. Every value is a static constant from lib/seo/site — no request
+          data, no member data — and jsonLdScript escapes '<' so nothing can close the tag early. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(landingJsonLd()) }}
+      />
     <div className="min-h-screen bg-white flex flex-col">
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
@@ -173,5 +206,6 @@ export default async function Home() {
         © {new Date().getFullYear()} Andrel. All rights reserved.
       </footer>
     </div>
+    </>
   )
 }

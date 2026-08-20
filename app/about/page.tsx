@@ -1,11 +1,24 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
+import { canonicalUrl, SITE_NAME } from '@/lib/seo/site'
 import { ClipboardList, Sparkles, Handshake, ArrowRight, ArrowDown } from 'lucide-react'
 
+const ABOUT_TITLE = 'About Andrel | A Private Executive Networking Platform'
+const ABOUT_DESCRIPTION =
+  'Learn how Andrel creates thoughtful professional relationships through private, curated introductions for executives, legal leaders, and business professionals.'
+
 export const metadata: Metadata = {
-  title: 'About Andrel',
-  description:
-    'Andrel is a private professional network that creates curated, mutual introductions among senior professionals and executives. Andrel selects each potential introduction; interest stays private, and a connection opens only when both people choose to meet.',
+  title: ABOUT_TITLE,
+  description: ABOUT_DESCRIPTION,
+  alternates: { canonical: canonicalUrl('/about') },
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    url: canonicalUrl('/about'),
+    title: ABOUT_TITLE,
+    description: ABOUT_DESCRIPTION,
+  },
+  twitter: { card: 'summary', title: ABOUT_TITLE, description: ABOUT_DESCRIPTION },
 }
 
 // Shared CTA pair — "Request an invitation" (the home-page waitlist form) + "Member sign in" (/login).

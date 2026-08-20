@@ -11,6 +11,22 @@ import FloatingHelp from '@/components/FloatingHelp'
 import PresenceHeartbeat from '@/components/PresenceHeartbeat'
 import MainScrollReset from '@/components/MainScrollReset'
 
+import type { Metadata } from 'next'
+
+/**
+ * NOINDEX for every member surface under /dashboard, including /dashboard/admin.
+ *
+ * The route is already auth-gated in middleware.ts, so a crawler cannot read its content — but an
+ * unauthenticated fetch returns a redirect to /login, and without this the URL itself could still be
+ * indexed from an external link. /dashboard is therefore deliberately NOT disallowed in robots.txt:
+ * blocking the fetch would stop a crawler ever seeing this directive. Two response-delivered signals
+ * carry it — this metadata and the X-Robots-Tag header in next.config.js — and both depend on the
+ * request being allowed. Authentication, not robots, is the privacy boundary.
+ */
+export const metadata: Metadata = {
+  robots: { index: false, follow: false, nocache: true },
+}
+
 const AVATAR_COLORS = [
   'bg-[#1B2850]','bg-[#2E4080]','bg-amber-500','bg-rose-500',
   'bg-cyan-600','bg-teal-600','bg-pink-500','bg-slate-600',

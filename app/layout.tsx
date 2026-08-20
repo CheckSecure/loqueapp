@@ -1,12 +1,31 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
+import { SITE_ORIGIN, SITE_NAME } from '@/lib/seo/site'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Andrel',
-  description: 'Andrel — Curated professional introductions for people worth knowing.',
+  // metadataBase makes every relative canonical/OG URL in the app resolve against the canonical
+  // production origin. Without it Next resolves them against the deploy host, so preview builds
+  // would emit canonicals pointing at themselves.
+  metadataBase: new URL(SITE_ORIGIN),
+  // NO title template. The landing and About titles are contractually exact strings; a template
+  // would append a suffix to them. Each page therefore states its own complete title.
+  title: SITE_NAME,
+  description:
+    'Andrel is a private professional network connecting executives, legal leaders, and business professionals through curated, mutual introductions.',
+  applicationName: SITE_NAME,
+  // Default for anything that does not set its own. Public marketing pages opt IN to indexing
+  // explicitly; every private surface either inherits a noindex layout or sets its own.
+  robots: { index: true, follow: true },
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    locale: 'en_US',
+    url: `${SITE_ORIGIN}/`,
+  },
+  twitter: { card: 'summary' },
   manifest: '/manifest.json',
   themeColor: '#1B2850',
   appleWebApp: {

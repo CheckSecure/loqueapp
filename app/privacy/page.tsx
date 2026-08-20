@@ -1,7 +1,17 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
+import { canonicalUrl, SITE_NAME } from '@/lib/seo/site'
 import { PRIVACY_VERSION_LABEL, PRIVACY_EFFECTIVE_DATE } from '@/lib/legal/terms'
 
-export const metadata = { title: 'Privacy Policy | Andrel' }
+export const metadata: Metadata = {
+  title: 'Privacy Policy | Andrel',
+  description:
+    'How Andrel collects, uses, and protects member information across our private professional network.',
+  alternates: { canonical: canonicalUrl('/privacy') },
+  openGraph: { type: 'website', siteName: SITE_NAME, url: canonicalUrl('/privacy'),
+    title: 'Privacy Policy | Andrel', description: 'How Andrel collects, uses, and protects member information across our private professional network.' },
+  twitter: { card: 'summary', title: 'Privacy Policy | Andrel', description: 'How Andrel collects, uses, and protects member information across our private professional network.' },
+}
 
 export default function PrivacyPage() {
   return (

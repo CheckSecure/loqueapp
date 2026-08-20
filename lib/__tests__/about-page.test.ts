@@ -7,8 +7,18 @@ const SRC = readFileSync('app/about/page.tsx', 'utf8')
 const TEXT = SRC.replace(/\s+/g, ' ')
 // The founder <section> only (aria-labelledby="founder-heading" … </section>).
 const FOUNDER = (SRC.match(/aria-labelledby="founder-heading"[\s\S]*?<\/section>/) || [''])[0].replace(/\s+/g, ' ')
-// The metadata description string value.
-const DESCRIPTION = (SRC.match(/description:\s*\n?\s*'([^']*)'/) || [, ''])[1]
+// The metadata title/description VALUES. They are now hoisted to ABOUT_TITLE / ABOUT_DESCRIPTION
+// constants (they are reused by the openGraph and twitter blocks), so resolve the constant rather
+// than only matching an inline literal.
+const resolveMeta = (field: 'title' | 'description'): string => {
+  const inline = SRC.match(new RegExp(`${field}:\\s*\\n?\\s*'([^']*)'`))?.[1]
+  if (inline) return inline
+  const ref = SRC.match(new RegExp(`${field}:\\s*([A-Z_][A-Z0-9_]*)`))?.[1]
+  if (!ref) return ''
+  return SRC.match(new RegExp(`const ${ref}\\s*=\\s*\\n?\\s*'([^']*)'`))?.[1] ?? ''
+}
+const TITLE = resolveMeta('title')
+const DESCRIPTION = resolveMeta('description')
 
 describe('About page — hero + section headings', () => {
   it('has the correct eyebrow, hero heading, and hero body', () => {
@@ -114,8 +124,16 @@ describe('About page — cross-functional executive positioning', () => {
     expect(TEXT).not.toMatch(/areas of legal practice/i)
     expect(TEXT).not.toMatch(/\bthe legal (industry|community|profession|world)\b/i)
     expect(TEXT).not.toMatch(/\blegal network\b/i)
-    // "legal" survives only as one entry in the list of functions Andrel serves
-    expect((TEXT.match(/\blegal\b/gi) || []).length).toBe(1)
+    // "legal" appears only as one entry among several professions Andrel serves — never as the
+    // network's defining identity. It occurs twice now: once in the body's function list and once
+    // in the approved meta description ('executives, legal leaders, and business professionals').
+    // Assert the CONTEXT rather than a bare count: every occurrence must sit beside other
+    // professions, and the exclusivity patterns above must all stay absent.
+    const legalHits = (TEXT.match(/\blegal\b/gi) || []).length
+    expect(legalHits).toBeGreaterThan(0)
+    expect(legalHits).toBeLessThanOrEqual(2)
+    expect(TEXT).toMatch(/executives/i)
+    expect(TEXT).toMatch(/business professionals|senior professionals/i)
   })
 })
 
@@ -280,16 +298,29 @@ describe('About page — layout regressions found in visual QA', () => {
 
 describe('About page — metadata is accurate, not inflated', () => {
   it('has a title and an honest description with no inflated SEO claims', () => {
-    expect(SRC).toMatch(/title:\s*'About Andrel'/)
+    // UPDATED: the approved public-SEO title. It was 'About Andrel'; search positioning now
+    // requires the fuller, still-accurate 'About Andrel | A Private Executive Networking Platform'.
+    expect(TITLE).toBe('About Andrel | A Private Executive Networking Platform')
     expect(DESCRIPTION.length).toBeGreaterThan(20)
     expect(DESCRIPTION).not.toMatch(/#1|\bbest\b|\bleading\b|top-rated|world-class|revolutionary/i)
   })
 
   it('the description positions Andrel across professions, with no legal-only framing', () => {
-    expect(DESCRIPTION).toContain(
-      'Andrel is a private professional network that creates curated, mutual introductions among senior professionals and executives.'
+    // UPDATED description, approved for public SEO. The ORIGINAL RULE — Andrel must never read as a
+    // legal-only network — is unchanged and still enforced below; what changed is the mechanism.
+    // The old assertion banned the word 'legal' outright. The approved copy now names legal as ONE
+    // of three constituencies, which is cross-functional positioning, not legal-only positioning.
+    // So the ban becomes a context check: 'legal' may appear only alongside other professions.
+    expect(DESCRIPTION).toBe(
+      'Learn how Andrel creates thoughtful professional relationships through private, curated introductions for executives, legal leaders, and business professionals.'
     )
-    expect(DESCRIPTION).not.toMatch(/legal|lawyer|attorney|counsel|law.firm/i)
+    if (/legal/i.test(DESCRIPTION)) {
+      expect(DESCRIPTION).toMatch(/executives/i)
+      expect(DESCRIPTION).toMatch(/business professionals/i)
+    }
+    // still no exclusivity framing of any single profession
+    expect(DESCRIPTION).not.toMatch(/(exclusively|only) for (lawyers|attorneys|legal|executives)/i)
+    expect(DESCRIPTION).not.toMatch(/\blegal network\b/i)
     // no keyword-stuffed function list in the meta description
     expect((DESCRIPTION.match(/,/g) || []).length).toBeLessThan(6)
   })

@@ -1,7 +1,17 @@
 import Link from 'next/link'
+import type { Metadata } from 'next'
+import { canonicalUrl, SITE_NAME } from '@/lib/seo/site'
 import { TERMS_VERSION_LABEL, TERMS_EFFECTIVE_DATE } from '@/lib/legal/terms'
 
-export const metadata = { title: 'Terms of Service | Andrel' }
+export const metadata: Metadata = {
+  title: 'Terms of Service | Andrel',
+  description:
+    'The terms that govern membership and use of Andrel, a private professional network built on curated introductions.',
+  alternates: { canonical: canonicalUrl('/terms') },
+  openGraph: { type: 'website', siteName: SITE_NAME, url: canonicalUrl('/terms'),
+    title: 'Terms of Service | Andrel', description: 'The terms that govern membership and use of Andrel, a private professional network built on curated introductions.' },
+  twitter: { card: 'summary', title: 'Terms of Service | Andrel', description: 'The terms that govern membership and use of Andrel, a private professional network built on curated introductions.' },
+}
 
 export default function TermsPage() {
   return (
