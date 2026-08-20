@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { runExpiryStage } from '@/lib/introductions/expiryWorker'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -25,5 +26,11 @@ export async function GET(request: Request) {
   }
 
   console.log(`[Expire Pending] Expired ${data?.length ?? 0} pending intro requests`)
-  return NextResponse.json({ expired: data?.length ?? 0 })
+  // Shared stage. This route keeps its original 30-day 'pending' sweep above and ALSO runs the
+  // suggested-card expiry, but nothing depends on this route being scheduled: engagement-reminders
+  // runs the same stage daily. See lib/introductions/expiryWorker.ts.
+  const exp = await runExpiryStage(adminClient, { budgetMs: 40_000 })
+
+  return NextResponse.json({
+    suggestedExpiry: exp, expired: data?.length ?? 0 })
 }

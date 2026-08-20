@@ -112,7 +112,8 @@ export async function finalizeMutualMatch(params: {
       `and(requester_id.eq.${otherUserId},target_user_id.eq.${actingUserId})`,
     )
   if (!bothMembersConsented(consentRows ?? [], actingUserId, otherUserId)) {
-    console.warn('[finalizeMutualMatch] consent revalidation failed — not finalizing', { actingUserId, otherUserId })
+    // Aggregate only: both member UUIDs used to be logged here.
+      console.warn('[finalizeMutualMatch] consent revalidation failed — not finalizing')
     return {
       status: 409,
       body: { error: 'Both members must independently express interest before connecting.', mutualInterest: false },
@@ -120,8 +121,16 @@ export async function finalizeMutualMatch(params: {
   }
 
   // Charge both users + create match + conversation atomically via the RPC.
-  const { data: rpcRows, error: rpcError } = await adminClient.rpc(
-    'consume_credits_and_create_match',
+  // Charge both users + create match + conversation atomically, THROUGH THE GUARD.
+  //
+  // The consent revalidation above is advisory only: it runs in its own round trip, so an
+  // expiration (public.expire_intro_pair) can land between it and the write and leave us creating
+  // a match for an introduction that no longer exists. public.finalize_mutual_match_atomic
+  // (migration 067) takes the SAME two member advisory locks expiry uses, re-reads consent inside
+  // the transaction that writes, and only then delegates to the same canonical
+  // consume_credits_and_create_match. Authorization now lives where the write lives.
+  const { data: guardData, error: rpcError } = await adminClient.rpc(
+    'finalize_mutual_match_atomic',
     {
       p_user_a: actingUserId,
       p_user_b: otherUserId,
@@ -130,15 +139,34 @@ export async function finalizeMutualMatch(params: {
   )
 
   if (rpcError) {
-    console.error('[Mutual Interest] RPC error:', rpcError)
+    // CLASS only — never a member id, consent state, or raw database message.
+    console.error('[Mutual Interest] RPC error (class):', (rpcError as any).code ?? 'unknown')
     return { status: 500, body: { error: 'Could not create match' } }
   }
 
-  const rpcResult = rpcRows?.[0]
-  if (!rpcResult) {
-    console.error('[Mutual Interest] RPC returned no row')
+  const guard = (guardData ?? {}) as Record<string, any>
+
+  if (guard.outcome === 'not_consented' || guard.outcome === 'invalid') {
+    // Expiry won the race, or consent was withdrawn. No match, conversation, credit or
+    // notification was produced, and none may follow.
+    return {
+      status: 409,
+      body: { error: 'Both members must independently express interest before connecting.', mutualInterest: false },
+    }
+  }
+  if (guard.outcome === 'already_matched') {
+    await retireWaitingResponseForPair(adminClient, actingUserId, otherUserId)
+    return { status: 200, body: { success: true, mutualInterest: true, matchAlreadyExists: true } }
+  }
+  if (guard.outcome !== 'finalized' && guard.outcome !== 'delegate_error') {
+    console.error('[Mutual Interest] unexpected guard outcome (class)')
     return { status: 500, body: { error: 'Could not create match' } }
   }
+
+  // The delegate's own coarse codes pass straight through, so every branch below is unchanged.
+  const rpcResult: any = guard.outcome === 'delegate_error'
+    ? { error_code: guard.error_code }
+    : { error_code: null, match_id: guard.match_id, conversation_id: guard.conversation_id }
 
   if (rpcResult.error_code === 'insufficient_credits_a') {
     return {
@@ -166,11 +194,7 @@ export async function finalizeMutualMatch(params: {
   const matchId = rpcResult.match_id as string
   const conversationId = rpcResult.conversation_id as string
 
-  console.log('[Match Created via RPC] Both users charged 1 credit:', {
-    matchId,
-    userA: actingUserId,
-    userB: otherUserId,
-  })
+  console.log('[Match Created via RPC] Both users charged 1 credit')
 
   // Reciprocal-pair lifecycle: a formed match is terminal for the pair — mark it 'matched' in the
   // PRIMARY match path (not only later during rotation), so a late pass/rotation never treats it as

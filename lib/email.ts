@@ -1216,3 +1216,33 @@ export async function sendAdminAlertEmail(subject: string, htmlBody: string): Pr
     return { success: false, error: err.message }
   }
 }
+
+
+/**
+ * Wednesday unanswered-introduction reminder.
+ *
+ * Unlike the older senders this RETURNS the provider message id, because migration 065's delivery
+ * ledger records it. A thrown provider error is surfaced to the caller so the ledger can mark the
+ * attempt retryable — swallowing it would leave a claim that never resolves and a member who is
+ * never reminded.
+ *
+ * The builder receives only a first name and a count, so no connection identity can reach the body.
+ */
+export async function sendWednesdayIntroReminderEmail(
+  toEmail: string,
+  firstName: string | null,
+  openCount: number,
+): Promise<{ sent: boolean; providerMessageId: string | null }> {
+  if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return { sent: false, providerMessageId: null }
+  const { buildWednesdayReminderEmail } = await import('@/lib/email/wednesdayReminder')
+  const built = buildWednesdayReminderEmail(firstName, openCount)
+  const res = await resend.emails.send({
+    from: 'Andrel <hello@andrel.app>',
+    to: toEmail,
+    subject: built.subject,
+    html: built.html,
+    text: built.text,
+  })
+  if ((res as any)?.error) throw new Error('provider_error')
+  return { sent: true, providerMessageId: (res as any)?.data?.id ?? null }
+}

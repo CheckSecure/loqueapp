@@ -244,11 +244,19 @@ describe('structural safety guards', () => {
     expect(fn).toContain('ADMIN_APPROVE_DISABLED_MSG')
   })
   it('finalizeMutualMatch revalidates BOTH consents immediately before the transactional RPC', () => {
+    // The application-level check remains and still precedes the call, but it is no longer the
+    // authorization: it ran in its own round trip, so an expiry could land between it and the
+    // write. finalizeMutualMatch now calls public.finalize_mutual_match_atomic (migration 067),
+    // which re-reads consent under the same member advisory locks expire_intro_pair uses, INSIDE
+    // the transaction that writes, before delegating to consume_credits_and_create_match.
     const guardIdx = finalizeSrc.indexOf('bothMembersConsented(consentRows')
-    const rpcIdx = finalizeSrc.indexOf("'consume_credits_and_create_match'")
+    const rpcIdx = finalizeSrc.indexOf("'finalize_mutual_match_atomic'")
     expect(guardIdx).toBeGreaterThan(-1)
     expect(rpcIdx).toBeGreaterThan(-1)
-    expect(guardIdx).toBeLessThan(rpcIdx) // consent check precedes the RPC
+    expect(guardIdx).toBeLessThan(rpcIdx) // advisory check still precedes the call
+    // and no caller can reach the unguarded writer any more
+    const code = finalizeSrc.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')
+    expect(code).not.toContain("'consume_credits_and_create_match'")
   })
   it('the admin page authenticates the admin BEFORE creating the service-role client', () => {
     const gateIdx = pageSrc.indexOf('user.email !== ADMIN_EMAIL')

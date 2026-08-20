@@ -505,14 +505,25 @@ export async function updateIntroStatus(id: string, status: 'accepted' | 'declin
   // Charge both users + create match + create conversation atomically via the
   // RPC. Same path as express-interest mutual completion (commit 663265f).
   // p_user_a = accepter (current user); p_user_b = requester.
-  const { data: rpcRows, error: rpcError } = await adminClient.rpc(
-    'consume_credits_and_create_match',
-    {
-      p_user_a: user.id,
-      p_user_b: intro.requester_id,
-      p_admin_facilitated: Boolean(intro.is_admin_initiated),
+    // Routed through public.finalize_mutual_match_atomic (migration 067), which takes the same
+    // member advisory locks public.expire_intro_pair uses and revalidates consent INSIDE the
+    // writing transaction. Updated together with lib/introductions/finalizeMutualMatch.ts so no
+    // caller can still reach the unguarded writer.
+    const { data: guardData, error: rpcError } = await adminClient.rpc(
+      'finalize_mutual_match_atomic',
+      {
+        p_user_a: user.id,
+        p_user_b: intro.requester_id,
+        p_admin_facilitated: Boolean(intro.is_admin_initiated),
+      }
+    )
+    const guard = (guardData ?? {}) as Record<string, any>
+    if (guard.outcome === 'not_consented' || guard.outcome === 'invalid') {
+      return { error: 'Both members must independently express interest before connecting.' }
     }
-  )
+    const rpcRows: any[] = guard.outcome === 'delegate_error'
+      ? [{ error_code: guard.error_code }]
+      : [{ error_code: null, match_id: guard.match_id, conversation_id: guard.conversation_id }]
 
   if (rpcError) {
     console.error('[updateIntroStatus] RPC error:', rpcError)
