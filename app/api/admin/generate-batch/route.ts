@@ -9,7 +9,8 @@ import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
-import { MAX_RESERVED_INTRO_CARDS } from '@/lib/introductions/capacity'
+import { MAX_VISIBLE_INTRO_CARDS } from '@/lib/introductions/capacity'
+import { validateGeneration, visibleDeficit } from '@/lib/matching/generationInvariants'
 import { solveGlobalBMatching, crossMarketAdjustment, pairTypeCounts, underfillReasonCounts, nullSafeRole } from '@/lib/matching/globalBMatching'
 import { isSameSideLegalPartnerEdge, lawFirmRole, legalSameSidePenalty } from '@/lib/matching/legalSameSidePenalty'
 import { isLegalProfessional } from '@/lib/matching/business-solutions'
@@ -167,16 +168,19 @@ export async function POST(req: NextRequest) {
       algorithm_config: algorithmSnapshot(),
       config_hash: algorithmConfigHash(),
     }
-    let { data: batch, error: batchError } = await adminClient
-      .from('introduction_batches').insert({ ...baseRow, ...versionRow }).select().single()
-    if (batchError && /column .* does not exist|schema cache|PGRST20[45]/i.test(`${batchError.message} ${(batchError as any).code ?? ''}`)) {
-      console.warn('[generate-batch] version columns absent (apply migration 018); recording batch without version snapshot')
-      ;({ data: batch, error: batchError } = await adminClient
-        .from('introduction_batches').insert(baseRow).select().single())
-    }
-
-    if (batchError || !batch) {
-      return NextResponse.json({ error: `Failed to create batch: ${batchError?.message || 'no row returned'}` }, { status: 500 })
+    // DEFERRED. The parent review batch used to be inserted HERE — roughly three hundred lines
+    // before anything validated the optimizer's output — with a compensating delete on failure.
+    // Nothing is written now until every invariant has passed, so a rejected generation leaves no
+    // batch row, no proposals, and nothing for an operator to clean up.
+    const createBatchRow = async () => {
+      let { data, error } = await adminClient
+        .from('introduction_batches').insert({ ...baseRow, ...versionRow }).select().single()
+      if (error && /column .* does not exist|schema cache|PGRST20[45]/i.test(`${error.message} ${(error as any).code ?? ''}`)) {
+        console.warn('[generate-batch] version columns absent (apply migration 018); recording batch without version snapshot')
+        ;({ data, error } = await adminClient
+          .from('introduction_batches').insert(baseRow).select().single())
+      }
+      return { data, error }
     }
 
     const ninetyDaysAgo = new Date()
@@ -280,13 +284,45 @@ export async function POST(req: NextRequest) {
     //
     // Current card counts are still read here, but for PRIORITISATION (who is empty) rather than
     // exclusion.
+    // ── AUTHORITATIVE VISIBLE-CAPACITY SNAPSHOT ────────────────────────────────────────────────
+    //
+    // Read SEPARATELY and EXPLICITLY, not derived from the history rows above.
+    //
+    // WHAT WENT WRONG. This used to be derived from the unbounded `intro_requests` history select,
+    // with `?? 0` for a missing member. PostgREST caps an unbounded select, so a member whose rows
+    // fell outside the returned window read as "holds zero cards" — maximum deficit — and an
+    // ALREADY-FULL member entered the graph. `?? 0` is not a default here; it is a silent inversion
+    // of the safest possible answer.
+    //
+    // Now: one narrow query, filtered to status='suggested', paged to exhaustion, keyed on
+    // requester_id (the column that defines whose card it is), and FAIL-CLOSED — any error or
+    // short page aborts generation before a single review artifact is written.
     const visibleCards = new Map<string, number>()
-    const reservedCards = new Map<string, number>()
-    for (const r of introHistoryRows ?? []) {
-      if (!r?.requester_id) continue
-      if (r.status === 'suggested') visibleCards.set(r.requester_id, (visibleCards.get(r.requester_id) ?? 0) + 1)
-      else if (r.status === 'queued') reservedCards.set(r.requester_id, (reservedCards.get(r.requester_id) ?? 0) + 1)
+    {
+      const PAGE = 1000
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await adminClient
+          .from('intro_requests')
+          .select('requester_id')
+          .eq('status', 'suggested')
+          .range(from, from + PAGE - 1)
+        if (error) {
+          // Deliberately NOT deploy-safe. Proceeding without capacity is what produced a batch of
+          // unapprovable pairs; refusing costs one retry.
+          console.error('[generate-batch] capacity read failed (class):', error.code ?? 'unknown')
+          return NextResponse.json({ error: 'Capacity snapshot unavailable; generation aborted' }, { status: 503 })
+        }
+        for (const r of data ?? []) {
+          if (!r?.requester_id) continue
+          visibleCards.set(r.requester_id, (visibleCards.get(r.requester_id) ?? 0) + 1)
+        }
+        if (!data || data.length < PAGE) break   // exhausted
+      }
     }
+    // Every eligible member gets an explicit entry, so the optimizer's strict lookup can never be
+    // satisfied by a fallback. Zero here means "genuinely holds no visible card", proven by a
+    // completed scan rather than assumed from an absent row.
+    for (const p of profiles as any[]) if (!visibleCards.has(p.id)) visibleCards.set(p.id, 0)
 
     const allPairs: PairScore[] = []
     
@@ -351,6 +387,12 @@ export async function POST(req: NextRequest) {
     const profileById = new Map<string, any>(profiles.map((p: any) => [p.id, p]))
     const M = (id: string) => profileById.get(id)
 
+    // visible_deficit(member) = max(0, MAX_VISIBLE - visible_count(member)). Nothing else.
+    const capacityByMember = new Map<string, number>()
+    for (const [id, visible] of Array.from(visibleCards.entries())) {
+      capacityByMember.set(id, visibleDeficit(visible, MAX_VISIBLE_INTRO_CARDS))
+    }
+
     // GLOBAL LEXICOGRAPHIC b-MATCHING over the complete eligible graph.
     //
     // Replaces greedy selection + two coverage fills + the exactly-one-intro repair pass. That
@@ -363,22 +405,12 @@ export async function POST(req: NextRequest) {
     // blocking, existing matches, hard history, cooldown, and the unadjusted relevance floor). The
     // optimizer only ever selects from that set; it can never re-admit an excluded pair.
     const bmatch = solveGlobalBMatching(allPairs as any[], {
-      // How many NEW proposals this member may receive in this batch.
-      //
-      // Capped at perRecipientIntroLimit. It must never exceed it: enforceRecipientLimits below
-      // trims per RECIPIENT, and trimming is one-directional — it would cut one half of an edge
-      // and reintroduce exactly the one-way rows this whole change exists to eliminate. The
-      // reserved tier still counts toward whether a member has ANY room (so a member who is full
-      // on both tiers gets no proposals at all), but it can never raise the batch's per-member
-      // proposal count above the configured limit.
-      deficitOf: (id: string) => {
-        const m = M(id); if (!m) return 0
-        const visFree = Math.max(0, capOf(m) - (visibleCards.get(id) ?? 0))
-        const resFree = Math.max(0, MAX_RESERVED_INTRO_CARDS - (reservedCards.get(id) ?? 0))
-        return Math.min(perRecipientIntroLimit(m.subscription_tier || 'free'), visFree + resFree)
-      },
-      // "Zero-card" means an EMPTY SCREEN — no visible card. Those members are covered first.
-      existingCardsOf: (id: string) => visibleCards.get(id) ?? 0,
+      // VISIBLE DEFICIT ONLY. The previous version added the member's free RESERVED slots to their
+      // free VISIBLE slots, so a member holding 2 visible and 0 reserved cards scored a deficit of
+      // 2 and was proposed to as though empty. Migration 064 places pairs into the VISIBLE tier or
+      // not at all, so reserved room can never make a visible-full member selectable.
+      capacityByMember,
+      existingVisibleByMember: visibleCards,
       // Cross-market legal preference, calibrated to the MEASURED score distribution (Option B:
       // per-edge -32/-24/-16, crossover +33 mutual points on an observed 62..166 range). Reusing
       // legalSameSidePenalty at full strength would put the crossover at +121, outside the range,
@@ -407,7 +439,9 @@ export async function POST(req: NextRequest) {
     const pairComposition = pairTypeCounts(selectedEdgesRepaired as any[], isLawFirm, legalPro)
     const underfillReasons = underfillReasonCounts(
       profiles.map((p: any) => p.id), selectedEdgesRepaired as any[], allPairs as any[],
-      (id: string) => Math.max(0, capOf(M(id) ?? {}) - (visibleCards.get(id) ?? 0)),
+      // Read the AUTHORITATIVE map rather than re-deriving the formula — a second copy is a
+      // second place for the two to drift apart, which is exactly how this defect happened.
+      (id: string) => capacityByMember.get(id) ?? 0,
     )
     console.log('[generate-batch] optimizer:', JSON.stringify({
       exact: bmatch.exact, reason: bmatch.reason ?? null, nodes: bmatch.nodesExplored,
@@ -428,54 +462,78 @@ export async function POST(req: NextRequest) {
     const mutualMatchesCreated = selectedEdgesRepaired.length
     const allSuggestions: any[] = []
 
-    // Build + insert suggestions. Any failure here (out-of-range score or a DB
-    // error) triggers a compensating delete of the batch row we created above —
-    // batch creation and suggestion insertion are not in one SQL transaction, so
-    // this keeps a failed attempt from leaving an orphan/empty batch behind.
-    try {
-      for (const [recipientId, suggestions] of Object.entries(userBatches)) {
-        // Position by each recipient's OWN directional score (their strongest match
-        // first), deterministic id tiebreak. Never drops or reorders across recipients.
-        suggestions.sort((a, b) => b.score - a.score || String(a.suggested.id).localeCompare(String(b.suggested.id)))
-        for (let i = 0; i < suggestions.length; i++) {
-          const { suggested, score, reason } = suggestions[i]
-          const safeScore = sanitizeMatchScore(score)
-          assertStorableScore(safeScore, recipientId, suggested.id) // descriptive error, not "numeric field overflow"
-          allSuggestions.push({
-            batch_id: batch.id,
-            recipient_id: recipientId,
-            suggested_id: suggested.id,
-            reason,
-            match_score: safeScore,
-            score_bucket: getScoreBucket(safeScore),
-            position: i + 1,
-            status: 'generated',
-          })
-        }
+    // ── PRE-WRITE INVARIANT VALIDATION ─────────────────────────────────────────────────────────
+    // The optimizer's result is checked against the SAME immutable snapshot it solved from, before
+    // a single row exists. Approval would reject a bad pair safely, but a review batch full of
+    // unapprovable proposals wastes the operator's review and hides real coverage — generation must
+    // not delegate its own correctness to approval.
+    for (const [recipientId, suggestions] of Object.entries(userBatches)) {
+      // Position by each recipient's OWN directional score, deterministic id tiebreak.
+      suggestions.sort((a, b) => b.score - a.score || String(a.suggested.id).localeCompare(String(b.suggested.id)))
+      for (let i = 0; i < suggestions.length; i++) {
+        const { suggested, score, reason } = suggestions[i]
+        const safeScore = sanitizeMatchScore(score)
+        assertStorableScore(safeScore, recipientId, suggested.id)
+        allSuggestions.push({
+          batch_id: null as any,                     // stamped once the parent row exists
+          recipient_id: recipientId,
+          suggested_id: suggested.id,
+          reason,
+          match_score: safeScore,
+          score_bucket: getScoreBucket(safeScore),
+          position: i + 1,
+          status: 'generated',
+        })
       }
+    }
 
-      // FINAL INVARIANT: guarantee no recipient exceeds their tier limit, even if
-      // an upstream selection bug produced excess. Fresh batch → no existing live
-      // suggestions. Rows are in priority order, so the best ones are kept.
+    const invariants = validateGeneration(
+      selectedEdgesRepaired as any[],
+      { visibleByMember: visibleCards, maxVisible: MAX_VISIBLE_INTRO_CARDS },
+      allSuggestions.map((r) => ({ recipient_id: r.recipient_id, suggested_id: r.suggested_id })),
+    )
+    if (!invariants.ok) {
+      // Coarse aggregate only — no member id, name, email or company.
+      console.error('[generate-batch] INVARIANT FAILURE, nothing written:', JSON.stringify(invariants.violations))
+      return NextResponse.json(
+        { error: 'Generated batch failed capacity/reciprocity invariants; nothing was written',
+          violations: invariants.violations },
+        { status: 500 },
+      )
+    }
+
+    // ── FIRST WRITE ────────────────────────────────────────────────────────────────────────────
+    const { data: batch, error: batchError } = await createBatchRow()
+    if (batchError || !batch) {
+      return NextResponse.json({ error: `Failed to create batch: ${batchError?.message || 'no row returned'}` }, { status: 500 })
+    }
+    for (const row of allSuggestions) row.batch_id = batch.id
+
+    try {
+      // FINAL INVARIANT: no recipient exceeds their remaining VISIBLE capacity. The real remaining
+      // capacity is passed in now — the old call used the tier limit alone with existingLive = 0,
+      // so it could not have caught an already-full member even in principle.
       const tierByRecipient = new Map(profiles.map((p: any) => [p.id, p.subscription_tier || 'free']))
       const { kept, dropped } = enforceRecipientLimits(
         allSuggestions,
-        (rid) => perRecipientIntroLimit(tierByRecipient.get(rid)),
+        (rid) => Math.min(perRecipientIntroLimit(tierByRecipient.get(rid)), capacityByMember.get(rid) ?? 0),
       )
       if (Object.keys(dropped).length > 0) {
         console.warn('[generate-batch] per-recipient limit invariant trimmed excess (investigate upstream):', JSON.stringify(dropped))
       }
-
+      if (kept.length !== allSuggestions.length) {
+        // Trimming is one-directional: it would cut one half of an edge and reintroduce exactly the
+        // one-way rows this work eliminated. Abort rather than persist an asymmetric batch.
+        await adminClient.from('introduction_batches').delete().eq('id', batch.id)
+        return NextResponse.json({ error: 'Recipient limit invariant trimmed rows; generation aborted' }, { status: 500 })
+      }
       if (kept.length > 0) {
-        const { error: suggestionsError } = await adminClient
-          .from('batch_suggestions')
-          .insert(kept)
+        const { error: suggestionsError } = await adminClient.from('batch_suggestions').insert(kept)
         if (suggestionsError) throw new Error(`Failed to insert suggestions: ${suggestionsError.message}`)
       }
       allSuggestions.length = 0
-      allSuggestions.push(...kept) // downstream metrics reflect what was actually persisted
+      allSuggestions.push(...kept)
     } catch (insertErr: any) {
-      // Compensating cleanup: remove the just-created (now empty) batch row.
       await adminClient.from('introduction_batches').delete().eq('id', batch.id)
       return NextResponse.json({ error: insertErr?.message || 'Failed to insert suggestions' }, { status: 500 })
     }

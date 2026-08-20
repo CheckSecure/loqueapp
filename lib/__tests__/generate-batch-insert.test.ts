@@ -22,6 +22,7 @@ const state = vi.hoisted(() => ({
   insertedSuggestions: null as any[] | null,
   insertedBatch: null as any,
   deletedBatchIds: [] as string[],
+  capacityError: null as any,   // set to force a capacity-snapshot read failure
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -32,7 +33,21 @@ vi.mock('@/lib/supabase/admin', () => {
   const resolve = (b: any) => {
     if (b._table === 'profiles') return { data: state.profiles, error: null }
     if (b._table === 'matches') return { data: [], error: null }
-    if (b._table === 'intro_requests') return { data: state.introRequests, error: null }
+    if (b._table === 'intro_requests') {
+      // The capacity snapshot is a NARROW, PAGED query: .eq('status','suggested').range(from,to).
+      // Honour both, or the mock would hand the route every row and hide the very defect these
+      // tests exist to catch. Paging is simulated so the route's exhaustion loop terminates.
+      let rows = state.introRequests ?? []
+      for (const [col, val] of b._eqs) rows = rows.filter((r: any) => r[col] === val)
+      if (state.capacityError && b._eqs.some(([c, v]: any) => c === 'status' && v === 'suggested')) {
+        return { data: null, error: state.capacityError }
+      }
+      if (b._range) {
+        const [from, to] = b._range
+        return { data: rows.slice(from, to + 1), error: null }
+      }
+      return { data: rows, error: null }
+    }
     if (b._table === 'introduction_batches') {
       if (b._insert) { state.insertedBatch = b._insert; return { data: state.batch, error: state.batchError } }
       if (b._delete) { const id = (b._eqs.find((e: any) => e[0] === 'id') || [])[1]; state.deletedBatchIds.push(id); return { error: null } }
@@ -45,8 +60,9 @@ vi.mock('@/lib/supabase/admin', () => {
     return { data: [], error: null }
   }
   const from = (table: string) => {
-    const b: any = { _table: table, _insert: null, _delete: false, _eqs: [] }
+    const b: any = { _table: table, _insert: null, _delete: false, _eqs: [], _range: null }
     for (const m of ['select', 'neq', 'not', 'gte', 'order', 'limit']) b[m] = () => b
+    b.range = (from: number, to: number) => { b._range = [from, to]; return b }
     b.eq = (col: string, val: any) => { b._eqs.push([col, val]); return b }
     b.insert = (rows: any) => { b._insert = rows; return b }
     b.delete = () => { b._delete = true; return b }
@@ -83,6 +99,8 @@ beforeEach(() => {
   state.suggestionsError = null
   state.insertedSuggestions = null
   state.deletedBatchIds = []
+  state.capacityError = null
+  state.insertedBatch = null   // was never reset: a stale value made "no batch written" vacuous
 })
 
 describe('Generate New Batch — full insert', () => {
@@ -291,6 +309,45 @@ describe('Generate New Batch — intro_requests (queue) history exclusion', () =
 // Availability tiers: never pair a member who has unresolved active intros with a
 // fully-resolved member (asymmetric — resolved side sees/responds, unresolved side is
 // blocked behind their queue). Both-resolved and both-unresolved pairs are unaffected.
+describe('Generate New Batch — capacity snapshot is fail-closed', () => {
+  it('3. a capacity read error aborts generation with ZERO review writes', async () => {
+    state.capacityError = { code: 'PGRST500', message: 'boom' }
+    const res = await post()
+    expect(res.status).toBe(503)
+    expect(state.insertedBatch, 'no review batch row may be written').toBeFalsy()
+    expect(state.insertedSuggestions, 'no proposals may be written').toBeFalsy()
+    const body = await res.json()
+    expect(body.error).toMatch(/Capacity snapshot unavailable/)
+    // the failure names no member
+    expect(JSON.stringify(body)).not.toMatch(/@|[0-9a-f]{8}-[0-9a-f]{4}/)
+  })
+
+  it('11. nothing is written before the invariants pass — the batch row is created last', async () => {
+    // Ordering proof: the parent row is inserted only after validation, so a rejected generation
+    // leaves nothing behind and needs no compensating delete.
+    state.capacityError = { code: 'PGRST500', message: 'boom' }
+    await post()
+    expect(state.deletedBatchIds, 'no compensating delete should be needed').toHaveLength(0)
+    expect(state.insertedBatch).toBeFalsy()
+  })
+
+  it('counts only status=suggested, keyed on requester_id', async () => {
+    // Rows the capacity snapshot must IGNORE: queued/passed/archived, and rows where the member is
+    // the TARGET rather than the requester.
+    state.introRequests = [
+      { requester_id: 'a', target_user_id: 'ext1', status: 'queued', batch_id: 'b1' },
+      { requester_id: 'a', target_user_id: 'ext2', status: 'passed', batch_id: 'b1' },
+      { requester_id: 'ext3', target_user_id: 'a', status: 'suggested', batch_id: 'b1' },
+    ]
+    await post()
+    const rows = state.insertedSuggestions || []
+    // 'a' holds ZERO visible cards by the correct definition, so it may receive up to two.
+    const got = rows.filter((r: any) => r.recipient_id === 'a').length
+    expect(got).toBeGreaterThan(0)
+    expect(got).toBeLessThanOrEqual(2)
+  })
+})
+
 describe('Generate New Batch — availability tier is no longer a candidate partition', () => {
   const hasEdge = (rows: any[], x: string, y: string) =>
     rows.some((r: any) => (r.recipient_id === x && r.suggested_id === y) || (r.recipient_id === y && r.suggested_id === x))
@@ -323,11 +380,22 @@ describe('Generate New Batch — availability tier is no longer a candidate part
     expect(involves(rows, 'a'), 'the unresolved member is no longer excluded').toBe(true)
   })
 
-  it('same-tier pairs are unaffected', async () => {
+  it('capacity now outranks tier: the zero-card member is served first', async () => {
+    // `unresolved(x)` gives x a live 'suggested' card, so a and b each hold ONE and c holds none.
+    // Before the capacity fix this was invisible — every member scored a deficit of 2 and a<->b was
+    // selectable alongside everything else. With capacity counted correctly, a and b have one slot
+    // each and the ZERO-card member c is covered first (objective 1), which legitimately consumes
+    // those slots. Asserting a<->b here would be asserting the old, capacity-blind behaviour.
     state.introRequests = [unresolved('a'), unresolved('b')]
     await post()
     const rows = state.insertedSuggestions || []
-    expect(hasEdge(rows, 'a', 'b'), 'both-unresolved was always allowed and still is').toBe(true)
+    expect(rows.length).toBeGreaterThan(0)
+    expect(involves(rows, 'c'), 'the zero-card member must be covered').toBe(true)
+    // and nobody is pushed past two visible cards
+    const held: Record<string, number> = { a: 1, b: 1, c: 0 }
+    const got: Record<string, number> = {}
+    for (const r of rows) got[r.recipient_id] = (got[r.recipient_id] || 0) + 1
+    for (const id of Object.keys(held)) expect((held[id] || 0) + (got[id] || 0)).toBeLessThanOrEqual(2)
   })
 
   it('generation still proposes SYMMETRIC rows for every cross-tier pair', async () => {

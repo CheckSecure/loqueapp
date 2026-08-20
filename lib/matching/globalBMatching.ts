@@ -84,10 +84,24 @@ export interface BEdge {
 }
 
 export interface BMatchConfig {
-  /** Remaining capacity for a member: 2 - current cards. Members at 0 are excluded. */
-  deficitOf: (memberId: string) => number
-  /** Cards the member already holds; used only by objective 6 (exposure spread). */
-  existingCardsOf?: (memberId: string) => number
+  /**
+   * VISIBLE DEFICIT PER MEMBER — an explicit map, deliberately not a callback.
+   *
+   * A callback with a `?? 0` fallback is how a capacity bug becomes silent: a member whose row was
+   * missing read as "holds zero cards", which is maximum deficit, so ALREADY-FULL members entered
+   * the graph. This map must contain an entry for EVERY member appearing in `edges`; a missing,
+   * negative, or non-integer entry THROWS rather than defaulting. Fail closed, never open.
+   *
+   * The value is `max(0, MAX_VISIBLE - visible_count)` and nothing else. Reserved/queued capacity
+   * must NOT be folded in: migration 064 places pairs into the visible tier only, so reserved room
+   * cannot make a visible-full member selectable.
+   */
+  capacityByMember: ReadonlyMap<string, number>
+  /**
+   * Visible cards each member already holds. Required for the same members as `capacityByMember`;
+   * used to identify zero-card members (objective 1) and for exposure spread.
+   */
+  existingVisibleByMember: ReadonlyMap<string, number>
   /**
    * BOUNDED quality adjustment applied to an edge's weight for optimisation only.
    *
@@ -197,14 +211,19 @@ export function solveComponent<E extends BEdge>(
   const roleCapOf = config.roleCapOf ?? (() => Number.POSITIVE_INFINITY)
   const rolePenalty = config.roleRepeatPenalty ?? 0
   const budget = config.nodeBudget ?? DEFAULT_NODE_BUDGET
-  const existingOf = config.existingCardsOf ?? (() => 0)
-
-  // ── Restrict to the deficit subgraph. An edge is selectable only when BOTH endpoints
-  // still have capacity; members at capacity are therefore untouchable by construction.
-  const cap = new Map<string, number>()
+  // Strict lookups. A member absent from either map is a DATA BUG, not a zero — throwing here is
+  // what stops a capacity read failure from silently proposing to already-full members.
   const capOf = (id: string) => {
-    if (!cap.has(id)) cap.set(id, Math.max(0, config.deficitOf(id)))
-    return cap.get(id)!
+    const v = config.capacityByMember.get(id)
+    if (v === undefined) throw new Error('capacity_missing_for_member')
+    if (!Number.isInteger(v) || v < 0) throw new Error('capacity_invalid_for_member')
+    return v
+  }
+  const existingOf = (id: string) => {
+    const v = config.existingVisibleByMember.get(id)
+    if (v === undefined) throw new Error('existing_visible_missing_for_member')
+    if (!Number.isInteger(v) || v < 0) throw new Error('existing_visible_invalid_for_member')
+    return v
   }
   const usable0 = edges.filter((e) =>
     e.userA.id !== e.userB.id &&                       // a self-pair is never a recommendation
@@ -547,7 +566,15 @@ export function solveGlobalBMatching<E extends BEdge>(
   edges: E[],
   config: BMatchConfig,
 ): BMatchResult<E> {
-  const capOf = (id: string) => Math.max(0, config.deficitOf(id))
+  const capOf = (id: string) => {
+    const v = config.capacityByMember.get(id)
+    if (v === undefined) throw new Error('capacity_missing_for_member')
+    if (!Number.isInteger(v) || v < 0) throw new Error('capacity_invalid_for_member')
+    return v
+  }
+  // Validate EVERY member in the graph up front, so a missing entry fails before any work and
+  // cannot be masked by an edge that happens to be filtered out first.
+  for (const e of edges) for (const m of [e.userA, e.userB]) { capOf(m.id) }
   const live = edges.filter((e) =>
     e.userA.id !== e.userB.id && capOf(e.userA.id) > 0 && capOf(e.userB.id) > 0)
 

@@ -584,8 +584,13 @@ describe('cross-market calibration is an explicit, measured choice', () => {
   // Realistic production mutual scores: observed 62..166, median 98.
   const decide = (adj: any, sameSide: number, crossMarket: number) => {
     const P1 = m('P1', LAW), P2 = m('P2', LAW), G = m('G', GC)
-    const r = solveGlobalBMatching([edge(P1, P2, sameSide), edge(P1, G, crossMarket)],
-      { deficitOf: () => 1, existingCardsOf: () => 0, qualityAdjustment: adj })
+    const es = [edge(P1, P2, sameSide), edge(P1, G, crossMarket)]
+    const ids = ['P1', 'P2', 'G']
+    const r = solveGlobalBMatching(es, {
+      capacityByMember: new Map(ids.map((i) => [i, 1])),
+      existingVisibleByMember: new Map(ids.map((i) => [i, 0])),
+      qualityAdjustment: adj,
+    })
     return pairTypeCounts(r.selected, (x) => lawFirmRole(x) !== null, legalPro).law_firm__law_firm
       ? 'same-side' : 'cross-market'
   }
@@ -612,8 +617,12 @@ describe('cross-market calibration is an explicit, measured choice', () => {
   it('coverage still outranks either calibration', () => {
     const P1 = m('P1', LAW), P2 = m('P2', LAW), G = m('G', GC)
     for (const adj of [A, B]) {
-      const r = solveGlobalBMatching([edge(P1, G, 166), edge(P1, P2, 62)],
-        { deficitOf: () => 2, existingCardsOf: () => 0, qualityAdjustment: adj })
+      const ids2 = ['P1', 'P2', 'G']
+      const r = solveGlobalBMatching([edge(P1, G, 166), edge(P1, P2, 62)], {
+        capacityByMember: new Map(ids2.map((i) => [i, 2])),
+        existingVisibleByMember: new Map(ids2.map((i) => [i, 0])),
+        qualityAdjustment: adj,
+      })
       expect(degOf(r, 'P2'), 'a zero-card member is covered regardless of pair type').toBe(1)
     }
   })
