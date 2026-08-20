@@ -9,10 +9,11 @@ import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
-import { selectReciprocalGraph, fillForCoverage, repairOneIntroCoverage, preferCrossMarketForPartners } from '@/lib/matching/reciprocal-graph'
-import { isSameSideLegalPartnerEdge, lawFirmRole } from '@/lib/matching/legalSameSidePenalty'
+import { MAX_RESERVED_INTRO_CARDS } from '@/lib/introductions/capacity'
+import { solveGlobalBMatching, crossMarketAdjustment, pairTypeCounts, underfillReasonCounts, nullSafeRole } from '@/lib/matching/globalBMatching'
+import { isSameSideLegalPartnerEdge, lawFirmRole, legalSameSidePenalty } from '@/lib/matching/legalSameSidePenalty'
+import { isLegalProfessional } from '@/lib/matching/business-solutions'
 import { buildIntroHistoryExclusions } from '@/lib/introRequests/history'
-import { membersWithUnresolvedIntros } from '@/lib/introductions/queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -263,14 +264,29 @@ export async function POST(req: NextRequest) {
     }
     const introHistoryMap = buildIntroHistoryExclusions(introHistoryRows)
 
-    // Availability tiers (re-engagement WITHOUT asymmetry). A member with unresolved
-    // active recommendations (a 'suggested' row they haven't acted on) may only be
-    // paired with ANOTHER unresolved member — never a fully-resolved one. Otherwise the
-    // resolved side would see/respond immediately while the unresolved side, still
-    // working their active batch, is placed behind the queue and cannot. Both-resolved
-    // and both-unresolved pairs are unaffected. This gates candidate PAIRS only —
-    // scoring, ranking, and the per-member cap are untouched.
-    const unresolvedMembers = membersWithUnresolvedIntros(introHistoryRows ?? [])
+    // AVAILABILITY TIER — the hard resolved/unresolved candidate partition is GONE.
+    //
+    // What it was protecting is real: a pair must never land with one member's card VISIBLE while
+    // the other's is QUEUED, because the visible side could act while the queued side cannot even
+    // see it. But unresolved-ness was only a PROXY for that. Under migration 063 the tier a card
+    // lands in is decided by free VISIBLE SLOTS, not by whether a member has acted. The proxy was
+    // over-inclusive: the production audit measured exactly 144 excluded combinations (12 resolved
+    // x 12 unresolved underfilled members) while only ~18 edges were needed to fill everyone.
+    //
+    // The real invariant is now enforced where it is actually decidable — atomically, on live
+    // capacity, inside public.materialize_admin_pair (migration 064), which places a pair
+    // 'suggested' for BOTH members or 'queued' for BOTH members or neither. Candidate generation
+    // no longer needs to guess.
+    //
+    // Current card counts are still read here, but for PRIORITISATION (who is empty) rather than
+    // exclusion.
+    const visibleCards = new Map<string, number>()
+    const reservedCards = new Map<string, number>()
+    for (const r of introHistoryRows ?? []) {
+      if (!r?.requester_id) continue
+      if (r.status === 'suggested') visibleCards.set(r.requester_id, (visibleCards.get(r.requester_id) ?? 0) + 1)
+      else if (r.status === 'queued') reservedCards.set(r.requester_id, (reservedCards.get(r.requester_id) ?? 0) + 1)
+    }
 
     const allPairs: PairScore[] = []
     
@@ -294,9 +310,6 @@ export async function POST(req: NextRequest) {
         // Exclude if: hidden, passed, matched, recently shown, queue-history, or same company
         if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA || introHistory || isSameCompany(userA, userB)) continue
 
-        // Availability tier: pair only same-tier members. Exactly one unresolved →
-        // asymmetric intro (one side blocked behind their queue) → skip.
-        if (unresolvedMembers.has(userA.id) !== unresolvedMembers.has(userB.id)) continue
         
         const scoreAtoB = scoreMatchV2(userA, userB, scoringCtx)
         const scoreBtoA = scoreMatchV2(userB, userA, scoringCtx)
@@ -335,50 +348,72 @@ export async function POST(req: NextRequest) {
     // lib/matching/reciprocal-graph.ts for the full rationale.
     const capOf = (m: any) => perRecipientIntroLimit(m.subscription_tier || 'free')
     const bsCapOf = (m: any, cap: number) => maxBusinessSolutionCount(m.open_to_business_solutions || false, m.subscription_tier || 'free', cap)
-    // Legal↔legal is peer professional networking, exempt from the business-solution
-    // buyer/provider throttle (e.g. a Law Firm Partner ↔ General Counsel needs no opt-in).
-    // isBusinessSolutionProvider is unchanged, so non-legal vendor throttling is preserved.
-    const graphConfig = { capOf, maxSameRolePercent: MAX_SAME_ROLE_PERCENT, isBusinessSolutionProvider, bsCapOf, isThrottleExemptPair: isLegalNetworkingPair }
-    const fillConfig = { capOf, isBusinessSolutionProvider, bsCapOf, isThrottleExemptPair: isLegalNetworkingPair }
+    const profileById = new Map<string, any>(profiles.map((p: any) => [p.id, p]))
+    const M = (id: string) => profileById.get(id)
 
-    // TWO-PASS SELECTION — Law Firm Partner ↔ Law Firm Partner is a LAST RESORT.
+    // GLOBAL LEXICOGRAPHIC b-MATCHING over the complete eligible graph.
     //
-    // Pass 1 (preferred): build the best batch using ONLY non-partner edges — every
-    // LFP↔LFP pair is excluded, so members are first satisfied with real cross-role
-    // alternatives (GC / in-house / other roles), then topped up by the coverage fill.
+    // Replaces greedy selection + two coverage fills + the exactly-one-intro repair pass. That
+    // chain was not a b-matching solver and provably stranded members: measured over 4,000 random
+    // graphs it left 282 cases where a strictly better assignment existed that dropped nobody, and
+    // in 65% of those the stranded member had ZERO cards — which the repair pass never even looked
+    // at, because it iterated only members sitting at exactly one.
     //
-    // Pass 2 (fallback): fill any member still below their cap over the FULL edge set,
-    // now allowing LFP↔LFP. Because pass 1's fill already exhausted every feasible
-    // non-partner edge between under-cap members, the ONLY edges pass 2 can add are
-    // LFP↔LFP — and only for members who could not otherwise reach 2.
-    //
-    // Both passes preserve history/availability-tier/same-company/relevance exclusions
-    // (already applied to allPairs), the per-member cap (2-max), and the BS throttle.
-    // Role diversity is relaxed by the fill only (a preference, never a strander).
-    const nonPartnerPairs = allPairs.filter((p) => !isPartnerPair(p.userA, p.userB))
-    const { selected: primaryEdges } = selectReciprocalGraph(nonPartnerPairs, graphConfig)
-    const primaryFilled = fillForCoverage(primaryEdges, nonPartnerPairs, fillConfig)
-    // CROSS-MARKET-FIRST bounded reassignment (PART 1/2): fill a partner's still-open slots
-    // with cross-market candidates via safe swaps — displacing a saturated candidate's
-    // weakest edge and re-seating (or leaving the displaced member at ≥ min coverage) —
-    // BEFORE any same-side fallback runs. Operates on the cross-market-only edge set, so it
-    // can never create a same-side pair; Pareto-guarded so no member drops to 0.
-    const { edges: crossMarketSwapped, swaps: partnerSwaps } = preferCrossMarketForPartners(primaryFilled, nonPartnerPairs, {
-      capOf, isBusinessSolutionProvider, bsCapOf, isThrottleExemptPair: isLegalNetworkingPair,
-      isPartner: (m: any) => lawFirmRole(m) === 'partner', isPartnerPair,
-      minCoverage: 1, maxSacrifice: 40, // conservative: no member →0, per-swap quality loss ≤ 40
+    // Every HARD gate has already been applied to `allPairs` above (eligibility, same-company,
+    // blocking, existing matches, hard history, cooldown, and the unadjusted relevance floor). The
+    // optimizer only ever selects from that set; it can never re-admit an excluded pair.
+    const bmatch = solveGlobalBMatching(allPairs as any[], {
+      // How many NEW proposals this member may receive in this batch.
+      //
+      // Capped at perRecipientIntroLimit. It must never exceed it: enforceRecipientLimits below
+      // trims per RECIPIENT, and trimming is one-directional — it would cut one half of an edge
+      // and reintroduce exactly the one-way rows this whole change exists to eliminate. The
+      // reserved tier still counts toward whether a member has ANY room (so a member who is full
+      // on both tiers gets no proposals at all), but it can never raise the batch's per-member
+      // proposal count above the configured limit.
+      deficitOf: (id: string) => {
+        const m = M(id); if (!m) return 0
+        const visFree = Math.max(0, capOf(m) - (visibleCards.get(id) ?? 0))
+        const resFree = Math.max(0, MAX_RESERVED_INTRO_CARDS - (reservedCards.get(id) ?? 0))
+        return Math.min(perRecipientIntroLimit(m.subscription_tier || 'free'), visFree + resFree)
+      },
+      // "Zero-card" means an EMPTY SCREEN — no visible card. Those members are covered first.
+      existingCardsOf: (id: string) => visibleCards.get(id) ?? 0,
+      // Cross-market legal preference, calibrated to the MEASURED score distribution (Option B:
+      // per-edge -32/-24/-16, crossover +33 mutual points on an observed 62..166 range). Reusing
+      // legalSameSidePenalty at full strength would put the crossover at +121, outside the range,
+      // making same-side unwinnable on quality. See lib/matching/globalBMatching.ts for both
+      // options and the measurements. The relevance floor above is applied to the UNADJUSTED
+      // score, so this only ranks — it never removes an edge from the pool.
+      qualityAdjustment: crossMarketAdjustment(lawFirmRole),
+      // Business-solution throttle, carried over as a HARD constraint. Peer edges (both providers,
+      // or legal<->legal) consume no quota, exactly as the previous path treated them.
+      providerCapOf: (id: string) => { const m = M(id); return m ? bsCapOf(m, capOf(m)) : 0 },
+      isProviderFor: (member: any, other: any) => {
+        if (isBusinessSolutionProvider(member) && isBusinessSolutionProvider(other)) return false
+        if (isLegalNetworkingPair(member, other)) return false
+        return isBusinessSolutionProvider(other)
+      },
+      // Role diversity, preserved as the PREFERENCE the previous code documented it to be.
+      roleOf: (m: any) => String(m?.role_type ?? 'unknown'),
+      roleCapOf: (id: string) => { const m = M(id); return m ? Math.max(1, Math.ceil(capOf(m) * MAX_SAME_ROLE_PERCENT)) : 1 },
+      roleRepeatPenalty: 25,
     })
-    if (partnerSwaps.length) console.log(`[generate-batch] partner cross-market swaps: ${partnerSwaps.length}`)
-    // Same-side fallback: ONLY NOW may a partner's still-open slot take a law-firm peer.
-    const selectedEdgesFilled = fillForCoverage(crossMarketSwapped, allPairs, fillConfig)
+    const selectedEdgesRepaired = bmatch.selected as typeof allPairs
 
-    // COVERAGE REPAIR (post-processing) — seat members left at exactly 1 intro via a safe
-    // augmenting swap. Never creates a partner↔partner edge (isPartnerPair), never exceeds
-    // the 2-cap, never drops a displaced member's degree, and re-checks the throttle on
-    // every add. Draws only from allPairs, so history/tier/same-company/relevance hold.
-    const selectedEdgesRepaired = repairOneIntroCoverage(selectedEdgesFilled, allPairs, {
-      capOf, isBusinessSolutionProvider, bsCapOf, isThrottleExemptPair: isLegalNetworkingPair, isPartnerPair,
-    })
+    // Aggregate, identity-free reporting. No member id, name, email or company is logged.
+    const isLawFirm = (x: any) => lawFirmRole(x) !== null
+    const legalPro = nullSafeRole(isLegalProfessional)
+    const pairComposition = pairTypeCounts(selectedEdgesRepaired as any[], isLawFirm, legalPro)
+    const underfillReasons = underfillReasonCounts(
+      profiles.map((p: any) => p.id), selectedEdgesRepaired as any[], allPairs as any[],
+      (id: string) => Math.max(0, capOf(M(id) ?? {}) - (visibleCards.get(id) ?? 0)),
+    )
+    console.log('[generate-batch] optimizer:', JSON.stringify({
+      exact: bmatch.exact, reason: bmatch.reason ?? null, nodes: bmatch.nodesExplored,
+      edgesConsidered: allPairs.length, pairsSelected: selectedEdgesRepaired.length,
+      pairComposition, underfillReasons,
+    }))
 
     // Fan each selected edge out into BOTH directions. This is the only place rows are
     // created, so a one-way recommendation is structurally impossible: an edge that
@@ -460,6 +495,13 @@ export async function POST(req: NextRequest) {
       mutualOpportunities: mutualMatchesCreated,
       oneWayMatches: allSuggestions.length - (mutualMatchesCreated * 2),
       avgBatchSize: Math.round(avgBatchSize * 10) / 10,
+      optimizer: {
+        exact: bmatch.exact,
+        reason: bmatch.reason ?? null,
+        nodesExplored: bmatch.nodesExplored,
+        pairComposition,
+        underfillReasons,
+      },
       qualityMetrics: {
         relevanceThreshold: MIN_RELEVANCE_SCORE,
         mutualMatchPercentile: MUTUAL_MATCH_PERCENTILE,

@@ -277,10 +277,28 @@ describe('both member-facing generators apply cross-market-first + versions bump
   it('System A composition delegates to the shared cross-market-first helper', () => {
     expect(live).toContain('crossMarketFirstForLawFirm(candidates, viewer)')
   })
-  it('System B primary pass excludes partner-involving same-side edges (not just partner↔partner)', () => {
+  it('System B expresses cross-market-first as a BOUNDED penalty, not a selection exclusion', () => {
+    // The two-pass exclusion (build without same-side partner edges, then re-add them as a
+    // fallback) is gone. It could not coexist with a global optimizer: excluding edges before
+    // selection removes them from the graph the optimizer is meant to reason over.
+    //
+    // The preference now lives inside the optimizer's QUALITY term, using the same authoritative
+    // legalSameSidePenalty, applied once per direction. That keeps it bounded — at most 120 mutual
+    // points for partner<->partner — so a materially stronger same-side match can still win, while
+    // an equally strong cross-market match always beats a same-side one.
     expect(batchRoute).toContain("from '@/lib/matching/legalSameSidePenalty'")
-    expect(batchRoute).toContain('isSameSideLegalPartnerEdge(a, b)')
-    expect(batchRoute).toContain('allPairs.filter((p) => !isPartnerPair(p.userA, p.userB))')
+    // Calibrated to the MEASURED distribution rather than reusing the shared penalty at full
+    // strength: at -120 per edge the crossover sits at +121 mutual points, outside the observed
+    // 62..166 range, which would make a near-best same-side match unwinnable on quality.
+    expect(batchRoute).toContain('crossMarketAdjustment(lawFirmRole)')
+    // and the shared helper is NOT modified — the weekly ranker keeps its own behaviour
+    expect(readFileSync('lib/matching/legalSameSidePenalty.ts', 'utf8'))
+      .toMatch(/partnerPartner: 60/)
+    // Crucially: the relevance floor is applied to the UNADJUSTED score, so the penalty can never
+    // push a same-side edge out of the candidate pool — the exact objection recorded in
+    // lib/matching/batch-scoring.ts, which is why it was never a scoreMatch penalty.
+    expect(batchRoute).toContain('if (avgScore < MIN_RELEVANCE_SCORE) continue')
+    expect(batchRoute).not.toContain('allPairs.filter((p) => !isPartnerPair(p.userA, p.userB))')
   })
   it('algorithm + scoring-model versions were bumped (contract)', () => {
     expect(batchScorer).toContain("RECOMMENDATION_ALGORITHM_VERSION = 'v3.3'") // selection changed

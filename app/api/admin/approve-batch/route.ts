@@ -1,22 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { enqueueBatch, countUnresolvedRecommendations } from '@/lib/introductions/queue'
+import { countUnresolvedRecommendations } from '@/lib/introductions/queue'
+import { materializeAdminPair, toUndirectedPairs, canonicalApprovalOrder } from '@/lib/introductions/materializeAdminPair'
 import { notifyAdminBatchReady, notifyPendingIntrosActionNeeded, isoWeekKey } from '@/lib/notifications/engagement'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Admin "Send" for a reciprocal batch. In the unified queue model this no longer
- * exposes batch_suggestions to members — it MATERIALIZES the reciprocal suggestions
- * into intro_requests (the single member-facing queue) via enqueueBatch, per
- * recipient, as an 'admin_reciprocal' batch. Placement respects the active window:
- *   • empty active slot  → becomes the member's ACTIVE batch
- *   • active occupied     → becomes the QUEUED (next) batch
- *   • queued organic batch present → the organic batch is discarded, admin takes the slot
- *   • queued admin batch already present → this recipient is REJECTED (no stacking)
- * batch_suggestions is marked shown (preserving the 90-day re-suggestion cooldown)
- * and materialized_at is stamped. Member notification fires ONLY for a batch that
+ * Admin "Send" for a reciprocal batch. It MATERIALIZES the reviewed proposals into
+ * intro_requests (the single member-facing queue) as an 'admin_reciprocal' batch.
+ *
+ * THE UNIT IS AN UNDIRECTED PAIR, NOT A RECIPIENT. This previously looped recipients and
+ * called enqueueBatch -> place_batch_rows once each. That RPC writes ONE direction while
+ * its eligibility gate is bidirectional, so the second side of every edge was filtered out
+ * by the first side's own freshly committed row — 145 live one-sided rows in production, all
+ * with pair_id NULL. Approval now calls public.materialize_admin_pair (migration 064) once
+ * per pair; it writes both directions with one shared pair_id under both members' advisory
+ * locks, choosing ONE tier for both, or writes nothing.
+ *
+ * enqueueBatch/place_batch_rows is NOT retired: lib/generate-recommendations.ts (the
+ * onboarding and weekly producers) still uses it, and those genuinely place a single
+ * member's rows. It is only the ADMIN pair path that was wrong for it.
+ *
+ * Capacity is rechecked inside the RPC, which is authoritative — generation can precede
+ * approval by days. A 'capacity' outcome leaves that pair's review rows 'generated' and
+ * re-approvable rather than marking it delivered. Member notification fires ONLY for a batch that
  * is VISIBLE now (placed ACTIVE). A queued admin batch is hidden, so it stays
  * silent here — it is announced later, once promoteIfResolved promotes it, by the
  * SAME shared helper (notifyNewVisibleBatch, dedupeKey batch:<batchId>). That
@@ -57,65 +66,94 @@ export async function POST(req: NextRequest) {
       .from('introduction_batches').update({ status: 'active' }).eq('id', batchId)
     if (activateErr) return NextResponse.json({ error: activateErr.message }, { status: 500 })
 
-    // Mark this batch's suggestions shown (keeps the 90-day cooldown in generate-batch)
-    // and record the materialization hand-off timestamp.
+    // ── EDGE-ATOMIC MATERIALIZATION ────────────────────────────────────────────────────────────
+    //
+    // Approval no longer loops RECIPIENTS calling place_batch_rows. That path inserted ONE
+    // direction per call while the RPC's eligibility gate is bidirectional, so once A's row
+    // committed, B's call saw it and filtered A out — every edge collapsed to one side. The
+    // production audit measured 145 live one-sided rows from exactly this, all with pair_id NULL,
+    // and zero from the two-sided reciprocal path.
+    //
+    // Now: collapse the batch's symmetric review rows into UNDIRECTED pairs and call
+    // materialize_admin_pair ONCE per pair. It writes both directions with one shared pair_id in
+    // one transaction, under both participants' advisory locks, or writes nothing.
+    //
+    // Review rows are NOT pre-marked 'shown'. The RPC marks both proposal rows materialised only
+    // when the pair actually lands, so a pair rejected for capacity or eligibility stays
+    // 'generated' and remains reviewable — instead of being silently recorded as delivered.
     const now = new Date().toISOString()
-    await adminClient
+    const { data: suggestions } = await adminClient
       .from('batch_suggestions')
-      .update({ status: 'shown', shown_at: now, materialized_at: now })
+      .select('recipient_id, suggested_id, match_score')
       .eq('batch_id', batchId)
       .eq('status', 'generated')
 
-    // Load the suggestions to materialize, grouped by recipient.
-    const { data: suggestions } = await adminClient
-      .from('batch_suggestions')
-      .select('recipient_id, suggested_id, reason, position')
-      .eq('batch_id', batchId)
-      .eq('status', 'shown')
+    const { pairs: rawPairs, unpaired } = toUndirectedPairs(suggestions ?? [])
 
-    const byRecipient = new Map<string, { target_user_id: string; match_reason: string | null }[]>()
-    for (const s of suggestions || []) {
-      if (!s.recipient_id || !s.suggested_id) continue
-      const rows = byRecipient.get(s.recipient_id) ?? []
-      rows.push({ target_user_id: s.suggested_id, match_reason: s.reason ?? null })
-      byRecipient.set(s.recipient_id, rows)
+    // Live visible-card counts, read ONCE so the order is fixed before the first call and a retry
+    // reproduces it exactly. The RPC still rechecks capacity per edge and remains authoritative;
+    // this only decides which edge gets the chance first.
+    const { data: liveRows } = await adminClient
+      .from('intro_requests')
+      .select('requester_id, status')
+      .eq('status', 'suggested')
+    const visibleNow = new Map<string, number>()
+    for (const r of liveRows ?? []) {
+      if (!r?.requester_id) continue
+      visibleNow.set(r.requester_id, (visibleNow.get(r.requester_id) ?? 0) + 1)
+    }
+    const scoreByPair = new Map<string, number>()
+    for (const r of suggestions ?? []) {
+      if (!r?.recipient_id || !r?.suggested_id) continue
+      const k = r.recipient_id < r.suggested_id
+        ? `${r.recipient_id}|${r.suggested_id}` : `${r.suggested_id}|${r.recipient_id}`
+      scoreByPair.set(k, (scoreByPair.get(k) ?? 0) + Number(r.match_score ?? 0))
     }
 
-    // Materialize into the unified queue, per recipient.
-    const placed: {
-      recipientId: string; visible: number; reserved: number
-      activeBatchId: string | null; queuedBatchId: string | null
-    }[] = []
-    const rejected: { recipientId: string; reason: string }[] = []
-    for (const [recipientId, rows] of Array.from(byRecipient.entries())) {
-      // Keep each recipient's admin batch within the sort order the graph produced.
-      const ordered = rows
-      try {
-        const result = await enqueueBatch(adminClient, {
-          memberId: recipientId,
-          source: 'admin_reciprocal',
-          rows: ordered,
-          reciprocalBatchId: batchId,
-        })
-        if (result.placed) {
-          // A single call can fill BOTH tiers now, so record each part separately: the visible part
-          // is announceable, the reserved part is not.
-          placed.push({
-            recipientId,
-            visible: result.visiblePlaced,
-            reserved: result.reservedPlaced,
-            activeBatchId: result.activeBatchId ?? null,
-            queuedBatchId: result.queuedBatchId ?? null,
-          })
-        } else {
-          rejected.push({ recipientId, reason: result.reason ?? 'not_placed' })
-        }
-      } catch (err: any) {
-        // Class only — never the member id and never the raw database message.
-        console.error('[approve-batch] materialize failed (class):', err?.message ?? 'unknown')
-        rejected.push({ recipientId, reason: 'error' })
+    const pairs = canonicalApprovalOrder(rawPairs, {
+      visibleCardsOf: (id) => visibleNow.get(id) ?? 0,
+      scoreOf: (a, b) => scoreByPair.get(a < b ? `${a}|${b}` : `${b}|${a}`) ?? 0,
+    })
+    if (unpaired > 0) {
+      // A proposal without its mirror cannot be materialised two-sidedly. Report the count; never
+      // approve it one-sidedly.
+      console.warn(`[approve-batch] ${unpaired} review row(s) had no symmetric mirror and were skipped`)
+    }
+
+    // Capacity can change between generation and approval; the RPC recheck is authoritative.
+    const byOutcome: Record<string, number> = {}
+    let createdVisible = 0
+    let createdReserved = 0
+    const placedMembers = new Map<string, { visible: number; reserved: number; batchId: string | null }>()
+
+    for (const pair of pairs) {
+      const r = await materializeAdminPair(adminClient, {
+        reviewBatchId: batchId, memberA: pair.a, memberB: pair.b,
+      })
+      byOutcome[r.outcome] = (byOutcome[r.outcome] ?? 0) + 1
+      if (r.outcome !== 'created') continue
+      if (r.tier === 'suggested') createdVisible++; else createdReserved++
+      for (const [mid, bid] of [[pair.a, r.batchIdLo], [pair.b, r.batchIdHi]] as const) {
+        const cur = placedMembers.get(mid) ?? { visible: 0, reserved: 0, batchId: null }
+        if (r.tier === 'suggested') cur.visible++; else cur.reserved++
+        // lo/hi follow canonical id order, so map each member to the batch that is actually theirs
+        cur.batchId = pair.a < pair.b
+          ? (mid === pair.a ? r.batchIdLo ?? null : r.batchIdHi ?? null)
+          : (mid === pair.a ? r.batchIdHi ?? null : r.batchIdLo ?? null)
+        placedMembers.set(mid, cur)
       }
     }
+
+    const placed = Array.from(placedMembers.entries()).map(([recipientId, v]) => ({
+      recipientId,
+      visible: v.visible,
+      reserved: v.reserved,
+      activeBatchId: v.visible > 0 ? v.batchId : null,
+      queuedBatchId: v.reserved > 0 ? v.batchId : null,
+    }))
+    const rejected = Object.entries(byOutcome)
+      .filter(([o]) => o !== 'created' && o !== 'already_materialized')
+      .flatMap(([o, n]) => Array.from({ length: n }, () => ({ recipientId: '', reason: o })))
 
     // CANONICAL THURSDAY-SEND notification/eligibility rules — the SAME rules as
     // weekly-refresh (System A), enforced here so the admin-reviewed batch is the single
@@ -175,6 +213,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       cycleKey,
+      pairsConsidered: pairs.length,
+      pairsUnpaired: unpaired,
+      pairsCreatedVisible: createdVisible,
+      pairsCreatedReserved: createdReserved,
+      // Aggregate outcome census — counts only, never a member identity.
+      outcomes: byOutcome,
       placed: placed.length,
       rejected: rejected.length,
       rejectedByReason: rejected.reduce<Record<string, number>>((acc, r) => {

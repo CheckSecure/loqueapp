@@ -26,15 +26,30 @@ export default async function AdminBatchesPage() {
         .select('id', { count: 'exact', head: true })
         .eq('batch_id', batch.id)
 
-      const { count: memberCount } = await adminClient
+      // The unit a reviewer decides on is an undirected PAIR, and the optimizer emits two
+      // symmetric rows for each one. Counting rows would report every introduction twice, and
+      // counting recipient_id with count:'exact' counts ROWS, not distinct members — so both of
+      // the old numbers overstated the batch. Derive both honestly from the actual rows.
+      const { data: edgeRows } = await adminClient
         .from('batch_suggestions')
-        .select('recipient_id', { count: 'exact', head: true })
+        .select('recipient_id, suggested_id')
         .eq('batch_id', batch.id)
+
+      const pairKeys = new Set<string>()
+      const members = new Set<string>()
+      for (const r of edgeRows || []) {
+        if (!r?.recipient_id || !r?.suggested_id) continue
+        members.add(r.recipient_id)
+        pairKeys.add(r.recipient_id < r.suggested_id
+          ? `${r.recipient_id}|${r.suggested_id}`
+          : `${r.suggested_id}|${r.recipient_id}`)
+      }
 
       return {
         ...batch,
-        suggestion_count: count || 0,
-        member_count: memberCount || 0
+        suggestion_count: count || 0,   // directed rows, retained for diagnostics
+        pair_count: pairKeys.size,      // introductions — what a reviewer actually approves
+        member_count: members.size      // DISTINCT members, not row count
       }
     })
   )

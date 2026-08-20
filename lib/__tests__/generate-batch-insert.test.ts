@@ -291,30 +291,66 @@ describe('Generate New Batch — intro_requests (queue) history exclusion', () =
 // Availability tiers: never pair a member who has unresolved active intros with a
 // fully-resolved member (asymmetric — resolved side sees/responds, unresolved side is
 // blocked behind their queue). Both-resolved and both-unresolved pairs are unaffected.
-describe('Generate New Batch — availability tiers (asymmetry guard)', () => {
+describe('Generate New Batch — availability tier is no longer a candidate partition', () => {
   const hasEdge = (rows: any[], x: string, y: string) =>
     rows.some((r: any) => (r.recipient_id === x && r.suggested_id === y) || (r.recipient_id === y && r.suggested_id === x))
   const involves = (rows: any[], id: string) => rows.some((r: any) => r.recipient_id === id || r.suggested_id === id)
-  // A 'suggested' row to an OUT-OF-POOL target makes that member "unresolved" without
-  // creating any a/b/c pair history (so we isolate the tier rule from the exclusion rule).
   const unresolved = (member: string) => ({ requester_id: member, target_user_id: 'ext-' + member, status: 'suggested', batch_id: 'b1' })
 
-  it('resolved ↔ unresolved pairs are BLOCKED (both directions)', async () => {
+  /**
+   * WHAT CHANGED, AND WHY THESE TESTS WERE INVERTED.
+   *
+   * Generation used to skip any pair whose members sat on opposite sides of the
+   * resolved/unresolved split. The concern it encoded is real: a pair must never land with one
+   * member's card VISIBLE and the other's QUEUED, because the visible side could act on an
+   * introduction the queued side cannot even see yet.
+   *
+   * But unresolved-ness was only a PROXY for that, and an over-inclusive one. Under migration 063
+   * the tier a card lands in is decided by free VISIBLE SLOTS, not by whether a member has acted.
+   * The production audit measured the cost precisely: 144 excluded combinations (12 resolved x 12
+   * unresolved underfilled members) against roughly 18 edges actually needed to fill everyone.
+   *
+   * The invariant now lives where it is genuinely decidable — atomically, on live capacity, in
+   * public.materialize_admin_pair (migration 064), which places a pair 'suggested' for BOTH
+   * members or 'queued' for BOTH members or neither. Candidate generation no longer guesses, so
+   * these tests assert the OPPOSITE of what they used to, deliberately.
+   */
+  it('a cross-tier pair is now a legitimate candidate', async () => {
     state.introRequests = [unresolved('a')] // a unresolved; b, c resolved
     await post()
     const rows = state.insertedSuggestions || []
     expect(rows.length).toBeGreaterThan(0)
-    expect(involves(rows, 'a')).toBe(false)     // a never paired with resolved b/c
-    expect(hasEdge(rows, 'b', 'c')).toBe(true)  // resolved↔resolved still allowed
+    expect(involves(rows, 'a'), 'the unresolved member is no longer excluded').toBe(true)
   })
 
-  it('unresolved ↔ unresolved pairs remain possible (re-engagement preserved)', async () => {
-    state.introRequests = [unresolved('a'), unresolved('b')] // a, b unresolved; c resolved
+  it('same-tier pairs are unaffected', async () => {
+    state.introRequests = [unresolved('a'), unresolved('b')]
     await post()
     const rows = state.insertedSuggestions || []
-    expect(hasEdge(rows, 'a', 'b')).toBe(true)  // both unresolved → allowed
-    expect(hasEdge(rows, 'a', 'c')).toBe(false) // tier mismatch → blocked
-    expect(hasEdge(rows, 'b', 'c')).toBe(false) // tier mismatch → blocked
+    expect(hasEdge(rows, 'a', 'b'), 'both-unresolved was always allowed and still is').toBe(true)
+  })
+
+  it('generation still proposes SYMMETRIC rows for every cross-tier pair', async () => {
+    // The safety property that replaced the partition is two-sidedness, enforced here at
+    // proposal time and again atomically at materialization. A cross-tier pair must never be
+    // proposed one-sidedly.
+    state.introRequests = [unresolved('a')]
+    await post()
+    const rows = state.insertedSuggestions || []
+    const directed = new Set(rows.map((r: any) => `${r.recipient_id}>${r.suggested_id}`))
+    for (const r of rows) expect(directed.has(`${r.suggested_id}>${r.recipient_id}`)).toBe(true)
+  })
+
+  it('generation emits no notification, email or interest signal', async () => {
+    // Removing the partition must not change what a member is TOLD. Generation writes review
+    // rows only; nothing member-facing exists until approval, and one-sided interest is never
+    // disclosed. Proposals carry no notification of any kind.
+    state.introRequests = [unresolved('a')]
+    await post()
+    const blob = JSON.stringify(state.insertedSuggestions || [])
+    for (const leak of ['notification', 'email', 'notify', 'interest']) {
+      expect(blob.toLowerCase(), `proposal rows leaked ${leak}`).not.toContain(leak)
+    }
   })
 
   it('resolved ↔ resolved pairs are unchanged when nobody is unresolved', async () => {
@@ -323,7 +359,7 @@ describe('Generate New Batch — availability tiers (asymmetry guard)', () => {
     const withNone = (state.insertedSuggestions || []).map((r: any) => `${r.recipient_id}>${r.suggested_id}`).sort()
     expect(withNone.length).toBeGreaterThan(0)
     expect(hasEdge(state.insertedSuggestions || [], 'a', 'b')).toBe(true)
-    // Re-run: identical output → the tier logic adds no restriction and no perturbation.
+    // Re-run: identical output → deterministic for identical input.
     state.insertedSuggestions = null
     await post()
     const rerun = (state.insertedSuggestions || []).map((r: any) => `${r.recipient_id}>${r.suggested_id}`).sort()

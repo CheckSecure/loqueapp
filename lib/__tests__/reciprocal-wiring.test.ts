@@ -38,9 +38,15 @@ describe('scoring field-name bug fixed at the DB boundary', () => {
 })
 
 describe('admin introductions + admin reciprocal-graph batch remain unchanged', () => {
-  it('the admin generate-batch route still uses the reciprocal-graph engine', () => {
+  it('the admin generate-batch route selects with the GLOBAL b-matching optimizer', () => {
+    // Was selectReciprocalGraph (greedy + coverage fills + a repair pass limited to members at
+    // exactly one card). That chain provably stranded members at ZERO, which the repair pass never
+    // examined. Selection is now a lexicographic b-matching over the whole eligible graph.
     const admin = readFileSync('app/api/admin/generate-batch/route.ts', 'utf8')
-    expect(admin).toContain('selectReciprocalGraph')
+    expect(admin).toContain('solveGlobalBMatching')
+    expect(admin).not.toContain('selectReciprocalGraph')
+    // The edge remains the unit of selection, so reciprocity stays structural.
+    expect(admin).toMatch(/for \(const e of selectedEdgesRepaired\)/)
   })
   it('createAdminIntroPair (admin-created intros) is untouched by this change', () => {
     const src = readFileSync('lib/introRequests/createAdminIntroPair.ts', 'utf8')
