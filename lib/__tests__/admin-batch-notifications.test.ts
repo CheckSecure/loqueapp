@@ -73,6 +73,7 @@ vi.mock('@/lib/supabase/admin', () => {
 })
 
 import { enqueueBatch, promoteIfResolved } from '@/lib/introductions/queue'
+import { attachQueueRpc } from './helpers/queueRpcModel'
 import { shouldNotifyVisibleBatch, notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 
 // ── Part A in-memory queue mock (queue-service query surface) ─────────────────
@@ -113,7 +114,7 @@ function makeClient(seed: Record<string, any[]> = {}) {
     }
     return b
   }
-  return { from, __tables: tables } as any
+  return attachQueueRpc({ from, __tables: tables } as any)
 }
 
 const adminRows = (targets: string[]) => targets.map((t) => ({ target_user_id: t, match_reason: null }))
@@ -127,11 +128,11 @@ describe('admin reciprocal placement → visibility gate → dedupe key', () => 
     const result = await enqueueBatch(c, { memberId: 'M', source: 'admin_reciprocal', rows: adminRows(['b', 'ca']) })
 
     expect(result.placed).toBe(true)
-    expect(result.state).toBe('active')
-    expect(result.batchId).toBeTruthy()
+    expect(result.visiblePlaced).toBe(2)
+    expect(result.activeBatchId).toBeTruthy()
     // This is the exact predicate the route uses before calling notifyNewVisibleBatch.
     expect(shouldNotifyVisibleBatch(result)).toBe(true)
-    expect(`batch:${result.batchId}`).toMatch(/^batch:[0-9a-f-]{36}$/)
+    expect(`batch:${result.activeBatchId}`).toMatch(/^batch:[0-9a-f-]{36}$/)
   })
 
   it('Test 2 — placed QUEUED (active occupied) → silent, no announce', async () => {
@@ -142,7 +143,8 @@ describe('admin reciprocal placement → visibility gate → dedupe key', () => 
     const queued = await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: adminRows(['d', 'e']) })
 
     expect(queued.placed).toBe(true)
-    expect(queued.state).toBe('queued')
+    expect(queued.reservedPlaced).toBe(2)
+    expect(queued.visiblePlaced).toBe(0)
     // The route must NOT announce a hidden queued batch.
     expect(shouldNotifyVisibleBatch(queued)).toBe(false)
   })
@@ -151,38 +153,38 @@ describe('admin reciprocal placement → visibility gate → dedupe key', () => 
     const c = makeClient()
     const active = await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: adminRows(['b', 'ca']) })
     const adminQueued = await enqueueBatch(c, { memberId: 'M', source: 'admin_reciprocal', rows: adminRows(['d', 'e']) })
-    expect(adminQueued.state).toBe('queued')
+    expect(adminQueued.reservedPlaced).toBe(2)
     expect(shouldNotifyVisibleBatch(adminQueued)).toBe(false) // silent while hidden
 
     // Resolve the active batch fully (pass on both suggested rows), then promote.
-    for (const r of c.__tables.intro_requests.filter((x: any) => x.batch_id === active.batchId)) r.status = 'passed'
+    for (const r of c.__tables.intro_requests.filter((x: any) => x.batch_id === active.activeBatchId)) r.status = 'passed'
     const promo = await promoteIfResolved(c, 'M')
 
     expect(promo.promoted).toBe(true)
     // The promoted (now-visible) batch is exactly the admin batch — announced now, once.
-    expect(promo.newActive).toBe(adminQueued.batchId)
+    expect(promo.newActive).toBe(adminQueued.queuedBatchId)
     // The promotion path and the (skipped) approval path share the SAME stable key.
-    expect(`batch:${promo.newActive}`).toBe(`batch:${adminQueued.batchId}`)
+    expect(`batch:${promo.newActive}`).toBe(`batch:${adminQueued.queuedBatchId}`)
   })
 
   it('Test 6 — organic flows unchanged: weekly/onboarding active announce, queued silent, promotion announces', async () => {
     // Onboarding / weekly active placement → announce.
     const onboarding = await enqueueBatch(makeClient(), { memberId: 'M', source: 'onboarding', rows: adminRows(['b', 'ca']) })
-    expect(onboarding.state).toBe('active')
+    expect(onboarding.visiblePlaced).toBe(2)
     expect(shouldNotifyVisibleBatch(onboarding)).toBe(true)
 
     // Organic queued batch stays silent.
     const c = makeClient()
     await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: adminRows(['b', 'ca']) })
     const organicQueued = await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: adminRows(['d', 'e']) })
-    expect(organicQueued.state).toBe('queued')
+    expect(organicQueued.reservedPlaced).toBe(2)
     expect(shouldNotifyVisibleBatch(organicQueued)).toBe(false)
 
     // Promotion of the organic queued batch announces (unchanged behavior).
     for (const r of c.__tables.intro_requests.filter((x: any) => x.status === 'suggested')) r.status = 'passed'
     const promo = await promoteIfResolved(c, 'M')
     expect(promo.promoted).toBe(true)
-    expect(promo.newActive).toBe(organicQueued.batchId)
+    expect(promo.newActive).toBe(organicQueued.queuedBatchId)
   })
 })
 

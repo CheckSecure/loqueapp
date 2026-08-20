@@ -1,5 +1,5 @@
 import { isSelfPair } from '@/lib/matching/reciprocalPair'
-import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
+import { MAX_VISIBLE_INTRO_CARDS } from '@/lib/introductions/capacity'
 
 // THE single reciprocal creation path for every automatic generator (onboarding + weekly). It
 // delegates to the transactional, race-safe RPC public.create_reciprocal_suggestion (migration
@@ -19,7 +19,9 @@ export async function createReciprocalSuggestion(
   admin: any,
   aId: string,
   bId: string,
-  opts?: { source?: string; reason?: string | null; cooldownDays?: number; maxCards?: number },
+  // NOTE: there is deliberately no `maxCards` option. The visible cap is a constant inside the RPC
+  // and cannot be raised from here; offering the knob would only invite a caller to try.
+  opts?: { source?: string; reason?: string | null; cooldownDays?: number },
 ): Promise<ReciprocalResult> {
   if (!aId || !bId || isSelfPair(aId, bId)) return { ok: false, outcome: 'invalid' }
   const { data, error } = await admin.rpc('create_reciprocal_suggestion', {
@@ -28,7 +30,10 @@ export async function createReciprocalSuggestion(
     p_source: opts?.source ?? 'reciprocal',
     p_reason: opts?.reason ?? null,
     p_cooldown_days: opts?.cooldownDays ?? 30,
-    p_max_cards: opts?.maxCards ?? RECOMMENDATIONS_PER_BATCH,
+    // p_max_cards is retained only because migration 050 defined this signature and PostgREST
+    // resolves by argument list. The RPC CLAMPS it downward against its own constant, so this value
+    // can never raise the cap; it is passed as the contract's number purely so the two agree.
+    p_max_cards: MAX_VISIBLE_INTRO_CARDS,
   })
   if (error) {
     // A deadline-cancelled RPC surfaces as an AbortError — never log the raw abort/payload. All

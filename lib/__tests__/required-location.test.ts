@@ -369,7 +369,7 @@ describe('server boundaries — profile_complete can never be set on an invalid 
     expect(ACTIONS).toMatch(/resolveLocationUpdate\(formData\.get\('location'\)/)
     const updateProfileBody = ACTIONS.slice(
       ACTIONS.indexOf('export async function updateProfile'),
-      ACTIONS.indexOf('export async function requestIntroduction'),
+      ACTIONS.indexOf('export async function submitIntroRequest'),
     )
     // It READS profile_complete (to decide whether a blank is an allowed draft
     // state) but must never WRITE it — profile edits cannot complete a profile.

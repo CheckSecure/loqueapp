@@ -117,7 +117,12 @@ describe('route source guarantees', () => {
     // No legacy one-sided generation call path (createIntroRequest / onboarding enqueue).
     expect(src).not.toMatch(/\bcreateIntroRequest\b|enqueueOnboardingRetry/)
     expect(src).not.toMatch(/Error for \$\{user\.email\}/)     // old identity-logging removed
-    expect(src).toContain('withActiveCard')                    // capacity from suggested/queued only
-    expect(src).toContain("in('status', ['suggested', 'queued'])")
+    expect(src).toContain('withActiveCard')
+    // A coverage gap is an EMPTY SCREEN: only 'suggested' rows count. A member holding two 'queued'
+    // reservations and nothing visible sees the same blank page as a member holding nothing, so they
+    // are covered. The old read (suggested+queued) treated a reservation nobody has seen as if it
+    // were already on screen and skipped them.
+    expect(src).toContain(".eq('status', VISIBLE_STATUS)")
+    expect(src).not.toContain("in('status', ['suggested', 'queued'])")
   })
 })

@@ -14,8 +14,9 @@ import { getActiveIntroCap, RECOMMENDATIONS_PER_BATCH } from '@/lib/introduction
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { applyMemberEligibility, filterEligible, assertAllEligible, isEligibleMember, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
-import { classifyIntroHistory, exhaustionThreshold } from '@/lib/introRequests/history'
+import { classifyIntroHistory, exhaustionThreshold, ACTIVE_STATUSES } from '@/lib/introRequests/history'
 import { shouldNotifyVisibleBatch, notifyNewVisibleBatch } from '@/lib/notifications/engagement'
+import { VISIBLE_STATUS, RESERVED_STATUS, NO_EXPOSURE, visibleSlotsFree, type CardCounts } from '@/lib/introductions/capacity'
 
 // Unified scoring model for all tiers
 // Final Score = Alignment (55%) + Network Value (30%) + Responsiveness (15%)
@@ -613,22 +614,87 @@ function generateIntroReason(userProfile: any, candidate: any): string {
  * over-concentrate on a few popular members. Only called when the balancing flag
  * is on, so it adds no cost to the default generation path.
  */
-async function getActiveInboundExposure(adminClient: ReturnType<typeof createAdminClient>): Promise<Map<string, number>> {
-  const exposure = new Map<string, number>()
-  const { data: activeBatches } = await adminClient
-    .from('recommendation_batches')
-    .select('batch_id')
-    .eq('state', 'active')
-  const activeIds = new Set((activeBatches ?? []).map((b: any) => b.batch_id))
-  if (activeIds.size === 0) return exposure
-  const { data: rows } = await adminClient
+/**
+ * A candidate's ACTIVE INBOUND EXPOSURE: how many live recommendation cards are currently
+ * presenting that member to other members. Purely a fairness-ranking input — it never decides
+ * eligibility and never touches the capacity contract.
+ *
+ * COUNTS a row when `target_user_id` is the candidate and `status` is 'suggested' or 'queued'
+ * (ACTIVE_STATUSES — the same "live card" set the history classifier uses). Queued rows count
+ * because they reserve imminent exposure. Everything terminal — pending, approved, passed,
+ * declined, rejected, expired, archived, hidden, hidden_permanent, matched — contributes nothing,
+ * as do formed matches, which are not intro_requests rows at all.
+ *
+ * WHY IT IS KEYED ON target_user_id: the fairness question is "how often is this candidate being
+ * SHOWN to other people", which is the target side. Counting requester_id would measure how many
+ * cards the candidate HOLDS — that is the capacity question, and a different contract.
+ *
+ * WHAT WAS WRONG. This previously required `batch_id && activeBatchIds.has(batch_id)`, and the
+ * reciprocal RPC deliberately creates its pair cards with batch_id NULL (migration 050 step 8).
+ * Every reciprocal card was therefore invisible here, so as reciprocal generation became the main
+ * path the exposure penalty increasingly computed 0 for everyone and ordering collapsed to raw
+ * compatibility score — the fair spread was inert for exactly the cards it existed to spread.
+ * Measured on production at the time of the fix: 145 of 153 suggested rows counted, all 8
+ * reciprocal rows ignored.
+ *
+ * The recommendation_batches join was ALSO measured to exclude nothing: every suggested row
+ * carrying a batch_id belonged to an active batch (145/145, zero orphans), so the join filtered no
+ * invalid legacy rows and is dropped rather than kept out of habit. That also removes a query.
+ *
+ * Bounded to the candidate ids under consideration when they are supplied, so this stays one
+ * query over a small set rather than a full scan. The caller passes its deadline-bound admin
+ * client, so this read is cancelled with the rest of the generation budget.
+ */
+/**
+ * A candidate's ACTIVE INBOUND EXPOSURE, split into the two tiers that mean different things:
+ * `visible` (status 'suggested' — already on someone's screen) and `reserved` (status 'queued' —
+ * generated but shown to nobody yet). Purely a fairness-ranking input; it never decides eligibility
+ * and never touches the capacity contract.
+ *
+ * KEYED ON target_user_id: the question is how often this candidate is being SHOWN to other people.
+ * Counting requester_id would measure how many cards the candidate HOLDS, which is capacity — a
+ * different contract with a different owner (the RPCs, under the member advisory lock).
+ *
+ * Two defects are corrected here. It previously required `batch_id && activeBatchIds.has(batch_id)`,
+ * and the reciprocal RPC deliberately creates its pair cards with batch_id NULL (migration 050 step
+ * 8) — so every reciprocal card was invisible to fairness and, as reciprocal generation became the
+ * main path, the penalty increasingly computed zero for everyone and ordering collapsed to raw
+ * compatibility. It also collapsed the two tiers into one number, which saturated the penalty for
+ * 59% of candidates. The recommendation_batches join was measured to exclude nothing (145/145
+ * suggested rows carrying a batch_id were in an active batch), so it is dropped rather than kept out
+ * of habit — which also removes a query.
+ *
+ * One bounded query, restricted to the candidates actually being ranked, issued through the caller's
+ * deadline-bound admin client so it is cancelled with the rest of the generation budget.
+ */
+export async function getActiveInboundExposure(
+  adminClient: ReturnType<typeof createAdminClient>,
+  candidateIds?: string[],
+): Promise<Map<string, CardCounts>> {
+  const exposure = new Map<string, CardCounts>()
+  // An explicitly empty candidate set has no exposure to measure — skip the round trip entirely.
+  if (candidateIds && candidateIds.length === 0) return exposure
+
+  let query = adminClient
     .from('intro_requests')
-    .select('target_user_id, batch_id')
-    .eq('status', 'suggested')
-  for (const r of rows ?? []) {
-    if (r.batch_id && activeIds.has(r.batch_id)) {
-      exposure.set(r.target_user_id, (exposure.get(r.target_user_id) ?? 0) + 1)
-    }
+    .select('target_user_id, status')
+    .in('status', [VISIBLE_STATUS, RESERVED_STATUS])
+  if (candidateIds && candidateIds.length > 0) query = query.in('target_user_id', candidateIds)
+
+  const { data: rows, error } = await query
+  // Fail OPEN to neutral ordering (every candidate at zero): a fairness input must never block
+  // generation. Class only — never ids, never the raw error text.
+  if (error) {
+    console.error('[reciprocal-exposure] read failed (class):', (error as any).code ?? 'unknown')
+    return exposure
+  }
+
+  for (const r of (rows ?? []) as Array<{ target_user_id: string | null; status: string | null }>) {
+    if (!r?.target_user_id) continue
+    const cur = exposure.get(r.target_user_id) ?? { visible: 0, reserved: 0 }
+    if (r.status === VISIBLE_STATUS) cur.visible += 1
+    else if (r.status === RESERVED_STATUS) cur.reserved += 1
+    exposure.set(r.target_user_id, cur)
   }
   return exposure
 }
@@ -819,8 +885,20 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number, a
   // no handful of people absorbs the network's introductions. Deterministic
   // alignment core is untouched; the cap keeps meaningfully-higher-fit candidates
   // ahead. Runs BEFORE law-firm composition so hard composition rules still win.
+  // NOTE ON THE TWO EXPOSURE SYSTEMS. This flag-gated ranker has its own tuning (softFloor 2,
+  // 1.5/unit, cap 6) built around a single COMBINED active-card count, which is exactly what
+  // getActiveInboundExposure used to return. It is deliberately left alone here: collapsing the two
+  // tiers back to one total preserves its behaviour byte-for-byte, and only the reciprocal fair
+  // selection below adopts the new two-tier penalty. Retuning this one is separate work.
   const exposureBalanced = exposureBalancingEnabled()
-    ? applyExposureBalancing(boostedCandidates, await getActiveInboundExposure(adminClient))
+    ? applyExposureBalancing(
+        boostedCandidates,
+        new Map(
+          Array.from(
+            (await getActiveInboundExposure(adminClient, boostedCandidates.map((c: any) => c.id))).entries(),
+          ).map(([id, counts]) => [id, counts.visible + counts.reserved] as const),
+        ),
+      )
     : boostedCandidates
   // Law-firm composition policy: a law-firm lawyer never gets two other law-firm
   // lawyers — at most one, only with a strategic (complementary-practice + local)
@@ -877,7 +955,7 @@ export async function generateBatchForMember(
   const adminClient = createAdminClient()
   const { candidates: sorted, targetedRequest } = await rankCandidatesForUser(userId, maxCount)
 
-  if (sorted.length === 0) return { placed: false, reason: 'empty', count: 0 }
+  if (sorted.length === 0) return { placed: false, reason: 'empty', visiblePlaced: 0, reservedPlaced: 0, dropped: 0 }
 
   const result = await enqueueBatch(adminClient, {
     memberId: userId,
@@ -904,11 +982,13 @@ export async function generateBatchForMember(
     })
   }
 
-  // Announce the batch (in-app + email) only when it lands VISIBLE (placed as the
-  // active batch). A queued batch is hidden, so it is intentionally silent until
-  // promotion (see promoteIfResolved callers). Idempotent + best-effort.
-  if (shouldNotifyVisibleBatch(result) && result.batchId) {
-    await notifyNewVisibleBatch(userId, result.batchId, result.count)
+  // Announce the batch (in-app + email) only for cards that actually landed in the VISIBLE tier.
+  // Reserved rows are hidden, so they stay silent until promotion (see promoteIfResolved callers).
+  // Idempotent + best-effort.
+  if (shouldNotifyVisibleBatch(result) && result.activeBatchId) {
+    // Announce the VISIBLE part only. One call can also have reserved rows; those stay silent until
+    // promotion reveals them, so the member is never emailed about a card they cannot open.
+    await notifyNewVisibleBatch(userId, result.activeBatchId, result.visiblePlaced)
   }
 
   return result
@@ -1115,12 +1195,20 @@ export async function generateReciprocalBatchForMember(
     if (meErr) return finish('transient_error', 0, 0, 0)         // uncertain read → retryable
     if (!me || !isEligibleMember(me)) return finish('ineligible', 0, 0, 0)
 
-    // Respect the member's own visible-card limit: only fill remaining slots. (deadline-bound read)
-    const { count: aActive, error: capErr } = await adminClient
+    // Respect the member's own VISIBLE-card limit: only fill free visible slots. (deadline-bound)
+    //
+    // This used to count 'suggested' + 'queued' together against one cap of 2, which is wrong in
+    // both directions: it let a member holding two reservations look full and receive nothing,
+    // while never actually bounding how many visible cards they could accumulate. A reservation
+    // occupies a reserved slot and no visible one — see lib/introductions/capacity.
+    const { count: aVisible, error: capErr } = await adminClient
       .from('intro_requests').select('id', { count: 'exact', head: true })
-      .eq('requester_id', userId).in('status', ['suggested', 'queued'])
+      .eq('requester_id', userId).eq('status', VISIBLE_STATUS)
     if (capErr) return finish('transient_error', 0, 0, 0)        // uncertain read → retryable
-    const remaining = Math.max(0, target - (aActive ?? 0))
+    // This read is ADVISORY only — it avoids pointless RPC calls. The authoritative check happens
+    // inside create_reciprocal_suggestion under the member advisory lock, which is what makes two
+    // concurrent generators safe.
+    const remaining = Math.min(target, visibleSlotsFree({ visible: aVisible ?? 0, reserved: 0 }))
     if (remaining === 0) return finish('noop_at_capacity', 0, 0, 0) // idempotent re-run — already has cards
 
     if (Date.now() >= deadlineAt || controller.signal.aborted) return finish('transient_error', 0, 0, 0)
@@ -1129,9 +1217,9 @@ export async function generateReciprocalBatchForMember(
     const { candidates } = await rankCandidatesForUser(userId, RECIPROCAL_CANDIDATE_POOL, adminClient)
     if (!candidates.length) return finish('empty_pool', 0, 0, 0)
 
-    const exposure = await getActiveInboundExposure(adminClient)
+    const exposure = await getActiveInboundExposure(adminClient, candidates.map((c: any) => c.id))
     const ordered = selectFairCounterparts(
-      candidates.map((c: any) => ({ id: c.id, score: c.finalScore ?? 0, inbound: exposure.get(c.id) ?? 0 })),
+      candidates.map((c: any) => ({ id: c.id, score: c.finalScore ?? 0, exposure: exposure.get(c.id) ?? NO_EXPOSURE })),
       candidates.length,
     ).map((c) => c.id)
 

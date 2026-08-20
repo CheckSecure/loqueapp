@@ -22,9 +22,15 @@
  * clean pre-migration state (partial queued flips reverted, partial batch metadata
  * cleared) so a re-run after an interruption never double-creates or strands a row.
  * The only deletes are genuine excess beyond Current+Next.
+ *
+ * WHY THIS DOES NOT DELEGATE TO place_batch_rows. It is a one-time, operator-run, single-threaded
+ * repair with no concurrent producer, and it deliberately UPDATEs existing rows in place (preserving
+ * match_reason and created_at) rather than inserting new ones — which is the opposite of what a
+ * placement RPC does. Routing it through placement would lose that content and gain nothing: there
+ * is no race to serialize. It does honour the same two caps, taken from the same contract.
  */
 import { randomUUID } from 'node:crypto'
-import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
+import { MAX_VISIBLE_INTRO_CARDS, MAX_RESERVED_INTRO_CARDS } from '@/lib/introductions/capacity'
 import { calculateAlignmentScore, applyLawFirmCompositionPolicy } from '@/lib/generate-recommendations'
 
 // Profile fields needed to deterministically re-rank a member's existing suggested
@@ -36,8 +42,11 @@ function signalStrength(reason: string | null | undefined): number {
   return typeof reason === 'string' ? reason.split('\n').map((l) => l.trim()).filter(Boolean).length : 0
 }
 
-const N = RECOMMENDATIONS_PER_BATCH
-const KEEP = 2 * N // Current (N) + Next (N)
+const N = MAX_VISIBLE_INTRO_CARDS
+// Current (visible) + Next (reserved). Written as the sum of the TWO caps rather than 2×N: they are
+// independent limits that happen to be equal today, and "2 × the batch size" would silently become
+// wrong the moment one of them moves.
+const KEEP = MAX_VISIBLE_INTRO_CARDS + MAX_RESERVED_INTRO_CARDS
 
 export interface BackfillReport {
   batchSize: number
@@ -232,6 +241,18 @@ export async function planBackfill(adminClient: any, sampleSize = 10): Promise<B
  * idempotency / resume-safety contract.
  */
 export async function applyBackfill(adminClient: any): Promise<BackfillApplyResult> {
+  // HARD-DISABLED. This is the one remaining application-side path that could write 'suggested' and
+  // 'queued' rows without the member advisory lock, so it must not be callable at all now that
+  // place_batch_rows and promote_queued_rows own those writes. The one-time queue migration it
+  // performed is long complete (production batches date from 2026-07-22), and nothing imports it:
+  // the only exposed entry point is the READ-ONLY buildBackfillReport.
+  //
+  // Re-enabling it is a deliberate act that requires deleting this guard in a reviewed change, and
+  // whoever does so must first make it acquire pg_advisory_xact_lock(hashtextextended(member_id))
+  // and respect both caps — otherwise it reintroduces exactly the defect migration 063 closes.
+  throw new Error('applyBackfill is disabled: recommendation rows are written only by the capacity RPCs')
+  // eslint-disable-next-line no-unreachable
+
   const { memberSet, irByMember, adminByMember, profileMap } = await collectForApply(adminClient)
 
   // Throw on any write error so the backfill can NEVER silently half-apply (e.g. a

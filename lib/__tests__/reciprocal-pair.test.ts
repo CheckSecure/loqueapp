@@ -22,8 +22,8 @@ describe('selectFairCounterpart — BOUNDED exposure (fit still wins)', () => {
   })
   it('a materially-better candidate wins DESPITE higher exposure (poor-fit low-exposure never wins)', () => {
     const c: Counterpart[] = [
-      { id: 'strong', inbound: 5, score: 90 }, // eff 90 - min(6,10) = 84
-      { id: 'weak', inbound: 0, score: 40 },   // eff 40
+      { id: 'strong', exposure: { visible: 5, reserved: 0 }, score: 90 }, // eff 90 - min(6,10) = 84
+      { id: 'weak', exposure: { visible: 0, reserved: 0 }, score: 40 },   // eff 40
     ]
     expect(selectFairCounterpart(c)!.id).toBe('strong')
     // the gap (50) exceeds the cap (6), so load can never flip it
@@ -31,21 +31,21 @@ describe('selectFairCounterpart — BOUNDED exposure (fit still wins)', () => {
   })
   it('among NEAR-EQUAL candidates, lower exposure wins (spreads load)', () => {
     const c: Counterpart[] = [
-      { id: 'a', inbound: 3, score: 80 }, // eff 80 - 6 = 74
-      { id: 'b', inbound: 0, score: 78 }, // eff 78
+      { id: 'a', exposure: { visible: 3, reserved: 0 }, score: 80 }, // eff 80 - 6 = 74
+      { id: 'b', exposure: { visible: 0, reserved: 0 }, score: 78 }, // eff 78
     ]
     expect(selectFairCounterpart(c)!.id).toBe('b')
   })
   it('exact ties break by lower load then deterministic id', () => {
-    expect(selectFairCounterpart([{ id: 'z', inbound: 0, score: 50 }, { id: 'a', inbound: 0, score: 50 }])!.id).toBe('a')
-    expect(selectFairCounterpart([{ id: 'z', inbound: 1, score: 50 }, { id: 'a', inbound: 3, score: 50 }])!.id).toBe('z')
+    expect(selectFairCounterpart([{ id: 'z', exposure: { visible: 0, reserved: 0 }, score: 50 }, { id: 'a', exposure: { visible: 0, reserved: 0 }, score: 50 }])!.id).toBe('a')
+    expect(selectFairCounterpart([{ id: 'z', exposure: { visible: 1, reserved: 0 }, score: 50 }, { id: 'a', exposure: { visible: 3, reserved: 0 }, score: 50 }])!.id).toBe('z')
   })
 })
 
 describe('selectFairCounterparts — distinct top-N', () => {
   it('picks distinct counterparts and never repeats', () => {
     const picks = selectFairCounterparts([
-      { id: 'a', inbound: 0, score: 90 }, { id: 'b', inbound: 0, score: 88 }, { id: 'c', inbound: 0, score: 86 },
+      { id: 'a', exposure: { visible: 0, reserved: 0 }, score: 90 }, { id: 'b', exposure: { visible: 0, reserved: 0 }, score: 88 }, { id: 'c', exposure: { visible: 0, reserved: 0 }, score: 86 },
     ], 2)
     expect(picks.map(p => p.id)).toEqual(['a', 'b'])
     expect(new Set(picks.map(p => p.id)).size).toBe(2)
@@ -64,7 +64,7 @@ describe('REGRESSION: identical fresh accounts DISTRIBUTE across good-fit member
     const baseScore: Record<string, number> = { hernan: 90, bianca: 90, carlos: 90 }
     const assigned: string[] = []
     for (let i = 0; i < 6; i++) {
-      const cands: Counterpart[] = Object.keys(baseScore).map(id => ({ id, score: baseScore[id], inbound: exposure[id] }))
+      const cands: Counterpart[] = Object.keys(baseScore).map(id => ({ id, score: baseScore[id], exposure: { visible: exposure[id], reserved: 0 } }))
       const pick = selectFairCounterpart(cands)!
       assigned.push(pick.id)
       exposure[pick.id] += 1 // reciprocal pair created → counterpart's inbound rises

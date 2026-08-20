@@ -9,6 +9,7 @@ import {
   enqueueBatch, promoteIfResolved, getActiveBatch, getQueuedBatch,
   countUnresolvedRecommendations, weeklyEligibilityCheck,
 } from '@/lib/introductions/queue'
+import { attachQueueRpc } from './helpers/queueRpcModel'
 import { buildBackfillReport, applyBackfill } from '@/lib/introductions/migration-backfill'
 import { classifyIntroHistory } from '@/lib/introRequests/history'
 
@@ -63,7 +64,7 @@ function makeClient(seed: Record<string, any[]> = {}) {
     }
     return b
   }
-  return { from, __tables: tables } as any
+  return attachQueueRpc({ from, __tables: tables } as any)
 }
 
 const irOf = (c: any, memberId = 'M') => c.__tables.intro_requests.filter((r: any) => r.requester_id === memberId)
@@ -132,7 +133,8 @@ describe('queue — active-window invariant (one active, at most one queued, nev
     const c = makeClient()
     const r = await enqueueBatch(c, { memberId: 'M', source: 'onboarding', rows: [{ target_user_id: 'A' }, { target_user_id: 'B' }] })
     expect(r.placed).toBe(true)
-    expect(r.state).toBe('active')
+    expect(r.visiblePlaced).toBe(2)
+    expect(r.reservedPlaced).toBe(0)
     expect(batchesOf(c, 'active')).toHaveLength(1)
     expect(suggestedOf(c)).toHaveLength(2)
   })
@@ -141,7 +143,8 @@ describe('queue — active-window invariant (one active, at most one queued, nev
     const c = makeClient()
     await enqueueBatch(c, { memberId: 'M', source: 'onboarding', rows: [{ target_user_id: 'A' }, { target_user_id: 'B' }] })
     const r2 = await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'C' }, { target_user_id: 'D' }] })
-    expect(r2.state).toBe('queued')
+    expect(r2.reservedPlaced).toBe(2)
+    expect(r2.visiblePlaced).toBe(0)   // visible tier already at cap
     expect(batchesOf(c, 'active')).toHaveLength(1)
     expect(batchesOf(c, 'queued')).toHaveLength(1)
     expect(suggestedOf(c)).toHaveLength(2)  // never more than N visible
@@ -154,7 +157,7 @@ describe('queue — active-window invariant (one active, at most one queued, nev
     await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'C' }, { target_user_id: 'D' }] })
     const r3 = await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'E' }] })
     expect(r3.placed).toBe(false)
-    expect(r3.reason).toBe('queued_slot_full')
+    expect(r3.reason).toBe('at_capacity')   // both tiers full — nothing is evicted to make room
     expect(batchesOf(c, 'queued')).toHaveLength(1)
   })
 
@@ -163,38 +166,59 @@ describe('queue — active-window invariant (one active, at most one queued, nev
     await enqueueBatch(c, { memberId: 'M', source: 'onboarding', rows: [{ target_user_id: 'A' }, { target_user_id: 'B' }] })
     const r = await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'A' }] }) // A already active
     expect(r.placed).toBe(false)
-    expect(r.reason).toBe('all_duplicates')
+    expect(r.reason).toBe('no_eligible_candidates')
   })
 })
 
-describe('queue — admin precedence for the queued slot', () => {
-  it('admin batch DISCARDS an organic queued batch (deleted, not archived) and takes the slot', async () => {
+describe('queue — NOTHING IS EVER EVICTED (admin precedence removed)', () => {
+  /**
+   * WHAT CHANGED AND WHY. Placement used to give an admin batch precedence over the queued slot: it
+   * DELETED an organic queued batch's rows and took the slot. That is a member losing a
+   * recommendation they were already allocated, purely because a newer producer arrived — and it
+   * made "nothing is ever evicted" false. An admin source now has no precedence over capacity: it
+   * fills genuinely free slots or it is refused, and every existing row and batch is left alone.
+   */
+  it('an admin batch does NOT displace a full organic queue — it is refused, nothing is touched', async () => {
     const c = makeClient()
     await enqueueBatch(c, { memberId: 'M', source: 'onboarding', rows: [{ target_user_id: 'A' }, { target_user_id: 'B' }] })
     const organic = await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'C' }, { target_user_id: 'D' }] })
+    const before = JSON.stringify(c.__tables)
+
     const r = await enqueueBatch(c, { memberId: 'M', source: 'admin_reciprocal', rows: [{ target_user_id: 'X' }, { target_user_id: 'Y' }] })
-    expect(r.placed).toBe(true)
-    expect(r.state).toBe('queued')
-    expect(r.discardedQueued).toBe(organic.batchId)
-    // organic recommendation rows are gone (discard = delete, never resurface)
-    expect(queuedOf(c).map((x: any) => x.target_user_id).sort()).toEqual(['X', 'Y'])
-    // the organic batch metadata row remains, marked discarded (analytics only)
-    const discarded = batchesOf(c, 'discarded')
-    expect(discarded).toHaveLength(1)
-    expect(discarded[0].batch_id).toBe(organic.batchId)
-    // still exactly one active + one queued, still only 2 visible
-    expect(batchesOf(c, 'active')).toHaveLength(1)
-    expect(batchesOf(c, 'queued')).toHaveLength(1)
-    expect(suggestedOf(c)).toHaveLength(2)
+
+    expect(r.placed).toBe(false)
+    expect(r.reason).toBe('at_capacity')
+    expect(JSON.stringify(c.__tables)).toBe(before)         // byte-for-byte unchanged
+    expect(queuedOf(c).map((x: any) => x.target_user_id).sort()).toEqual(['C', 'D'])
+    expect(batchesOf(c, 'discarded')).toHaveLength(0)       // discarding no longer exists
+    expect(organic.queuedBatchId).toBeTruthy()
   })
 
-  it('a SECOND admin batch is rejected when an admin batch is already queued', async () => {
+  it('refuses to merge into a queued batch from a different producer rather than blur provenance', async () => {
     const c = makeClient()
+    // visible tier full, reserved tier holds ONE organic row → a free reserved slot exists…
     await enqueueBatch(c, { memberId: 'M', source: 'onboarding', rows: [{ target_user_id: 'A' }, { target_user_id: 'B' }] })
-    await enqueueBatch(c, { memberId: 'M', source: 'admin_reciprocal', rows: [{ target_user_id: 'X' }, { target_user_id: 'Y' }] })
-    const r = await enqueueBatch(c, { memberId: 'M', source: 'admin_reciprocal', rows: [{ target_user_id: 'Z' }] })
+    await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'C' }] })
+    const before = JSON.stringify(c.__tables)
+
+    // …but filling it from an admin source would put an admin row inside a 'weekly' batch.
+    const r = await enqueueBatch(c, { memberId: 'M', source: 'admin_reciprocal', rows: [{ target_user_id: 'X' }] })
+
     expect(r.placed).toBe(false)
-    expect(r.reason).toBe('queued_admin_exists')
+    expect(r.reason).toBe('source_mismatch')
+    expect(JSON.stringify(c.__tables)).toBe(before)
+  })
+
+  it('the SAME producer may append into its own queued batch, up to the reserved cap', async () => {
+    const c = makeClient()
+    await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'A' }, { target_user_id: 'B' }] })
+    await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'C' }] })
+    const r = await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'D' }, { target_user_id: 'E' }] })
+
+    expect(r.reservedPlaced).toBe(1)
+    expect(r.dropped).toBe(1)                                // beyond the reserved cap
+    expect(queuedOf(c)).toHaveLength(2)
+    expect(batchesOf(c, 'queued')).toHaveLength(1)           // appended, not a second batch
   })
 })
 
@@ -343,205 +367,64 @@ describe('migration dry-run report', () => {
   })
 })
 
-describe('migration apply — preserves rows, splits current/next, idempotent & resume-safe', () => {
-  const seed = () => ({
-    profiles: [{ id: 'M', account_status: 'active', profile_complete: true }],
-    intro_requests: [
-      { id: 'r1', requester_id: 'M', target_user_id: 'A', status: 'suggested', match_reason: 'reason-A', created_at: '2026-03-03' },
-      { id: 'r2', requester_id: 'M', target_user_id: 'B', status: 'suggested', match_reason: 'reason-B', created_at: '2026-03-02' },
-      { id: 'r3', requester_id: 'M', target_user_id: 'C', status: 'suggested', match_reason: 'reason-C', created_at: '2026-03-01' },
-    ],
-  })
-
-  it('a 3-suggested member becomes 2 active + 1 queued, match_reason preserved, nothing deleted', async () => {
-    const c = makeClient(seed())
-    const res = await applyBackfill(c)
-    expect(res.membersProcessed).toBe(1)
-    expect(res.activeBatchesCreated).toBe(1)
-    expect(res.queuedBatchesCreated).toBe(1)
-    expect(res.recommendationsDiscarded).toBe(0)         // 3 ≤ Current2+Next2
-    // most-recent two stay visible (A,B); oldest (C) is queued
-    expect(suggestedOf(c).map((r: any) => r.target_user_id).sort()).toEqual(['A', 'B'])
-    expect(queuedOf(c).map((r: any) => r.target_user_id)).toEqual(['C'])
-    // rows preserved in place — match_reason intact, no rows deleted (still 3)
-    expect(irOf(c)).toHaveLength(3)
-    expect(irOf(c).find((r: any) => r.target_user_id === 'C').match_reason).toBe('reason-C')
-    // exactly one active + one queued batch
-    expect(batchesOf(c, 'active')).toHaveLength(1)
-    expect(batchesOf(c, 'queued')).toHaveLength(1)
-  })
-
-  it('re-running is idempotent — the already-migrated member is skipped, no duplication', async () => {
-    const c = makeClient(seed())
-    await applyBackfill(c)
-    const res2 = await applyBackfill(c)
-    expect(res2.membersProcessed).toBe(0)
-    expect(res2.membersSkipped).toBe(1)
-    expect(irOf(c)).toHaveLength(3)
-    expect(batchesOf(c, 'active')).toHaveLength(1)
-    expect(batchesOf(c, 'queued')).toHaveLength(1)
-  })
-
-  it('resumes cleanly after an interruption that flipped a row to queued but wrote no active batch', async () => {
-    const c = makeClient(seed())
-    // simulate a partial prior run: r3 flipped to 'queued' + orphan queued metadata, no ACTIVE batch
-    c.__tables.intro_requests.find((r: any) => r.id === 'r3').status = 'queued'
-    c.__tables.recommendation_batches.push({ batch_id: 'partial-q', member_id: 'M', state: 'queued', batch_source: 'migration' })
-    const res = await applyBackfill(c)
-    expect(res.membersProcessed).toBe(1)              // not skipped — no active batch existed
-    // recovered to a consistent 2 active + 1 queued with a single queued batch row
-    expect(suggestedOf(c).map((r: any) => r.target_user_id).sort()).toEqual(['A', 'B'])
-    expect(queuedOf(c).map((r: any) => r.target_user_id)).toEqual(['C'])
-    expect(batchesOf(c, 'active')).toHaveLength(1)
-    expect(batchesOf(c, 'queued')).toHaveLength(1)     // stale partial-q metadata cleared, not duplicated
-    expect(irOf(c)).toHaveLength(3)                    // no rows lost
-  })
-})
-
-describe('migration ranking — alignment-based Active/Queued selection', () => {
-  const activeTargets = (c: any, m = 'MEM') => suggestedOf(c, m).map((r: any) => r.target_user_id).sort()
-  const queuedTargets = (c: any, m = 'MEM') => queuedOf(c, m).map((r: any) => r.target_user_id).sort()
-
-  it('strongest alignment becomes Active; weakest is Queued', async () => {
+describe('migration apply — HARD-DISABLED (it was the last unlocked writer)', () => {
+  /**
+   * applyBackfill was the one-time collapse of pre-queue members onto the active-window model. It
+   * wrote 'suggested' and 'queued' rows directly, with no member advisory lock and no cap check —
+   * exactly the shape of writer that migration 063 exists to eliminate. The migration it performed
+   * completed in July 2026 and nothing imports it (only the READ-ONLY buildBackfillReport is
+   * exposed, via /api/admin/queue-backfill-report), so rather than leave a callable bypass sitting
+   * in the module it now refuses to run.
+   *
+   * The behavioural tests that used to live here drove that writer end to end. They are gone
+   * deliberately: they asserted the behaviour of a code path that no longer executes, and keeping
+   * them green would have required keeping the bypass callable. What remains is the guarantee that
+   * matters now — it cannot write.
+   */
+  it('throws instead of writing, and names the RPCs that own these rows', async () => {
     const c = makeClient({
-      profiles: [
-        { id: 'MEM', account_status: 'active', profile_complete: true, intro_preferences: ['General Counsel'], seniority: 'Senior', expertise: ['Litigation'], city: 'NYC', state: 'NY' },
-        { id: 'S', role_type: 'General Counsel', seniority: 'Senior', expertise: ['Litigation'], city: 'NYC', state: 'NY' },   // strongest
-        { id: 'Mid', role_type: 'COO', seniority: 'Senior', expertise: ['Finance'], city: 'NYC', state: 'NY' },               // mid
-        { id: 'W', role_type: 'Consultant', seniority: 'Junior', expertise: ['Marketing'], city: 'LA', state: 'CA' },         // weakest
-      ],
+      profiles: [{ id: 'M', role_type: 'gc' }],
       intro_requests: [
-        { id: 'r1', requester_id: 'MEM', target_user_id: 'S', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-        { id: 'r2', requester_id: 'MEM', target_user_id: 'Mid', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-        { id: 'r3', requester_id: 'MEM', target_user_id: 'W', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
+        { requester_id: 'M', target_user_id: 'A', status: 'suggested', batch_id: null },
+        { requester_id: 'M', target_user_id: 'B', status: 'suggested', batch_id: null },
+        { requester_id: 'M', target_user_id: 'C', status: 'suggested', batch_id: null },
       ],
     })
-    await applyBackfill(c)
-    expect(activeTargets(c)).toEqual(['Mid', 'S'])   // two highest-alignment
-    expect(queuedTargets(c)).toEqual(['W'])          // weakest queued
+    await expect(applyBackfill(c)).rejects.toThrow(/disabled/i)
+    // nothing moved: still three untouched suggested rows and no batch metadata
+    expect(c.__tables.intro_requests.filter((r: any) => r.status === 'suggested')).toHaveLength(3)
+    expect(c.__tables.intro_requests.every((r: any) => r.batch_id === null)).toBe(true)
+    expect(c.__tables.recommendation_batches).toHaveLength(0)
   })
 
-  it('is deterministic — identical inputs produce identical Active/Queued twice', async () => {
-    const seed = () => ({
-      profiles: [
-        { id: 'MEM', account_status: 'active', profile_complete: true, intro_preferences: ['General Counsel'], seniority: 'Senior', expertise: ['Litigation'], city: 'NYC' },
-        { id: 'S', role_type: 'General Counsel', seniority: 'Senior', expertise: ['Litigation'], city: 'NYC' },
-        { id: 'Mid', role_type: 'COO', seniority: 'Senior', expertise: ['Finance'], city: 'NYC' },
-        { id: 'W', role_type: 'Consultant', seniority: 'Junior', expertise: ['Marketing'], city: 'LA' },
-      ],
-      intro_requests: [
-        { id: 'r1', requester_id: 'MEM', target_user_id: 'S', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-        { id: 'r2', requester_id: 'MEM', target_user_id: 'Mid', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-        { id: 'r3', requester_id: 'MEM', target_user_id: 'W', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-      ],
-    })
-    const a = makeClient(seed()); await applyBackfill(a)
-    const b = makeClient(seed()); await applyBackfill(b)
-    expect(activeTargets(a)).toEqual(activeTargets(b))
-    expect(queuedTargets(a)).toEqual(queuedTargets(b))
-  })
-
-  // Tie-break chain (no profiles → uniform alignment, so lower keys decide).
-  it('tie-break 1: match_reason signal strength — fewer bullets is queued', async () => {
-    const c = makeClient({
-      profiles: [{ id: 'MEM', account_status: 'active', profile_complete: true }],
-      intro_requests: [
-        { id: 'r1', requester_id: 'MEM', target_user_id: 'A', status: 'suggested', match_reason: 'a\nb\nc', created_at: '2026-03-01' },
-        { id: 'r2', requester_id: 'MEM', target_user_id: 'B', status: 'suggested', match_reason: 'a\nb', created_at: '2026-03-01' },
-        { id: 'r3', requester_id: 'MEM', target_user_id: 'C', status: 'suggested', match_reason: 'a', created_at: '2026-03-01' },
-      ],
-    })
-    await applyBackfill(c)
-    expect(queuedTargets(c)).toEqual(['C'])   // weakest signal
-  })
-
-  it('tie-break 2: created_at descending — oldest is queued', async () => {
-    const c = makeClient({
-      profiles: [{ id: 'MEM', account_status: 'active', profile_complete: true }],
-      intro_requests: [
-        { id: 'r1', requester_id: 'MEM', target_user_id: 'A', status: 'suggested', match_reason: 'x', created_at: '2026-03-03' },
-        { id: 'r2', requester_id: 'MEM', target_user_id: 'B', status: 'suggested', match_reason: 'x', created_at: '2026-03-02' },
-        { id: 'r3', requester_id: 'MEM', target_user_id: 'C', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-      ],
-    })
-    await applyBackfill(c)
-    expect(queuedTargets(c)).toEqual(['C'])   // oldest
-  })
-
-  it('tie-break 3: final target_user_id ascending — highest id is queued', async () => {
-    const c = makeClient({
-      profiles: [{ id: 'MEM', account_status: 'active', profile_complete: true }],
-      intro_requests: [
-        { id: 'r1', requester_id: 'MEM', target_user_id: 'aaa', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-        { id: 'r2', requester_id: 'MEM', target_user_id: 'bbb', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-        { id: 'r3', requester_id: 'MEM', target_user_id: 'ccc', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-      ],
-    })
-    await applyBackfill(c)
-    expect(activeTargets(c)).toEqual(['aaa', 'bbb'])   // two lowest ids
-    expect(queuedTargets(c)).toEqual(['ccc'])
-  })
-
-  it('law-firm composition: two law-firm candidates never both occupy the Active batch', async () => {
-    const c = makeClient({
-      profiles: [
-        { id: 'LFV', account_status: 'active', profile_complete: true, role_type: 'Law Firm Partner', city: 'DC', expertise: ['Litigation'] },
-        { id: 'lfA', role_type: 'Law Firm Partner', city: 'DC', expertise: ['Litigation'] },   // highest alignment law-firm
-        { id: 'lfB', role_type: 'Law Firm Attorney', city: 'DC', expertise: ['Regulatory'] },  // strategic peer
-        { id: 'gc', role_type: 'General Counsel', city: 'DC', expertise: ['Compliance'] },      // client
-      ],
-      intro_requests: [
-        { id: 'r1', requester_id: 'LFV', target_user_id: 'lfA', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-        { id: 'r2', requester_id: 'LFV', target_user_id: 'lfB', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-        { id: 'r3', requester_id: 'LFV', target_user_id: 'gc', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-      ],
-    })
-    await applyBackfill(c)
-    const activeRoles = suggestedOf(c, 'LFV').map((r: any) => r.target_user_id)
-    const lawFirmInActive = activeRoles.filter((id: string) => id === 'lfA' || id === 'lfB').length
-    expect(lawFirmInActive).toBeLessThanOrEqual(1)               // never two law-firm in Active
-    expect(activeRoles).toContain('gc')                          // a client is Active
-  })
-
-  it('migration safety: pending / approved / matched / history rows are untouched', async () => {
-    const c = makeClient({
-      profiles: [{ id: 'MEM', account_status: 'active', profile_complete: true }],
-      intro_requests: [
-        { id: 's1', requester_id: 'MEM', target_user_id: 'X', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-        { id: 's2', requester_id: 'MEM', target_user_id: 'Y', status: 'suggested', match_reason: 'x', created_at: '2026-03-01' },
-        { id: 'p1', requester_id: 'MEM', target_user_id: 'Z', status: 'pending', match_reason: 'keep' },
-        { id: 'a1', requester_id: 'MEM', target_user_id: 'W', status: 'approved', match_reason: 'keep' },
-        { id: 'h1', requester_id: 'MEM', target_user_id: 'H', status: 'archived', match_reason: 'keep' },
-      ],
-      matches: [{ user_a_id: 'MEM', user_b_id: 'V', status: 'active' }],
-    })
-    const beforeRows = c.__tables.intro_requests.length
-    await applyBackfill(c)
-    const pending = c.__tables.intro_requests.find((r: any) => r.id === 'p1')
-    const approved = c.__tables.intro_requests.find((r: any) => r.id === 'a1')
-    const archived = c.__tables.intro_requests.find((r: any) => r.id === 'h1')
-    expect(pending.status).toBe('pending')                       // unchanged
-    expect(approved.status).toBe('approved')                     // unchanged
-    expect(archived.status).toBe('archived')                     // unchanged
-    expect(pending.match_reason).toBe('keep')
-    expect(c.__tables.matches).toHaveLength(1)                   // matches untouched
-    expect(c.__tables.intro_requests.length).toBe(beforeRows)   // no unexpected deletes (2 suggested ≤ Active)
-    expect(suggestedOf(c, 'MEM').map((r: any) => r.target_user_id).sort()).toEqual(['X', 'Y'])
+  it('the read-only report is untouched and still callable', async () => {
+    const c = makeClient({ profiles: [], intro_requests: [], batch_suggestions: [] })
+    const report = await buildBackfillReport(c)
+    expect(report.batchSize).toBe(RECOMMENDATIONS_PER_BATCH)
+    expect(c.__tables.intro_requests).toHaveLength(0)   // a report mutates nothing
   })
 })
 
 describe('tiered introduction-history model (queue lifecycle ↔ exclusion)', () => {
-  it('discarded-before-visible pair leaves NO history → eligible; shown/queued pairs are HARD-excluded', async () => {
+  it('every placed pair stays in history — there is no longer a discard path that erases one', async () => {
+    // THIS TEST USED TO ASSERT THE OPPOSITE. An admin batch displaced an organic queued batch by
+    // DELETING its rows, so those pairs left no history and became eligible again. Eviction is gone
+    // (see "NOTHING IS EVER EVICTED" above): the admin batch is refused instead, so C and D keep
+    // their queued rows and stay in the active window.
     const c = makeClient()
-    // A,B shown (active). C,D organic queued (unseen). Admin displaces → C,D discarded (deleted).
     await enqueueBatch(c, { memberId: 'M', source: 'onboarding', rows: [{ target_user_id: 'A' }, { target_user_id: 'B' }] })
     await enqueueBatch(c, { memberId: 'M', source: 'weekly', rows: [{ target_user_id: 'C' }, { target_user_id: 'D' }] })
-    await enqueueBatch(c, { memberId: 'M', source: 'admin_reciprocal', rows: [{ target_user_id: 'E' }, { target_user_id: 'F' }] })
+    const refused = await enqueueBatch(c, { memberId: 'M', source: 'admin_reciprocal', rows: [{ target_user_id: 'E' }, { target_user_id: 'F' }] })
+    expect(refused.placed).toBe(false)
+
     const rows = c.__tables.intro_requests.filter((r: any) => r.requester_id === 'M' || r.target_user_id === 'M')
     const { hardExcluded } = classifyIntroHistory('M', rows)
-    for (const id of ['A', 'B', 'E', 'F']) expect(hardExcluded.has(id)).toBe(true) // suggested/queued = active window = HARD
-    expect(hardExcluded.has('C')).toBe(false) // discarded before visible → deleted → eligible
-    expect(hardExcluded.has('D')).toBe(false)
+    // suggested AND queued are the active window → all four are HARD-excluded
+    for (const id of ['A', 'B', 'C', 'D']) expect(hardExcluded.has(id)).toBe(true)
+    // E and F were never written, so they carry no history and remain eligible
+    expect(hardExcluded.has('E')).toBe(false)
+    expect(hardExcluded.has('F')).toBe(false)
+    expect(c.__tables.recommendation_batches.filter((b: any) => b.state === 'discarded')).toHaveLength(0)
   })
 
   it('regeneration: committed pairs HARD, shown-no-commitment SOFT, artifact eligible, fresh candidate eligible', () => {

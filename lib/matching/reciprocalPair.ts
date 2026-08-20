@@ -6,6 +6,8 @@
 // rejected. Fair selection spreads new members across eligible counterparts (least-loaded first)
 // instead of repeatedly assigning the globally top-ranked person to everyone.
 
+import { exposurePenalty, type CardCounts } from '@/lib/introductions/capacity'
+
 export function isSelfPair(a: string, b: string): boolean {
   return a === b
 }
@@ -24,8 +26,13 @@ export function canonicalPairKey(a: string, b: string): string {
 
 export interface Counterpart {
   id: string
-  /** how many ACTIVE inbound recommendations this candidate already holds (load signal) */
-  inbound: number
+  /**
+   * Active inbound exposure, kept as TWO signals because they mean different things: `visible`
+   * cards are already on someone's screen, `reserved` ones have been shown to nobody. Collapsing
+   * them into a single number saturated the bounded penalty for 59% of candidates on production,
+   * which silently turned fair ordering back into pure score ordering.
+   */
+  exposure: CardCounts
   /** meaningful viewer-specific fit score; NEVER surfaced to members */
   score: number
 }
@@ -34,28 +41,40 @@ export interface Counterpart {
 // still wins, but among near-equally-good candidates the one with less existing exposure is
 // preferred — so no one becomes the default for everyone, and a poor-fit low-exposure candidate
 // never beats a materially better one solely because of load.
-export const EXPOSURE_PENALTY_CAP = 6   // max fit points exposure can ever shave off
-export const EXPOSURE_PER_INBOUND = 2   // penalty per active inbound recommendation
+// The penalty itself lives in the capacity contract (lib/introductions/capacity), so the tiers,
+// their weights and their caps are defined exactly once:
+//   visible  2 points each, capped at 6
+//   reserved 1 point each,  capped at 2   → maximum total 8
+export {
+  VISIBLE_PENALTY_PER_CARD,
+  VISIBLE_PENALTY_CAP,
+  RESERVED_PENALTY_PER_CARD,
+  RESERVED_PENALTY_CAP,
+  MAX_EXPOSURE_PENALTY,
+  // Legacy names kept so existing imports keep compiling; they now name the VISIBLE tier only.
+  VISIBLE_PENALTY_CAP as EXPOSURE_PENALTY_CAP,
+  VISIBLE_PENALTY_PER_CARD as EXPOSURE_PER_INBOUND,
+} from '@/lib/introductions/capacity'
 
 /**
  * Choose the fairest counterpart:
- *   1. highest EXPOSURE-ADJUSTED fit = score − min(cap, inbound·perInbound) — bounded, so a
- *      candidate leading by more than the cap always wins regardless of load;
- *   2. tie → lower current inbound load (spreads near-ties);
+ *   1. highest EXPOSURE-ADJUSTED fit = score − exposurePenalty(exposure) — bounded at 8 points,
+ *      so a candidate leading by more than that always wins regardless of load;
+ *   2. tie → lower current load, a visible card weighing more than a reservation;
  *   3. tie → deterministic id.
+ * The weights are NOT injectable: one authoritative definition in lib/introductions/capacity is the
+ * whole point, and a per-call override is how the two systems drifted apart before.
  * Returns null when there is no eligible counterpart (honest empty state; never a forced match).
  */
-export function selectFairCounterpart(
-  candidates: Counterpart[],
-  opts?: { penaltyCap?: number; perInbound?: number },
-): Counterpart | null {
+export function selectFairCounterpart(candidates: Counterpart[]): Counterpart | null {
   if (!candidates.length) return null
-  const cap = opts?.penaltyCap ?? EXPOSURE_PENALTY_CAP
-  const per = opts?.perInbound ?? EXPOSURE_PER_INBOUND
-  const eff = (c: Counterpart) => c.score - Math.min(cap, Math.max(0, c.inbound) * per)
+  const eff = (c: Counterpart) => c.score - exposurePenalty(c.exposure)
+  // Near-tie → prefer the candidate carrying less load, weighting an already-VISIBLE card above a
+  // reservation nobody has seen.
+  const load = (c: Counterpart) => c.exposure.visible * 2 + c.exposure.reserved
   return [...candidates].sort((x, y) =>
     (eff(y) - eff(x)) ||                        // bounded exposure-adjusted fit
-    (x.inbound - y.inbound) ||                  // near-tie → lower load
+    (load(x) - load(y)) ||                      // near-tie → lower load
     (x.id < y.id ? -1 : x.id > y.id ? 1 : 0),   // deterministic tie-break
   )[0]
 }
@@ -65,16 +84,12 @@ export function selectFairCounterpart(
  * selection raises that candidate's effective exposure), so a member's batch spreads across
  * good-fit members instead of stacking the single top candidate. Empty input → [] (honest empty).
  */
-export function selectFairCounterparts(
-  candidates: Counterpart[],
-  n: number,
-  opts?: { penaltyCap?: number; perInbound?: number },
-): Counterpart[] {
-  const pool = candidates.map(c => ({ ...c }))
+export function selectFairCounterparts(candidates: Counterpart[], n: number): Counterpart[] {
+  const pool = candidates.map(c => ({ ...c, exposure: { ...c.exposure } }))
   const picked: Counterpart[] = []
   while (picked.length < n && pool.length) {
-    const next = selectFairCounterpart(pool, opts)!
-    picked.push({ ...next })
+    const next = selectFairCounterpart(pool)!
+    picked.push({ ...next, exposure: { ...next.exposure } })
     pool.splice(pool.findIndex(c => c.id === next.id), 1) // never pick the same counterpart twice
   }
   return picked

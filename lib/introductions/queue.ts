@@ -11,16 +11,24 @@
  *   • COMPLETED/DISCARDED → resolved / displaced (kept for analytics)
  *
  * Guaranteed at all times, per member: exactly one ACTIVE batch, at most one QUEUED
- * batch, and never more than RECOMMENDATIONS_PER_BATCH visible recommendations.
- * Two partial-unique indexes enforce the ≤1 active / ≤1 queued limits at the database
- * level; this module enforces placement, admin precedence, promotion, and generation
- * eligibility on top of that.
+ * batch, at most MAX_VISIBLE_INTRO_CARDS cards with status 'suggested', and — as a
+ * SEPARATE tier — at most MAX_RESERVED_INTRO_CARDS with status 'queued'. The two card
+ * caps are independent: a reservation nobody has seen does not consume a visible slot.
+ * See lib/introductions/capacity for the contract.
+ *
+ * WHERE EACH INVARIANT IS ENFORCED. Two partial-unique indexes enforce ≤1 active / ≤1
+ * queued batch. The CARD caps are enforced in the database, by place_batch_rows,
+ * promote_queued_rows and create_reciprocal_suggestion (migration 063), each holding
+ * pg_advisory_xact_lock(hashtextextended(member_id)) while it counts and writes. This
+ * module is now a typed client for those RPCs plus the read-only eligibility helpers —
+ * it deliberately no longer writes recommendation rows itself, because a capacity
+ * decision split across several round trips from Node cannot be made race-safe, and
+ * the UI's 2-card slice hides an over-capacity member rather than preventing one.
  *
  * Generation (creating a new batch) and promotion (revealing an already-generated
  * queued batch) are deliberately different operations — see enqueueBatch vs
  * promoteIfResolved. Promotion never generates and never consumes inventory.
  */
-import { randomUUID } from 'node:crypto'
 import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
 
 export type BatchSource = 'onboarding' | 'weekly' | 'admin_reciprocal' | 'migration'
@@ -45,13 +53,26 @@ export interface RecommendationBatch {
 
 export interface EnqueueResult {
   placed: boolean
-  state?: 'active' | 'queued'
-  batchId?: string
-  count?: number
-  /** Why nothing was placed: 'empty' | 'all_duplicates' | 'queued_admin_exists' | 'queued_slot_full' */
+  /** Cards written into the VISIBLE tier (status 'suggested') by this call. */
+  visiblePlaced: number
+  /** Cards written into the RESERVED tier (status 'queued') by this call. */
+  reservedPlaced: number
+  /** Supplied rows that landed nowhere — beyond BOTH caps, or filtered by an eligibility gate. */
+  dropped: number
+  /** The active batch the visible rows joined or created, when any. */
+  activeBatchId?: string | null
+  /** The queued batch the reserved rows joined or created, when any. */
+  queuedBatchId?: string | null
+  /**
+   * Why nothing was placed:
+   *   'empty' | 'invalid' | 'ineligible' | 'too_many_rows' | 'no_eligible_candidates'
+   *   | 'at_capacity'   (both tiers full)
+   *   | 'reserved_full' (visible full, reserved full)
+   *   | 'source_mismatch' (the only free tier holds a batch from a different producer; appending
+   *                        would make batch_source a lie, so the call refuses rather than merge)
+   *   | 'inconsistent_batches'
+   */
   reason?: string
-  /** When an organic queued batch was displaced by an admin batch, its id. */
-  discardedQueued?: string
 }
 
 export interface PromoteResult {
@@ -152,166 +173,128 @@ export function membersWithUnresolvedIntros(
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
-
-/** Remove rows whose target already occupies a slot for this member (dedupe). */
-async function dedupeRows(adminClient: any, memberId: string, rows: QueueRow[]): Promise<QueueRow[]> {
-  const targets = rows.map((r) => r.target_user_id)
-  if (targets.length === 0) return []
-  const { data: existing } = await adminClient
-    .from('intro_requests').select('target_user_id, status')
-    .eq('requester_id', memberId)
-    .in('status', OCCUPYING_STATUSES as unknown as string[])
-    .in('target_user_id', targets)
-  const taken = new Set((existing ?? []).map((r: any) => r.target_user_id))
-  // Also dedupe within the incoming rows themselves.
-  const seen = new Set<string>()
-  return rows.filter((r) => {
-    if (taken.has(r.target_user_id) || seen.has(r.target_user_id)) return false
-    seen.add(r.target_user_id)
-    return true
-  })
-}
-
-/** Create a recommendation_batches row + its intro_requests rows in the given state. */
-async function insertBatch(
-  adminClient: any,
-  memberId: string,
-  source: BatchSource,
-  rows: QueueRow[],
-  rowStatus: 'suggested' | 'queued',
-  reciprocalBatchId: string | null,
-): Promise<string> {
-  const batchId = randomUUID()
-  const now = new Date().toISOString()
-  const { error: batchErr } = await adminClient.from('recommendation_batches').insert({
-    batch_id: batchId,
-    member_id: memberId,
-    batch_source: source,
-    state: rowStatus === 'suggested' ? 'active' : 'queued',
-    reciprocal_batch_id: reciprocalBatchId,
-    created_at: now,
-    generated_at: now,
-    displayed_at: rowStatus === 'suggested' ? now : null,
-    completed_at: null,
-  })
-  if (batchErr) throw new Error(`recommendation_batches insert failed: ${batchErr.message}`)
-
-  const introRows = rows.map((r) => ({
-    requester_id: memberId,
-    target_user_id: r.target_user_id,
-    status: rowStatus,
-    match_reason: r.match_reason ?? null,
-    batch_id: batchId,
-    created_at: now,
-    updated_at: now,
-  }))
-  const { error: rowsErr } = await adminClient.from('intro_requests').insert(introRows)
-  if (rowsErr) {
-    // Compensating cleanup so a failed insert never leaves an empty batch row.
-    await adminClient.from('recommendation_batches').delete().eq('batch_id', batchId)
-    throw new Error(`intro_requests insert failed: ${rowsErr.message}`)
-  }
-  return batchId
-}
-
-/** Discard an organic queued batch: delete its recommendation rows, keep metadata. */
-async function discardQueuedBatch(adminClient: any, batch: RecommendationBatch): Promise<void> {
-  await adminClient.from('intro_requests').delete()
-    .eq('requester_id', batch.member_id).eq('batch_id', batch.batch_id).eq('status', 'queued')
-  await adminClient.from('recommendation_batches')
-    .update({ state: 'discarded' }).eq('batch_id', batch.batch_id)
-}
+//
+// dedupeRows / insertBatch / discardQueuedBatch have been REMOVED, not merely bypassed. They were an
+// unlocked, multi-round-trip way to write recommendation rows, and leaving them importable would
+// leave the defect one call site away. Their logic now lives inside public.place_batch_rows, where
+// it runs under the member advisory lock in a single transaction.
 
 // ── Enqueue (generation placement + admin precedence) ─────────────────────────
 
 /**
- * Place a freshly produced batch into the member's queue. Placement is the single
- * choke-point that upholds the active window:
+ * Place a freshly produced batch into the member's queue.
  *
- *   • active slot empty                        → becomes ACTIVE (visible)
- *   • active occupied, queued empty            → becomes QUEUED (hidden)
- *   • active occupied, queued has ORGANIC batch → admin source DISCARDS the organic
- *       queued batch (rows deleted, metadata kept) and takes the queued slot;
- *       an organic source is refused (weekly eligibility should prevent this)
- *   • active occupied, queued has ADMIN batch  → admin source is REJECTED (no stacking)
+ * DELEGATES TO public.place_batch_rows (migration 063). Placement is a CAPACITY DECISION, and a
+ * capacity decision taken across several round trips from Node cannot be made safe: this function
+ * previously read the batch slots and then inserted, so two producers for the same member — the
+ * weekly cron and an admin send, or two retries of the same onboarding — could both observe an empty
+ * slot and both fill it. Worse, it inferred occupancy from the EXISTENCE of a recommendation_batches
+ * row, so a member holding only reciprocal cards (batch_id NULL by design) looked empty and received
+ * two more visible cards on top of them.
  *
- * Rows whose target already occupies a slot are deduped away first.
+ * The RPC does the whole decision in ONE transaction while holding
+ * pg_advisory_xact_lock(hashtextextended(member_id)) — the same lock create_reciprocal_suggestion
+ * takes — so reciprocal creation and batch placement for one member serialize against each other.
+ * It counts intro_requests by STATUS (visible = 'suggested', reserved = 'queued'), fills only free
+ * slots, and TRUNCATES the surplus instead of overflowing.
+ *
+ * ONE CALL USES ALL SAFELY AVAILABLE CAPACITY, in tier order:
+ *   1. fill free VISIBLE slots   (status 'suggested', max 2)
+ *   2. fill free RESERVED slots  (status 'queued',    max 2) with what is left
+ *   3. drop only what exceeds BOTH
+ * So a member holding 1 visible and 0 reserved, offered 2 candidates, ends with 1 new visible AND
+ * 1 new reserved — not 1 placed and 1 thrown away. Both writes happen in the same transaction under
+ * the same lock. The batch a row joins is the member's existing active/queued batch, or a new one
+ * when none exists; a second batch of either state is never created, so the partial-unique indexes
+ * are untouched. Appending is refused when the existing batch's source differs ('source_mismatch'),
+ * because merging would make batch_source a lie.
+ *
+ * NOTHING IS EVER EVICTED. There is no delete and no discard anywhere in this path, for any source.
+ * An admin batch has no precedence over capacity: at capacity the call refuses and every existing
+ * row and batch is left untouched. (The previous implementation deleted an organic queued batch to
+ * make room for an admin one. That behaviour is gone.)
+ *
+ * ELIGIBILITY IS RE-CHECKED IN THE RPC. A service-role caller is not trusted to supply safe targets:
+ * each candidate must independently pass member/target eligibility, block, match, live-intro and
+ * cooldown gates. `dropped` therefore counts both over-capacity rows and rows a gate rejected.
  */
 export async function enqueueBatch(
   adminClient: any,
   opts: { memberId: string; source: BatchSource; rows: QueueRow[]; reciprocalBatchId?: string | null },
 ): Promise<EnqueueResult> {
   const { memberId, source } = opts
-  const reciprocalBatchId = opts.reciprocalBatchId ?? null
+  const none = { visiblePlaced: 0, reservedPlaced: 0, dropped: 0 }
+  // Fail closed on a malformed call rather than throwing on `.map`. The RPC validates everything
+  // again server-side; this only avoids a crash before the round trip and keeps the refusal shape
+  // consistent with the one the RPC would have returned.
+  if (!memberId || typeof memberId !== 'string') return { placed: false, ...none, reason: 'invalid' }
+  if (!Array.isArray(opts.rows)) return { placed: false, ...none, reason: 'invalid' }
+  if (opts.rows.length === 0) return { placed: false, ...none, reason: 'empty' }
 
-  const rows = await dedupeRows(adminClient, memberId, opts.rows)
-  if (opts.rows.length === 0) return { placed: false, reason: 'empty' }
-  if (rows.length === 0) return { placed: false, reason: 'all_duplicates' }
-
-  const active = await getActiveBatch(adminClient, memberId)
-  if (!active) {
-    const batchId = await insertBatch(adminClient, memberId, source, rows, 'suggested', reciprocalBatchId)
-    return { placed: true, state: 'active', batchId, count: rows.length }
+  const { data, error } = await adminClient.rpc('place_batch_rows', {
+    p_member_id: memberId,
+    p_source: source,
+    // Order is significant: it is the ranker's order, and the RPC fills the visible tier from the
+    // front, then the reserved tier, then drops the rest.
+    p_rows: opts.rows.map((r) => ({ target_user_id: r.target_user_id, match_reason: r.match_reason ?? null })),
+    p_reciprocal_batch_id: opts.reciprocalBatchId ?? null,
+    // No cap argument exists. The limits are constants inside the function, so no caller — this one
+    // included — can raise them. lib/introductions/capacity carries the same numbers for the
+    // application's own reasoning, and a test asserts the two definitions agree.
+  })
+  if (error) {
+    // Placement is a write: it must NOT fail open into a second, unlocked code path, because that is
+    // exactly how the over-capacity rows were created. Throw so the caller's existing error handling
+    // records a failed generation and the member simply keeps what they already have. The message
+    // carries the error CLASS only — never a member id, a target id or a raw database message.
+    throw new Error(`place_batch_rows failed (${error.code ?? 'unknown'})`)
   }
-
-  const queued = await getQueuedBatch(adminClient, memberId)
-  if (!queued) {
-    const batchId = await insertBatch(adminClient, memberId, source, rows, 'queued', reciprocalBatchId)
-    return { placed: true, state: 'queued', batchId, count: rows.length }
+  const r = (data ?? {}) as Record<string, any>
+  return {
+    placed: Boolean(r.placed),
+    visiblePlaced: Number(r.visible_placed ?? 0),
+    reservedPlaced: Number(r.reserved_placed ?? 0),
+    dropped: Number(r.dropped ?? 0),
+    activeBatchId: r.active_batch_id ?? null,
+    queuedBatchId: r.queued_batch_id ?? null,
+    ...(r.reason ? { reason: r.reason } : {}),
   }
-
-  // Queued slot occupied. Only an admin batch may claim it.
-  if (source !== 'admin_reciprocal') {
-    return { placed: false, reason: 'queued_slot_full' }
-  }
-  if (queued.batch_source === 'admin_reciprocal') {
-    return { placed: false, reason: 'queued_admin_exists' }
-  }
-  // Admin precedence: discard the organic queued batch and take the slot. The
-  // discarded organic recommendations regenerate fresh at the member's next
-  // weekly eligibility — never archived, never resurfaced.
-  await discardQueuedBatch(adminClient, queued)
-  const batchId = await insertBatch(adminClient, memberId, source, rows, 'queued', reciprocalBatchId)
-  return { placed: true, state: 'queued', batchId, count: rows.length, discardedQueued: queued.batch_id }
 }
 
 // ── Promotion (reveal an already-generated queued batch) ──────────────────────
 
 /**
- * Called immediately after a member resolves a recommendation (pass or express
- * interest). If the active batch is now fully resolved, complete it and — if a
- * queued batch is waiting — promote that queued batch to ACTIVE (reveal only, no
- * generation). If nothing is queued, the member simply has no active batch until the
- * next producer fills it. Idempotent and safe to call on every resolving action.
+ * Called immediately after a member resolves a recommendation (pass or express interest). If the
+ * active batch is now fully resolved, complete it and reveal a waiting queued batch.
+ *
+ * DELEGATES TO public.promote_queued_rows (migration 063), for the same reason placement does: this
+ * was a read-then-write sequence with no lock, and it revealed the ENTIRE queued batch without
+ * re-checking how many visible slots were actually free. A member who had expressed interest in
+ * their two batch cards while still holding a live reciprocal card (batch_id NULL — pair-governed,
+ * so the batch-scoped archive deliberately leaves it alone) went straight to three visible cards,
+ * of which the UI silently showed two.
+ *
+ * The RPC re-counts visible cards AFTER completing the active batch, reveals only what fits
+ * oldest-first, and splits any remainder into a fresh queued batch so every batch's rows still match
+ * its state. When nothing fits it defers ('deferred_capacity') without discarding anything, and
+ * because it no longer requires an active batch to exist, the next resolving action promotes the
+ * deferred reservation. Idempotent and safe to call on every resolving action.
  */
 export async function promoteIfResolved(adminClient: any, memberId: string): Promise<PromoteResult> {
-  const active = await getActiveBatch(adminClient, memberId)
-  if (!active) return { promoted: false, reason: 'no_active' }
-
-  const unresolved = await countUnresolvedRecommendations(adminClient, memberId)
-  if (unresolved > 0) return { promoted: false, reason: 'incomplete' }
-
-  const now = new Date().toISOString()
-  // Complete the active batch: archive any lingering 'suggested' rows (those resolved
-  // by expressed interest — the interest itself lives on its own pending/approved row,
-  // so archiving here never hides a Pending card) and stamp completed_at.
-  await adminClient.from('intro_requests')
-    .update({ status: 'archived', updated_at: now })
-    .eq('requester_id', memberId).eq('batch_id', active.batch_id).eq('status', 'suggested')
-  await adminClient.from('recommendation_batches')
-    .update({ state: 'completed', completed_at: now }).eq('batch_id', active.batch_id)
-
-  const queued = await getQueuedBatch(adminClient, memberId)
-  if (!queued) return { promoted: false, activeCompleted: active.batch_id, reason: 'empty_queue' }
-
-  // Reveal the queued batch: flip its rows to visible and mark the batch active.
-  await adminClient.from('intro_requests')
-    .update({ status: 'suggested', updated_at: now })
-    .eq('requester_id', memberId).eq('batch_id', queued.batch_id).eq('status', 'queued')
-  await adminClient.from('recommendation_batches')
-    .update({ state: 'active', displayed_at: now }).eq('batch_id', queued.batch_id)
-
-  return { promoted: true, activeCompleted: active.batch_id, newActive: queued.batch_id }
+  const { data, error } = await adminClient.rpc('promote_queued_rows', { p_member_id: memberId })
+  if (error) {
+    // Every caller already treats a promotion failure as non-fatal and logs it; surface the error
+    // class only (no member identifiers, no raw message) and report "not promoted".
+    console.error('[queue] promote_queued_rows failed (class):', error.code ?? 'unknown')
+    return { promoted: false, reason: 'error' }
+  }
+  const r = (data ?? {}) as Record<string, any>
+  return {
+    promoted: Boolean(r.promoted),
+    ...(r.active_completed ? { activeCompleted: r.active_completed } : {}),
+    ...(r.new_active ? { newActive: r.new_active } : {}),
+    ...(r.reason ? { reason: r.reason } : {}),
+  }
 }
 
 // ── Weekly generation eligibility ─────────────────────────────────────────────

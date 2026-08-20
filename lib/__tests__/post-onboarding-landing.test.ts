@@ -175,7 +175,7 @@ describe('completion now advances onboarding_step in the SAME server-authorized 
     // updateProfile (profile edit) must never touch it.
     const updateBody = ACTIONS.slice(
       ACTIONS.indexOf('export async function updateProfile'),
-      ACTIONS.indexOf('export async function requestIntroduction'),
+      ACTIONS.indexOf('export async function submitIntroRequest'),
     )
     expect(updateBody).not.toMatch(/onboarding_step/)
   })

@@ -176,22 +176,6 @@ export async function updateProfile(formData: FormData) {
   return { success: true }
 }
 
-export async function requestIntroduction(targetId: string) {
-  const { user } = await getSupabaseAndUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  // requester_id is server-derived; write as service_role (browser DML on intro_requests revoked, migration 055).
-  const admin = createAdminClient()
-  const { error } = await admin.from('intro_requests').insert({
-    requester_id: user.id,
-    target_user_id: targetId,
-  })
-
-  if (error) return { error: error.message }
-  revalidatePath('/dashboard/introductions')
-  return { success: true }
-}
-
 export async function submitIntroRequest(targetUserId: string, note?: string) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }

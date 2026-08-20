@@ -163,7 +163,7 @@ export default async function AdminDashboard() {
               <Stat label="Reciprocal pairs created" value={rec.data.reciprocalPairsCreated} tip="Total member_pairs rows — canonical two-person auto-introduction pairs created all-time." />
               <Stat label="Active reciprocal suggestions" value={rec.data.activeReciprocalSuggestions} tip="Directional intro_requests cards with a pair_id and status 'suggested' (both sides of a live pair)." />
               <Stat label="One-sided legacy suggestions" value={rec.data.oneSidedLegacySuggestions} tone={rec.data.oneSidedLegacySuggestions > 0 ? 'sky' : 'neutral'} tip="Suggested intro_requests with NO pair_id — legacy batch-model one-directional cards." />
-              <Stat label="Members at capacity" value={rec.data.membersAtCapacity} tip={`Eligible members holding the max ${2} active suggestion cards (RECOMMENDATIONS_PER_BATCH).`} />
+              <Stat label="Members at capacity" value={rec.data.membersAtCapacity} tip="Eligible members holding the maximum 2 VISIBLE cards (status suggested). Reserved 'queued' cards are a separate tier and do not count toward this."  />
               <Stat label="Pairs nearing rotation" value={rec.data.nearingRotation} tip={`Active pairs last recommended ${11}–${14} days ago — due to rotate soon.`} />
               <Stat label="Pairs overdue for rotation" value={rec.data.staleOverdue} tone={rec.data.staleOverdue > 0 ? 'amber' : 'neutral'} href="/dashboard/admin/operations" tip={`Active pairs untouched > ${14} days — rotation should have expired them.`} />
               <Stat label="Interest expressed" value={rec.data.interestExpressed} tip="intro_requests in an expressed-interest status (pending/accepted/admin_pending/approved)." />

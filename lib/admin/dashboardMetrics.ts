@@ -15,7 +15,7 @@
  * recommendation-generation failures, auth 5xx), we return { unavailable, reason } and the
  * UI shows "Unavailable"/"Not connected" — we never synthesize a healthy/green value.
  */
-import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
+import { MAX_VISIBLE_INTRO_CARDS, VISIBLE_STATUS } from '@/lib/introductions/capacity'
 import { EXPRESSED_INTEREST_STATUSES } from '@/lib/introductions/queue'
 
 // ── Documented thresholds (every "needs attention" rule cites one of these) ──────────
@@ -370,8 +370,12 @@ export function classifyRecommendations(args: {
   const { intros, pairs, eligibleIds, matchPairKeys, matchedPairCount, meetingPairKeys, now } = args
   const eligibleSet = new Set(eligibleIds)
 
-  // Active outbound suggestions per requester (occupies a slot) → capacity + "without rec".
+  // Outbound cards per requester, split by TIER. `outboundActive` (visible+reserved) answers "does
+  // this member have anything live at all" → the coverage gap. `outboundVisible` ('suggested' only)
+  // is the capacity question: a member holding two reservations and nothing visible is NOT at
+  // capacity, and counting them as such is what hid the real over-capacity members.
   const outboundActive = new Map<string, number>()
+  const outboundVisible = new Map<string, number>()
   const inbound = new Map<string, number>()
   let activeReciprocalSuggestions = 0
   let oneSidedLegacySuggestions = 0
@@ -382,6 +386,7 @@ export function classifyRecommendations(args: {
     const isActive = ACTIVE_SUGGESTION_STATUSES.includes(r.status as any)
     if (isActive) {
       outboundActive.set(r.requester_id, (outboundActive.get(r.requester_id) ?? 0) + 1)
+      if (r.status === VISIBLE_STATUS) outboundVisible.set(r.requester_id, (outboundVisible.get(r.requester_id) ?? 0) + 1)
       // inbound exposure counts BOTH reciprocal (pair_id) and legacy suggestion cards.
       inbound.set(r.target_user_id, (inbound.get(r.target_user_id) ?? 0) + 1)
     }
@@ -393,8 +398,10 @@ export function classifyRecommendations(args: {
   }
 
   const eligibleWithoutRec = eligibleIds.filter((id) => (outboundActive.get(id) ?? 0) === 0).length
-  const membersAtCapacity = Array.from(outboundActive.entries())
-    .filter(([id, n]) => eligibleSet.has(id) && n >= RECOMMENDATIONS_PER_BATCH).length
+  // ">=" not "==" deliberately: it must keep counting a member who is OVER the cap, so an
+  // enforcement regression shows up as a rising number rather than disappearing from the metric.
+  const membersAtCapacity = Array.from(outboundVisible.entries())
+    .filter(([id, n]) => eligibleSet.has(id) && n >= MAX_VISIBLE_INTRO_CARDS).length
 
   // Rotation windows over active pairs.
   let nearingRotation = 0

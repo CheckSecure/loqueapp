@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { VISIBLE_STATUS } from '@/lib/introductions/capacity'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateReciprocalBatchForMember } from '@/lib/generate-recommendations'
 import { expireStaleReciprocalPairs } from '@/lib/matching/createReciprocalSuggestion'
@@ -65,11 +66,18 @@ export async function GET(req: Request) {
   const { expired: rotatedPairs } = await expireStaleReciprocalPairs(adminClient)
   console.log(`[Weekly Generation] Rotation: expired ${rotatedPairs} stale reciprocal pair(s).`)
 
-  // COVERAGE INPUT: the set of members who currently hold an ACTIVE card (suggested/queued only — legacy
-  // status='approved' is NOT a card and never counts as capacity). One bounded query, no N+1/scan. A
-  // member absent from this set is a coverage gap and is filled below via the reciprocal generator.
+  // COVERAGE INPUT: the set of members who currently hold a VISIBLE card (status 'suggested'). One
+  // bounded query, no N+1/scan. A member absent from this set is a coverage gap and is filled below
+  // via the reciprocal generator.
+  //
+  // VISIBLE, NOT VISIBLE+RESERVED. A coverage gap is an EMPTY SCREEN, and a 'queued' row is a
+  // reservation that has been shown to nobody — a member holding two of them and nothing visible
+  // sees exactly the same blank Introductions page as a member holding nothing at all. They are
+  // covered here, and the reciprocal card takes a free VISIBLE slot without disturbing the
+  // reservations (see lib/introductions/capacity). Legacy status='approved' is not a card and has
+  // never counted.
   const { data: activeCardRows } = await adminClient
-    .from('intro_requests').select('requester_id').in('status', ['suggested', 'queued'])
+    .from('intro_requests').select('requester_id').eq('status', VISIBLE_STATUS)
   const withActiveCard = new Set((activeCardRows ?? []).map((r: any) => r.requester_id))
   const coverageOn = coverageEnabled()
   const coverageDeadlineAt = Date.now() + COVERAGE_DEADLINE_MS
@@ -113,7 +121,7 @@ export async function GET(req: Request) {
         }
         continue
       }
-      // ELIGIBLE. COVERAGE FIRST: a member with NO active suggested/queued card is a coverage gap →
+      // ELIGIBLE. COVERAGE FIRST: a member with NO VISIBLE card is a coverage gap →
       // fill it via the canonical reciprocal generator (atomic two-sided, all guards, idempotent, no
       // notification). Bounded by member cap + wall-clock deadline; work never continues past it.
       if (coverageOn && !withActiveCard.has(user.id)) {

@@ -21,8 +21,13 @@ import { createNotificationSafe } from '@/lib/notifications'
 
 /** A batch is emailable only when it becomes VISIBLE (placed as the active batch),
  *  never for a hidden queued batch. Covers weekly, onboarding, and promotions. */
-export function shouldNotifyVisibleBatch(result: { placed?: boolean; state?: string } | null | undefined): boolean {
-  return !!result && result.placed === true && result.state === 'active'
+export function shouldNotifyVisibleBatch(
+  result: { placed?: boolean; visiblePlaced?: number } | null | undefined,
+): boolean {
+  // A placement can now fill BOTH tiers in one call, so "did this become visible" is no longer a
+  // property of the batch as a whole — it is whether any card actually landed in the VISIBLE tier.
+  // Announcing on `state === 'active'` would have emailed about reservations nobody can see.
+  return !!result && result.placed === true && (result.visiblePlaced ?? 0) > 0
 }
 
 /** Recipient is "currently active" if they touched the app within this window. */

@@ -82,7 +82,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Materialize into the unified queue, per recipient.
-    const placed: { recipientId: string; state: string; count: number; batchId: string }[] = []
+    const placed: {
+      recipientId: string; visible: number; reserved: number
+      activeBatchId: string | null; queuedBatchId: string | null
+    }[] = []
     const rejected: { recipientId: string; reason: string }[] = []
     for (const [recipientId, rows] of Array.from(byRecipient.entries())) {
       // Keep each recipient's admin batch within the sort order the graph produced.
@@ -94,13 +97,22 @@ export async function POST(req: NextRequest) {
           rows: ordered,
           reciprocalBatchId: batchId,
         })
-        if (result.placed && result.batchId) {
-          placed.push({ recipientId, state: result.state ?? 'queued', count: result.count ?? ordered.length, batchId: result.batchId })
+        if (result.placed) {
+          // A single call can fill BOTH tiers now, so record each part separately: the visible part
+          // is announceable, the reserved part is not.
+          placed.push({
+            recipientId,
+            visible: result.visiblePlaced,
+            reserved: result.reservedPlaced,
+            activeBatchId: result.activeBatchId ?? null,
+            queuedBatchId: result.queuedBatchId ?? null,
+          })
         } else {
           rejected.push({ recipientId, reason: result.reason ?? 'not_placed' })
         }
       } catch (err: any) {
-        console.error('[approve-batch] materialize failed for', recipientId, err?.message)
+        // Class only — never the member id and never the raw database message.
+        console.error('[approve-batch] materialize failed (class):', err?.message ?? 'unknown')
         rejected.push({ recipientId, reason: 'error' })
       }
     }
@@ -127,26 +139,37 @@ export async function POST(req: NextRequest) {
     let remindersAlreadyHandled = 0
     let emailFailures = 0
     for (const p of placed) {
-      if (p.state === 'active') {
-        await notifyAdminBatchReady(p.recipientId, p.batchId, p.count)
+      if (p.visible > 0 && p.activeBatchId) {
+        // Something actually landed on the member's screen → announce exactly that count. A batch
+        // that ALSO reserved rows is still announced once, for its visible part only.
+        await notifyAdminBatchReady(p.recipientId, p.activeBatchId, p.visible)
         batchVisible++; newBatchEmailsSent++
-      } else {
+      } else if (p.reserved > 0 && p.queuedBatchId) {
+        // Reserved only — the member must not be told about cards they cannot see.
         const unresolved = await countUnresolvedRecommendations(adminClient, p.recipientId)
         if (unresolved > 0) {
           actionNeeded++
-          const r = await notifyPendingIntrosActionNeeded(p.recipientId, p.batchId, cycleKey)
+          const r = await notifyPendingIntrosActionNeeded(p.recipientId, p.queuedBatchId, cycleKey)
           if (r.alreadyHandled) remindersAlreadyHandled++
           else if (r.emailed || r.skipped) actionNeededEmailsSent++
           else emailFailures++
         } else {
           otherSkipped++
         }
+      } else {
+        otherSkipped++
       }
     }
 
     console.log(`[approve-batch] cycle ${cycleKey}: placed=${placed.length} rejected=${rejected.length} | ${batchVisible} visible, ${actionNeeded} action-needed, ${otherSkipped} other-skipped | emails: ${newBatchEmailsSent} new-batch, ${actionNeededEmailsSent} action-needed, ${remindersAlreadyHandled} already-handled (dedup), ${emailFailures} failed`)
     if (rejected.length > 0) {
-      console.warn('[approve-batch] rejected recipients (already had a queued admin batch or no candidates):', JSON.stringify(rejected))
+      // Reason CLASSES only. The recipient ids stay out of the log and out of the response: an
+      // operator can re-derive them from the batch, and a log line is the wrong place for identities.
+      const byReason = rejected.reduce<Record<string, number>>((acc, r) => {
+        acc[r.reason] = (acc[r.reason] ?? 0) + 1
+        return acc
+      }, {})
+      console.warn('[approve-batch] rejected recipients by reason:', JSON.stringify(byReason))
     }
 
     return NextResponse.json({
@@ -154,7 +177,10 @@ export async function POST(req: NextRequest) {
       cycleKey,
       placed: placed.length,
       rejected: rejected.length,
-      rejectedDetail: rejected,
+      rejectedByReason: rejected.reduce<Record<string, number>>((acc, r) => {
+        acc[r.reason] = (acc[r.reason] ?? 0) + 1
+        return acc
+      }, {}),
       batchVisible,
       actionNeeded,
       otherSkipped,

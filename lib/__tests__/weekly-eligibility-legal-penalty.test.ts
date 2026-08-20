@@ -362,13 +362,13 @@ describe('admin Send (approve-batch) enforces the shared eligibility + reminder 
   it('unresolved recipient → Action Needed via the SHARED helper + ISO-week key (not the generic waiting email)', () => {
     expect(approve).toContain("import { notifyAdminBatchReady, notifyPendingIntrosActionNeeded, isoWeekKey } from '@/lib/notifications/engagement'")
     expect(approve).toContain('const cycleKey = isoWeekKey(new Date())')
-    expect(approve).toContain('notifyPendingIntrosActionNeeded(p.recipientId, p.batchId, cycleKey)')
+    expect(approve).toContain('notifyPendingIntrosActionNeeded(p.recipientId, p.queuedBatchId, cycleKey)')
     // the OLD generic "Your Andrel introductions are waiting" nudge is no longer used here
     expect(approve).not.toContain('notifyQueuedIntrosWaiting')
   })
 
   it('eligible recipient (placed active) → existing new-batch email, unchanged', () => {
-    expect(approve).toContain('notifyAdminBatchReady(p.recipientId, p.batchId, p.count)')
+    expect(approve).toContain('notifyAdminBatchReady(p.recipientId, p.activeBatchId, p.visible)')
   })
 
   it('approve-batch reports the canonical Thursday counts', () => {
@@ -382,7 +382,7 @@ describe('admin Send (approve-batch) enforces the shared eligibility + reminder 
     expect(approve).toContain('const cycleKey = isoWeekKey(new Date())')
     // both feed the same helper (which derives dedupeKey = actionneeded:<cycleKey>)
     expect(cron).toContain('notifyPendingIntrosActionNeeded(user.id, elig.activeBatchId, cycleKey)')
-    expect(approve).toContain('notifyPendingIntrosActionNeeded(p.recipientId, p.batchId, cycleKey)')
+    expect(approve).toContain('notifyPendingIntrosActionNeeded(p.recipientId, p.queuedBatchId, cycleKey)')
   })
 
   it('weekly-refresh GENERATION is gated off by default (admin batch canonical); reminders remain', () => {

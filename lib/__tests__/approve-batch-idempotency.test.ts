@@ -28,7 +28,14 @@ vi.mock('@/lib/supabase/server', () => ({
 vi.mock('@/lib/introductions/queue', () => ({
   enqueueBatch: vi.fn(async (_admin: any, opts: any) => {
     h.enqueueCalls.push(opts)
-    return { placed: true, state: h.placement[opts.memberId] ?? 'active', batchId: 'rb-' + opts.memberId, count: opts.rows.length }
+    // The RPC now reports the two tiers separately: `h.placement` still says which tier this
+    // recipient's rows land in, but the shape is the real one the route consumes.
+    const tier = h.placement[opts.memberId] ?? 'active'
+    return tier === 'active'
+      ? { placed: true, visiblePlaced: opts.rows.length, reservedPlaced: 0, dropped: 0,
+          activeBatchId: 'rb-' + opts.memberId, queuedBatchId: null }
+      : { placed: true, visiblePlaced: 0, reservedPlaced: opts.rows.length, dropped: 0,
+          activeBatchId: null, queuedBatchId: 'rb-' + opts.memberId }
   }),
   countUnresolvedRecommendations: vi.fn(async (_admin: any, memberId: string) => h.unresolved[memberId] ?? 0),
 }))

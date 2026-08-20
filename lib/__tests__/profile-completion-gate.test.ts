@@ -103,7 +103,7 @@ describe('profile save revalidates the Introductions reminder', () => {
   const profileForm = readFileSync('components/ProfileForm.tsx', 'utf8')
 
   it('updateProfile (server action) revalidates both /dashboard/profile and /dashboard/introductions', () => {
-    const block = actions.slice(actions.indexOf('export async function updateProfile'), actions.indexOf('export async function requestIntroduction'))
+    const block = actions.slice(actions.indexOf('export async function updateProfile'), actions.indexOf('export async function submitIntroRequest'))
     expect(block).toContain("revalidatePath('/dashboard/profile')")
     expect(block).toContain("revalidatePath('/dashboard/introductions')")
   })

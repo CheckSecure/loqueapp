@@ -1,7 +1,8 @@
 import type { GenerationOutcome } from '@/lib/generate-recommendations'
 
 /**
- * Weekly COVERAGE generation: fill eligible members who currently have NO active suggested/queued card
+ * Weekly COVERAGE generation: fill eligible members who currently have NO VISIBLE card (status
+ * 'suggested')
  * with a reciprocal "Introduced by Andrel" pair via the canonical create_reciprocal_suggestion path
  * (atomic two-sided, all existing active-pair/cooldown/canonical/capacity/duplicate guards).
  *
@@ -12,6 +13,11 @@ import type { GenerationOutcome } from '@/lib/generate-recommendations'
  * flow notifies only on mutual finalization). Legacy status='approved' rows are NOT active cards
  * (capacity counts only suggested/queued), so a member with only legacy one-sided interest is covered
  * without touching those rows, and the generator's history exclusion keeps their prior counterparts out.
+ *
+ * CAPACITY IS TWO TIERS, NOT ONE. A 'queued' row reserves a hidden slot and has been shown to
+ * nobody; it does not occupy a visible slot and therefore does not disqualify a member from
+ * coverage. Only 'suggested' rows fill the screen, and only they bound this. See
+ * lib/introductions/capacity.
  *
  * A kill-switch env var WEEKLY_COVERAGE_GENERATION='off' disables it; anything else (incl. unset) = ON.
  */

@@ -14,11 +14,15 @@ import {
 // ── PART 1: New introduction emails — only for VISIBLE (active) batches ───────
 describe('shouldNotifyVisibleBatch', () => {
   it('emails when a batch is placed as the active (visible) batch', () => {
-    expect(shouldNotifyVisibleBatch({ placed: true, state: 'active' })).toBe(true)
+    // A placement can fill both tiers in one call, so the gate is "did anything land VISIBLE",
+    // not "was the batch active". Announcing on batch state would email about hidden reservations.
+    expect(shouldNotifyVisibleBatch({ placed: true, visiblePlaced: 2 })).toBe(true)
+    expect(shouldNotifyVisibleBatch({ placed: true, visiblePlaced: 1 })).toBe(true)
   })
 
   it('does NOT email for a hidden queued batch', () => {
-    expect(shouldNotifyVisibleBatch({ placed: true, state: 'queued' })).toBe(false)
+    expect(shouldNotifyVisibleBatch({ placed: true, visiblePlaced: 0 })).toBe(false)
+    expect(shouldNotifyVisibleBatch({ placed: true } as any)).toBe(false)   // absent → not visible
   })
 
   it('does NOT email when nothing was placed (empty / duplicate / slot full)', () => {
