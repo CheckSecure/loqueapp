@@ -49,6 +49,15 @@ function logClass(where: string, error: unknown) {
 }
 
 /**
+ * A THROWN failure, classified. `name` distinguishes a configuration fault (`Error` from
+ * createAdminClient) from a transport fault (`TypeError`/`AbortError`) without ever carrying the
+ * message, which can contain connection strings.
+ */
+function logThrow(where: string, e: unknown) {
+  console.error(`[server-profile] ${where} read threw (class):`, (e as any)?.name ?? 'Error')
+}
+
+/**
  * Read one profile by id. `columns` is a PostgREST select list — pass only what is needed.
  */
 export async function readProfileById<T = Record<string, unknown>>(
@@ -57,17 +66,26 @@ export async function readProfileById<T = Record<string, unknown>>(
   where = 'by-id',
 ): Promise<ProfileRead<T>> {
   if (!id) return { ok: false, reason: 'not_found' }
-  const { data, error } = await createAdminClient()
-    .from('profiles')
-    .select(columns)
-    .eq('id', id)
-    .maybeSingle()
-  if (error) {
-    logClass(where, error)
-    return { ok: false, reason: 'unavailable' }   // NOT "not_found"
+  try {
+    const { data, error } = await createAdminClient()
+      .from('profiles')
+      .select(columns)
+      .eq('id', id)
+      .maybeSingle()
+    if (error) {
+      logClass(where, error)
+      return { ok: false, reason: 'unavailable' }   // NOT "not_found"
+    }
+    if (!data) return { ok: false, reason: 'not_found' }
+    return { ok: true, profile: data as T }
+  } catch (e) {
+    // createAdminClient() THROWS when SUPABASE_SERVICE_ROLE_KEY or the URL is unset, and the driver
+    // can throw on a network fault. Unguarded, that exception escaped this helper AND its caller,
+    // so the route returned an opaque HTML 500 instead of its own JSON — which the browser form then
+    // failed to parse, leaving the member with a spinner and no message at all.
+    logThrow(where, e)
+    return { ok: false, reason: 'unavailable' }
   }
-  if (!data) return { ok: false, reason: 'not_found' }
-  return { ok: true, profile: data as T }
 }
 
 /** Read several profiles by id. A partial result is still `ok`; only a failed query is not. */
@@ -78,15 +96,20 @@ export async function readProfilesByIds<T = Record<string, unknown>>(
 ): Promise<ProfileListRead<T>> {
   const wanted = Array.from(new Set(ids.filter(Boolean)))
   if (wanted.length === 0) return { ok: true, profiles: [] }
-  const { data, error } = await createAdminClient()
-    .from('profiles')
-    .select(columns)
-    .in('id', wanted)
-  if (error) {
-    logClass(where, error)
+  try {
+    const { data, error } = await createAdminClient()
+      .from('profiles')
+      .select(columns)
+      .in('id', wanted)
+    if (error) {
+      logClass(where, error)
+      return { ok: false, reason: 'unavailable' }
+    }
+    return { ok: true, profiles: (data ?? []) as T[] }
+  } catch (e) {
+    logThrow(where, e)
     return { ok: false, reason: 'unavailable' }
   }
-  return { ok: true, profiles: (data ?? []) as T[] }
 }
 
 /**

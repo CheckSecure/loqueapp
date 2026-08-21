@@ -345,3 +345,97 @@ describe('nominator resolution after the A3 revoke', () => {
     expect(JSON.stringify(body)).not.toMatch(/permission denied|42501|relation|table profiles/)
   })
 })
+
+/**
+ * THE BUTTON STILL FAILED AFTER 7bebc38 — and the reason was not the lookup that commit fixed.
+ *
+ * Three defects compounded into a submission that produced NO message at all:
+ *   1. readProfileById did not guard createAdminClient(), which THROWS when the service-role env is
+ *      unset, and the driver can throw on a network fault;
+ *   2. the route had no try/catch around its body, so that throw became an opaque HTML 500 instead
+ *      of the route's own JSON;
+ *   3. the form did `await res.json()` unguarded inside an async handler with no catch — parsing
+ *      HTML threw, handleSubmit rejected, and setState('error') never ran. The button just span.
+ */
+describe('no failure can escape as an opaque 500', () => {
+  const ROUTE = readFileSync('app/api/referrals/submit/route.ts', 'utf8')
+  const FORM = readFileSync('app/dashboard/referrals/ReferralForm.tsx', 'utf8')
+  const HELPER = readFileSync('lib/profiles/serverProfile.ts', 'utf8')
+
+  it('the whole route body is wrapped, returning the route JSON shape', () => {
+    expect(ROUTE).toMatch(/export async function POST\(req: Request\) \{[\s\S]{0,700}\n  try \{/)
+    expect(ROUTE).toMatch(/code: 'UNEXPECTED'[\s\S]{0,60}status: 500/)
+    expect(ROUTE).toMatch(/NOTHING may escape this handler/)
+  })
+
+  it('the server-authorized helper guards the throwing client factory', () => {
+    // createAdminClient() throws on missing env — that must become `unavailable`, not an exception
+    expect(HELPER).toMatch(/try \{[\s\S]{0,400}createAdminClient\(\)/)
+    expect(HELPER).toMatch(/catch \(e\) \{[\s\S]{0,600}reason: 'unavailable'/)
+    expect(HELPER).toMatch(/logThrow/)
+  })
+
+  it('a thrown lookup is reported as unavailable, never as a missing profile', async () => {
+    state.referrerProfileError = { data: null, error: { code: '42501' } }
+    const body = await (await post(validBody())).json()
+    expect(body.code).toBe('PROFILE_UNAVAILABLE')
+    expect(JSON.stringify(body)).not.toMatch(/Profile not found/)
+  })
+
+  it('the form survives a non-JSON body and always leaves the loading state', () => {
+    expect(FORM).toMatch(/try \{ data = await res\.json\(\) \} catch \{ data = \{\} \}/)
+    expect(FORM).toMatch(/catch \{\s*\n\s*setErrorMsg\(ERROR_COPY\.NETWORK\)/)
+    // every failure path sets an error state; none can fall through silently
+    const handler = FORM.slice(FORM.indexOf('const handleSubmit'), FORM.indexOf("if (state === 'done')"))
+    const returns = (handler.match(/setState\('error'\)/g) ?? []).length
+    expect(returns).toBeGreaterThanOrEqual(6)
+  })
+
+  it('double submission is prevented even via Enter', () => {
+    expect(FORM).toMatch(/if \(state === 'loading'\) return/)
+    expect(FORM).toMatch(/disabled=\{state === 'loading'\}/)
+  })
+
+  it('every server classification has member-safe copy', () => {
+    for (const code of ['UNAUTHORIZED', 'PROFILE_NOT_FOUND', 'PROFILE_UNAVAILABLE', 'REFERRER_INACTIVE',
+                        'EMAIL_ALREADY_MEMBER', 'EMAIL_ON_WAITLIST', 'REFERRAL_PREVIOUSLY_REJECTED',
+                        'INVALID_FULL_NAME', 'WAITLIST_INSERT_FAILED', 'REFERRAL_INSERT_FAILED',
+                        'UNEXPECTED', 'NETWORK']) {
+      expect(FORM, code).toMatch(new RegExp(`${code}:\\s*'`))
+    }
+    // and the two distinct profile outcomes must not share copy
+    const notFound = FORM.match(/PROFILE_NOT_FOUND:\s*'([^']+)'/)![1]
+    const unavailable = FORM.match(/PROFILE_UNAVAILABLE:\s*'([^']+)'/)![1]
+    expect(notFound).not.toBe(unavailable)
+  })
+
+  it('failure logging is structured, correlated, and carries no identity', () => {
+    expect(ROUTE).toMatch(/const cid = \(req\.headers\.get\('x-vercel-id'\)/)
+    expect(ROUTE).toMatch(/JSON\.stringify\(\{ cid, stage, class: cls \}\)/)
+    for (const stage of ['nominator_lookup', 'waitlist_insert', 'referral_insert', 'unhandled']) {
+      expect(ROUTE, stage).toContain(`'${stage}'`)
+    }
+    // the orphan log previously carried a waitlist id, a referrer id AND the raw driver message
+    for (const line of ROUTE.split('\n')) {
+      if (!/console\.(error|log)/.test(line)) continue
+      expect(line).not.toMatch(/waitlistId|referrerUserId|\.message|targetEmail|full_name/)
+    }
+  })
+
+  it('mobile and desktop share one endpoint — there is only one form', () => {
+    expect(FORM).toMatch(/fetch\('\/api\/referrals\/submit'/)
+    const page = readFileSync('app/dashboard/referrals/page.tsx', 'utf8')
+    expect(page).toMatch(/<ReferralForm/)
+    // the other "Nominate someone" surfaces are links to this page, not second implementations
+    for (const f of ['app/dashboard/introductions/page.tsx', 'app/dashboard/settings/page.tsx']) {
+      expect(readFileSync(f, 'utf8'), f).not.toMatch(/fetch\('\/api\/referrals/)
+    }
+  })
+
+  it('no caller-scoped profiles read remains on the nomination path', () => {
+    expect(ROUTE).not.toMatch(/supabase\s*\n?\s*\.from\('profiles'\)/)
+    expect(ROUTE).toMatch(/readSelfEligibility\(user\.id\)/)
+    // the nominee lookup is admin-scoped and tolerates absence
+    expect(ROUTE).toMatch(/adminClient\s*\n?\s*\.from\('profiles'\)/)
+  })
+})

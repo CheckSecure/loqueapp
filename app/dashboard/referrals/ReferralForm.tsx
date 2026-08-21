@@ -26,6 +26,17 @@ const ERROR_COPY: Record<string, string> = {
   REFERRAL_PREVIOUSLY_REJECTED: 'This person was previously reviewed and is not eligible for re-nomination.',
   UNAUTHORIZED:                 'Your session has expired. Please refresh and try again.',
   REFERRER_INACTIVE:            'Your account is not currently active.',
+  INVALID_FULL_NAME:            'Please enter their first and last name.',
+  // Distinct from a missing profile on purpose: one is a fact about the member, the other is a
+  // failure on our side. Telling someone their profile does not exist when the database simply did
+  // not answer is what made the original bug so confusing.
+  PROFILE_UNAVAILABLE:          'We could not verify your account just now. Please try again in a moment.',
+  PROFILE_NOT_FOUND:            'We could not find your member profile. Please contact support.',
+  WAITLIST_INSERT_FAILED:       'We could not save this nomination. Please try again.',
+  REFERRAL_INSERT_FAILED:       'We could not save this nomination. Please try again.',
+  INVALID_BODY:                 'Something went wrong sending your nomination. Please try again.',
+  UNEXPECTED:                   'Something went wrong. Please try again.',
+  NETWORK:                      'We could not reach the server. Check your connection and try again.',
 }
 
 export default function ReferralForm({ userEmail }: { userEmail: string }) {
@@ -42,6 +53,9 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // The submit button is disabled while loading, but Enter in a text field still submits the
+    // form, so re-entrancy is guarded here too. One submission per attempt.
+    if (state === 'loading') return
     setErrorMsg('')
 
     // Client-side pre-validation — mirrors server checks exactly. The note ("why") is
@@ -81,25 +95,38 @@ export default function ReferralForm({ userEmail }: { userEmail: string }) {
 
     setState('loading')
 
-    const res = await fetch('/api/referrals/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        full_name:     fullName.trim(),
-        email:         trimmedEmail,
-        title:         title.trim() || undefined,
-        company:       company.trim() || undefined,
-        linkedin_url:  linkedinUrl.trim() || undefined,
-        relationship:  relationship.trim() || undefined,
-        referral_note: referralNote.trim(),
-        consent,
-      }),
-    })
+    // GUARDED END TO END. Previously an unguarded `fetch` + `await res.json()` sat in an async
+    // handler with no catch: when the route returned a non-JSON body (an opaque HTML 500 from an
+    // unhandled server throw), res.json() threw, handleSubmit rejected, and NOTHING ran — the
+    // button stayed spinning with no message. Every failure now lands in a visible error state.
+    let res: Response
+    try {
+      res = await fetch('/api/referrals/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name:     fullName.trim(),
+          email:         trimmedEmail,
+          title:         title.trim() || undefined,
+          company:       company.trim() || undefined,
+          linkedin_url:  linkedinUrl.trim() || undefined,
+          relationship:  relationship.trim() || undefined,
+          referral_note: referralNote.trim(),
+          consent,
+        }),
+      })
+    } catch {
+      setErrorMsg(ERROR_COPY.NETWORK)
+      setState('error')
+      return
+    }
 
-    const data = await res.json()
+    // A body that is not JSON must not throw. `{}` falls through to the status-based copy below.
+    let data: any = {}
+    try { data = await res.json() } catch { data = {} }
 
     if (!res.ok) {
-      setErrorMsg(ERROR_COPY[data.code] ?? data.error ?? 'Something went wrong. Please try again.')
+      setErrorMsg(ERROR_COPY[data.code] ?? data.error ?? ERROR_COPY.UNEXPECTED)
       setState('error')
       return
     }
