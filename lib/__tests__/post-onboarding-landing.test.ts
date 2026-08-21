@@ -70,12 +70,12 @@ describe('post-onboarding landing — the zero-data client set must not throw', 
     const view = resolveThursdayBanner({
       now: new Date('2026-08-18T12:00:00Z'),
       canView: true,
-      receivedThisCycle: false,   // brand-new member: nothing generated yet
+      receivedThisCycle: false, releasedThisCycle: true,   // brand-new member: nothing generated yet
       scheduleOnly: false,
     })
     expect(view).not.toBeNull()
     // This is the differential: only a member WITHOUT a suggestion runs the live countdown.
-    expect(view!.kind).toBe('before')
+    expect(view!.kind).toBe('post_release')
     expect(view!.showCountdown).toBe(true)
   })
 
@@ -84,7 +84,7 @@ describe('post-onboarding landing — the zero-data client set must not throw', 
     const { default: Banner } = await import('@/components/ThursdayCountdownBanner')
     const { resolveThursdayBanner } = await import('@/lib/introductions/thursdayBanner')
     const view = resolveThursdayBanner({
-      now: new Date('2026-08-18T12:00:00Z'), canView: true, receivedThisCycle: false,
+      now: new Date('2026-08-18T12:00:00Z'), canView: true, receivedThisCycle: false, releasedThisCycle: true,
     })!
     const html = await render(React.createElement(Banner as any, { ...view }))
     expect(html).toContain('Next introduction batch')
@@ -303,7 +303,7 @@ describe('the unguarded banner lookup is hardened', () => {
     const React = await import('react')
     const { default: Banner } = await import('@/components/ThursdayCountdownBanner')
     const src = readFileSync('components/ThursdayCountdownBanner.tsx', 'utf8')
-    expect(src).toMatch(/ACCENT\[kind\] \?\? ACCENT\.before/)
+    expect(src).toMatch(/ACCENT\[kind\] \?\? ACCENT\.pre_release/)
     // Render with a kind the map does not contain — must not throw.
     const html = await render(React.createElement(Banner as any, {
       kind: 'a_state_that_does_not_exist',

@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   user: { id: 'admin', email: 'bizdev91@gmail.com' } as any,
   batchStatus: 'pending_review' as string,
+  releases: [] as any[],
   suggestions: [] as any[],
   rpcCalls: [] as any[],
   outcomes: {} as Record<string, string>,

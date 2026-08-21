@@ -16,7 +16,10 @@ export interface ThursdayCountdownBannerProps {
 }
 
 const ACCENT: Record<ThursdayBannerKind, { ring: string; iconWrap: string; Icon: typeof CalendarClock }> = {
-  before:         { ring: 'border-brand-gold/30',  iconWrap: 'bg-brand-gold-soft text-brand-gold', Icon: CalendarClock },
+  // Quiet and neutral: nothing has been released yet, so the banner must not look like an event.
+  pre_release:    { ring: 'border-slate-200',      iconWrap: 'bg-slate-100 text-slate-500',        Icon: CalendarClock },
+  // The scheduled-countdown look the old `before` state had — now shown only once a release is real.
+  post_release:   { ring: 'border-brand-gold/30',  iconWrap: 'bg-brand-gold-soft text-brand-gold', Icon: CalendarClock },
   after_received: { ring: 'border-emerald-200',    iconWrap: 'bg-emerald-50 text-emerald-600',     Icon: Sparkles },
 }
 
@@ -85,7 +88,7 @@ export default function ThursdayCountdownBanner({
   // serialization edge), `ACCENT[kind].Icon` would throw. That throw IS a render error, so
   // app/dashboard/error.tsx would now catch it — but a member's first view degrading to
   // neutral styling beats an error page, so it falls back here instead.
-  const accent = ACCENT[kind] ?? ACCENT.before
+  const accent = ACCENT[kind] ?? ACCENT.pre_release
   const Icon = accent.Icon
 
   return (

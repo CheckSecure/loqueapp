@@ -15,6 +15,7 @@ import { buildIntroSections } from '@/lib/introductions/andrelSection'
 import FoundingMemberWelcomeBanner from '@/components/FoundingMemberWelcomeBanner'
 import ThursdayCountdownBanner from '@/components/ThursdayCountdownBanner'
 import { resolveThursdayBanner, canViewThursdayBanner, type ThursdayBannerView } from '@/lib/introductions/thursdayBanner'
+import { getCurrentCycleRelease } from '@/lib/introductions/batchRelease'
 import { currentCycleBatch } from '@/lib/introductions/thursdaySchedule'
 import ImproveRecommendationsCard from '@/components/ImproveRecommendationsCard'
 import IncomingInterestCard from '@/components/IncomingInterestCard'
@@ -752,10 +753,24 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   const isAdminViewer = (profileRow as any)?.is_admin === true
   let thursdayBanner: ThursdayBannerView | null = null
   if (canViewThursdayBanner(bannerFacts)) {
+    // DURABLE RELEASE EVIDENCE (migration 074), read once, server-side, for every viewer including
+    // admins. The countdown used to be computed from the calendar alone, so it rolled forward every
+    // Thursday whether or not a batch had been approved. `null` (a failed read) is deliberately NOT
+    // treated as released: a countdown claims this week's batch went out, and a failed read is not
+    // evidence of that.
+    let releasedThisCycle: boolean | null = null
+    try {
+      releasedThisCycle = (await getCurrentCycleRelease(createAdminClient(), bannerNow)) !== null
+    } catch {
+      releasedThisCycle = null
+    }
+
     if (isAdminViewer) {
       // Admin: read-only schedule preview. Do NOT query admin suggestions (admins are excluded from
       // candidate pools) and force the neutral schedule state — never "New introductions are here".
-      thursdayBanner = resolveThursdayBanner({ now: bannerNow, canView: true, receivedThisCycle: false, scheduleOnly: true })
+      // Admin: schedule-only preview. It reflects the SAME release truth every member sees —
+      // scheduleOnly suppresses only the member-specific 'New introductions are here' state.
+      thursdayBanner = resolveThursdayBanner({ now: bannerNow, canView: true, receivedThisCycle: false, releasedThisCycle, scheduleOnly: true })
     } else {
       // Durable "new suggestion arrived" evidence: does an ACTIVE suggestion created at/after THIS
       // cycle's Thursday window exist? Read authoritatively via service_role (independent of RLS).
@@ -776,7 +791,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       } catch {
         receivedThisCycle = null
       }
-      thursdayBanner = resolveThursdayBanner({ now: bannerNow, canView: true, receivedThisCycle, scheduleOnly: false })
+      thursdayBanner = resolveThursdayBanner({ now: bannerNow, canView: true, receivedThisCycle, releasedThisCycle, scheduleOnly: false })
     }
   }
 

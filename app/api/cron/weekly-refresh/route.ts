@@ -6,6 +6,7 @@ import { expireStaleReciprocalPairs } from '@/lib/matching/createReciprocalSugge
 import { evaluateWeeklyEligibility } from '@/lib/introductions/queue'
 import { notifyPendingIntrosActionNeeded, isoWeekKey } from '@/lib/notifications/engagement'
 import { weeklyRunKey } from '@/lib/introductions/thursdaySchedule'
+import { finalizeWeeklyRelease } from '@/lib/introductions/batchRelease'
 import {
   coverageEnabled, coverageEventForOutcome,
   COVERAGE_MEMBER_LIMIT, COVERAGE_DEADLINE_MS, type CoverageEvent,
@@ -46,6 +47,8 @@ export async function GET(req: Request) {
   // on this single invocation plus the existing idempotent generation protections (rotation is
   // idempotent, generation is gated + guarded, reminders dedupe durably per ISO week). runKey is a
   // non-authoritative per-week LOG LABEL only — it is not a durable claim/lease.
+  // Stamped BEFORE any generation: committed-card verification counts from here.
+  const runStartedAt = new Date()
   const runKey = weeklyRunKey(new Date())
 
   const adminClient = createAdminClient()
@@ -87,6 +90,9 @@ export async function GET(req: Request) {
   }
 
   let generated = 0
+  // Transient/system failures during generation. A run with ANY of these did not complete cleanly
+  // and must not finalize a release — the route is idempotent, so a rerun retries those members.
+  let memberErrors = 0
   let generationDisabledSkipped = 0 // eligible but generation gated off (admin batch is canonical)
   let skippedUnresolved = 0   // ineligible because they still have unresolved introductions
   let skippedOther = 0        // ineligible for another reason (e.g. lingering queued batch)
@@ -155,7 +161,30 @@ export async function GET(req: Request) {
     generated, generationDisabledSkipped, skippedUnresolved, skippedOther, placedNothing,
     reminderSent, reminderAlreadyHandled, reminderFailed,
   }))
+  // ── FINALIZE THE WEEKLY RELEASE (migration 074) ──────────────────────────────────────────────
+  //
+  // Reaching this line means the bounded run completed normally. A member with no candidate is an
+  // expected outcome of a curated network, not a failure, so it does not block finalization — but a
+  // TRANSIENT generation error does. The weekly route is idempotent and retryable for the same
+  // release key: re-running it re-attempts the failed members and finalizes then.
+  //
+  // There is deliberately NO cron that repairs this from cards: a crashed run and a failed insert
+  // are indistinguishable afterwards, so only re-running the writer can establish completion.
+  const transientGenerationErrors = memberErrors + (coverage.transient ?? 0)
+  let releaseFinalization: { status: string; releaseKey?: string }
+  if (transientGenerationErrors > 0) {
+    releaseFinalization = { status: 'skipped_transient_errors' }
+    console.log('[weekly-refresh] release NOT finalized: transient errors present; rerun to retry')
+  } else {
+    const fin = await finalizeWeeklyRelease(adminClient, { source: 'weekly_cron' })
+    releaseFinalization = fin.finalized
+      ? { status: fin.wasExisting ? 'already_finalized' : 'finalized', releaseKey: fin.releaseKey }
+      : { status: fin.reason }
+    console.log('[weekly-refresh] release finalization:', releaseFinalization.status)
+  }
+
   return NextResponse.json({
+    releaseFinalization,
     success: true,
     cycleKey,
     generationEnabled: WEEKLY_REFRESH_GENERATION,

@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { countUnresolvedRecommendations } from '@/lib/introductions/queue'
 import { materializeAdminPair, toUndirectedPairs, canonicalApprovalOrder } from '@/lib/introductions/materializeAdminPair'
 import { notifyAdminBatchReady, notifyPendingIntrosActionNeeded, isoWeekKey } from '@/lib/notifications/engagement'
+import { finalizeWeeklyRelease } from '@/lib/introductions/batchRelease'
 
 export const dynamic = 'force-dynamic'
 
@@ -124,6 +125,8 @@ export async function POST(req: NextRequest) {
     const byOutcome: Record<string, number> = {}
     let createdVisible = 0
     let createdReserved = 0
+    // Stamped BEFORE any pair is materialised: committed-card verification counts from here.
+    const approvalStartedAt = new Date()
     const placedMembers = new Map<string, { visible: number; reserved: number; batchId: string | null }>()
 
     for (const pair of pairs) {
@@ -142,6 +145,36 @@ export async function POST(req: NextRequest) {
           : (mid === pair.a ? r.batchIdHi ?? null : r.batchIdLo ?? null)
         placedMembers.set(mid, cur)
       }
+    }
+
+    // ── FINALIZE THE WEEKLY RELEASE (migration 074) ────────────────────────────────────────────
+    //
+    // Reaching this line means the loop ran to completion over every planned pair — a route that
+    // threw mid-loop never arrives, so an interrupted approval can never be finalized.
+    //
+    // WHAT BLOCKS FINALIZATION. Any transient/system error. A batch where some pairs succeeded and
+    // others failed transiently is NOT a completed release: the plan did not run cleanly, and the
+    // honest response is to leave the week unreleased and let the admin retry. Approval is
+    // idempotent (materialize_admin_pair refuses duplicates), so a retry re-materialises what is
+    // missing, reaches the end again, and finalizes.
+    //
+    // WHAT DOES NOT BLOCK IT. Deterministic refusals — capacity, cooldown, blocked, ineligible,
+    // invalid, duplicate_proposal, exists_active. Those are normal outcomes of a curated network;
+    // treating them as failures would mean almost no batch could ever be released.
+    //
+    // The RPC derives the week, verifies committed cards and inserts the immutable fact in ONE
+    // transaction. It supplies no count, so nothing here can fabricate a release.
+    const transientFailures = byOutcome['error'] ?? 0
+    let releaseFinalization: { status: string; releaseKey?: string; wasExisting?: boolean }
+    if (transientFailures > 0) {
+      releaseFinalization = { status: 'skipped_transient_errors' }
+      console.log('[approve-batch] release NOT finalized: transient errors present; retry approval')
+    } else {
+      const fin = await finalizeWeeklyRelease(adminClient, { source: 'admin_approval', batchId })
+      releaseFinalization = fin.finalized
+        ? { status: fin.wasExisting ? 'already_finalized' : 'finalized', releaseKey: fin.releaseKey, wasExisting: fin.wasExisting }
+        : { status: fin.reason }
+      console.log('[approve-batch] release finalization:', releaseFinalization.status)
     }
 
     const placed = Array.from(placedMembers.entries()).map(([recipientId, v]) => ({
@@ -215,6 +248,7 @@ export async function POST(req: NextRequest) {
       cycleKey,
       pairsConsidered: pairs.length,
       pairsUnpaired: unpaired,
+      releaseFinalization,
       pairsCreatedVisible: createdVisible,
       pairsCreatedReserved: createdReserved,
       // Aggregate outcome census — counts only, never a member identity.

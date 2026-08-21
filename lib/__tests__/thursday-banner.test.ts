@@ -48,14 +48,14 @@ describe('canViewThursdayBanner — visibility is SEPARATE from matching eligibi
 
 describe('resolveThursdayBanner — hidden when canView is false', () => {
   it('returns null when the viewer cannot see the banner', () => {
-    expect(resolveThursdayBanner({ now: RUN_UP, canView: false, receivedThisCycle: true })).toBeNull()
+    expect(resolveThursdayBanner({ now: RUN_UP, canView: false, receivedThisCycle: true, releasedThisCycle: true })).toBeNull()
   })
 })
 
-describe('resolveThursdayBanner — ordinary member: before / after_received', () => {
+describe('resolveThursdayBanner — ordinary member: post_release / after_received', () => {
   it('run-up shows the neutral countdown to the Thursday 14:00 UTC window', () => {
-    const v = resolveThursdayBanner({ now: RUN_UP, canView: true, receivedThisCycle: null }) as ThursdayBannerView
-    expect(v.kind).toBe('before')
+    const v = resolveThursdayBanner({ now: RUN_UP, canView: true, receivedThisCycle: null, releasedThisCycle: true }) as ThursdayBannerView
+    expect(v.kind).toBe('post_release')
     expect(v.title).toBe('Next introduction batch: Thursday')
     expect(v.subtitle).toBe('The next curated introduction batch is being prepared.')
     expect(v.showCountdown).toBe(true)
@@ -63,12 +63,12 @@ describe('resolveThursdayBanner — ordinary member: before / after_received', (
     expect(v.initialCountdownText).toMatch(/remaining$/)
   })
   it('after the window passes, rolls forward to the following Thursday', () => {
-    const v = resolveThursdayBanner({ now: AFTER_WINDOW, canView: true, receivedThisCycle: false })!
-    expect(v.kind).toBe('before')
+    const v = resolveThursdayBanner({ now: AFTER_WINDOW, canView: true, receivedThisCycle: false, releasedThisCycle: true })!
+    expect(v.kind).toBe('post_release')
     expect(v.targetIso).toBe('2026-08-27T14:00:00.000Z')
   })
   it('proven new suggestion → after_received', () => {
-    const v = resolveThursdayBanner({ now: IN_WINDOW, canView: true, receivedThisCycle: true })!
+    const v = resolveThursdayBanner({ now: IN_WINDOW, canView: true, receivedThisCycle: true, releasedThisCycle: true })!
     expect(v.kind).toBe('after_received')
     expect(v.title).toBe('New introductions are here')
     expect(v.showCountdown).toBe(false)
@@ -77,29 +77,29 @@ describe('resolveThursdayBanner — ordinary member: before / after_received', (
 
 describe('resolveThursdayBanner — ADMIN schedule-only view', () => {
   it('active/complete/unpaused admin sees the NEUTRAL countdown', () => {
-    const v = resolveThursdayBanner({ now: RUN_UP, canView: true, receivedThisCycle: false, scheduleOnly: true })!
-    expect(v.kind).toBe('before')
+    const v = resolveThursdayBanner({ now: RUN_UP, canView: true, receivedThisCycle: false, releasedThisCycle: true, scheduleOnly: true })!
+    expect(v.kind).toBe('post_release')
     expect(v.title).toBe('Next introduction batch: Thursday')
     expect(v.subtitle).toBe('The next curated introduction batch is being prepared.')
     expect(v.showCountdown).toBe(true)
   })
   it('admin NEVER gets after_received — even if evidence somehow says true', () => {
-    const v = resolveThursdayBanner({ now: IN_WINDOW, canView: true, receivedThisCycle: true, scheduleOnly: true })!
-    expect(v.kind).toBe('before')
+    const v = resolveThursdayBanner({ now: IN_WINDOW, canView: true, receivedThisCycle: true, releasedThisCycle: true, scheduleOnly: true })!
+    expect(v.kind).toBe('post_release')
     expect(v.title).not.toBe('New introductions are here')
   })
 })
 
 describe('NO false negative — "still looking" / after_none is NEVER produced', () => {
   it('false and null both yield the neutral before-countdown', () => {
-    expect(resolveThursdayBanner({ now: IN_WINDOW, canView: true, receivedThisCycle: false })!.kind).toBe('before')
-    expect(resolveThursdayBanner({ now: IN_WINDOW, canView: true, receivedThisCycle: null })!.kind).toBe('before')
+    expect(resolveThursdayBanner({ now: IN_WINDOW, canView: true, receivedThisCycle: false, releasedThisCycle: true })!.kind).toBe('post_release')
+    expect(resolveThursdayBanner({ now: IN_WINDOW, canView: true, receivedThisCycle: null, releasedThisCycle: true })!.kind).toBe('post_release')
   })
   it('the resolver can only ever return before | after_received', () => {
     for (const ev of [true, false, null] as const) {
       for (const so of [true, false]) {
-        const v = resolveThursdayBanner({ now: IN_WINDOW, canView: true, receivedThisCycle: ev, scheduleOnly: so })!
-        expect(['before', 'after_received']).toContain(v.kind)
+        const v = resolveThursdayBanner({ now: IN_WINDOW, canView: true, receivedThisCycle: ev, releasedThisCycle: true, scheduleOnly: so })!
+        expect(['post_release', 'after_received']).toContain(v.kind)
       }
     }
   })
@@ -111,7 +111,7 @@ describe('copy safety — no guaranteed match, no exact-hour claim, no notificat
     for (const now of [RUN_UP, IN_WINDOW, AFTER_WINDOW]) {
       for (const ev of [true, false, null] as const) {
         for (const so of [true, false]) {
-          const v = resolveThursdayBanner({ now, canView: true, receivedThisCycle: ev, scheduleOnly: so })
+          const v = resolveThursdayBanner({ now, canView: true, receivedThisCycle: ev, releasedThisCycle: true, scheduleOnly: so })
           if (!v) continue
           expect(`${v.title} ${v.subtitle ?? ''}`).not.toMatch(banned)
         }
