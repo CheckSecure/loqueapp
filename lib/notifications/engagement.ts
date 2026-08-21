@@ -140,12 +140,12 @@ export async function notifyNewVisibleBatch(memberId: string, batchId: string, c
     })
     if (!created) return // duplicate → this batch was already announced
 
-    const { data: p } = await admin.from('profiles').select('email, full_name').eq('id', memberId).maybeSingle()
-    if (p?.email && process.env.RESEND_API_KEY) {
-      console.log(`[Email] type=new_introductions memberId=${memberId} batchId=${batchId} count=${n}`)
-      const { sendNewBatchEmail } = await import('@/lib/email')
-      await sendNewBatchEmail(p.email, p.full_name || 'there', n)
-    }
+    // EMAIL IS NOT SENT HERE. The announcement was already recorded DURABLY by the migration-070
+    // trigger, inside the transaction that committed the card, so it cannot be lost if this
+    // process dies. This drain is promptness only — the scheduled stage in engagement-reminders
+    // sends it regardless. The in-app `new_batch` notification above is unchanged.
+    const { drainForMember } = await import('@/lib/introductions/newIntroductionOutbox')
+    await drainForMember(admin, memberId)
   } catch (e: any) {
     console.error('[engagement] notifyNewVisibleBatch failed (non-fatal):', e?.message)
   }
@@ -180,12 +180,10 @@ export async function notifyAdminBatchReady(memberId: string, batchId: string, c
     })
     if (!created) return // duplicate → this batch was already announced
 
-    const { data: p } = await admin.from('profiles').select('email, full_name').eq('id', memberId).maybeSingle()
-    if (p?.email && process.env.RESEND_API_KEY) {
-      console.log(`[Email] type=admin_batch_ready memberId=${memberId} batchId=${batchId} count=${n}`)
-      const { sendAdminBatchReadyEmail } = await import('@/lib/email')
-      await sendAdminBatchReadyEmail(p.email, p.full_name || 'there')
-    }
+    // Same as notifyNewVisibleBatch: the in-app notification stays here; the email is owed by the
+    // durable outbox row the trigger already wrote, and this only drains it sooner.
+    const { drainForMember } = await import('@/lib/introductions/newIntroductionOutbox')
+    await drainForMember(admin, memberId)
   } catch (e: any) {
     console.error('[engagement] notifyAdminBatchReady failed (non-fatal):', e?.message)
   }
@@ -216,7 +214,7 @@ export async function notifyQueuedIntrosWaiting(memberId: string, queuedBatchId:
 
     const { data: p } = await admin.from('profiles').select('email, full_name').eq('id', memberId).maybeSingle()
     if (p?.email && process.env.RESEND_API_KEY) {
-      console.log(`[Email] type=introductions_waiting memberId=${memberId} queuedBatchId=${queuedBatchId}`)
+      console.log('[Email] type=introductions_waiting')
       const { sendCurrentIntroductionsWaitingEmail } = await import('@/lib/email')
       await sendCurrentIntroductionsWaitingEmail(p.email, p.full_name || 'there')
     }
@@ -273,7 +271,7 @@ export async function notifyPendingIntrosActionNeeded(
     const { data: p } = await admin.from('profiles').select('email, full_name').eq('id', memberId).maybeSingle()
     let emailed = false, skipped = false, error: string | undefined
     if (p?.email && process.env.RESEND_API_KEY) {
-      console.log(`[Email] type=intro_action_needed memberId=${memberId} cycle=${cycleKey}`)
+      console.log('[Email] type=intro_action_needed')
       const { sendPendingIntrosReminderEmail } = await import('@/lib/email')
       const res = await sendPendingIntrosReminderEmail(p.email, p.full_name || 'there')
       emailed = res.success; skipped = !!res.skipped; error = res.error

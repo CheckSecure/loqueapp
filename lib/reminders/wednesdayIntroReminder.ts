@@ -49,6 +49,16 @@ export const RESPONDED_STATUSES: ReadonlySet<string> = new Set([
   'passed', 'declined', 'rejected', 'hidden', 'hidden_permanent', 'expired', 'archived',
 ])
 
+/**
+ * Statuses an unanswered-introduction scan must READ: open cards plus every status that counts as a
+ * RESPONSE. Both the weekly cron and the one-time catch-up campaign use this one list, so they can
+ * never drift into disagreeing about who has an open card.
+ */
+export const REMINDER_RELEVANT_STATUSES = [
+  'suggested', 'pending', 'accepted', 'accepted_pending_payment', 'admin_pending', 'approved',
+  'passed', 'declined', 'rejected', 'hidden', 'hidden_permanent', 'expired', 'archived',
+]
+
 /** True when this row is an open, unanswered visible card. */
 export function isOpenCard(row: { status: string }): boolean {
   return row.status === 'suggested'

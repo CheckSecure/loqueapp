@@ -28,6 +28,14 @@ vi.mock('@/lib/email', () => ({
   sendNewBatchEmail: vi.fn(async (...args: any[]) => { h.emailCalls.push(args) }),
 }))
 
+// The notifier no longer sends the email itself, and no longer OWNS it: the migration-070 trigger
+// already recorded the obligation durably inside the transaction that committed the card. What is
+// left here is a best-effort drain for promptness, so these tests assert the handoff (one per
+// announced batch, deduped identically), not the provider call.
+vi.mock('@/lib/introductions/newIntroductionOutbox', () => ({
+  drainForMember: vi.fn(async (_admin: any, memberId: string) => { h.emailCalls.push([memberId]) }),
+}))
+
 vi.mock('@/lib/supabase/admin', () => {
   function from(table: string) {
     const filters: ((r: any) => boolean)[] = []
@@ -210,8 +218,8 @@ describe('notifyNewVisibleBatch — one notification + one email per batch', () 
     expect(h.notifications).toHaveLength(1)
     expect(h.notifications[0]).toMatchObject({ user_id: 'M', type: 'new_batch' })
     expect(h.notifications[0].data.dedupeKey).toBe('batch:B-1')
-    expect(h.emailCalls).toHaveLength(1)
-    expect(h.emailCalls[0]).toEqual(['m@example.com', 'Member', 2])
+    expect(h.emailCalls).toHaveLength(1)          // exactly one handoff to the shared outbox
+    expect(h.emailCalls[0]).toEqual(['M'])        // ...for the announced member
   })
 
   it('Test 4 — retry for the same batch → no second notification, no second email', async () => {

@@ -340,7 +340,9 @@ describe('J. capacity is a SEPARATE contract from this ranking input', () => {
 
   it('the candidate walk still continues past a capacity result', () => {
     const walk = SRC.slice(SRC.indexOf('export async function walkCandidates'), SRC.indexOf('export async function walkCandidates') + 1600)
-    expect(walk).toMatch(/if \(o === 'created'\) created\+\+/)
+    // the walk now also records WHICH counterparts were created, so the new-introduction outbox can
+    // announce both sides; the control flow it pins here is unchanged
+    expect(walk).toMatch(/if \(o === 'created'\) \{ created\+\+; createdIds\.add\(id\) \}/)
     expect(walk).toMatch(/else if \(o === 'error'\) transientIds\.push\(id\)/)
     // 'capacity' is recorded and the loop proceeds — it is never a break condition
     expect(walk).not.toMatch(/o === 'capacity'/)

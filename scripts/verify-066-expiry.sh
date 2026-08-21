@@ -35,13 +35,20 @@ out(){ python3 -c "import sys,json;print(json.load(sys.stdin).get('outcome','-')
 # 067 PART 1 ALTERs the delegate the fixture defines.
 if [[ "${HARNESS_BOOTSTRAP:-0}" == "1" ]]; then
   echo "== bootstrap =="
+  # 065 is loaded BEFORE the 066 fixture so the harness exercises the REAL reminder_deliveries
+  # table (the fixture's CREATE ... IF NOT EXISTS then becomes a no-op). 068 is deliberately NOT
+  # bootstrapped: section 17 applies it, which is what proves the transition and the post-068 state.
   for f in supabase/tests/063_fixture.sql \
            supabase/migrations/063_unified_introduction_capacity.sql \
            supabase/tests/064_fixture.sql \
            supabase/migrations/064_materialize_admin_pair.sql \
+           supabase/migrations/065_reminder_deliveries.sql \
            supabase/tests/066_fixture.sql \
            supabase/migrations/066_expire_intro_pair.sql \
-           supabase/migrations/067_finalize_mutual_match_atomic.sql; do
+           supabase/migrations/067_finalize_mutual_match_atomic.sql \
+           supabase/migrations/069_delivery_purposes_and_event_key.sql \
+           supabase/migrations/070_introduction_email_outbox.sql \
+           supabase/migrations/071_outbox_service_role_least_privilege.sql; do
     if ! psql "$URL" -qAt -v ON_ERROR_STOP=1 -f "$f" >/dev/null 2>/tmp/bootstrap.err; then
       echo "  BOOTSTRAP FAILED on $f"; sed -n '1,12p' /tmp/bootstrap.err; exit 2
     fi
@@ -399,7 +406,15 @@ echo
 echo "== 17. after migration 068 (applied LAST - it drops a privilege for good) =="
 freset; mkpair $A $B; P=$(pid $A $B)
 q "UPDATE public.intro_requests SET status='approved' WHERE pair_id='$P';" >/dev/null
-check "before 068: service_role CAN reach delegate" "$(q "SELECT has_function_privilege('service_role','$D3','EXECUTE');")" "t"
+# 068 removes a privilege PERMANENTLY, so this precondition only holds on a freshly bootstrapped
+# database. On a re-run against the same disposable DB it is already gone — which is the correct
+# post-068 state, not a regression. It is never re-granted here: restoring service_role EXECUTE on
+# the raw delegate is exactly what must not happen.
+if [[ "${HARNESS_BOOTSTRAP:-0}" == "1" ]]; then
+  check "before 068: service_role CAN reach delegate" "$(q "SELECT has_function_privilege('service_role','$D3','EXECUTE');")" "t"
+else
+  echo "  SKIP  before 068 precondition (re-run against an already-migrated DB)"
+fi
 psql "$URL" -qAt -v ON_ERROR_STOP=1 -f supabase/migrations/068_revoke_raw_delegate_service_role.sql >/dev/null 2>&1 \
   && echo "  (068 applied)" || { echo "  FAIL  068 would not apply"; FAIL=$((FAIL+1)); }
 check "delegate: PUBLIC cannot execute"        "$(q "SELECT has_function_privilege('public','$D3','EXECUTE');")" "f"
@@ -416,6 +431,190 @@ check "  exactly one match"                     "$(q "SELECT count(*) FROM publi
 check "  exactly one conversation"              "$(q "SELECT count(*) FROM public.conversations;")" "1"
 check "  both members charged once"             "$(q "SELECT count(*) FROM public.meeting_credits WHERE user_id IN ('$A','$B') AND free_credits=4;")" "2"
 check "  balance invariant holds"               "$(q "SELECT count(*) FROM public.meeting_credits WHERE balance <> free_credits + coalesce(premium_credits,0);")" "0"
+
+echo
+echo "== 18. migration 070: the transactional outbox trigger =="
+OB="public.introduction_email_outbox"
+ob(){ q "SELECT count(*) FROM $OB ${1:-};"; }
+obreset(){ q "TRUNCATE $OB CASCADE; DELETE FROM public.intro_requests;" >/dev/null; }
+mkcard(){ q "INSERT INTO public.intro_requests(id,requester_id,target_user_id,status,created_at)
+             VALUES ('$1'::uuid,'$2'::uuid,'$3'::uuid,'$4',now());" >/dev/null; }
+C1=11111111-0000-4000-8000-00000000ca01
+C2=11111111-0000-4000-8000-00000000ca02
+
+# the card and its outbox event are written by the SAME transaction
+obreset; mkcard $C1 $A $B suggested
+check "INSERT suggested -> exactly one event"      "$(ob "WHERE intro_request_id='$C1'")" "1"
+check "  event names the card OWNER"               "$(q "SELECT member_id='$A' FROM $OB WHERE intro_request_id='$C1';")" "t"
+check "  event starts pending"                     "$(q "SELECT status FROM $OB WHERE intro_request_id='$C1';")" "pending"
+
+obreset; mkcard $C1 $A $B queued
+check "INSERT queued -> no event"                  "$(ob)" "0"
+q "UPDATE public.intro_requests SET status='suggested' WHERE id='$C1';" >/dev/null
+check "queued -> suggested -> exactly one event"   "$(ob)" "1"
+q "UPDATE public.intro_requests SET status='suggested', updated_at=now() WHERE id='$C1';" >/dev/null
+check "suggested -> suggested -> still one event"  "$(ob)" "1"
+q "UPDATE public.intro_requests SET status='expired' WHERE id='$C1';" >/dev/null
+check "suggested -> expired -> still one event"    "$(ob)" "1"
+q "UPDATE public.intro_requests SET status='suggested' WHERE id='$C1';" >/dev/null
+check "re-visibility cannot duplicate the event"   "$(ob)" "1"
+
+# every non-visible status is silent
+obreset
+for st in queued pending approved accepted admin_pending passed declined rejected expired archived hidden; do
+  q "INSERT INTO public.intro_requests(requester_id,target_user_id,status,created_at)
+     VALUES ('$A'::uuid,'$B'::uuid,'$st',now());" >/dev/null
+done
+check "no non-visible status enqueues"             "$(ob)" "0"
+
+# ROLLBACK: neither the card nor the event survives
+obreset
+psql "$URL" -qAt -c "BEGIN; INSERT INTO public.intro_requests(id,requester_id,target_user_id,status,created_at)
+  VALUES ('$C2'::uuid,'$A'::uuid,'$B'::uuid,'suggested',now()); ROLLBACK;" >/dev/null 2>&1
+check "rollback leaves no card"                    "$(q "SELECT count(*) FROM public.intro_requests WHERE id='$C2';")" "0"
+check "rollback leaves no event"                   "$(ob)" "0"
+
+# a row that existed BEFORE the trigger produces nothing — modelled by disabling it, which is
+# exactly the state production's 188 historical cards were written in.
+obreset
+q "ALTER TABLE public.intro_requests DISABLE TRIGGER intro_requests_visible_outbox_aiu;" >/dev/null
+mkcard $C1 $A $B suggested
+q "ALTER TABLE public.intro_requests ENABLE TRIGGER intro_requests_visible_outbox_aiu;" >/dev/null
+check "historical card -> NO event (no blast)"     "$(ob)" "0"
+q "UPDATE public.intro_requests SET updated_at=now() WHERE id='$C1';" >/dev/null
+check "  touching it later still enqueues nothing" "$(ob)" "0"
+
+# reciprocal shape: both directions -> one event each, so both members are announced
+obreset
+q "INSERT INTO public.intro_requests(requester_id,target_user_id,status,created_at)
+   VALUES ('$A'::uuid,'$B'::uuid,'suggested',now()),('$B'::uuid,'$A'::uuid,'suggested',now());" >/dev/null
+check "reciprocal pair -> one event per member"    "$(ob)" "2"
+check "  distinct members"                         "$(q "SELECT count(DISTINCT member_id) FROM $OB;")" "2"
+
+echo "-- 070 security posture --"
+check "outbox: RLS enabled"                        "$(q "SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass('$OB');")" "t"
+check "outbox: ZERO policies"                      "$(q "SELECT count(*) FROM pg_policy WHERE polrelid=to_regclass('$OB');")" "0"
+check "outbox: anon has no privilege"              "$(q "SELECT count(*) FROM information_schema.role_table_grants WHERE table_name='introduction_email_outbox' AND grantee='anon';")" "0"
+check "outbox: authenticated has no privilege"     "$(q "SELECT count(*) FROM information_schema.role_table_grants WHERE table_name='introduction_email_outbox' AND grantee='authenticated';")" "0"
+check "outbox: PUBLIC has no privilege"            "$(q "SELECT count(*) FROM information_schema.role_table_grants WHERE table_name='introduction_email_outbox' AND grantee='PUBLIC';")" "0"
+check "outbox: service_role can read/write"        "$(q "SELECT has_table_privilege('service_role','$OB','SELECT') AND has_table_privilege('service_role','$OB','INSERT') AND has_table_privilege('service_role','$OB','UPDATE');")" "t"
+TF="public.tg_intro_request_visible_outbox()"
+check "trigger fn: SECURITY DEFINER"               "$(q "SELECT prosecdef FROM pg_proc WHERE proname='tg_intro_request_visible_outbox';")" "t"
+check "trigger fn: search_path empty"              "$(q "SELECT coalesce(array_to_string(proconfig,','),'-') FROM pg_proc WHERE proname='tg_intro_request_visible_outbox';")" 'search_path=""'
+check "trigger fn: fully schema-qualified"         "$(q "SELECT (regexp_replace(regexp_replace(prosrc,'--[^\n]*','','g'),'public\.(introduction_email_outbox|intro_requests)','','g') ~ '\m(introduction_email_outbox|intro_requests)\M')::text FROM pg_proc WHERE proname='tg_intro_request_visible_outbox';")" "false"
+check "trigger fn: anon cannot execute"            "$(q "SELECT has_function_privilege('anon','$TF','EXECUTE');")" "f"
+check "trigger fn: PUBLIC cannot execute"          "$(q "SELECT has_function_privilege('public','$TF','EXECUTE');")" "f"
+check "outbox stores no body/name/address"         "$(q "SELECT count(*) FROM information_schema.columns WHERE table_name='introduction_email_outbox' AND column_name IN ('email','full_name','subject','html','body','provider_payload','first_name');")" "0"
+
+echo "-- 069: purposes widened without ever rejecting the LIVE one --"
+check "wednesday purpose still accepted"           "$(q "SELECT count(*) FROM pg_constraint WHERE conname='reminder_deliveries_purpose_check' AND pg_get_constraintdef(oid) LIKE '%wednesday_intro_reminder%';")" "1"
+check "catchup purpose accepted"                   "$(q "SELECT count(*) FROM pg_constraint WHERE conname='reminder_deliveries_purpose_check' AND pg_get_constraintdef(oid) LIKE '%catchup_unanswered_2026_08_20%';")" "1"
+check "new_introductions purpose accepted"         "$(q "SELECT count(*) FROM pg_constraint WHERE conname='reminder_deliveries_purpose_check' AND pg_get_constraintdef(oid) LIKE '%new_introductions%';")" "1"
+check "week claim now excludes event-keyed rows"   "$(q "SELECT count(*) FROM pg_indexes WHERE indexname='reminder_deliveries_active_claim_uniq' AND indexdef LIKE '%event_key IS NULL%';")" "1"
+check "event claim index exists"                   "$(q "SELECT count(*) FROM pg_indexes WHERE indexname='reminder_deliveries_event_claim_uniq';")" "1"
+# two deliveries in the SAME week must both be claimable when the artifacts differ
+q "TRUNCATE public.reminder_deliveries;" >/dev/null
+q "INSERT INTO public.reminder_deliveries(member_id,purpose,cycle_key,event_key,status)
+   VALUES ('$A'::uuid,'new_introductions','2026-W34','key-one','accepted');" >/dev/null
+INS2=$(q "INSERT INTO public.reminder_deliveries(member_id,purpose,cycle_key,event_key,status)
+   VALUES ('$A'::uuid,'new_introductions','2026-W34','key-two','claimed');" 2>&1 | grep -c "ERROR")
+check "same week, different artifact -> allowed"   "$INS2" "0"
+DUP=$(q "INSERT INTO public.reminder_deliveries(member_id,purpose,cycle_key,event_key,status)
+   VALUES ('$A'::uuid,'new_introductions','2026-W34','key-one','claimed');" 2>&1 | grep -c "duplicate key")
+check "same artifact twice -> blocked"             "$DUP" "1"
+q "TRUNCATE public.reminder_deliveries;" >/dev/null
+
+echo "-- post-068 privilege state is NOT restored by 069/070 --"
+check "069 grants nothing on the raw delegate"     "$(grep -c 'consume_credits_and_create_match' supabase/migrations/069_delivery_purposes_and_event_key.sql)" "0"
+check "070 never GRANTs on the raw delegate"       "$(grep -c 'GRANT.*consume_credits_and_create_match' supabase/migrations/070_introduction_email_outbox.sql)" "0"
+
+echo
+echo "== 19. outbox claim protocol, TWO REAL SESSIONS =="
+CLAIM_SQL="UPDATE $OB SET status='claimed', claim_token=gen_random_uuid(), claimed_at=now(),
+             claim_expires_at=now()+interval '15 minutes', updated_at=now()
+           WHERE id=(SELECT id FROM $OB WHERE intro_request_id='%s')
+             AND (status='pending' OR (status='claimed' AND claim_expires_at < now()))
+           RETURNING id;"
+
+obreset; mkcard $C1 $A $B suggested
+check "trigger produced one pending event"        "$(q "SELECT status FROM $OB WHERE intro_request_id='$C1';")" "pending"
+
+# Session A takes the claim and HOLDS the transaction open. Session B must not be able to take it.
+psql "$URL" -qAt -c "BEGIN; $(printf "$CLAIM_SQL" "$C1") SELECT pg_sleep(3); COMMIT;" >/dev/null 2>&1 &
+sleep 1
+B_ROWS=$(psql "$URL" -qAt -c "$(printf "$CLAIM_SQL" "$C1")" 2>&1 | grep -c "^[0-9a-f-]\{36\}$")
+wait
+check "B cannot steal A's FRESH claim"            "$B_ROWS" "0"
+check "  the row is claimed exactly once"         "$(q "SELECT count(*) FROM $OB WHERE status='claimed' AND claim_token IS NOT NULL;")" "1"
+A_TOKEN=$(q "SELECT claim_token FROM $OB WHERE intro_request_id='$C1';")
+
+# A stale worker must not be able to settle a row someone else legitimately reclaimed.
+# Age the lease. claimed_at must move too, or lease_order_chk correctly rejects the update — the
+# constraint does not permit an expiry that precedes its own start.
+q "UPDATE $OB SET claimed_at = now() - interval '20 minutes', claim_expires_at = now() - interval '5 minutes'
+   WHERE intro_request_id='$C1';" >/dev/null
+B2=$(psql "$URL" -qAt -c "$(printf "$CLAIM_SQL" "$C1")" 2>&1 | grep -c "^[0-9a-f-]\{36\}$")
+check "B DOES reclaim once the lease expired"     "$B2" "1"
+NEW_TOKEN=$(q "SELECT claim_token FROM $OB WHERE intro_request_id='$C1';")
+check "  reclaim minted a NEW token"              "$([[ "$A_TOKEN" != "$NEW_TOKEN" ]] && echo yes || echo no)" "yes"
+STALE=$(q "WITH u AS (UPDATE $OB SET status='sent', processed_at=now(), claim_token=NULL, claimed_at=NULL, claim_expires_at=NULL
+             WHERE intro_request_id='$C1' AND status='claimed' AND claim_token='$A_TOKEN'::uuid RETURNING 1)
+           SELECT count(*) FROM u;")
+check "stale A CANNOT settle after B reclaimed"   "$STALE" "0"
+check "  the row still belongs to B"              "$(q "SELECT status FROM $OB WHERE intro_request_id='$C1';")" "claimed"
+OWNED=$(q "WITH u AS (UPDATE $OB SET status='sent', processed_at=now(), claim_token=NULL, claimed_at=NULL, claim_expires_at=NULL
+             WHERE intro_request_id='$C1' AND status='claimed' AND claim_token='$NEW_TOKEN'::uuid RETURNING 1)
+           SELECT count(*) FROM u;")
+check "the OWNER can settle"                      "$OWNED" "1"
+check "  settled row cleared its lease"           "$(q "SELECT claim_token IS NULL AND claim_expires_at IS NULL FROM $OB WHERE intro_request_id='$C1';")" "t"
+
+echo "-- 070 integrity constraints --"
+obreset; mkcard $C1 $A $B suggested
+EID=$(q "SELECT id FROM $OB WHERE intro_request_id='$C1';")
+BAD1=$(q "UPDATE $OB SET status='claimed' WHERE id='$EID';" 2>&1 | grep -c "claim_shape_chk")
+check "claimed WITHOUT a lease is rejected"       "$BAD1" "1"
+BAD2=$(q "UPDATE $OB SET status='sent' WHERE id='$EID';" 2>&1 | grep -c "processed_shape_chk")
+check "terminal WITHOUT processed_at is rejected" "$BAD2" "1"
+BAD3=$(q "UPDATE $OB SET status='claimed', claim_token=gen_random_uuid(), claimed_at=now(), claim_expires_at=now()-interval '1 hour' WHERE id='$EID';" 2>&1 | grep -c "lease_order_chk")
+check "a lease ending before it starts rejected"  "$BAD3" "1"
+BAD4=$(q "INSERT INTO $OB (intro_request_id, member_id) VALUES ('$C1'::uuid,'$A'::uuid);" 2>&1 | grep -c "duplicate key")
+check "duplicate event for one card rejected"     "$BAD4" "1"
+check "pending-selection index exists"            "$(q "SELECT count(*) FROM pg_indexes WHERE indexname='introduction_email_outbox_pending_idx' AND indexdef LIKE '%status = ''pending''%';")" "1"
+check "stale-claim index exists"                  "$(q "SELECT count(*) FROM pg_indexes WHERE indexname='introduction_email_outbox_stale_claim_idx' AND indexdef LIKE '%claim_expires_at%';")" "1"
+check "claim/lease/processed CHECKs all present"  "$(q "SELECT count(*) FROM pg_constraint WHERE conrelid=to_regclass('$OB') AND contype='c' AND conname LIKE '%_chk';")" "3"
+check "070 inserted no outbox row at apply time"  "$(q "SELECT count(*) FROM $OB WHERE created_at < (SELECT min(created_at) FROM public.intro_requests);")" "0"
+obreset
+
+echo
+echo "== 20. migration 071: outbox least privilege =="
+check "service_role: SELECT"                      "$(q "SELECT has_table_privilege('service_role','$OB','SELECT');")" "t"
+check "service_role: INSERT"                      "$(q "SELECT has_table_privilege('service_role','$OB','INSERT');")" "t"
+check "service_role: UPDATE"                      "$(q "SELECT has_table_privilege('service_role','$OB','UPDATE');")" "t"
+check "service_role: DELETE denied"               "$(q "SELECT has_table_privilege('service_role','$OB','DELETE');")" "f"
+check "service_role: TRUNCATE denied"             "$(q "SELECT has_table_privilege('service_role','$OB','TRUNCATE');")" "f"
+
+# THE REAL DEFECT, REPRODUCED. A plain local cluster has no Supabase default privileges, so the
+# outbox is created here WITHOUT the inherited DELETE grant that production got - which is exactly
+# why the local harness passed while production was wrong. Grant it explicitly to recreate the
+# production condition, then prove 071 actually removes it.
+q "GRANT DELETE ON TABLE $OB TO service_role;" >/dev/null
+check "reproduced: DELETE wrongly present"        "$(q "SELECT has_table_privilege('service_role','$OB','DELETE');")" "t"
+# a NARROW GRANT alone cannot fix it - this is the 070 mistake, demonstrated
+q "GRANT SELECT, INSERT, UPDATE ON TABLE $OB TO service_role;" >/dev/null
+check "a narrow GRANT does NOT remove DELETE"     "$(q "SELECT has_table_privilege('service_role','$OB','DELETE');")" "t"
+# 071 does
+psql "$URL" -qAt -v ON_ERROR_STOP=1 -f supabase/migrations/071_outbox_service_role_least_privilege.sql >/dev/null 2>&1 \
+  && echo "  (071 re-applied)" || { echo "  FAIL  071 would not apply"; FAIL=$((FAIL+1)); }
+check "071 removed DELETE"                        "$(q "SELECT has_table_privilege('service_role','$OB','DELETE');")" "f"
+check "071 preserved SELECT/INSERT/UPDATE"        "$(q "SELECT has_table_privilege('service_role','$OB','SELECT') AND has_table_privilege('service_role','$OB','INSERT') AND has_table_privilege('service_role','$OB','UPDATE');")" "t"
+check "071 is idempotent (re-applies cleanly)"    "$(psql "$URL" -qAt -v ON_ERROR_STOP=1 -f supabase/migrations/071_outbox_service_role_least_privilege.sql >/dev/null 2>&1 && echo ok || echo fail)" "ok"
+check "071 granted browser roles nothing"         "$(q "SELECT count(*) FROM information_schema.role_table_grants WHERE table_name='introduction_email_outbox' AND grantee IN ('anon','authenticated','PUBLIC');")" "0"
+# the guard must REFUSE a database that does not match the contract
+q "GRANT DELETE ON TABLE $OB TO service_role;" >/dev/null
+GUARD=$(psql "$URL" -qAt -c "DO \$g\$ BEGIN IF has_table_privilege('service_role','$OB','DELETE') THEN RAISE EXCEPTION 'contract mismatch'; END IF; END \$g\$;" 2>&1 | grep -c "contract mismatch")
+check "the contract guard fires on a mismatch"    "$GUARD" "1"
+psql "$URL" -qAt -v ON_ERROR_STOP=1 -f supabase/migrations/071_outbox_service_role_least_privilege.sql >/dev/null 2>&1
+check "restored to the required contract"         "$(q "SELECT has_table_privilege('service_role','$OB','DELETE');")" "f"
 
 echo
 echo "== RESULT: $PASS passed, $FAIL failed =="

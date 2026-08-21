@@ -97,3 +97,60 @@ export async function markFailed(admin: any, deliveryId: string, errorClass: str
     .eq('id', deliveryId)
   if (error) console.error('[wednesday-reminder] fail update failed (class):', (error as any).code ?? 'unknown')
 }
+
+/**
+ * Claim an EVENT-keyed delivery (migration 069).
+ *
+ * The weekly claim above is keyed on the calendar week, which is the right authority for something
+ * that happens once a week. It is the WRONG authority for new introductions: a member can
+ * legitimately receive introductions twice in one week, and a week key would swallow the second.
+ * This claims on (member_id, purpose, event_key) instead, where event_key fingerprints the
+ * committed cards. `cycle_key` is still written, still meaning the calendar week — it is recorded,
+ * not used as the authority.
+ *
+ * Identical lease semantics to claimReminder: 23505 means someone already holds it, and only a
+ * STALE 'claimed' row may be taken over — never an 'accepted' one, because the provider may already
+ * hold that message.
+ */
+export async function claimEventDelivery(
+  admin: any,
+  args: { memberId: string; purpose: string; cycleKey: string; eventKey: string; openCardCount: number },
+): Promise<ClaimResult> {
+  const { data, error } = await admin
+    .from('reminder_deliveries')
+    .insert({
+      member_id: args.memberId,
+      purpose: args.purpose,
+      cycle_key: args.cycleKey,
+      event_key: args.eventKey,
+      open_card_count: args.openCardCount,
+      status: 'claimed',
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    if ((error as any).code === UNIQUE_VIOLATION) {
+      const staleBefore = new Date(Date.now() - CLAIM_LEASE_MS).toISOString()
+      const { data: revived, error: reviveErr } = await admin
+        .from('reminder_deliveries')
+        .update({ claimed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('member_id', args.memberId)
+        .eq('purpose', args.purpose)
+        .eq('event_key', args.eventKey)
+        .eq('status', 'claimed')
+        .lt('claimed_at', staleBefore)
+        .select('id')
+        .maybeSingle()
+      if (reviveErr) {
+        console.error('[new-introductions] stale-claim recovery failed (class):', (reviveErr as any).code ?? 'unknown')
+        return { claimed: false, errorClass: 'reclaim_error' }
+      }
+      if (revived?.id) return { claimed: true, deliveryId: revived.id, reclaimed: true }
+      return { claimed: false }
+    }
+    console.error('[new-introductions] claim failed (class):', (error as any).code ?? 'unknown')
+    return { claimed: false, errorClass: 'claim_error' }
+  }
+  return { claimed: true, deliveryId: (data as any)?.id }
+}

@@ -1088,7 +1088,7 @@ function nextCorrelationId(): string { genSeq = (genSeq + 1) % 1_000_000; return
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-export interface WalkResult { created: number; considered: number; rpcCalls: number; finalOutcomes: ReciprocalOutcome[]; timedOut: boolean }
+export interface WalkResult { created: number; considered: number; rpcCalls: number; finalOutcomes: ReciprocalOutcome[]; timedOut: boolean; createdIds: string[] }
 
 /**
  * Bounded candidate traversal — the testable core. Walks the fair-ordered candidate ids ONCE,
@@ -1109,6 +1109,7 @@ export async function walkCandidates(
 ): Promise<WalkResult> {
   const deadline = clock() + limits.timeBudgetMs
   const outcomeById = new Map<string, ReciprocalOutcome>()
+  const createdIds = new Set<string>()
   const transientIds: string[] = []
   let created = 0, considered = 0, rpcCalls = 0, timedOut = false
   // Never START a DB op with no budget left (point 4): out of time OR the deadline signal fired.
@@ -1122,7 +1123,7 @@ export async function walkCandidates(
     considered++; rpcCalls++
     const o = await createFn(id)
     outcomeById.set(id, o)
-    if (o === 'created') created++
+    if (o === 'created') { created++; createdIds.add(id) }
     else if (o === 'error') transientIds.push(id)   // ONLY transient errors are retry-eligible
   }
 
@@ -1138,11 +1139,11 @@ export async function walkCandidates(
       rpcCalls++
       const o = await createFn(id)
       outcomeById.set(id, o) // final outcome supersedes the transient one (aborted RPC → exists_active on retry)
-      if (o === 'created') created++
+      if (o === 'created') { created++; createdIds.add(id) }
     }
   }
 
-  return { created, considered, rpcCalls, finalOutcomes: Array.from(outcomeById.values()), timedOut }
+  return { created, considered, rpcCalls, finalOutcomes: Array.from(outcomeById.values()), timedOut, createdIds: Array.from(createdIds) }
 }
 
 /**
@@ -1235,6 +1236,18 @@ export async function generateReciprocalBatchForMember(
     const outcome = classifyGenerationOutcome(walk.finalOutcomes, {
       createdCount: walk.created, candidatesEmpty: false, memberIneligible: false, timedOut: walk.timedOut,
     })
+    // The announcement itself was already recorded durably: create_reciprocal_suggestion inserts
+    // both directional 'suggested' rows, and the migration-070 trigger wrote one outbox event per
+    // row INSIDE that same transaction. Nothing here is load-bearing — this only drains those
+    // events sooner, for both sides. A FRESH admin client is used deliberately: the one above
+    // carries the generation deadline's abort signal, and reusing it would cancel these reads.
+    if (walk.created > 0) {
+      const { drainForMember } = await import('@/lib/introductions/newIntroductionOutbox')
+      const drainClient = createAdminClient()
+      for (const memberToAnnounce of [userId, ...walk.createdIds]) {
+        await drainForMember(drainClient, memberToAnnounce)
+      }
+    }
     return finish(outcome, walk.created, walk.considered, walk.rpcCalls)
   } catch {
     // Any exception incl. an AbortError from a cancelled op → conclusive uncertainty, never empty pool.

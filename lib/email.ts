@@ -1246,3 +1246,26 @@ export async function sendWednesdayIntroReminderEmail(
   if ((res as any)?.error) throw new Error('provider_error')
   return { sent: true, providerMessageId: (res as any)?.data?.id ?? null }
 }
+
+/**
+ * The ongoing "new introductions are available" email. Honours the existing
+ * `email_new_introductions` preference, so a member who opted out of introduction mail stays opted
+ * out of this one. Returns rather than throws on an opt-out, so the caller records a real outcome.
+ */
+export async function sendNewIntroductionsEmail(
+  toEmail: string,
+  firstName: string | null,
+): Promise<{ sent: boolean; providerMessageId: string | null }> {
+  if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return { sent: false, providerMessageId: null }
+  const { buildNewIntroductionsEmail } = await import('@/lib/email/newIntroductions')
+  const built = buildNewIntroductionsEmail(firstName)
+  const res = await resend.emails.send({
+    from: 'Andrel <hello@andrel.app>',
+    to: toEmail,
+    subject: built.subject,
+    html: built.html,
+    text: built.text,
+  })
+  if ((res as any)?.error) throw new Error('provider_error')
+  return { sent: true, providerMessageId: (res as any)?.data?.id ?? null }
+}

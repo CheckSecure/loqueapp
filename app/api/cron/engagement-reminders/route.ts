@@ -3,11 +3,13 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createNotificationSafe } from '@/lib/notifications'
 import { countUnresolvedRecommendations, EXPRESSED_INTEREST_STATUSES } from '@/lib/introductions/queue'
 import {
-  isWednesdayInNewYork, newYorkIsoWeekKey, openCardsFor, reminderIneligibility,
+  isWednesdayInNewYork,
+  REMINDER_RELEVANT_STATUSES, newYorkIsoWeekKey, openCardsFor, reminderIneligibility,
   REMINDER_PURPOSE, type OpenCard, type ReminderProfile,
 } from '@/lib/reminders/wednesdayIntroReminder'
 import { claimReminder, markAccepted, markFailed } from '@/lib/reminders/deliveryLedger'
 import { runExpiryStage } from '@/lib/introductions/expiryWorker'
+import { drainIntroductionOutbox } from '@/lib/introductions/newIntroductionOutbox'
 import { sendWednesdayIntroReminderEmail } from '@/lib/email'
 
 /**
@@ -20,11 +22,7 @@ const REMINDER_PAGE = 1000
 const REMINDER_MAX_PER_RUN = 300
 const REMINDER_DEADLINE_MS = 25_000   // Wednesday reminder stage
 const EXPIRY_BUDGET_MS = 15_000       // daily expiry stage, strictly after the reminder
-/** Statuses the Wednesday scan must read: open cards plus every status that counts as a RESPONSE. */
-const REMINDER_RELEVANT_STATUSES = [
-  'suggested', 'pending', 'accepted', 'accepted_pending_payment', 'admin_pending', 'approved',
-  'passed', 'declined', 'rejected', 'hidden', 'hidden_permanent', 'expired', 'archived',
-]
+const OUTBOX_STAGE_BUDGET_MS = 12_000 // daily new-introduction outbox drain, strictly last
 import { sendIntroductionReminderEmail, sendWaitingResponseEmail } from '@/lib/email'
 import {
   shouldRemindWaiting,
@@ -310,7 +308,25 @@ export async function GET(req: Request) {
     expiry = { error: 'expiry_stage_failed' }
   }
 
+  // ── PART 7: bounded DURABLE new-introduction outbox drain ───────────────────
+  //
+  // THIS IS THE RECOVERY PATH, and it is why a post-commit crash can no longer lose an email. The
+  // migration-070 trigger writes an outbox event inside the transaction that commits a newly
+  // visible card, so the obligation exists in the database whether or not the writing process
+  // survived. Writers also drain eagerly for promptness, but nothing depends on that: anything they
+  // missed is still sitting in the outbox and is sent here, daily.
+  //
+  // Runs last and on its own budget, so it can never delay the Wednesday email or the expiry stage.
+  let introOutbox: Awaited<ReturnType<typeof drainIntroductionOutbox>> | { error: string }
+  try {
+    introOutbox = await drainIntroductionOutbox(admin, { budgetMs: OUTBOX_STAGE_BUDGET_MS })
+  } catch {
+    console.error('[engagement-reminders] intro outbox stage failed (class): unhandled')
+    introOutbox = { error: 'intro_outbox_stage_failed' }
+  }
+
   return NextResponse.json({
+    introOutbox,
     wednesdayReminder: {
       ranToday: isWednesdayInNewYork(new Date(now)),
       considered: wedConsidered, claimed: wedClaimed, sent: wedSent, failed: wedFailed,
