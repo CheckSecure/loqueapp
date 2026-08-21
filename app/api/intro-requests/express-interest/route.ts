@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { readProfileById } from '@/lib/profiles/serverProfile'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextResponse } from 'next/server'
 import { createNotificationSafe } from '@/lib/notifications'
@@ -41,15 +42,32 @@ export async function POST(request: Request) {
       ? introReqCheck.target_user_id
       : introReqCheck.requester_id
 
-    const { data: otherProfileCheck } = await adminClient
-      .from('profiles')
-      .select('account_status')
-      .eq('id', otherUserIdCheck)
-      .maybeSingle()
+    // THE DYSON MAPPING. This read used to discard `error`, so ANY failure — permission, timeout,
+    // a future RLS change — became "This member is no longer active": a factual claim about another
+    // member, made from a query that never answered. The sibling gate in submitIntroRequest failed
+    // exactly that way after migration 058 and told members their provably-active targets were
+    // deactivated. A read that did not answer is now its own outcome, and it is retryable.
+    const targetRead = await readProfileById<{ account_status: string | null }>(
+      otherUserIdCheck, 'account_status', 'express-interest-target')
 
-    if (!otherProfileCheck || otherProfileCheck.account_status !== 'active') {
+    if (!targetRead.ok && targetRead.reason === 'unavailable') {
       return NextResponse.json(
-        { error: 'This member is no longer active', message: 'This member is no longer active. No credit was used.' },
+        { error: 'We could not verify this member right now. Please try again.',
+          message: 'We could not verify this member right now. No credit was used.', code: 'TARGET_UNAVAILABLE' },
+        { status: 503 }
+      )
+    }
+    if (!targetRead.ok) {
+      return NextResponse.json(
+        { error: 'This introduction is no longer available.',
+          message: 'This introduction is no longer available. No credit was used.', code: 'TARGET_MISSING' },
+        { status: 410 }
+      )
+    }
+    if (targetRead.profile.account_status !== 'active') {
+      return NextResponse.json(
+        { error: 'This member is no longer active',
+          message: 'This member is no longer active. No credit was used.', code: 'TARGET_INACTIVE' },
         { status: 410 }
       )
     }
@@ -70,15 +88,44 @@ export async function POST(request: Request) {
     const expresserId = user.id
     const otherUserId = isRequester ? introRequest.target_user_id : introRequest.requester_id
 
-    // STEP 2: Update intro request status to 'approved'. Check the result — a
-    // failed/blocked write must surface an error, never a false success.
-    const { error: statusUpdateErr } = await adminClient
+    // STEP 2: Record the interest — but only on a card that is still ACTIONABLE.
+    //
+    // The update used to be keyed on the id alone, so a card the member had already passed, or that
+    // had expired, would be silently REOPENED as 'approved' and could go on to finalize a match the
+    // member had declined. The status set is therefore part of the WHERE clause, which also makes
+    // this safe against a concurrent pass/expire: whichever write lands first wins, and the loser
+    // matches zero rows and is told the card is no longer actionable rather than proceeding.
+    //
+    // 'approved' is included so an idempotent retry (a lost response after a successful write) is a
+    // no-op success rather than a false rejection.
+    const ACTIONABLE_FOR_INTEREST = ['suggested', 'pending', 'approved']
+
+    if (!ACTIONABLE_FOR_INTEREST.includes(introRequest.status)) {
+      return NextResponse.json(
+        { error: 'This introduction is no longer available.',
+          message: 'This introduction is no longer available. No credit was used.', code: 'CARD_NOT_ACTIONABLE' },
+        { status: 409 }
+      )
+    }
+
+    const { data: updatedRows, error: statusUpdateErr } = await adminClient
       .from('intro_requests')
       .update({ status: 'approved', updated_at: new Date().toISOString() })
       .eq('id', introRequestId)
+      .in('status', ACTIONABLE_FOR_INTEREST)
+      .select('id')
+
+    if (!statusUpdateErr && (updatedRows ?? []).length === 0) {
+      // Lost a race with a pass/expire between the read above and this write.
+      return NextResponse.json(
+        { error: 'This introduction is no longer available.',
+          message: 'This introduction is no longer available. No credit was used.', code: 'CARD_NOT_ACTIONABLE' },
+        { status: 409 }
+      )
+    }
 
     if (statusUpdateErr) {
-      console.error('[Express Interest] status update failed:', statusUpdateErr)
+      console.error('[Express Interest] status update failed (class):', (statusUpdateErr as any)?.code ?? 'unknown')
       return NextResponse.json(
         { error: 'Could not record your interest. Please try again.' },
         { status: 500 },
@@ -98,11 +145,11 @@ export async function POST(request: Request) {
         console.error('[Express Interest] promoteIfResolved failed (non-fatal):', e))
 
     // Notify the other user that someone expressed interest
-    const { data: expresserProfile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', expresserId)
-      .single()
+    // service_role read (058). Only a display name, and only for the notification below; a failed
+    // read degrades the copy rather than failing the member's action.
+    const expresserRead = await readProfileById<{ full_name: string | null }>(
+      expresserId, 'full_name', 'express-interest-name')
+    const expresserProfile = expresserRead.ok ? expresserRead.profile : null
 
     // PRIVACY — reciprocal pairs (pair_id set): one member's interest MUST stay private until the
     // other independently expresses interest. Both already hold the "Introduced by Andrel" card
@@ -116,13 +163,13 @@ export async function POST(request: Request) {
         await createNotificationSafe({
           userId: otherUserId,
           type: 'admin_intro_nudge',
-          data: { fromUserId: expresserId, fromUserName: expresserProfile?.full_name },
+          data: { fromUserId: expresserId, fromUserName: expresserProfile?.full_name ?? undefined },
         })
       } else {
         await createNotificationSafe({
           userId: otherUserId,
           type: 'interest_received',
-          data: { fromUserId: expresserId, fromUserName: expresserProfile?.full_name },
+          data: { fromUserId: expresserId, fromUserName: expresserProfile?.full_name ?? undefined },
         })
       }
     }
@@ -171,6 +218,10 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error('[Express Interest] Error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    // NEVER return the raw exception. It has carried database messages ('permission denied for
+    // table profiles'), which leak schema to a member and read as if THEY did something wrong.
+    return NextResponse.json(
+      { error: 'Something went wrong recording your interest. Please try again.', code: 'UNEXPECTED' },
+      { status: 500 })
   }
 }

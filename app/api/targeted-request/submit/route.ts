@@ -90,15 +90,44 @@ export async function POST(request: Request) {
       expires_at: targetedRequest.expires_at
     })
 
-    // 4. THEN deduct premium credit (only after successful insert)
+    // 4. THEN deduct premium credit (only after successful insert).
+    //
+    // This is a LEGITIMATE canonical debit: it already recomputes balance from free + premium, so
+    // the invariant holds, and the `currentPremium < 1` gate above keeps it non-negative. What it
+    // lacked was an attributable event — a credit moved with nothing recording why. The premium
+    // guard is also moved into the WHERE clause so two concurrent submissions cannot both read 1
+    // and both write 0.
     const newPremium = currentPremium - 1
-    const { error: creditError } = await adminClient
+    const { data: creditRows, error: creditError } = await adminClient
       .from('meeting_credits')
       .update({
         premium_credits: newPremium,
         balance: currentFree + newPremium
       })
       .eq('user_id', user.id)
+      .gte('premium_credits', 1)     // lost race -> zero rows, never a negative balance
+      .select('user_id')
+
+    if (!creditError && (creditRows ?? []).length === 0) {
+      console.error('[Targeted Request] credit deduction lost a race; rolling back')
+      await adminClient.from('targeted_requests').delete().eq('id', targetedRequest.id)
+      return NextResponse.json({
+        error: 'Premium credit required',
+        message: 'Your premium credit was used elsewhere. Nothing was charged.'
+      }, { status: 409 })
+    }
+
+    if (!creditError) {
+      await adminClient.from('credit_transactions').insert({
+        user_id: user.id,
+        amount: -1,
+        type: 'deduction',
+        note: 'Targeted request submitted',
+        event_key: `targeted_request:${targetedRequest.id}`,
+        source_kind: 'targeted_request_debit',
+        source_id: targetedRequest.id,
+      })
+    }
 
     if (creditError) {
       console.error('[Targeted Request] Credit deduction failed, rolling back:', creditError)

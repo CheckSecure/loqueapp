@@ -1,7 +1,9 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { randomUUID } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { readProfileById, readProfilesByIds } from '@/lib/profiles/serverProfile'
 import { normalizeEmail, findAuthUserByEmail, registrationExistingState } from '@/lib/invitations'
 import { parseMultiSelectField } from '@/lib/profile/multiSelect'
 import { revalidatePath } from 'next/cache'
@@ -180,11 +182,14 @@ export async function submitIntroRequest(targetUserId: string, note?: string) {
   const { supabase, user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
 
-  const { data: target } = await supabase
-    .from('profiles')
-    .select('account_status')
-    .eq('id', targetUserId)
-    .maybeSingle()
+  // service_role read: migration 058 revoked authenticated SELECT on public.profiles, so this
+  // gate was failing open-ended — an unanswered read looked identical to a deactivated member.
+  const targetRead = await readProfileById<{ account_status: string | null }>(
+    targetUserId, 'account_status', 'submit-intro-target')
+  if (!targetRead.ok && targetRead.reason === 'unavailable') {
+    return { error: 'We could not verify this member right now. Please try again.' }
+  }
+  const target = targetRead.ok ? targetRead.profile : null
 
   if (!target || target.account_status !== 'active') {
     return { error: 'This member is no longer active' }
@@ -852,13 +857,12 @@ export async function scheduleMeeting(formData: FormData) {
   if (error) return { error: error.message }
 
   // Create notification for recipient
-  const { data: requesterProfile } = await supabase
-    .from('profiles')
-    .select('full_name')
-    .eq('id', user.id)
-    .single()
+  const requesterRead = await readProfileById<{ full_name: string | null }>(
+    user.id, 'full_name', 'meeting-requester-name')
+  const requesterProfile = requesterRead.ok ? requesterRead.profile : null
 
-  const requesterName = requesterProfile?.full_name || user.email
+  // user.email is optional on the auth user; keep this a plain string for the email templates.
+  const requesterName = requesterProfile?.full_name || user.email || 'A member'
   const notifInsert = await adminClient.from('notifications').insert({
     user_id: recipientId,
     type: 'meeting_request',
@@ -876,13 +880,12 @@ export async function scheduleMeeting(formData: FormData) {
   }
 
   // Send email notification
-  const { data: recipientProfile } = await supabase
-    .from('profiles')
-    .select('full_name, email')
-    .eq('id', recipientId)
-    .single()
+  const recipientRead = await readProfileById<{ full_name: string | null; email: string | null }>(
+    recipientId, 'full_name, email', 'meeting-recipient')
+  const recipientProfile = recipientRead.ok ? recipientRead.profile : null
 
-  console.log('[scheduleMeeting] Recipient profile:', recipientProfile)
+  // Was logging the whole profile row — name and email — on every meeting request.
+  console.log('[scheduleMeeting] recipient resolved:', recipientProfile ? 'yes' : 'no')
   if (recipientProfile?.email) {
     // UTC is stored/scheduled unchanged; this only formats the email to show the
     // scheduler's local time (same IANA zone the request screen used) AND UTC.
@@ -1039,10 +1042,9 @@ export async function acceptMeeting(meetingId: string) {
     })
 
     // Send email
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, full_name, email')
-      .in('id', [user.id, otherUserId])
+    const pairRead = await readProfilesByIds<{ id: string; full_name: string | null; email: string | null }>(
+      [user.id, otherUserId], 'id, full_name, email', 'meeting-pair')
+    const profiles = pairRead.ok ? pairRead.profiles : []
 
     const accepterProfile = profiles?.find(p => p.id === user.id)
     const otherProfile = profiles?.find(p => p.id === otherUserId)
@@ -1187,10 +1189,9 @@ export async function declineMeeting(meetingId: string) {
     })
 
     // Send email
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, full_name, email')
-      .in('id', [user.id, otherUserId])
+    const pairRead = await readProfilesByIds<{ id: string; full_name: string | null; email: string | null }>(
+      [user.id, otherUserId], 'id, full_name, email', 'meeting-pair')
+    const profiles = pairRead.ok ? pairRead.profiles : []
 
     const declinerProfile = profiles?.find(p => p.id === user.id)
     const otherProfile = profiles?.find(p => p.id === otherUserId)
@@ -1345,10 +1346,9 @@ export async function rescheduleMeeting(meetingId: string, formData: FormData) {
   })
 
   // Send email
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id, full_name, email')
-    .in('id', [user.id, otherUserId])
+  const pairRead = await readProfilesByIds<{ id: string; full_name: string | null; email: string | null }>(
+    [user.id, otherUserId], 'id, full_name, email', 'meeting-pair')
+  const profiles = pairRead.ok ? pairRead.profiles : []
 
   const reschedulerProfile = profiles?.find(p => p.id === user.id)
   const otherProfile = profiles?.find(p => p.id === otherUserId)
@@ -1415,10 +1415,10 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
   })
 
   // Get profiles for notifications
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id, full_name, email, title, company')
-    .in('id', [userAId, userBId])
+  const forceRead = await readProfilesByIds<{
+    id: string; full_name: string | null; email: string | null; title: string | null; company: string | null
+  }>([userAId, userBId], 'id, full_name, email, title, company', 'force-match-pair')
+  const profiles = forceRead.ok ? forceRead.profiles : []
 
   const profileA = profiles?.find(p => p.id === userAId)
   const profileB = profiles?.find(p => p.id === userBId)
@@ -1451,8 +1451,8 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
           profileA.email,
           profileA.full_name || 'there',
           profileB.full_name || 'New Connection',
-          profileB.title,
-          profileB.company
+          profileB.title ?? undefined,
+          profileB.company ?? undefined
         )
       } catch (e) {
         console.error('Email error:', e)
@@ -1465,8 +1465,8 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
           profileB.email,
           profileB.full_name || 'there',
           profileA.full_name || 'New Connection',
-          profileA.title,
-          profileA.company
+          profileA.title ?? undefined,
+          profileA.company ?? undefined
         )
       } catch (e) {
         console.error('Email error:', e)
@@ -1515,16 +1515,57 @@ export async function adminUpdateUser(userId: string, updates: {
     if (error) return { error: error.message }
   }
 
-  // Update credits if provided
+  // Update credits if provided.
+  //
+  // THIS WROTE `balance` ALONE. Two consequences, both real:
+  //   1. it broke the stored invariant balance = free_credits + premium_credits on every call, and
+  //      on an UPSERT-insert it created a row with balance = N while free and premium stayed 0;
+  //   2. it accepted ANY number, including a negative one — it is the only writer in the codebase
+  //      with no lower bound, and therefore the only one that can produce a negative balance.
+  //
+  // An admin adjustment is legitimate, so it is kept — but it now sets the FREE bucket, recomputes
+  // balance from free + premium, refuses a negative, and leaves an attributable ledger row. A
+  // credit must not move without an event that says who moved it and why.
   if (updates.credits !== undefined) {
+    const next = Number(updates.credits)
+    if (!Number.isInteger(next) || next < 0) {
+      return { error: 'Credits must be a whole number of zero or more' }
+    }
+
+    const { data: existing, error: readErr } = await admin
+      .from('meeting_credits')
+      .select('free_credits, premium_credits')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (readErr) return { error: 'Could not read the current credit balance. Please try again.' }
+
+    const premium = Math.max(0, existing?.premium_credits ?? 0)
+    const previousFree = Math.max(0, existing?.free_credits ?? 0)
+
     const { error } = await admin
       .from('meeting_credits')
       .upsert({
         user_id: userId,
-        balance: updates.credits
+        free_credits: next,
+        premium_credits: premium,
+        balance: next + premium,          // the invariant, recomputed rather than assumed
       }, { onConflict: 'user_id' })
 
-    if (error) return { error: error.message }
+    if (error) return { error: 'Could not update credits. Please try again.' }
+
+    // Attributable, append-only, and never idempotent by accident: a deliberate re-adjustment to
+    // the same value is a second real event, so the key is unique per adjustment.
+    const delta = next - previousFree
+    if (delta !== 0) {
+      await admin.from('credit_transactions').insert({
+        user_id: userId,
+        amount: delta,
+        type: delta > 0 ? 'admin_grant' : 'admin_deduction',
+        note: 'Manual admin credit adjustment',
+        event_key: `admin_adjust:${randomUUID()}`,
+        source_kind: 'admin_adjustment',
+      })
+    }
   }
 
   revalidatePath('/dashboard/admin')

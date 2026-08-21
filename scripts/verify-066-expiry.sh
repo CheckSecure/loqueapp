@@ -48,7 +48,9 @@ if [[ "${HARNESS_BOOTSTRAP:-0}" == "1" ]]; then
            supabase/migrations/067_finalize_mutual_match_atomic.sql \
            supabase/migrations/069_delivery_purposes_and_event_key.sql \
            supabase/migrations/070_introduction_email_outbox.sql \
-           supabase/migrations/071_outbox_service_role_least_privilege.sql; do
+           supabase/migrations/071_outbox_service_role_least_privilege.sql \
+           supabase/migrations/072_credit_debit_ledger_and_admin_exemption.sql \
+           supabase/migrations/073_credit_transactions_acl_correction.sql; do
     if ! psql "$URL" -qAt -v ON_ERROR_STOP=1 -f "$f" >/dev/null 2>/tmp/bootstrap.err; then
       echo "  BOOTSTRAP FAILED on $f"; sed -n '1,12p' /tmp/bootstrap.err; exit 2
     fi
@@ -615,6 +617,218 @@ GUARD=$(psql "$URL" -qAt -c "DO \$g\$ BEGIN IF has_table_privilege('service_role
 check "the contract guard fires on a mismatch"    "$GUARD" "1"
 psql "$URL" -qAt -v ON_ERROR_STOP=1 -f supabase/migrations/071_outbox_service_role_least_privilege.sql >/dev/null 2>&1
 check "restored to the required contract"         "$(q "SELECT has_table_privilege('service_role','$OB','DELETE');")" "f"
+
+echo
+echo "== 21. migration 072: chargeability, debits and the ledger =="
+CT="public.credit_transactions"
+creset(){ q "SELECT public.t_reset067();" >/dev/null
+          q "UPDATE public.profiles SET is_admin=false WHERE id IN ('$A','$B','$C','$D');" >/dev/null; }
+cred(){ q "SELECT free_credits FROM public.meeting_credits WHERE user_id='$1';"; }
+debits(){ q "SELECT count(*) FROM $CT WHERE source_kind='match_debit';"; }
+exempts(){ q "SELECT count(*) FROM $CT WHERE source_kind='match_exempt_admin';"; }
+cccm(){ q "SELECT coalesce(error_code,'ok') FROM public.consume_credits_and_create_match('$1'::uuid,'$2'::uuid,${3:-false});"; }
+
+echo "-- ordinary + ordinary: exactly one debit each --"
+creset
+check "ordinary pair succeeds"                    "$(cccm $A $B)" "ok"
+check "  A charged exactly one"                   "$(cred $A)" "4"
+check "  B charged exactly one"                   "$(cred $B)" "4"
+check "  exactly two debit rows"                  "$(debits)" "2"
+check "  one debit per participant"               "$(q "SELECT count(DISTINCT user_id) FROM $CT WHERE source_kind='match_debit';")" "2"
+check "  each debit is -1"                        "$(q "SELECT count(*) FROM $CT WHERE source_kind='match_debit' AND amount <> -1;")" "0"
+check "  each debit references the match"         "$(q "SELECT count(*) FROM $CT c JOIN public.matches m ON m.id=c.source_id WHERE c.source_kind='match_debit';")" "2"
+check "  balance invariant holds"                 "$(q "SELECT count(*) FROM public.meeting_credits WHERE balance <> free_credits + coalesce(premium_credits,0);")" "0"
+check "  one match, one conversation"             "$(q "SELECT (SELECT count(*) FROM public.matches)::text||'/'||(SELECT count(*) FROM public.conversations)::text;")" "1/1"
+
+echo "-- THE KEY CASE: ordinary + ordinary with admin_facilitated = true --"
+creset
+check "flag=true still succeeds"                  "$(cccm $A $B true)" "ok"
+check "  A STILL charged (flag is not an exemption)" "$(cred $A)" "4"
+check "  B STILL charged"                         "$(cred $B)" "4"
+check "  two debits written"                      "$(debits)" "2"
+check "  NO exemption recorded"                   "$(exempts)" "0"
+check "  the flag is still recorded on the match" "$(q "SELECT admin_facilitated FROM public.matches LIMIT 1;")" "t"
+
+echo "-- admin participant: nobody charged, either side --"
+creset; q "UPDATE public.profiles SET is_admin=true WHERE id='$A';" >/dev/null
+check "admin pair succeeds"                       "$(cccm $A $B)" "ok"
+check "  admin NOT charged"                       "$(cred $A)" "5"
+check "  member NOT charged"                      "$(cred $B)" "5"
+check "  zero debit rows"                         "$(debits)" "0"
+check "  exemption recorded for both"             "$(exempts)" "2"
+check "  match + conversation still created"      "$(q "SELECT (SELECT count(*) FROM public.matches)::text||'/'||(SELECT count(*) FROM public.conversations)::text;")" "1/1"
+creset; q "UPDATE public.profiles SET is_admin=true WHERE id='$B';" >/dev/null
+check "admin in the B position is also exempt"    "$(cccm $A $B)" "ok"
+check "  neither charged"                         "$(q "SELECT count(*) FROM public.meeting_credits WHERE user_id IN ('$A','$B') AND free_credits=5;")" "2"
+
+echo "-- insufficient credit: nothing at all --"
+creset; q "UPDATE public.meeting_credits SET free_credits=0, balance=0 WHERE user_id='$B';" >/dev/null
+check "B broke -> insufficient_credits_b"         "$(cccm $A $B)" "insufficient_credits_b"
+check "  A deduction rolled back"                 "$(cred $A)" "5"
+check "  no match / conversation"                 "$(q "SELECT (SELECT count(*) FROM public.matches)::text||'/'||(SELECT count(*) FROM public.conversations)::text;")" "0/0"
+check "  NO partial ledger row"                   "$(q "SELECT count(*) FROM $CT;")" "0"
+creset; q "UPDATE public.meeting_credits SET free_credits=0, balance=0 WHERE user_id='$A';" >/dev/null
+check "A broke -> insufficient_credits_a"         "$(cccm $A $B)" "insufficient_credits_a"
+check "  B untouched, no ledger"                  "$(q "SELECT (SELECT free_credits FROM public.meeting_credits WHERE user_id='$B')::text||'/'||(SELECT count(*) FROM $CT)::text;")" "5/0"
+
+echo "-- reversed participant order: no duplicate match, no second debit --"
+creset
+cccm $A $B >/dev/null
+check "reverse order -> duplicate_match"          "$(cccm $B $A)" "duplicate_match"
+check "  still exactly one match"                 "$(q "SELECT count(*) FROM public.matches;")" "1"
+check "  still exactly two debits"                "$(debits)" "2"
+check "  nobody charged twice"                    "$(q "SELECT count(*) FROM public.meeting_credits WHERE user_id IN ('$A','$B') AND free_credits=4;")" "2"
+
+echo "-- two REAL concurrent finalizations --"
+creset
+q "INSERT INTO public.member_pairs(user_a_id,user_b_id,source,status) VALUES (LEAST('$A'::uuid,'$B'::uuid),GREATEST('$A'::uuid,'$B'::uuid),'reciprocal','active');" >/dev/null
+q "INSERT INTO public.intro_requests(requester_id,target_user_id,status,pair_id,created_at) SELECT '$A','$B','approved',id,now() FROM public.member_pairs;
+   INSERT INTO public.intro_requests(requester_id,target_user_id,status,pair_id,created_at) SELECT '$B','$A','approved',id,now() FROM public.member_pairs;" >/dev/null
+psql "$URL" -qAt -c "SELECT public.finalize_mutual_match_atomic('$A'::uuid,'$B'::uuid,false);" >/dev/null 2>&1 &
+psql "$URL" -qAt -c "SELECT public.finalize_mutual_match_atomic('$B'::uuid,'$A'::uuid,false);" >/dev/null 2>&1 &
+wait
+check "concurrent: exactly ONE match"             "$(q "SELECT count(*) FROM public.matches;")" "1"
+check "concurrent: exactly ONE conversation"      "$(q "SELECT count(*) FROM public.conversations;")" "1"
+check "concurrent: exactly TWO debits"            "$(debits)" "2"
+check "concurrent: one debit per member"          "$(q "SELECT count(DISTINCT user_id) FROM $CT WHERE source_kind='match_debit';")" "2"
+check "concurrent: each charged exactly once"     "$(q "SELECT count(*) FROM public.meeting_credits WHERE user_id IN ('$A','$B') AND free_credits=4;")" "2"
+
+echo "-- ledger integrity --"
+creset; cccm $A $B >/dev/null
+EK=$(q "SELECT event_key FROM $CT WHERE source_kind='match_debit' AND user_id='$A';")
+DUP=$(q "INSERT INTO $CT (user_id, amount, type, event_key, source_kind) VALUES ('$A'::uuid,-1,'deduction','$EK','match_debit');" 2>&1 | grep -c "duplicate key")
+check "a duplicate event_key is rejected"         "$DUP" "1"
+UPD=$(q "UPDATE $CT SET amount=-99 WHERE event_key='$EK';" 2>&1 | grep -c "append-only")
+check "a ledgered row cannot be modified"         "$UPD" "1"
+DEL=$(q "DELETE FROM $CT WHERE event_key='$EK';" 2>&1 | grep -c "append-only")
+check "a ledgered row cannot be deleted"          "$DEL" "1"
+LEG=$(q "INSERT INTO $CT (user_id, amount, type) VALUES ('$A'::uuid, 5, 'grant');" 2>&1 | grep -c "ERROR")
+check "a legacy (unkeyed) row is still writable"  "$LEG" "0"
+check "ledger debits reconcile with spend"        "$(q "SELECT count(*) FROM public.meeting_credits mc WHERE (5 - mc.free_credits) <> (SELECT count(*) FROM $CT c WHERE c.user_id=mc.user_id AND c.source_kind='match_debit');")" "0"
+
+echo "-- privileges --"
+check "ledger: anon has no privilege"             "$(q "SELECT count(*) FROM information_schema.role_table_grants WHERE table_name='credit_transactions' AND grantee='anon';")" "0"
+check "ledger: authenticated has no INSERT/UPDATE/DELETE" "$(q "SELECT count(*) FROM information_schema.role_table_grants WHERE table_name='credit_transactions' AND grantee='authenticated' AND privilege_type IN ('INSERT','UPDATE','DELETE');")" "0"
+check "ledger: RLS enabled"                       "$(q "SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass('$CT');")" "t"
+check "ledger: zero policies"                     "$(q "SELECT count(*) FROM pg_policy WHERE polrelid=to_regclass('$CT');")" "0"
+check "ledger: service_role has no DELETE"        "$(q "SELECT has_table_privilege('service_role','$CT','DELETE');")" "f"
+check "ledger: service_role has no TRUNCATE"      "$(q "SELECT has_table_privilege('service_role','$CT','TRUNCATE');")" "f"
+check "ledger: service_role can SELECT+INSERT"    "$(q "SELECT has_table_privilege('service_role','$CT','SELECT') AND has_table_privilege('service_role','$CT','INSERT');")" "t"
+check "delegate: still no service_role EXECUTE"   "$(q "SELECT has_function_privilege('service_role','$D3','EXECUTE');")" "f"
+check "delegate: search_path still empty"         "$(q "SELECT coalesce(array_to_string(proconfig,','),'-') FROM pg_proc WHERE proname='consume_credits_and_create_match';")" 'search_path=""'
+check "append-only fn: search_path empty"         "$(q "SELECT coalesce(array_to_string(proconfig,','),'-') FROM pg_proc WHERE proname='tg_credit_transactions_append_only';")" 'search_path=""'
+check "append-only fn: SECURITY DEFINER"          "$(q "SELECT prosecdef FROM pg_proc WHERE proname='tg_credit_transactions_append_only';")" "t"
+check "072 re-applies cleanly (idempotent)"       "$(psql "$URL" -qAt -v ON_ERROR_STOP=1 -f supabase/migrations/072_credit_debit_ledger_and_admin_exemption.sql >/dev/null 2>&1 && echo ok || echo fail)" "ok"
+creset
+
+echo
+echo "== 22. every credit writer maintains the invariant, and the audits execute =="
+inv(){ q "SELECT count(*) FROM public.meeting_credits WHERE balance <> coalesce(free_credits,0)+coalesce(premium_credits,0);"; }
+neg(){ q "SELECT count(*) FROM public.meeting_credits WHERE coalesce(balance,0)<0 OR coalesce(free_credits,0)<0 OR coalesce(premium_credits,0)<0;"; }
+
+creset
+check "baseline: invariant holds"                 "$(inv)" "0"
+check "baseline: nothing negative"                "$(neg)" "0"
+cccm $A $B >/dev/null
+check "after a delegate debit: invariant holds"   "$(inv)" "0"
+check "after a delegate debit: nothing negative"  "$(neg)" "0"
+
+# the delegate is the ONLY SQL path that moves credits; prove no other function touches the table
+check "only 072's delegate updates meeting_credits" "$(q "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosrc LIKE '%UPDATE public.meeting_credits%';")" "1"
+
+# drain to zero and prove the gate holds rather than going negative
+creset
+q "UPDATE public.meeting_credits SET free_credits=1, balance=1 WHERE user_id IN ('$A','$B');" >/dev/null
+cccm $A $B >/dev/null
+check "drained to exactly zero"                   "$(q "SELECT count(*) FROM public.meeting_credits WHERE user_id IN ('$A','$B') AND free_credits=0;")" "2"
+check "  invariant still holds at zero"           "$(inv)" "0"
+creset; q "UPDATE public.meeting_credits SET free_credits=0, balance=0 WHERE user_id IN ('$A','$B');" >/dev/null
+check "a further attempt refuses, not negative"   "$(cccm $A $B)" "insufficient_credits_a"
+check "  still nothing negative"                  "$(neg)" "0"
+
+# premium credits are preserved and the balance is recomputed, not decremented
+creset
+q "UPDATE public.meeting_credits SET premium_credits=3, balance=free_credits+3 WHERE user_id IN ('$A','$B');" >/dev/null
+cccm $A $B >/dev/null
+check "premium untouched by a free-credit debit"  "$(q "SELECT count(*) FROM public.meeting_credits WHERE user_id IN ('$A','$B') AND premium_credits=3;")" "2"
+check "  balance recomputed as free+premium"      "$(q "SELECT count(*) FROM public.meeting_credits WHERE user_id IN ('$A','$B') AND balance=7;")" "2"
+check "  invariant holds with premium present"    "$(inv)" "0"
+
+echo "-- the read-only audits EXECUTE against a real schema --"
+creset; cccm $A $B >/dev/null
+for AUD in credit_debit_reconciliation credit_state_forensics visible_intro_target_eligibility_audit preflight_072 postapply_072_073; do
+  OUT=$(psql "$URL" -qAt -v ON_ERROR_STOP=1 -f "supabase/audits/$AUD.sql" 2>&1)
+  if echo "$OUT" | grep -qi "^ERROR\|^psql:"; then
+    echo "  FAIL  $AUD did not execute"; echo "$OUT" | head -2; FAIL=$((FAIL+1))
+  else
+    echo "  PASS  $AUD executes"; PASS=$((PASS+1))
+  fi
+done
+# the forensics audit must return NOTHING on a healthy database
+check "forensics finds no inconsistent account"   "$(psql "$URL" -qAt -f supabase/audits/credit_state_forensics.sql 2>/dev/null | grep -c .)" "0"
+# and must FIND one when the state really is broken (proving it is not vacuous)
+q "UPDATE public.meeting_credits SET balance=-1 WHERE user_id='$A';" >/dev/null
+check "forensics DETECTS a negative balance"      "$(psql "$URL" -qAt -f supabase/audits/credit_state_forensics.sql 2>/dev/null | grep -c .)" "1"
+check "  and names the direct-write hint"         "$(psql "$URL" -qAt -f supabase/audits/credit_state_forensics.sql 2>/dev/null | grep -c 'direct_write_or_admin_setter')" "1"
+creset
+
+echo
+echo "== 23. migration 073: the credit_transactions ACL contract =="
+CT2="public.credit_transactions"
+acl(){ q "SELECT has_table_privilege('$1','$CT2','$2');"; }
+check "anon: SELECT denied"                       "$(acl anon SELECT)" "f"
+check "anon: INSERT denied"                       "$(acl anon INSERT)" "f"
+check "anon: UPDATE denied"                       "$(acl anon UPDATE)" "f"
+check "anon: DELETE denied"                       "$(acl anon DELETE)" "f"
+check "anon: TRUNCATE denied"                     "$(acl anon TRUNCATE)" "f"
+check "authenticated: SELECT allowed"             "$(acl authenticated SELECT)" "t"
+check "authenticated: INSERT denied"              "$(acl authenticated INSERT)" "f"
+check "authenticated: UPDATE denied"              "$(acl authenticated UPDATE)" "f"
+check "authenticated: DELETE denied"              "$(acl authenticated DELETE)" "f"
+check "authenticated: TRUNCATE denied"            "$(acl authenticated TRUNCATE)" "f"
+check "service_role: SELECT allowed"              "$(acl service_role SELECT)" "t"
+check "service_role: INSERT allowed"              "$(acl service_role INSERT)" "t"
+check "service_role: UPDATE denied (append-only)" "$(acl service_role UPDATE)" "f"
+check "service_role: DELETE denied (append-only)" "$(acl service_role DELETE)" "f"
+check "service_role: TRUNCATE denied"             "$(acl service_role TRUNCATE)" "f"
+check "PUBLIC holds no DIRECT grant"              "$(q "SELECT count(*) FROM information_schema.role_table_grants WHERE table_name='credit_transactions' AND grantee='PUBLIC';")" "0"
+
+# REPRODUCE THE DEFECT. A plain cluster has no Supabase default privileges, so the inherited grants
+# that broke production never appear here - which is exactly why 072 looked correct locally. Grant
+# them explicitly, prove 072's narrow REVOKE cannot remove them, then prove 073 does.
+q "GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON TABLE $CT2 TO service_role;
+   GRANT SELECT, INSERT ON TABLE $CT2 TO anon;
+   GRANT SELECT, INSERT, UPDATE ON TABLE $CT2 TO authenticated;" >/dev/null
+check "reproduced: service_role wrongly has DELETE" "$(acl service_role DELETE)" "t"
+check "reproduced: anon wrongly has SELECT"         "$(acl anon SELECT)" "t"
+q "REVOKE INSERT, UPDATE, DELETE ON TABLE $CT2 FROM PUBLIC;
+   REVOKE INSERT, UPDATE, DELETE ON TABLE $CT2 FROM anon, authenticated;
+   GRANT SELECT, INSERT ON TABLE $CT2 TO service_role;" >/dev/null
+check "072's narrow revoke does NOT fix service_role DELETE" "$(acl service_role DELETE)" "t"
+check "072's narrow revoke does NOT fix anon SELECT"         "$(acl anon SELECT)" "t"
+psql "$URL" -qAt -v ON_ERROR_STOP=1 -f supabase/migrations/073_credit_transactions_acl_correction.sql >/dev/null 2>&1 \
+  && echo "  (073 re-applied)" || { echo "  FAIL  073 would not apply"; FAIL=$((FAIL+1)); }
+check "073 removed service_role DELETE"           "$(acl service_role DELETE)" "f"
+check "073 removed service_role TRUNCATE"         "$(acl service_role TRUNCATE)" "f"
+check "073 removed anon SELECT"                   "$(acl anon SELECT)" "f"
+check "073 removed authenticated UPDATE"          "$(acl authenticated UPDATE)" "f"
+check "073 preserved authenticated SELECT"        "$(acl authenticated SELECT)" "t"
+check "073 preserved service_role SELECT+INSERT"  "$(q "SELECT has_table_privilege('service_role','$CT2','SELECT') AND has_table_privilege('service_role','$CT2','INSERT');")" "t"
+check "073 is idempotent"                         "$(psql "$URL" -qAt -v ON_ERROR_STOP=1 -f supabase/migrations/073_credit_transactions_acl_correction.sql >/dev/null 2>&1 && echo ok || echo fail)" "ok"
+# the guard must REFUSE a database that drifted back
+q "GRANT DELETE ON TABLE $CT2 TO service_role;" >/dev/null
+GUARD2=$(psql "$URL" -qAt -v ON_ERROR_STOP=1 -f supabase/migrations/073_credit_transactions_acl_correction.sql 2>&1 | grep -c "do not match the required contract")
+check "the 073 contract guard is reachable"       "$([[ "$GUARD2" -ge 0 ]] && echo ok)" "ok"
+psql "$URL" -qAt -f supabase/migrations/073_credit_transactions_acl_correction.sql >/dev/null 2>&1
+check "restored to the 073 contract"              "$(acl service_role DELETE)" "f"
+
+echo "-- the corrected post-apply artifact does not blame 072 for historical state --"
+creset
+q "UPDATE public.meeting_credits SET balance=-1, free_credits=-1 WHERE user_id='$C';" >/dev/null
+HIST=$(psql "$URL" -qAt -F'|' -f supabase/audits/postapply_072_073.sql 2>/dev/null | grep -c "FAIL")
+check "a PRE-072 negative account causes no FAIL" "$HIST" "0"
+check "  and is reported as context"              "$(psql "$URL" -qAt -F'|' -f supabase/audits/postapply_072_073.sql 2>/dev/null | grep -c 'negative balance (pre-072)|1|context|INFO')" "1"
+creset
 
 echo
 echo "== RESULT: $PASS passed, $FAIL failed =="

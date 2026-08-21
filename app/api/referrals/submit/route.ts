@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
 import { isMissingColumnError } from '@/lib/db/isMissingColumn'
 import { validateFullName } from '@/lib/validation/fullName'
+import { readSelfEligibility } from '@/lib/profiles/serverProfile'
 
 // Basic email format check. Does NOT normalize Unicode lookalikes or punycode — V1 accepted gap.
 // A determined user could submit visually similar addresses that bypass this check.
@@ -35,26 +36,40 @@ export async function POST(req: Request) {
     )
   }
 
-  const { data: referrerProfile } = await supabase
-    .from('profiles')
-    .select('id, email, account_status')
-    .eq('id', user.id)
-    .single()
+  // NOMINATOR eligibility, read as service_role.
+  //
+  // This used to read public.profiles with the CALLER's client. Migration 058 revoked
+  // SELECT on that table from authenticated, so the query started failing — and because only
+  // `data` was destructured, a PERMISSION ERROR was reported to the member as
+  // "Profile not found", blaming their profile for a privilege change. get_my_profile() is not a
+  // substitute here: it returns neither email nor account_status.
+  //
+  // 058 deliberately preserved service_role, so the read moves to the server, selects only the
+  // three fields this route needs, and keeps the three outcomes distinct: a genuinely missing row,
+  // a deactivated account, and a read that did not answer.
+  const referrer = await readSelfEligibility(user.id)
 
-  if (!referrerProfile) {
+  if (!referrer.ok && referrer.reason === 'unavailable') {
+    // The database did not answer. Do NOT claim anything about the member's profile.
     return NextResponse.json(
-      { ok: false, error: 'Profile not found', code: 'PROFILE_NOT_FOUND' },
-      { status: 500 }
+      { ok: false, error: 'We could not verify your account right now. Please try again.', code: 'PROFILE_UNAVAILABLE' },
+      { status: 503 }
     )
   }
-
+  if (!referrer.ok && referrer.reason === 'not_found') {
+    return NextResponse.json(
+      { ok: false, error: 'Profile not found', code: 'PROFILE_NOT_FOUND' },
+      { status: 404 }
+    )
+  }
   // Supabase auth sessions remain valid after deactivation — must check account_status explicitly.
-  if (referrerProfile.account_status !== 'active') {
+  if (!referrer.ok) {
     return NextResponse.json(
       { ok: false, error: 'Your account is not active', code: 'REFERRER_INACTIVE' },
       { status: 403 }
     )
   }
+  const referrerProfile = referrer.profile
 
   // ── Body parsing ──────────────────────────────────────────────────────────
   let body: any
@@ -104,7 +119,9 @@ export async function POST(req: Request) {
 
   // ── Validation 3: self-referral ───────────────────────────────────────────
   // Case-insensitive ASCII comparison only — Unicode lookalike normalization is a V1 accepted gap.
-  if (targetEmail.toLowerCase() === referrerProfile.email.toLowerCase()) {
+  // referrerProfile.email is nullable in the base table. A member with no recorded address cannot
+  // be self-referring, so an absent email simply skips this check rather than throwing.
+  if (referrerProfile.email && targetEmail.toLowerCase() === referrerProfile.email.toLowerCase()) {
     return NextResponse.json(
       { ok: false, error: 'You cannot refer yourself', code: 'SELF_REFERRAL' },
       { status: 400 }

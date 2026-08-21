@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import AdminBatchReview from './AdminBatchReview'
 
 export default async function AdminPendingBatches() {
@@ -24,7 +25,9 @@ export default async function AdminPendingBatches() {
       const suggestedIds = Array.from(new Set((suggestions ?? []).map((s: any) => s.suggested_id)))
       const allIds = Array.from(new Set([...recipientIds, ...suggestedIds]))
 
-      const { data: profileRows } = await supabase
+      // service_role: migration 058 revoked authenticated SELECT on public.profiles, so this
+      // admin review panel could no longer resolve any of the names it renders.
+      const { data: profileRows } = await createAdminClient()
         .from('profiles')
         .select('id, full_name, title, company, role_type, bio, email')
         .in('id', allIds)

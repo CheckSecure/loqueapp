@@ -12,6 +12,8 @@ const state = vi.hoisted(() => ({
     insert: { waitlist: { data: { id: 'wl1' }, error: null }, referrals: { data: { id: 're1' }, error: null } },
     insertErrorOnce: {} as Record<string, any>, // return this error on the FIRST insert to `table`, then clear
   } as any,
+  /** Set to simulate a FAILED nominator read (permission/timeout) — must not read as "not found". */
+  referrerProfileError: null as any,
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -32,8 +34,18 @@ vi.mock('@/lib/supabase/admin', () => ({
         if (table === 'waitlist') state.lastWaitlistInsert = payload
         return b
       }
-      b.eq = () => b; b.neq = () => b; b.in = () => b; b.ilike = () => b
-      b.maybeSingle = async () => state.admin.select[table] ?? { data: null, error: null }
+      // The route now makes TWO admin reads of `profiles`: the NOMINATOR (by id) and the NOMINEE
+      // (by email, via .ilike). They used to be distinguishable because the nominator came from the
+      // caller-scoped client — migration 058 revoked that, so both are server reads now and the mock
+      // has to tell them apart the same way the route does.
+      b.eq = () => b; b.neq = () => b; b.in = () => b
+      b.ilike = () => { b.byEmail = true; return b }
+      b.maybeSingle = async () => {
+        if (table === 'profiles' && !b.byEmail) {
+          return state.referrerProfileError ?? { data: state.referrerProfile, error: null }
+        }
+        return state.admin.select[table] ?? { data: null, error: null }
+      }
       b.single = async () => {
         if (!b.isInsert) return state.admin.select[table] ?? { data: null, error: null }
         const once = state.admin.insertErrorOnce[table]
@@ -58,6 +70,7 @@ beforeEach(() => {
   state.referrerProfile = { id: 'ref1', email: 'me@x.com', account_status: 'active' }
   state.lastReferralInsert = null
   state.lastWaitlistInsert = null
+  state.referrerProfileError = null
   state.admin = {
     select: { profiles: { data: null, error: null }, waitlist: { data: null, error: null }, referrals: { data: null, error: null } },
     insert: { waitlist: { data: { id: 'wl1' }, error: null }, referrals: { data: { id: 're1' }, error: null } },
@@ -275,5 +288,60 @@ describe('no cap remains in source (structural)', () => {
   it('13. the form has no obsolete cap message', () => {
     expect(form).not.toContain('CAP_REACHED')
     expect(form).not.toMatch(/up to 3|nomination limit|reached your/i)
+  })
+})
+
+/**
+ * The A3 regression: migration 058 revoked authenticated SELECT on public.profiles, and this route
+ * was reading it with the caller's client. The read failed, only `data` was destructured, and every
+ * member who tried to nominate someone was told "Profile not found" — about their OWN profile,
+ * which existed. The nominee was never the problem.
+ */
+describe('nominator resolution after the A3 revoke', () => {
+  it('an eligible member can nominate an external person with NO Andrel account', async () => {
+    state.admin.select.profiles = { data: null, error: null }   // nominee does not exist — the normal case
+    const res = await post(validBody('brand-new@example.com'))
+    expect(res.status).toBe(200)
+    expect(state.lastWaitlistInsert).toBeTruthy()
+    expect(state.lastReferralInsert).toBeTruthy()
+  })
+
+  it('a FAILED nominator read is 503 — never "Profile not found"', async () => {
+    state.referrerProfileError = { data: null, error: { code: '42501' } }   // permission denied
+    const res = await post(validBody())
+    const body = await res.json()
+    expect(res.status).toBe(503)
+    expect(body.code).toBe('PROFILE_UNAVAILABLE')
+    expect(JSON.stringify(body)).not.toMatch(/Profile not found/)
+    expect(state.lastWaitlistInsert).toBeNull()                             // nothing was written
+  })
+
+  it('a genuinely missing nominator profile is 404 and distinct from the failure case', async () => {
+    state.referrerProfile = null
+    const res = await post(validBody())
+    const body = await res.json()
+    expect(res.status).toBe(404)
+    expect(body.code).toBe('PROFILE_NOT_FOUND')
+  })
+
+  it('a deactivated nominator is 403 and distinct from both', async () => {
+    state.referrerProfile = { id: 'ref1', email: 'me@x.com', account_status: 'deactivated' }
+    const res = await post(validBody())
+    const body = await res.json()
+    expect(res.status).toBe(403)
+    expect(body.code).toBe('REFERRER_INACTIVE')
+  })
+
+  it('an unauthenticated caller is 401, before any profile read happens', async () => {
+    state.user = null
+    const res = await post(validBody())
+    expect(res.status).toBe(401)
+    expect((await res.json()).code).toBe('UNAUTHORIZED')
+  })
+
+  it('no raw database message reaches the member in any failure mode', async () => {
+    state.referrerProfileError = { data: null, error: { code: '42501', message: 'permission denied for table profiles' } }
+    const body = await (await post(validBody())).json()
+    expect(JSON.stringify(body)).not.toMatch(/permission denied|42501|relation|table profiles/)
   })
 })

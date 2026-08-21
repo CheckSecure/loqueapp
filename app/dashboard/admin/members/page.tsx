@@ -15,7 +15,11 @@ export default async function AdminMembersPage() {
 
   // Get all users with their key stats
   console.log('[AdminMembers] Starting query...')
-  const profileQuery = await supabase
+  // Admin-gated above. The profile reads run as service_role because migration 058 revoked
+  // authenticated SELECT on public.profiles — an admin session is still an `authenticated` role,
+  // so this page was querying a table it can no longer read and silently rendering nothing.
+  const adminDb = createAdminClient()
+  const profileQuery = await adminDb
     .from('profiles')
     .select('id, full_name, email, company, title, subscription_tier, location, boost_score, is_priority, account_status, verification_status, current_status, profile_complete, created_at, is_founding_member, founding_member_email_sent_at, founding_member_expires_at, launch_cohort')
     .order('created_at', { ascending: false })
@@ -33,7 +37,7 @@ export default async function AdminMembersPage() {
   // migration 041 (missing column) can never break the admin members page. When
   // the column is absent the query errors and we simply show no focus areas.
   const focusByMember: Record<string, unknown> = {}
-  const { data: focusRows, error: focusErr } = await supabase
+  const { data: focusRows, error: focusErr } = await adminDb
     .from('profiles')
     .select('id, current_focus_areas')
   if (!focusErr) {

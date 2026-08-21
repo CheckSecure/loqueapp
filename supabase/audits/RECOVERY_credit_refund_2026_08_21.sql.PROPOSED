@@ -1,0 +1,118 @@
+-- ═══════════════════════════════════════════════════════════════════════════════════════════════
+-- GUARDED RECOVERY — refund credits taken by automatic administrator connections
+--
+--   ██  NOT EXECUTED. NOT APPROVED. The .PROPOSED suffix is deliberate so this file cannot be
+--   ██  run by tab-completing a directory of .sql files. It is a review artifact.
+--
+-- DO NOT RUN THIS UNTIL ALL OF THE FOLLOWING ARE TRUE:
+--   1. supabase/audits/credit_debit_reconciliation.sql has been run against PRODUCTION and its
+--      output reviewed.
+--   2. The manifest below has been replaced with the EXACT user_ids that audit placed in
+--      populations 1, 2 and 5 — and nothing else.
+--   3. Migration 072 has been applied, so refunds land in an append-only, idempotent ledger.
+--   4. A named human has approved the manifest.
+--
+-- THE MANIFEST IS NOT PRE-FILLED, ON PURPOSE. Earlier evidence pointed at the administrator plus
+-- roughly 42 member accounts. That number is an expectation, not a fact, and freezing it here would
+-- convert an expectation into an instruction. The audit decides the set.
+--
+-- ─── WHAT IT WILL AND WILL NOT TOUCH ───────────────────────────────────────────────────────────
+--   REFUNDS   population 1 (proven admin-connection charge), 2 (strong candidate), 5 (the
+--             administrator's own deductions).
+--   NEVER     population 3 (ambiguous), 4 (legitimate member connection whose only defect is a
+--             missing ledger row — refunding those would GIVE AWAY credits members genuinely
+--             spent), or 6 (inconsistent arithmetic, which must be understood first).
+--
+-- ─── IDEMPOTENCY ───────────────────────────────────────────────────────────────────────────────
+-- Every refund carries event_key 'refund:' || RECOVERY_KEY || ':' || user_id. Migration 072 makes
+-- that unique, so a second run inserts nothing and changes no balance: the ON CONFLICT DO NOTHING
+-- decides, and the balance update is driven by the rows actually inserted. Re-running is safe.
+--
+-- ─── ATOMICITY ─────────────────────────────────────────────────────────────────────────────────
+-- The refund row and the balance change happen in ONE transaction. There is no window in which a
+-- member's balance moved without a record saying why — the exact failure being remediated.
+-- ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+BEGIN;
+
+-- ── The reviewed manifest. REPLACE ENTIRELY from the production audit output. ─────────────────
+CREATE TEMP TABLE recovery_manifest (user_id uuid PRIMARY KEY, credits integer NOT NULL) ON COMMIT DROP;
+
+-- INSERT INTO recovery_manifest (user_id, credits) VALUES
+--   ('00000000-0000-0000-0000-000000000000', 1),   -- population 1/2/5 only
+--   ... ;
+
+-- ── PRECONDITION GUARDS. Refuse rather than proceed on a changed database. ────────────────────
+DO $guard$
+DECLARE
+  v_expected_rows  integer := -1;    -- SET THIS to the approved manifest size. -1 = unapproved.
+  v_expected_total integer := -1;    -- SET THIS to the approved total credits. -1 = unapproved.
+  v_rows integer; v_total integer; v_missing integer; v_ledgered integer;
+BEGIN
+  IF v_expected_rows < 0 OR v_expected_total < 0 THEN
+    RAISE EXCEPTION 'Recovery has not been approved: expected manifest size/total are unset';
+  END IF;
+
+  SELECT count(*), COALESCE(SUM(credits), 0) INTO v_rows, v_total FROM recovery_manifest;
+  IF v_rows <> v_expected_rows OR v_total <> v_expected_total THEN
+    RAISE EXCEPTION 'Manifest differs from the approved review (rows/total mismatch)';
+  END IF;
+
+  -- Every listed account must still exist and still hold a credit row.
+  SELECT count(*) INTO v_missing
+  FROM recovery_manifest m
+  WHERE NOT EXISTS (SELECT 1 FROM public.meeting_credits mc WHERE mc.user_id = m.user_id);
+  IF v_missing > 0 THEN
+    RAISE EXCEPTION 'Manifest references % account(s) with no credit row', v_missing;
+  END IF;
+
+  -- Migration 072 must be applied, or refunds would land in a ledger with no idempotency.
+  SELECT count(*) INTO v_ledgered FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'credit_transactions' AND column_name = 'event_key';
+  IF v_ledgered = 0 THEN
+    RAISE EXCEPTION 'Migration 072 is not applied: credit_transactions.event_key is absent';
+  END IF;
+
+  -- Refuse to refund anything that is not positive and small. A large per-account refund means the
+  -- manifest was built from the wrong column.
+  IF EXISTS (SELECT 1 FROM recovery_manifest WHERE credits <= 0 OR credits > 5) THEN
+    RAISE EXCEPTION 'Manifest contains an implausible per-account refund amount';
+  END IF;
+END
+$guard$;
+
+-- ── 1. The durable refund record. Idempotent by event_key (migration 072). ────────────────────
+WITH inserted AS (
+  INSERT INTO public.credit_transactions (user_id, amount, type, note, event_key, source_kind)
+  SELECT m.user_id, m.credits, 'refund',
+         'Refund: credits taken by an automatic administrator connection',
+         'refund:credit-recovery-2026-08-21:' || m.user_id::text,
+         'match_refund'
+  FROM recovery_manifest m
+  ON CONFLICT (event_key) DO NOTHING
+  RETURNING user_id, amount
+)
+-- ── 2. The balance change, driven ONLY by rows this run actually inserted. ─────────────────────
+UPDATE public.meeting_credits mc
+SET free_credits = COALESCE(mc.free_credits, 0) + i.amount,
+    balance      = COALESCE(mc.free_credits, 0) + i.amount + COALESCE(mc.premium_credits, 0)
+FROM inserted i
+WHERE mc.user_id = i.user_id;
+
+-- ── 3. Aggregate-only verification. No user_id, no name, no email. ────────────────────────────
+SELECT
+  (SELECT count(*) FROM recovery_manifest)                                       AS manifest_accounts,
+  (SELECT count(*) FROM public.credit_transactions
+    WHERE source_kind = 'match_refund'
+      AND event_key LIKE 'refund:credit-recovery-2026-08-21:%')                  AS refund_rows_total,
+  (SELECT COALESCE(SUM(amount), 0) FROM public.credit_transactions
+    WHERE source_kind = 'match_refund'
+      AND event_key LIKE 'refund:credit-recovery-2026-08-21:%')                  AS credits_refunded_total,
+  (SELECT count(*) FROM public.meeting_credits
+    WHERE balance <> COALESCE(free_credits, 0) + COALESCE(premium_credits, 0))   AS invariant_violations;
+
+-- Review the four numbers above BEFORE committing. invariant_violations must be 0 and
+-- refund_rows_total must equal manifest_accounts.
+--
+-- COMMIT;   ← deliberately left commented. Uncomment only after reading the verification row.
+ROLLBACK;

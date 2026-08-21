@@ -19,6 +19,47 @@ export async function POST(request: Request) {
 
   // A3: admin route — read the intro + embedded participant profiles via service_role (the admin's
   // authenticated role no longer holds base SELECT on profiles once 058 is applied). Authorized above by requireAdmin().
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // FAIL-CLOSED PENDING A PRODUCT DECISION.
+  //
+  // This route is a SECOND credit-debit authority, and it disagrees with the canonical one on both
+  // WHO pays and WHAT is decremented:
+  //
+  //   this route     charges ONE member (whoever expressed interest first) and decrements `balance`
+  //                  ALONE — leaving free_credits untouched, so the stored invariant
+  //                  balance = free_credits + premium_credits is broken by every call.
+  //   the delegate   charges BOTH members, decrements free_credits, and RECOMPUTES balance.
+  //
+  // Those are not two implementations of one rule; they are two different rules. Migration 072
+  // cannot honestly be called the atomic credit authority while this route independently moves
+  // balances, so it is disabled rather than quietly re-pointed at the new one.
+  //
+  // The product question this route cannot answer for itself: when an ADMINISTRATOR manually
+  // facilitates an introduction between TWO ORDINARY MEMBERS, is that free, charged to one, or
+  // charged to both? The code contains evidence for two different answers and none for which is
+  // intended, so choosing here would be inventing policy inside a bug fix.
+  //
+  // While disabled this writes NOTHING: no match, no conversation, no debit, no ledger row.
+  //
+  // TO RE-ENABLE: decide the policy, then route the write through
+  // public.finalize_mutual_match_atomic, which reaches the migration-072 authority and inherits its
+  // atomicity, ledger, idempotency and admin-participant exemption. Never a second balance update.
+  //
+  // The legacy body below is intentionally retained (and still type-checked) so the reviewed
+  // behaviour is visible when the policy decision is made.
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  const FACILITATION_ENABLED = false as boolean
+  if (!FACILITATION_ENABLED) {
+    return NextResponse.json(
+      {
+        error: 'Manual introduction facilitation is temporarily disabled.',
+        message: 'This action is disabled pending a credit-policy decision. Nothing was changed and no credit was used.',
+        code: 'FACILITATION_DISABLED_PENDING_POLICY',
+      },
+      { status: 501 },
+    )
+  }
+
   const { data: introRequest, error: reqError } = await createAdminClient()
     .from('intro_requests')
     .select('id, requester_id, target_user_id, created_at, requester:profiles!intro_requests_requester_id_fkey(id, full_name, email, role_type, company), target:profiles!intro_requests_target_user_id_fkey(id, full_name, email, role_type, company)')
@@ -86,19 +127,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create conversation' }, { status: 500 })
   }
 
-  // Deduct credit from first person
-  await adminSupabase
-    .from('meeting_credits')
-    .update({ balance: balance - 1 })
-    .eq('user_id', firstPersonId)
-
-  // Log transaction
-  await adminSupabase.from('credit_transactions').insert({
-    user_id: firstPersonId,
-    amount: -1,
-    type: 'deduction',
-    note: 'Introduction facilitated',
-  })
+  // ── THE CREDIT MUTATION WAS REMOVED, NOT JUST DISABLED ──────────────────────────────────────
+  // It read:
+  //     update({ balance: balance - 1 }).eq('user_id', firstPersonId)
+  //     insert credit_transactions { amount: -1, type: 'deduction' }
+  // and it was wrong twice over: it decremented `balance` ALONE (breaking
+  // balance = free_credits + premium_credits on every call, since free_credits was left untouched),
+  // and it charged only ONE member where the canonical delegate charges both.
+  //
+  // Leaving it here behind a flag would mean re-enabling this route is one boolean away from
+  // reinstating a balance-only decrement. It is deleted so that whoever makes the product decision
+  // has to write the correct implementation — routed through
+  // public.finalize_mutual_match_atomic, which reaches the migration-072 authority and inherits its
+  // atomic balance handling, immutable ledger, idempotency and admin-participant exemption.
 
   // Update both intro_requests to approved
   await adminSupabase

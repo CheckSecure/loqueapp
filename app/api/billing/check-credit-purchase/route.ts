@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { readProfileById } from '@/lib/profiles/serverProfile'
 import { createClient } from '@/lib/supabase/server'
 import { getTotalCredits } from '@/lib/credits'
 import { getEffectiveTier, getCreditCap } from '@/lib/tier-override'
@@ -13,11 +14,15 @@ export async function POST(req: Request) {
   
   const { creditsToPurchase } = await req.json()
   
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('subscription_tier, is_founding_member, founding_member_expires_at')
-    .eq('id', user.id)
-    .single()
+  // service_role read (migration 058 revoked the authenticated SELECT). A failed read must not be
+  // silently treated as "no entitlement".
+  const tierRead = await readProfileById<{
+    subscription_tier: string | null; is_founding_member: boolean | null; founding_member_expires_at: string | null
+  }>(user.id, 'subscription_tier, is_founding_member, founding_member_expires_at', 'credit-purchase-check')
+  if (!tierRead.ok && tierRead.reason === 'unavailable') {
+    return NextResponse.json({ error: 'Temporarily unavailable. Please try again.' }, { status: 503 })
+  }
+  const profile = tierRead.ok ? tierRead.profile : null
   
   const { data: credits } = await supabase
     .from('meeting_credits')

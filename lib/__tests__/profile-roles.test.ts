@@ -255,8 +255,15 @@ describe('Phase A/B wiring', () => {
     // not the import of listRolesForProfiles at the top of the file)
     expect(adminPage.indexOf("redirect('/dashboard')"))
       .toBeLessThan(adminPage.indexOf('listRolesForProfiles(createAdminClient'))
-    // member/profile queries are unchanged: still the user-scoped client
+    // The caller-scoped client is still how the page authenticates and gates.
     expect(adminPage).toContain("const supabase = createClient()")
-    expect(adminPage).toMatch(/supabase\s*\n?\s*\.from\('profiles'\)/)
+    expect(adminPage).toContain('supabase.auth.getUser()')
+    // But the PROFILE READS are now service_role: migration 058 revoked authenticated SELECT on
+    // public.profiles, and an admin session is still an `authenticated` role — so this page was
+    // querying a table it can no longer read. The read must also come AFTER the gate.
+    expect(adminPage).not.toMatch(/supabase\s*\n?\s*\.from\('profiles'\)/)
+    expect(adminPage).toMatch(/const adminDb = createAdminClient\(\)/)
+    expect(adminPage.indexOf("redirect('/dashboard')"))
+      .toBeLessThan(adminPage.indexOf('const adminDb = createAdminClient()'))
   })
 })

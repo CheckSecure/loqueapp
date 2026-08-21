@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { readProfileById } from '@/lib/profiles/serverProfile'
 import { stripe, CREDIT_PACKS } from '@/lib/stripe'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -15,11 +16,25 @@ export async function POST(req: NextRequest) {
     const { priceId, mode } = await req.json()
     if (!priceId) return NextResponse.json({ error: 'Missing priceId' }, { status: 400 })
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('stripe_customer_id, full_name, is_founding_member, founding_member_expires_at, subscription_tier')
-      .eq('id', user.id)
-      .single()
+    // service_role read (migration 058 revoked the authenticated SELECT). Two things went wrong
+    // while this read was silently failing, and both are money bugs:
+    //   1. `profile` was null, so the founding-member guard below never fired and founding members
+    //      could buy a subscription they already have equivalent benefits for;
+    //   2. `stripe_customer_id` was undefined, so EVERY checkout created a NEW Stripe customer.
+    // An unanswered read must therefore fail the request, not fall through as "no customer".
+    const read = await readProfileById<{
+      stripe_customer_id: string | null; full_name: string | null; is_founding_member: boolean | null
+      founding_member_expires_at: string | null; subscription_tier: string | null
+    }>(user.id, 'stripe_customer_id, full_name, is_founding_member, founding_member_expires_at, subscription_tier', 'stripe-checkout')
+    if (!read.ok) {
+      const status = read.reason === 'unavailable' ? 503 : 404
+      return NextResponse.json(
+        { error: read.reason === 'unavailable'
+            ? 'Billing is temporarily unavailable. Please try again.'
+            : 'Profile not found' },
+        { status })
+    }
+    const profile = read.profile
 
     // Founding members already have premium-equivalent benefits via the override
     // (lib/tier-override.ts), so block subscription checkout for them. Credit-pack
