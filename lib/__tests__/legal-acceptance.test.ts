@@ -19,12 +19,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }))
 
-import {
-  needsReacceptance,
-  needsReacceptanceAt,
-  TERMS_VERSION,
-  PRIVACY_VERSION,
-} from '@/lib/legal/terms'
+import { needsReacceptance, needsReacceptanceAt, TERMS_VERSION, PRIVACY_VERSION } from '@/lib/legal/terms'
 import { POST } from '@/app/api/legal/accept/route'
 
 const req = (body: any) =>
@@ -37,7 +32,7 @@ const req = (body: any) =>
 // ==============================================================================
 // Gate logic — grandfathering vs affirmative acceptance
 // ==============================================================================
-describe('needsReacceptance — grandfathering gate (current versions = 1/1)', () => {
+describe('needsReacceptance — grandfathering gate', () => {
   it('Existing V1 grandfathered user is NOT redirected', () => {
     expect(needsReacceptance({
       acceptedTermsVersion: null,

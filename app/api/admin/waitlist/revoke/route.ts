@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { openDeletion, recordDeletionEvent } from '@/lib/account/deletionLedger'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
@@ -101,6 +102,34 @@ export async function POST(request: Request) {
   // ── Revoke ────────────────────────────────────────────────────────────────
   const now = new Date().toISOString()
 
+  // ── Ledger: record the intent BEFORE anything is destroyed ────────────────
+  // Only when this revoke will actually DESTROY something. A revoke with no partial profile and no
+  // auth user only changes a waitlist status; that is not a deletion and must not be logged as one.
+  //
+  // FAIL CLOSED. If the record cannot be written we refuse the revoke outright rather than delete an
+  // account that nothing will remember. A member disappeared once with no trace of who removed them
+  // or how; the trade — an admin sees a retryable error instead of an untraceable deletion — is the
+  // right way round.
+  // deletion_id IS the account's UUID, not a fresh random one. The BEFORE DELETE triggers on
+  // public.profiles and auth.users (migration 075) key their events the same way, so the events
+  // this route writes and the events the database writes CONVERGE on one lifecycle rather than
+  // producing two unrelated half-records for the same deletion.
+  const deletionId = authUser?.id ?? profile?.id ?? null
+  if (deletionId) {
+    const opened = await openDeletion(admin, deletionId, {
+      actor: 'admin',
+      path: 'admin_invite_revoke',
+      deletedUserId: authUser?.id ?? profile?.id ?? null,
+      reason: 'invitation_revoked',
+    })
+    if (!opened) {
+      return NextResponse.json(
+        { ok: false, error: 'Could not revoke the invitation. Please try again.' },
+        { status: 500 },
+      )
+    }
+  }
+
   // 1) Clean up a PARTIAL profile (onboarding started, not finished) so no orphaned
   //    onboarding data remains — the delete is CONDITIONAL on profile_complete = false,
   //    which doubles as the race guard: if onboarding completes between the check
@@ -140,20 +169,52 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Could not revoke the invitation. Please try again.' }, { status: 500 })
   }
 
+  if (deletionId) {
+    // Application-side removal is done. Best-effort: the rows are already gone and this cannot
+    // un-delete them, so a write failure is logged (inside the helper) and does not block.
+    await recordDeletionEvent(admin, {
+      deletionId, stage: 'data_deleted', actor: 'admin', path: 'admin_invite_revoke',
+      deletedUserId: authUser?.id ?? profile?.id ?? null, reason: 'invitation_revoked',
+    })
+  }
+
   // 3) Delete the auth account so the temp password can no longer sign in (and to
   //    cascade-clean any residual profile). Safe: no fully-active member reaches
   //    here. Best-effort + idempotent — a missing / already-deleted user is success.
   if (authUser) {
     const { error: delErr } = await admin.auth.admin.deleteUser(authUser.id)
-    if (delErr && !/not[\s_-]?found/i.test(delErr.message || '')) {
+    const missing = delErr ? /not[\s_-]?found/i.test(delErr.message || '') : false
+    if (delErr && !missing) {
       console.error('[waitlist/revoke] auth deleteUser failed (non-fatal):', delErr.message)
     }
+    // This is the transition that CANNOT be atomic: deleteUser is an HTTP call to the Auth API, not
+    // a statement in a database transaction. The terminal event is therefore recorded separately —
+    // and its ABSENCE is the signal. A deletion_id with no 'auth_deleted' and no 'failed' means the
+    // process died mid-deletion, which is a state an operator can find rather than a silent gap.
+    // An already-absent user counts as deleted: the desired end state holds.
+    if (deletionId) {
+      await recordDeletionEvent(admin, {
+        deletionId,
+        stage: delErr && !missing ? 'failed' : 'auth_deleted',
+        actor: 'admin', path: 'admin_invite_revoke',
+        deletedUserId: authUser.id, reason: 'invitation_revoked',
+        // A CLASS, never the provider's message — those routinely echo the address that caused them.
+        errorClass: delErr && !missing ? 'auth_api_error' : undefined,
+      })
+    }
+  } else if (deletionId) {
+    // No auth identity existed; removing the partial profile completed the deletion.
+    await recordDeletionEvent(admin, {
+      deletionId, stage: 'auth_deleted', actor: 'admin', path: 'admin_invite_revoke',
+      deletedUserId: profile?.id ?? null, reason: 'invitation_revoked',
+    })
   }
 
   // 4) Sync any linked referral to terminal (mirrors the decline path). No-op if none.
   await admin.from('referrals').update({ status: 'rejected', rejected_at: now }).eq('waitlist_id', entryId)
 
-  // Lightweight audit trail (no formal admin-audit table exists in the repo).
+  // Operational log line. The DURABLE record is public.account_deletion_events (migration 075);
+  // this is for tailing logs, and is not the audit trail any more.
   console.log(JSON.stringify({ event: 'invite_revoked', admin_id: user.id, waitlist_id: entryId, at: now }))
 
   revalidatePath('/dashboard', 'layout')

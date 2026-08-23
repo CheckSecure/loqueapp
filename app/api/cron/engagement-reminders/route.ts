@@ -10,6 +10,7 @@ import {
 import { claimReminder, markAccepted, markFailed } from '@/lib/reminders/deliveryLedger'
 import { runExpiryStage } from '@/lib/introductions/expiryWorker'
 import { drainIntroductionOutbox } from '@/lib/introductions/newIntroductionOutbox'
+import { purgeExpiredDeletionEvents } from '@/lib/account/retentionPurge'
 import { sendWednesdayIntroReminderEmail } from '@/lib/email'
 
 /**
@@ -325,8 +326,30 @@ export async function GET(req: Request) {
     introOutbox = { error: 'intro_outbox_stage_failed' }
   }
 
+  // ── PART 8: seven-year retention purge for the account-deletion ledger ──────
+  //
+  // Non-member-facing maintenance. It runs here rather than on a cron entry of its own because a
+  // separate schedule would buy nothing: the work is a single bounded DELETE against a small table,
+  // and Vercel Hobby runs a limited number of cron jobs, so an extra entry is a cost with no
+  // benefit. Once per maintenance run is exactly the required cadence for a seven-year boundary.
+  //
+  // Runs LAST and cannot affect anything above it: the reminder, expiry and outbox stages have all
+  // completed by this point, and a failure here is caught, classified and reported alongside their
+  // results rather than replacing them. The seven-year cutoff is not expressed in application code
+  // — the database function takes no arguments and no date.
+  let ledgerRetention: Awaited<ReturnType<typeof purgeExpiredDeletionEvents>>
+  try {
+    ledgerRetention = await purgeExpiredDeletionEvents(admin)
+  } catch {
+    // Belt and braces: the helper already swallows its own failures.
+    console.error('[engagement-reminders] ledger retention stage failed (class): unhandled')
+    ledgerRetention = { removed: null, errorClass: 'unavailable' }
+  }
+
   return NextResponse.json({
     introOutbox,
+    // Aggregate count and a safe class only — never an id, a timestamp or a sample row.
+    ledgerRetention,
     wednesdayReminder: {
       ranToday: isWednesdayInNewYork(new Date(now)),
       considered: wedConsidered, claimed: wedClaimed, sent: wedSent, failed: wedFailed,

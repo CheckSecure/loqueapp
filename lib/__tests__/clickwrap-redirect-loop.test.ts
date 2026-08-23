@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { needsReacceptance } from '@/lib/legal/terms'
+import { needsReacceptance, TERMS_VERSION, PRIVACY_VERSION } from '@/lib/legal/terms'
 
 /**
  * Regression: the /dashboard ↔ /legal/accept infinite redirect loop.
@@ -89,6 +89,9 @@ describe('clickwrap gate — loop simulation over the real decision functions', 
   }
 
   /** A member who predates the backfill: grandfathered through the current version. */
+  // A real established member: grandfathered through Privacy 1, which is what production holds.
+  // Publishing Privacy 2 must not turn this row into someone who owes re-acceptance — that is the
+  // whole point of MIN_REQUIRED_PRIVACY_VERSION, and this literal 1 is what proves it.
   const ESTABLISHED_MEMBER = {
     terms_version_accepted: null,
     privacy_version_accepted: null,

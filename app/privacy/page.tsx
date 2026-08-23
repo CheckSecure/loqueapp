@@ -77,6 +77,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-base font-bold text-slate-900 mb-3">5. Data Retention</h2>
             <p>We retain your information for as long as your account is active. If you delete your account, we will remove your personal data within 30 days, except where retention is required for legal obligations, dispute resolution, or enforcement of our Terms of Service. Certain records, including messages and transaction history, may be retained longer where necessary.</p>
+            <p>When an account is deleted, Andrel removes or de-identifies the associated account and profile information. We may retain a limited deletion audit record for up to seven years where reasonably necessary for security, fraud prevention, legal compliance, dispute resolution, and enforcement of our Terms. This record contains only an internal account identifier, the date and status of the deletion, and categories describing how it was initiated. It does not contain the member&rsquo;s name, email address, profile information, messages, or other account content. We periodically review these records and delete them when they are no longer reasonably necessary.</p>
           </section>
 
           <section>
