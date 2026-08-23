@@ -26,6 +26,14 @@ export const metadata: Metadata = {
     url: `${SITE_ORIGIN}/`,
   },
   twitter: { card: 'summary' },
+  // Served as a STATIC file from public/manifest.json, deliberately.
+  //
+  // The App Router's app/manifest.ts convention would emit /manifest.webmanifest — a DIFFERENT URL
+  // — so adopting it here would have left this advertised path still returning 404 unless the
+  // advertised URL changed too. A static file serves the exact path already published in the HTML.
+  //
+  // This is the ONLY manifest declaration. Next emits <link rel="manifest"> from this field, so the
+  // hand-written <link> that used to sit in <head> was a second, identical tag for the same URL.
   manifest: '/manifest.json',
   themeColor: '#1B2850',
   appleWebApp: {
@@ -48,7 +56,6 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-        <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#1B2850" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
