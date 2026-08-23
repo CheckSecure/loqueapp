@@ -10,6 +10,7 @@ import { claimInviteDelivery, markDeliveryAccepted, markDeliveryFailed } from '@
 import { canSendInvitation, invitationsMode, INVITATIONS_PAUSED_MESSAGE, INVITATION_TEST_BLOCKED_MESSAGE } from '@/lib/invitations/featureGate'
 import { requestPasswordRecoveryForUserId } from '@/lib/auth/recoveryRequest'
 import { getSiteUrl, getRecoveryRedirectUrl } from '@/lib/config/siteUrl'
+import { mintBoundResumeLink, revokeResumeToken } from '@/lib/invitations/resumeTokenStore'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -93,6 +94,14 @@ export async function POST(req: Request) {
       if (error || !hashedToken) throw new Error(error?.message || 'generateLink failed')
       return { hashedToken, userId: (data as any)?.user?.id ?? null }
     },
+    // DURABLE FALLBACK for the FIRST invitation. Without this the initial email died with its
+    // authentication link, and only people who later received a reminder ever got a resume link —
+    // which is no use to someone who opened the first email a week late.
+    mintResumeLink: (authUserId) =>
+      mintBoundResumeLink(admin, { waitlistId: entryId, authUserId, siteUrl: getSiteUrl() }),
+    // Revoked ONLY on a definite provider failure, where the plaintext reached nobody. An uncertain
+    // outcome keeps it: the email may have arrived, and killing that link would be the worse error.
+    revokeResumeToken: async (tokenId) => { await revokeResumeToken(admin, tokenId) },
     sendEmail: async (a) => {
       // CONSENT GATE: name the referrer ONLY when they explicitly consented (migration 037
       // unapplied → query errors → treated as no consent → anonymous copy).
@@ -107,7 +116,7 @@ export async function POST(req: Request) {
           referrerName = (referralRow?.referrer as any)?.full_name ?? null
         }
       }
-      return sendSecureInviteEmail({ to: a.to, toName: a.toName, link: a.link, referrerName, idempotencyKey: a.idempotencyKey })
+      return sendSecureInviteEmail({ to: a.to, toName: a.toName, link: a.link, resumeLink: a.resumeLink ?? null, referrerName, idempotencyKey: a.idempotencyKey })
     },
   }
 
@@ -144,7 +153,13 @@ export async function POST(req: Request) {
   // Provider ACCEPTED. Stamp invited_at only for a genuine first invite (mirrors prior semantics,
   // now gated on acceptance). An access-resend keeps status invited without re-implying delivery.
   if (result.state === 'invited') {
-    const { error: wlErr } = await supabase.from('waitlist').update({ status: 'invited', invited_at: new Date().toISOString() }).eq('id', entryId)
+    // reminder_enrollment_at is the PROSPECTIVE ENROLLMENT BOUNDARY (migration 077). Stamping it
+    // here — and only here, on a genuine first invite whose provider send was accepted — is what
+    // separates the 117 historical invitees from everyone invited afterwards. There is no backfill:
+    // a pre-077 row stays NULL forever and is therefore never picked up by the automatic worker.
+    // It is set in the SAME update as invited_at so the two can never disagree.
+    const stampedAt = new Date().toISOString()
+    const { error: wlErr } = await supabase.from('waitlist').update({ status: 'invited', invited_at: stampedAt, reminder_enrollment_at: stampedAt }).eq('id', entryId)
     if (wlErr) return NextResponse.json({ error: 'Invite sent but status update failed. Please refresh.' }, { status: 500 })
     await admin.from('referrals').update({ status: 'invited' }).eq('waitlist_id', entryId)
     if (entry.referral_source === 'referral') logRecommendationEvent('recommendation_invite_sent', { entryId })

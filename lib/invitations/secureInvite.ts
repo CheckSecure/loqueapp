@@ -83,9 +83,38 @@ export interface SecureInviteDeps {
   claimDelivery: (purpose: 'first_invite' | 'access_resend', authUserId: string | null) => Promise<{ deliveryId: string | null; isNew: boolean; claimFailed?: boolean; existingStatus?: string | null; stale?: boolean }>
   /** generateLink for the chosen type; returns ONLY the hashed_token + resolved user id. */
   generateLink: (type: InviteLinkType, email: string) => Promise<{ hashedToken: string; userId: string | null }>
+  /**
+   * Mint a durable RESUME link for this invitation and bind it to the resolved auth user.
+   *
+   * WHY THE FIRST EMAIL NEEDS ONE. The primary button is a Supabase authentication link, which
+   * expires by design. Until now nothing else was in that email, so once it expired the invitation
+   * was simply dead and the member had no way back — the exact complaint this work exists to fix.
+   * Resume tokens were minted only by later reminders, which is no help to someone who never got
+   * a reminder or who opened the first email a week late.
+   *
+   * Returns null — or throws — when the token could not be persisted. When this dep is SUPPLIED,
+   * EITHER outcome is FAIL-CLOSED: the attempt is marked failed and NO provider call is made, no
+   * success is reported, and nothing downstream stamps invited_at or reminder_enrollment_at.
+   *
+   * The dep remains OPTIONAL only for legacy call sites that deliberately do not supply it. Every
+   * production invitation path supplies it and therefore fails closed.
+   *
+   * The earlier reasoning — "an invitation with only a primary link is the status quo, and no
+   * invitation at all is worse" — was wrong once the durable fallback became the approved product
+   * behaviour. An email whose only link expires is exactly the failure this work exists to remove,
+   * and sending one silently would leave the member in the original broken state while the system
+   * recorded a success. Refusing is visible, retryable, and leaves invited_at and
+   * reminder_enrollment_at unstamped, so nothing downstream believes an invitation went out.
+   *
+   * The returned string contains the plaintext token in its fragment — treat it as a secret. It is
+   * passed to sendEmail and to nothing else, and MUST NOT be logged or returned.
+   */
+  mintResumeLink?: (authUserId: string) => Promise<{ link: string; tokenId: string } | null>
+  /** Revoke a resume token minted for an attempt whose provider send definitively failed. */
+  revokeResumeToken?: (tokenId: string) => Promise<void>
   /** send the secure email with a stable idempotency key; NO token echoed. `uncertain` ⇒ a
    *  timeout/unknown outcome that must be retried with the SAME key (not a definite failure). */
-  sendEmail: (args: { to: string; toName: string; link: string; idempotencyKey?: string }) => Promise<{ success: boolean; messageId?: string | null; errorClass?: string; uncertain?: boolean }>
+  sendEmail: (args: { to: string; toName: string; link: string; resumeLink?: string | null; idempotencyKey?: string }) => Promise<{ success: boolean; messageId?: string | null; errorClass?: string; uncertain?: boolean }>
   markAccepted: (deliveryId: string | null, providerMessageId: string | null, authUserId: string | null) => Promise<void>
   markFailed: (deliveryId: string | null, errorClass: string) => Promise<void>
   siteUrl: string
@@ -175,9 +204,45 @@ export async function sendSecureInvite(deps: SecureInviteDeps, input: SecureInvi
     return { ok: false, state: 'error', sent: false, deliveryId: claim.deliveryId, message: 'Could not generate the secure access link. Please try again.' }
   }
   const link = buildRecoverLink({ siteUrl: deps.siteUrl, hashedToken, type }) // token ONLY flows to sendEmail
-  const idempotencyKey = `invite:${claim.deliveryId}` // one key ⇄ one token/payload; never reused with a new token
 
-  const send = await deps.sendEmail({ to: email, toName: input.fullName || 'there', link, idempotencyKey })
+  // DURABLE FALLBACK. Minted after generateLink so it can be bound to the resolved auth user id —
+  // a token with no bound identity can never be invalidated by completion. Minted BEFORE the send
+  // so the email can carry it; a failure here degrades to an invitation without a fallback, never
+  // to no invitation.
+  const resolvedUserId = userId ?? user?.id ?? null
+  let resume: { link: string; tokenId: string } | null = null
+  if (deps.mintResumeLink) {
+    // FAIL CLOSED. No identity to bind, or no token persisted, means we cannot honour the durable
+    // guarantee — so nothing is sent. This runs BEFORE sendEmail, so no provider call happens.
+    if (!resolvedUserId) {
+      await deps.markFailed(claim.deliveryId, 'resume_identity_unresolved')
+      return { ok: false, state: 'error', sent: false, deliveryId: claim.deliveryId,
+        authUserId: null, errorClass: 'resume_identity_unresolved',
+        message: 'Could not prepare a durable recovery link. Nothing was sent; it is safe to retry.' }
+    }
+    // A THROW is the same failure as a null, and must not escape. An unhandled rejection here
+    // would leave the delivery row stranded in 'claimed' and surface as a 500, which is both less
+    // informative and less safe than the explicit refusal below.
+    try {
+      resume = await deps.mintResumeLink(resolvedUserId)
+    } catch {
+      resume = null
+    }
+    if (!resume) {
+      await deps.markFailed(claim.deliveryId, 'resume_token_unavailable')
+      return { ok: false, state: 'error', sent: false, deliveryId: claim.deliveryId,
+        authUserId: resolvedUserId, errorClass: 'resume_token_unavailable',
+        message: 'Could not prepare a durable recovery link. Nothing was sent; it is safe to retry.' }
+    }
+  }
+
+  // One key ⇄ one payload. The key is derived from THIS claim, and this claim minted THIS token, so
+  // a retry (which takes a fresh claim) can never reuse a key with a different link or token.
+  const idempotencyKey = `invite:${claim.deliveryId}`
+
+  const send = await deps.sendEmail({
+    to: email, toName: input.fullName || 'there', link, resumeLink: resume?.link ?? null, idempotencyKey,
+  })
 
   if (send.success) {
     // AT-MOST-ONCE: the provider ACCEPTED the send. Recording that locally is best-effort — a failure
@@ -193,12 +258,20 @@ export async function sendSecureInvite(deps: SecureInviteDeps, input: SecureInvi
     return { ok: true, state: plan === 'create' ? 'invited' : 'link_sent', sent: true, deliveryId: claim.deliveryId, authUserId: userId ?? user?.id ?? null }
   }
   if (send.uncertain) {
-    // Provider outcome unknown. Leave the claim in `claimed` and DO NOT resend: a same-key
+    // Provider outcome unknown — the message MAY have arrived, so the resume token stays LIVE. A
+    // revoked token here would silently break a fallback link that is sitting in someone's inbox.
+    // Leave the claim in `claimed` and DO NOT resend: a same-key
     // re-send with a regenerated token would be a 409 invalid_idempotent_request, and a different
     // key could double-send. If the provider accepted it, the delivery webhook resolves the claim;
     // otherwise the admin can retire it and start a new attempt after the 24h window.
     return { ok: false, state: 'uncertain', sent: false, deliveryId: claim.deliveryId, authUserId: userId ?? user?.id ?? null,
       message: 'Delivery status is pending — do not resend. It resolves automatically, or can be retried after 24 hours.' }
+  }
+  // DEFINITE failure: the provider never took the message, so the plaintext token reached nobody.
+  // Revoking it removes an unusable capability from the live set rather than leaving an orphan that
+  // nothing can ever present. (Uncertain outcomes are handled above and deliberately keep it.)
+  if (resume?.tokenId && deps.revokeResumeToken) {
+    try { await deps.revokeResumeToken(resume.tokenId) } catch { /* best effort; it is unreachable anyway */ }
   }
   await deps.markFailed(claim.deliveryId, send.errorClass ?? 'provider_error')
   return { ok: false, state: 'error', sent: false, deliveryId: claim.deliveryId, authUserId: userId ?? user?.id ?? null,

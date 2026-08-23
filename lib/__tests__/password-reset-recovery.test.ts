@@ -48,10 +48,13 @@ describe('getSiteUrl / getRecoveryRedirectUrl (PART 5)', () => {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://andrel.app'
     expect(getRecoveryRedirectUrl()).toBe('https://andrel.app/auth/recover')
   })
-  it('falls back to the canonical andrel.app when unset (never localhost/preview/window.origin)', () => {
+  it('falls back to the canonical www.andrel.app when unset (never localhost/preview/window.origin)', () => {
+    // The canonical origin is now www. Both spellings were previously in use — this helper fell back
+    // to the apex while the invite-reminder email hardcoded www — and a fragment-carried token is
+    // exactly the payload you least want travelling through an unplanned host redirect.
     delete process.env.NEXT_PUBLIC_SITE_URL
-    expect(getSiteUrl()).toBe('https://andrel.app')
-    expect(getRecoveryRedirectUrl()).toBe('https://andrel.app/auth/recover')
+    expect(getSiteUrl()).toBe('https://www.andrel.app')
+    expect(getRecoveryRedirectUrl()).toBe('https://www.andrel.app/auth/recover')
   })
   it('strips a trailing slash', () => {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://andrel.app/'

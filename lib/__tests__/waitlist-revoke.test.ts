@@ -238,8 +238,19 @@ describe('revoke — lifecycle + email exclusion (source invariants)', () => {
   })
 
   it('reminder emails only target status=invited → revoked rows are excluded', () => {
-    expect(readFileSync('app/api/cron/activation-reminders/route.ts', 'utf8')).toMatch(/\.eq\('status',\s*'invited'\)/)
+    // The activation-reminders cron is now a superseded no-op; the invariant lives in the staged
+    // worker that replaced it, which filters at the query AND re-checks in the pure predicate.
+    const worker = readFileSync('lib/onboarding/reminderWorker.ts', 'utf8')
+    expect(worker).toMatch(/\.eq\('status', 'invited'\)/)
+    const predicate = readFileSync('lib/onboarding/reminderEligibility.ts', 'utf8')
+    expect(predicate).toMatch(/reason: 'revoked_or_declined'/)
     expect(readFileSync('app/api/admin/first-matching-reminder/send/route.ts', 'utf8')).toMatch(/\.eq\('status',\s*'invited'\)/)
+  })
+
+  it('the superseded cron can no longer send to anyone, revoked or not', () => {
+    const old = readFileSync('app/api/cron/activation-reminders/route.ts', 'utf8')
+    expect(old).not.toMatch(/resend\.emails\.send|sendInviteReminder/)
+    expect(old).toMatch(/superseded: true/)
   })
 })
 

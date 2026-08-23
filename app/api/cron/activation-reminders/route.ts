@@ -1,152 +1,32 @@
 import { NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { sendInviteReminder1, sendInviteReminder2 } from '@/lib/email'
-import { activationRemindersEnabled } from '@/lib/invitations/featureGate'
 
-// Daily cron. Sends at most one reminder per invited user, in two phases:
-//   Reminder 1: invited 23–48h ago, never reminded, hasn't signed in
-//   Reminder 2: invited >= 7 days ago, reminder 1 sent, hasn't signed in
-// Activation = auth.users.last_sign_in_at IS NOT NULL. Once a user signs in,
-// they're permanently disqualified from future reminders.
-
-type AuthUserInfo = { id: string; last_sign_in_at: string | null }
-
-async function buildAuthUserMap(admin: ReturnType<typeof createAdminClient>): Promise<Map<string, AuthUserInfo>> {
-  const map = new Map<string, AuthUserInfo>()
-  const perPage = 1000
-  let page = 1
-  // listUsers pages until a partial page comes back.
-  while (true) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
-    if (error) {
-      console.error('[activation-reminders] listUsers failed:', error.message)
-      break
-    }
-    for (const u of data.users) {
-      if (u.email) {
-        map.set(u.email.toLowerCase(), {
-          id: u.id,
-          last_sign_in_at: u.last_sign_in_at ?? null,
-        })
-      }
-    }
-    if (data.users.length < perPage) break
-    page++
-  }
-  return map
-}
-
-async function processCandidate(
-  admin: ReturnType<typeof createAdminClient>,
-  candidate: { id: string; email: string; full_name: string | null },
-  authMap: Map<string, AuthUserInfo>,
-  phase: 1 | 2,
-): Promise<'sent' | 'skipped_orphan' | 'skipped_activated' | 'failed'> {
-  const authUser = authMap.get(candidate.email.toLowerCase())
-  if (!authUser) return 'skipped_orphan'
-  if (authUser.last_sign_in_at) return 'skipped_activated'
-
-  const send = phase === 1 ? sendInviteReminder1 : sendInviteReminder2
-  const column = phase === 1 ? 'invite_reminder_1_sent_at' : 'invite_reminder_2_sent_at'
-  const errorColumn = phase === 1 ? 'invite_reminder_1_error' : 'invite_reminder_2_error'
-
-  const result = await send(candidate.email, candidate.full_name || 'there')
-  if (!result.success) {
-    // Durable failure record (migration 012). Its OWN best-effort write, isolated
-    // from any sent_at write and never gating the send decision — a failure just
-    // leaves sent_at null so the recipient stays retryable. Logged by
-    // waitlist_id only (never the email address).
-    await admin.from('waitlist').update({ [errorColumn]: result.error ?? 'unknown error' }).eq('id', candidate.id)
-    console.log(JSON.stringify({ event: 'activation_reminder_failed', reminder: phase, waitlist_id: candidate.id, error: result.error }))
-    return 'failed'
-  }
-
-  // Idempotency-critical write: ONLY the sent_at column, so it can never depend on
-  // the error column existing (safe even if migration 012 is not yet applied).
-  const { error: updateError } = await admin
-    .from('waitlist')
-    .update({ [column]: new Date().toISOString() })
-    .eq('id', candidate.id)
-
-  if (updateError) {
-    // Email already sent but tracking column failed — log so it can be reconciled.
-    // Worst case: the next cron run resends. Mitigated by the 23h floor for reminder 1.
-    console.log(JSON.stringify({ event: 'activation_reminder_track_failed', reminder: phase, waitlist_id: candidate.id, error: updateError.message }))
-  } else {
-    // Best-effort clear of any prior failure marker (separate write; harmless no-op if 012 absent).
-    await admin.from('waitlist').update({ [errorColumn]: null }).eq('id', candidate.id)
-  }
-
-  console.log(JSON.stringify({ event: 'activation_reminder_sent', reminder: phase, waitlist_id: candidate.id }))
-  return 'sent'
-}
-
+/**
+ * SUPERSEDED — this route no longer sends anything.
+ *
+ * It previously sent two "activation reminders" whose only call to action was a link to
+ * /auth/forgot-password, the password-reset flow. It also disqualified anyone whose auth user had
+ * last_sign_in_at set — so the people who signed in and stalled mid-onboarding, the exact cohort a
+ * reminder exists for, could never be reminded again. And its stage-1 window was 23–48h with
+ * stage 2 gated behind stage 1, so one missed run stranded a person permanently.
+ *
+ * The replacement is the staged onboarding-reminder worker in lib/onboarding/reminderWorker.ts,
+ * which runs inside the daily engagement-reminders maintenance invocation.
+ *
+ * THIS FILE IS KEPT AS A DELIBERATE NO-OP rather than deleted, because vercel.json still declares a
+ * cron for this path. Deleting the route would turn a scheduled invocation into a 404 that nothing
+ * watches; keeping it as an explicit, authenticated no-op means the schedule is harmless and the
+ * reason is recorded where whoever finds it will look. It writes no timestamp, so no recipient is
+ * marked as reminded by a run that sent nothing.
+ */
 export async function GET(req: Request) {
   const auth = req.headers.get('authorization')
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-
-  // GATE: activation reminders are invitation/access emails and run ONLY in 'on' mode. In 'off'
-  // AND 'test' mode, send NOTHING and — critically — DO NOT touch any reminder timestamp (so
-  // recipients stay eligible once the flow is globally enabled). Record a neutral paused result.
-  if (!activationRemindersEnabled()) {
-    console.log('[activation-reminders] paused — invitations mode is not "on"; no sends, no timestamp writes')
-    return NextResponse.json({ paused: true, reminder_1: { sent: 0 }, reminder_2: { sent: 0 } })
-  }
-
-  const admin = createAdminClient()
-  const now = Date.now()
-  const cutoff23h = new Date(now - 23 * 60 * 60 * 1000).toISOString()
-  const cutoff48h = new Date(now - 48 * 60 * 60 * 1000).toISOString()
-  const cutoff7d = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString()
-
-  const authMap = await buildAuthUserMap(admin)
-
-  // --- Reminder 1: 23–48h since invite, no reminder yet ---
-  const { data: r1Candidates } = await admin
-    .from('waitlist')
-    .select('id, email, full_name')
-    .eq('status', 'invited')
-    .not('invited_at', 'is', null)
-    .gte('invited_at', cutoff48h)
-    .lte('invited_at', cutoff23h)
-    .is('invite_reminder_1_sent_at', null)
-
-  let r1Sent = 0, r1Orphan = 0, r1Activated = 0, r1Failed = 0
-  for (const c of r1Candidates || []) {
-    const outcome = await processCandidate(admin, c, authMap, 1)
-    if (outcome === 'sent') r1Sent++
-    else if (outcome === 'skipped_orphan') r1Orphan++
-    else if (outcome === 'skipped_activated') r1Activated++
-    else r1Failed++
-  }
-
-  // --- Reminder 2: invited >= 7d ago, reminder 1 sent, reminder 2 not sent ---
-  const { data: r2Candidates } = await admin
-    .from('waitlist')
-    .select('id, email, full_name')
-    .eq('status', 'invited')
-    .lte('invited_at', cutoff7d)
-    .not('invite_reminder_1_sent_at', 'is', null)
-    .is('invite_reminder_2_sent_at', null)
-
-  let r2Sent = 0, r2Orphan = 0, r2Activated = 0, r2Failed = 0
-  for (const c of r2Candidates || []) {
-    const outcome = await processCandidate(admin, c, authMap, 2)
-    if (outcome === 'sent') r2Sent++
-    else if (outcome === 'skipped_orphan') r2Orphan++
-    else if (outcome === 'skipped_activated') r2Activated++
-    else r2Failed++
-  }
-
-  console.log(
-    `[activation-reminders] done — r1: sent=${r1Sent} orphan=${r1Orphan} activated=${r1Activated} failed=${r1Failed}; ` +
-    `r2: sent=${r2Sent} orphan=${r2Orphan} activated=${r2Activated} failed=${r2Failed}`,
-  )
-
+  console.log('[activation-reminders] superseded no-op; staged reminders run in engagement-reminders')
   return NextResponse.json({
-    reminder_1: { sent: r1Sent, skipped_orphan: r1Orphan, skipped_activated: r1Activated, failed: r1Failed },
-    reminder_2: { sent: r2Sent, skipped_orphan: r2Orphan, skipped_activated: r2Activated, failed: r2Failed },
+    superseded: true,
+    replacement: 'lib/onboarding/reminderWorker.ts (runs in /api/cron/engagement-reminders)',
+    sent: 0,
   })
 }

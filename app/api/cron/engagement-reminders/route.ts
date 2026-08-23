@@ -11,6 +11,7 @@ import { claimReminder, markAccepted, markFailed } from '@/lib/reminders/deliver
 import { runExpiryStage } from '@/lib/introductions/expiryWorker'
 import { drainIntroductionOutbox } from '@/lib/introductions/newIntroductionOutbox'
 import { purgeExpiredDeletionEvents } from '@/lib/account/retentionPurge'
+import { runOnboardingReminderStage, REMINDER_STAGE_BUDGET_MS } from '@/lib/onboarding/reminderWorker'
 import { sendWednesdayIntroReminderEmail } from '@/lib/email'
 
 /**
@@ -326,7 +327,26 @@ export async function GET(req: Request) {
     introOutbox = { error: 'intro_outbox_stage_failed' }
   }
 
-  // ── PART 8: seven-year retention purge for the account-deletion ledger ──────
+  // ── PART 8: staged onboarding reminders (prospective invitations only) ──────
+  //
+  // Lives here rather than on a cron entry of its own because Vercel Hobby registers only a small
+  // number of crons and this is a short bounded scan. Runs on its OWN budget, after every stage
+  // above has completed, so a backlog of invitees can never delay the Wednesday reminder, the
+  // expiry stage or the outbox drain.
+  //
+  // PROSPECTIVE ONLY: the worker scans rows with reminder_enrollment_at set, which is stamped from
+  // migration 077 onward. The 117 historical invitees are never fetched and never evaluated; they
+  // are reached only by the explicit admin catch-up campaign.
+  let onboardingReminders: Awaited<ReturnType<typeof runOnboardingReminderStage>> | { error: string }
+  try {
+    onboardingReminders = await runOnboardingReminderStage(admin, { budgetMs: REMINDER_STAGE_BUDGET_MS })
+  } catch {
+    // CLASS only — no identity, no raw error. Every stage above still stands.
+    console.error('[engagement-reminders] onboarding reminder stage failed (class): unhandled')
+    onboardingReminders = { error: 'onboarding_reminder_stage_failed' }
+  }
+
+  // ── PART 9: seven-year retention purge for the account-deletion ledger ──────
   //
   // Non-member-facing maintenance. It runs here rather than on a cron entry of its own because a
   // separate schedule would buy nothing: the work is a single bounded DELETE against a small table,
@@ -350,6 +370,8 @@ export async function GET(req: Request) {
     introOutbox,
     // Aggregate count and a safe class only — never an id, a timestamp or a sample row.
     ledgerRetention,
+    // Aggregate counts and coarse skip reasons only — never an address or a token.
+    onboardingReminders,
     wednesdayReminder: {
       ranToday: isWednesdayInNewYork(new Date(now)),
       considered: wedConsidered, claimed: wedClaimed, sent: wedSent, failed: wedFailed,

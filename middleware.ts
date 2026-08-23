@@ -43,7 +43,19 @@ export async function middleware(request: NextRequest) {
     }
 
     // A3: read the caller's OWN gate fields via the self-only RPC (base-table SELECT is revoked).
-    const { data: myRows } = await supabase.rpc('get_my_profile')
+    const { data: myRows, error: profileError } = await supabase.rpc('get_my_profile')
+
+    // FAIL CLOSED ON ERROR. This previously discarded `error`, so a transient RPC failure produced
+    // `profile = null`, which dashboardRedirect reads as "no profile" — and a fully onboarded member
+    // was redirected into onboarding by a blip. ZERO ROWS is a real, expected state (a mid-onboarding
+    // invitee); an ERROR is not, and the two must never be conflated. On error we let the request
+    // through untouched: the page itself re-reads the profile and renders its own retryable state,
+    // which is strictly better than sending a complete member somewhere they do not belong.
+    if (profileError) {
+      console.error(JSON.stringify({ event: 'middleware_profile_rpc_failed', code: (profileError as { code?: string }).code ?? 'unknown' }))
+      return response
+    }
+
     const profile = Array.isArray(myRows) ? (myRows[0] ?? null) : (myRows ?? null)
 
     // Single source of truth for the reset/onboarding routing decision (unit-tested).

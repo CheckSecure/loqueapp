@@ -359,11 +359,25 @@ export async function sendSecureInviteEmail(args: {
   /** Named ONLY when the referrer explicitly consented to be shared (consent gate is enforced
    *  by the caller). Absent → anonymous invite copy. */
   referrerName?: string | null
+  /**
+   * DURABLE FALLBACK, and a different kind of link entirely from `link`.
+   *
+   * `link` is a Supabase AUTHENTICATION link: it signs the recipient in, and it expires by design.
+   * `resumeLink` authenticates nobody — opening it does nothing at all until the recipient presses
+   * a button, and even then it only asks us to email a fresh authentication link to the address
+   * this invitation was issued to. That is why it can safely outlive the primary link, and why the
+   * copy must not describe them as the same thing.
+   *
+   * Absent (null) when the token could not be minted; the email then carries only the primary link,
+   * which is the previous behaviour rather than a failure.
+   */
+  resumeLink?: string | null
   /** Stable key from the durable delivery claim id → passed to Resend so a retry with the same
    *  key is de-duplicated provider-side. */
   idempotencyKey?: string
 }): Promise<{ success: boolean; messageId?: string; errorClass?: string; uncertain?: boolean }> {
   const firstName = ((args.toName || '').trim().split(/\s+/)[0]) || 'there'
+  const resume = (args.resumeLink || '').trim()
   const recommendedBy = (args.referrerName || '').trim()
   const introLine = recommendedBy
     ? `${escapeHtml(recommendedBy)} recommended you for Andrel. Use the secure link below to set your password and finish setting up your account.`
@@ -383,8 +397,13 @@ export async function sendSecureInviteEmail(args: {
           </p>
           <p style="font-size:13px; color:#64748b; line-height:1.6;">
             This link is personal to you — please don't forward it. This secure link expires for your protection.
-            If it no longer works, request a new link from the Andrel sign-in page.
           </p>
+          ${resume ? `<p style="font-size:13px; color:#64748b; line-height:1.6;">
+            If this sign-in link expires, <a href="${resume}" style="color:#1B2850;">request a fresh secure link</a>
+            and we'll email a new one to this address.
+          </p>` : `<p style="font-size:13px; color:#64748b; line-height:1.6;">
+            If it no longer works, request a new link from the Andrel sign-in page.
+          </p>`}
           <p style="font-size:13px; color:#64748b; line-height:1.6;">
             Don't see it? Check your spam/junk folder. Need help? Reply to this email or contact
             <a href="mailto:hello@andrel.app" style="color:#1B2850;">hello@andrel.app</a>.
@@ -395,8 +414,10 @@ export async function sendSecureInviteEmail(args: {
         `You're invited to Andrel.\n\nHi ${firstName},\n\n` +
         `${recommendedBy ? `${recommendedBy} recommended you for Andrel.` : `You've been invited to join Andrel.`} Use the secure link below to set your password and finish setting up your account:\n\n` +
         `${args.link}\n\n` +
-        `This link is personal to you — please don't forward it. This secure link expires for your protection; ` +
-        `if it no longer works, request a new link from the Andrel sign-in page.\n\n` +
+        `This link is personal to you — please don't forward it. This secure link expires for your protection.\n\n` +
+        (resume
+          ? `If this sign-in link expires, request a fresh secure link and we'll email a new one to this address:\n${resume}\n\n`
+          : `If it no longer works, request a new link from the Andrel sign-in page.\n\n`) +
         `Don't see it? Check your spam/junk folder. Need help? Contact hello@andrel.app.\n\n— The Andrel Team`,
     }, args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : undefined)
     if (error) {
@@ -509,87 +530,96 @@ export async function sendRecommendationIntroductionEmail(
 // logged in yet, so they have no preference row, and these are bootstrap/access
 // emails (the same bootstrap class as the secure invitation). They link only to the
 // static /login page — no token or password. Reminders stop on first login.
-export async function sendInviteReminder1(toEmail: string, toName: string): Promise<{ success: boolean; error?: string }> {
+/**
+ * Staged onboarding reminders.
+ *
+ * WHAT THESE REPLACE, AND WHY IT MATTERED. The previous reminder's only call to action was a link
+ * to /auth/forgot-password — the password-reset flow. Someone who had already been invited, and in
+ * many cases already signed in, was told to reset a password they had never set. That is the
+ * "unexpected password-reset flow" reported from production. These templates never say "password",
+ * never say "reset", and never link to /auth/forgot-password.
+ *
+ * The button goes to the resume page, whose token rides in the URL FRAGMENT. Nothing happens when
+ * the link is opened — the recipient must press a button, which then asks us to email them a fresh
+ * secure sign-in link. The copy says exactly that, so the mechanism is not a surprise.
+ *
+ * These emails NEVER claim the original invitation link still works, promise acceptance, or promise
+ * matches or introductions. Each one states plainly that the recipient may ignore it.
+ */
+export const ONBOARDING_REMINDER_SUBJECTS = {
+  onboarding_reminder_1: 'Finish setting up your Andrel profile',
+  onboarding_reminder_2: 'Your Andrel profile is still unfinished',
+  onboarding_reminder_3: 'Last reminder: complete your Andrel profile',
+  onboarding_catchup:    'Finish setting up your Andrel profile',
+} as const
+
+export type OnboardingReminderStage = keyof typeof ONBOARDING_REMINDER_SUBJECTS
+
+const REMINDER_LEAD: Record<OnboardingReminderStage, string> = {
+  onboarding_reminder_1:
+    'You started setting up your Andrel profile but didn&rsquo;t finish. It only takes a few minutes to complete.',
+  onboarding_reminder_2:
+    'Your Andrel profile setup is still incomplete. You can pick up where you left off whenever suits you.',
+  onboarding_reminder_3:
+    'This is the last reminder we&rsquo;ll send about your unfinished Andrel profile.',
+  onboarding_catchup:
+    'Your Andrel profile setup was never completed. You can finish it whenever suits you.',
+}
+
+/**
+ * Send one staged onboarding reminder.
+ *
+ * `resumeLink` carries the resume token in its fragment — treat it as a secret. It is passed to the
+ * provider and to nothing else: never logged, never returned, never stored. `idempotencyKey` is
+ * derived from the durable delivery claim, so a retry under the same key cannot double-send.
+ */
+export async function sendOnboardingReminder(args: {
+  to: string
+  toName: string
+  stage: OnboardingReminderStage
+  resumeLink: string
+  idempotencyKey?: string
+}): Promise<{ success: boolean; messageId?: string | null; error?: string; errorClass?: string; uncertain?: boolean }> {
   try {
     const { data, error } = await resend.emails.send({
       from: 'Andrel <hello@andrel.app>',
-      to: toEmail,
-      subject: 'Your Andrel access is waiting',
+      to: args.to,
+      subject: ONBOARDING_REMINDER_SUBJECTS[args.stage],
       html: `
         <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            Hi ${escapeHtml(toName)},
+            Hi ${escapeHtml(args.toName)},
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-            You've been invited into Andrel's early network. Your access is ready when you are — set up (or reset) your secure sign-in below.
+            ${REMINDER_LEAD[args.stage]}
           </p>
-          <a href="https://www.andrel.app/auth/forgot-password"
+          <a href="${args.resumeLink}"
              style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
-            Set up your access
+            Continue setting up
           </a>
-          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-top: 24px;">
-            We'll email you a secure link to finish setting up — no password to remember. Once you're in, we'll begin curating relevant introductions for you.
+          <p style="color: #334155; font-size: 15px; line-height: 1.6; margin-top: 24px;">
+            Pressing that button lets us email you a fresh, secure sign-in link. Nothing is sent until you
+            press it, and you don&rsquo;t need to remember a password.
           </p>
-          <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
-            — The Andrel team
+          <p style="color: #64748b; font-size: 14px; line-height: 1.6; margin-top: 24px;">
+            If you no longer wish to join Andrel, you can simply ignore this email.
+          </p>
+          <p style="color: #64748b; font-size: 14px; margin-top: 24px;">
+            &mdash; The Andrel team
           </p>
         </div>
       `,
-    })
-    if (error) {
-      console.error('[sendInviteReminder1] Resend API error:', error.message)
-      return { success: false, error: error.message }
-    }
-    console.log('[sendInviteReminder1] sent, message ID:', data?.id)
-    return { success: true }
-  } catch (err: any) {
-    console.error('[sendInviteReminder1] exception:', err?.message)
-    return { success: false, error: err?.message }
+      ...(args.idempotencyKey ? { headers: { 'Idempotency-Key': args.idempotencyKey } } : {}),
+    } as any)
+    if (error) return { success: false, error: 'send_failed', errorClass: 'provider_error' }
+    return { success: true, messageId: (data as any)?.id ?? null }
+  } catch {
+    // Unknown outcome: the provider may or may not have accepted it. NEVER treated as a definite
+    // failure, because a retry under a new key would double-send.
+    return { success: false, errorClass: 'provider_timeout', uncertain: true }
   }
 }
 
-export async function sendInviteReminder2(toEmail: string, toName: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const { data, error } = await resend.emails.send({
-      from: 'Andrel <hello@andrel.app>',
-      to: toEmail,
-      subject: 'Reminder: your Andrel invitation',
-      html: `
-        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
-          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-            Hi ${escapeHtml(toName)},
-          </p>
-          <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-            A brief reminder that your Andrel access is still available. We're opening the founding group in stages and would be glad to include you when you're ready. Set up (or reset) your secure sign-in below — we'll email you a link, no password to remember.
-          </p>
-          <a href="https://www.andrel.app/auth/forgot-password"
-             style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
-            Set up your access
-          </a>
-          <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
-            — The Andrel team
-          </p>
-        </div>
-      `,
-    })
-    if (error) {
-      console.error('[sendInviteReminder2] Resend API error:', error.message)
-      return { success: false, error: error.message }
-    }
-    console.log('[sendInviteReminder2] sent, message ID:', data?.id)
-    return { success: true }
-  } catch (err: any) {
-    console.error('[sendInviteReminder2] exception:', err?.message)
-    return { success: false, error: err?.message }
-  }
-}
-
-// Founding Member notification — one-time status email. Bypasses preferences
-// (same class as invite/reminder emails: account-status, not configurable).
-// The audit confirmed real benefits exist today (lib/tier-override.ts: 30
-// credits/month, 60 credit cap, premium-opportunity access), so the body can
-// mention them honestly. Founding intro cadence matches free (3), so the copy
-// must not imply more or faster introductions.
 export async function sendFoundingMemberEmail(toEmail: string, toName: string): Promise<{ success: boolean; error?: string }> {
   try {
     const { data, error } = await resend.emails.send({
