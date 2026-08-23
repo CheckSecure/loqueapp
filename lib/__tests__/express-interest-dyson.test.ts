@@ -105,7 +105,7 @@ beforeEach(() => {
 
 describe('the call path that produced the message', () => {
   it('Express Interest hits the SERVER ACTION first, not the API route', () => {
-    const i = BUTTON_SRC.indexOf('await submitIntroRequest(targetId)')
+    const i = BUTTON_SRC.indexOf('await submitIntroRequest(rowId, targetId)')
     const j = BUTTON_SRC.indexOf("fetch('/api/intro-requests/express-interest'")
     expect(i).toBeGreaterThan(-1)
     expect(j).toBeGreaterThan(-1)

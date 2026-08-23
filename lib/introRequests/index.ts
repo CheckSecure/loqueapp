@@ -18,6 +18,22 @@ async function resolveProfileId(supabase: ReturnType<typeof createClient>, authU
   return data?.[0]?.id ?? authUserId
 }
 
+/**
+ * NOT the Express-Interest-on-a-card path. See lib/introRequests/expressInterest.ts.
+ *
+ * This is the person-addressed contract: "record that this member wants to meet that person", with
+ * no recommendation card behind it. It writes an UNCORRELATED row — responds_to_id stays NULL — so
+ * such a row is never a capacity-release candidate and behaves exactly as it did before migration
+ * 080. It deliberately has NO parameter for a card id: an optional one is what previously allowed
+ * the card path to degrade silently to this one.
+ *
+ * Its (requester, target) idempotency reuse is correct HERE, where there is no epoch to confuse,
+ * and is the reason it must never serve the card path: findReusableOutboundIntro returns the OLDEST
+ * live row, which after a cooldown re-recommendation is an expression from a previous epoch.
+ *
+ * No server action and no route reaches this function today; it is retained as the non-card
+ * contract and is unreachable from the member-facing UI.
+ */
 export async function createIntroRequest(
   authUserId: string,
   authUserEmail: string,

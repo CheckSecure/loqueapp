@@ -7,6 +7,15 @@ import { submitIntroRequest, passOnSuggestion } from '@/app/actions'
 import { isPermanentDismissal, type DismissChoice } from '@/lib/introRequests/dismissal'
 import { CheckCircle, Loader2, X, EyeOff, Sparkles, UserCheck } from 'lucide-react'
 
+/**
+ * The Express-Interest control on a recommendation card.
+ *
+ * rowId is REQUIRED and is the card's own intro_requests.id. It is not a convenience for the pass
+ * menu any more: it is the correlation key. The server binds the expression to exactly this card
+ * (responds_to_id), which is what lets capacity release identify the recommendation epoch instead of
+ * guessing at it from a timestamp. There is no branch here that submits without it — an optional
+ * rowId is precisely how the card path used to degrade into an uncorrelated person-addressed write.
+ */
 export default function RequestIntroButton({
   targetId,
   alreadyRequested = false,
@@ -14,7 +23,7 @@ export default function RequestIntroButton({
 }: {
   targetId: string
   alreadyRequested?: boolean
-  rowId?: string
+  rowId: string
 }) {
   const router = useRouter()
   const [state, setState] = useState<'idle' | 'loading' | 'signaling' | 'facilitating' | 'done' | 'error' | 'passed' | 'hidden'>(
@@ -33,8 +42,8 @@ export default function RequestIntroButton({
     await new Promise(r => setTimeout(r, 600))
     setState('signaling')  // Internal signal - no notification to other user
 
-    // First create the intro request
-    const result = await submitIntroRequest(targetId)
+    // First create the intro request, correlated to THIS card.
+    const result = await submitIntroRequest(rowId, targetId)
 
     if (result.error) {
       if ((result as any).code === 'OUTBOUND_PENDING_CAP_REACHED') {

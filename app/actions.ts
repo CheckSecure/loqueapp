@@ -11,10 +11,10 @@ import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedE
 import { formatMeetingTimes, normalizeIanaTimeZone } from '@/lib/meetings/formatMeetingTime'
 import { isMissingColumnError } from '@/lib/db/isMissingColumn'
 import {
-  createIntroRequest,
   approveIntroRequest,
   rejectIntroRequest,
 } from '@/lib/introRequests'
+import { expressInterestOnCard } from '@/lib/introRequests/expressInterest'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { enqueueOnboardingRetry } from '@/lib/onboarding/retryQueue'
 import { promoteIfResolved } from '@/lib/introductions/queue'
@@ -178,9 +178,21 @@ export async function updateProfile(formData: FormData) {
   return { success: true }
 }
 
-export async function submitIntroRequest(targetUserId: string, note?: string) {
-  const { supabase, user } = await getSupabaseAndUser()
+/**
+ * Express interest in ONE specific recommendation card.
+ *
+ * The card's own intro_requests.id is REQUIRED — this action has no person-only form, so the
+ * correlated path cannot degrade to the legacy uncorrelated one by omitting an argument. targetId is
+ * a cross-check, not a source of truth: public.express_intro_interest() refuses unless the card it
+ * locks actually names that target, so a mismatched pair writes nothing.
+ *
+ * requesterId is never a parameter. It is taken from the verified session below, so a caller cannot
+ * express interest as somebody else.
+ */
+export async function submitIntroRequest(suggestedRowId: string, targetUserId: string) {
+  const { user } = await getSupabaseAndUser()
   if (!user) return { error: 'Not authenticated' }
+  if (!suggestedRowId) return { error: 'This introduction is no longer available.', code: 'CARD_REQUIRED' }
 
   // service_role read: migration 058 revoked authenticated SELECT on public.profiles, so this
   // gate was failing open-ended — an unanswered read looked identical to a deactivated member.
@@ -195,10 +207,14 @@ export async function submitIntroRequest(targetUserId: string, note?: string) {
     return { error: 'This member is no longer active' }
   }
 
-  const result = await createIntroRequest(user.id, user.email ?? '', targetUserId, note)
-  if (result.error) return { error: result.error, code: (result as any).code }
+  const result = await expressInterestOnCard({
+    authUserId: user.id,
+    suggestedRowId,
+    targetUserId,
+  })
+  if ('error' in result && result.error) return { error: result.error, code: (result as any).code }
   revalidatePath('/dashboard/introductions')
-  return { success: true, introRequestId: result.introRequestId }
+  return { success: true, introRequestId: (result as any).introRequestId }
 }
 
 export async function adminApproveIntro(requestId: string) {

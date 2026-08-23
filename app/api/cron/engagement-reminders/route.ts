@@ -12,6 +12,7 @@ import { runExpiryStage } from '@/lib/introductions/expiryWorker'
 import { drainIntroductionOutbox } from '@/lib/introductions/newIntroductionOutbox'
 import { purgeExpiredDeletionEvents } from '@/lib/account/retentionPurge'
 import { runOnboardingReminderStage, REMINDER_STAGE_BUDGET_MS } from '@/lib/onboarding/reminderWorker'
+import { runCapacityReleaseStage, RELEASE_STAGE_BUDGET_MS } from '@/lib/introductions/capacityRelease'
 import { sendWednesdayIntroReminderEmail } from '@/lib/email'
 
 /**
@@ -346,7 +347,26 @@ export async function GET(req: Request) {
     onboardingReminders = { error: 'onboarding_reminder_stage_failed' }
   }
 
-  // ── PART 9: seven-year retention purge for the account-deletion ledger ──────
+  // ── PART 9: introduction capacity release ───────────────────────────────────
+  //
+  // Frees a member's own hidden card from their visible capacity 72h after they expressed interest
+  // in it. Default OFF: CAPACITY_RELEASE_MODE must be 'on' before a single row is written, and
+  // 'dry_run' reports candidates while changing nothing.
+  //
+  // Runs on its OWN budget after every stage above has completed, so it can never delay the
+  // Wednesday reminder, the expiry stage, the outbox drain or the onboarding reminders. It sends no
+  // email and creates no notification — a release is internal accounting, and the replacement cards
+  // announce themselves through the existing outbox when they are placed.
+  let capacityRelease: Awaited<ReturnType<typeof runCapacityReleaseStage>> | { error: string }
+  try {
+    capacityRelease = await runCapacityReleaseStage(admin, { budgetMs: RELEASE_STAGE_BUDGET_MS })
+  } catch {
+    // CLASS only — no identity, no raw error. Every stage above still stands.
+    console.error('[engagement-reminders] capacity release stage failed (class): unhandled')
+    capacityRelease = { error: 'capacity_release_stage_failed' }
+  }
+
+  // ── PART 10: seven-year retention purge for the account-deletion ledger ──────
   //
   // Non-member-facing maintenance. It runs here rather than on a cron entry of its own because a
   // separate schedule would buy nothing: the work is a single bounded DELETE against a small table,
@@ -372,6 +392,8 @@ export async function GET(req: Request) {
     ledgerRetention,
     // Aggregate counts and coarse skip reasons only — never an address or a token.
     onboardingReminders,
+    // Aggregate counts only — never a member id or an intro_request id.
+    capacityRelease,
     wednesdayReminder: {
       ranToday: isWednesdayInNewYork(new Date(now)),
       considered: wedConsidered, claimed: wedClaimed, sent: wedSent, failed: wedFailed,

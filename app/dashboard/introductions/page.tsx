@@ -19,6 +19,7 @@ import { getCurrentCycleRelease } from '@/lib/introductions/batchRelease'
 import { currentCycleBatch } from '@/lib/introductions/thursdaySchedule'
 import ImproveRecommendationsCard from '@/components/ImproveRecommendationsCard'
 import IncomingInterestCard from '@/components/IncomingInterestCard'
+import WaitingOnResponse from '@/components/introductions/WaitingOnResponse'
 import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
@@ -209,7 +210,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     // stays visible even after its suggested row is gone.
     supabase
       .from('intro_requests')
-      .select('id, target_user_id, status, created_at, match_reason')
+      .select('id, target_user_id, status, created_at, match_reason, responds_to_id')
       .eq('requester_id', profileId)
       .in('status', ['pending', 'approved'])
       .order('created_at', { ascending: false }),
@@ -378,10 +379,22 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // + approved pair) render exactly one card. Excludes matched (Connections) and
   // inactive targets. This is what keeps an expressed interest visible even once
   // its 'suggested' row is gone.
+  //
+  // CORRELATED expressions (responds_to_id set — migration 080) are partitioned OUT of this section
+  // and rendered as the compact, non-interactive waiting state instead, so the member sees exactly
+  // ONE representation of "I answered this card" rather than two. Their targets still suppress the
+  // suggestion, which is what makes the answered card disappear from the actionable list.
   const pendingByTarget = new Map<string, any>()
+  const correlatedExpressions: any[] = []
+  const correlatedTargetIds = new Set<string>()
   for (const intro of (pendingIntrosRaw as any[] | null) || []) {
     const t = intro.target
     if (!t || matchedUserIds.has(t.id) || (t.account_status && t.account_status !== 'active')) continue
+    if (intro.responds_to_id) {
+      correlatedExpressions.push(intro)
+      correlatedTargetIds.add(t.id)
+      continue
+    }
     if (incomingRequesterIds.has(t.id)) continue // shown in "Interested in you" instead
     if (!pendingByTarget.has(t.id)) {
       pendingByTarget.set(t.id, { rowId: intro.id, profile: t, matchReason: intro.match_reason || null, status: intro.status })
@@ -389,6 +402,31 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   }
   const pendingProfiles = Array.from(pendingByTarget.values())
   const pendingTargetIds = new Set<string>(pendingProfiles.map((p: any) => p.profile.id))
+  correlatedTargetIds.forEach((id) => pendingTargetIds.add(id))
+
+  // WAITING ON THEIR RESPONSE — derived ONLY from the viewer's own correlated, still-live expression.
+  //
+  // Liveness comes from the CARD, not from the expression: `suggestedIntros` is this member's
+  // status='suggested' rows, so a card that has been passed, expired, matched or otherwise closed is
+  // simply absent and the entry vanishes with it. That is also why a stale epoch cannot linger — an
+  // expression from a previous recommendation points at a card id that is no longer suggested.
+  // A released card (capacity_released_at set) is still 'suggested' and still answerable, so it
+  // correctly keeps its waiting line while no longer consuming capacity.
+  //
+  // Nothing here reads or reveals the counterparty's state: the only inputs are the viewer's own two
+  // rows. The section renders no control of any kind.
+  const liveCardIds = new Set<string>(
+    ((suggestedIntros as any[] | null) || []).filter((r: any) => r.pair_id).map((r: any) => r.id),
+  )
+  const seenWaitingCards = new Set<string>()
+  const waitingEntries = correlatedExpressions
+    .filter((r: any) => liveCardIds.has(r.responds_to_id))
+    .filter((r: any) => {
+      if (seenWaitingCards.has(r.responds_to_id)) return false
+      seenWaitingCards.add(r.responds_to_id)
+      return true
+    })
+    .map((r: any) => ({ id: r.responds_to_id as string, name: r.target?.full_name || 'A member' }))
 
   // Never more than RECOMMENDATIONS_PER_BATCH visible. The active batch already
   // holds at most that many 'suggested' rows by construction; the slice is a
@@ -915,6 +953,9 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
                 </div>
               </section>
             )}
+
+            {/* WAITING ON THEIR RESPONSE — compact, non-interactive, outside the actionable count */}
+            <WaitingOnResponse entries={waitingEntries} />
 
             {/* FEATURED + ADDITIONAL */}
             {/* INTRODUCED BY ANDREL — reciprocal pair_id cards ONLY (featured + additional in one
