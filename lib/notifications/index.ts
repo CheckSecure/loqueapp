@@ -25,6 +25,7 @@ export type NotificationType =
   | 'introduction_reminder'
   | 'introductions_waiting'
   | 'waiting_response'
+  | 'andrel_connector_awarded'
 
 export interface NotificationData {
   matchId?: string
@@ -124,6 +125,13 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
   introductions_waiting: {
     title: 'Your introductions are waiting',
     message: 'Review your current introductions to unlock your next round.'
+  },
+  // Andrel Connector. Written by public.set_andrel_connector (migration 083) inside the award
+  // transaction, so THIS copy is a mirror for type-completeness — createNotificationSafe is not the
+  // producer. The two must stay in step; a focused test asserts they are identical.
+  andrel_connector_awarded: {
+    title: "You've been recognized as an Andrel Connector",
+    message: 'Thank you for thoughtfully helping grow the Andrel community by inviting engaged professionals.'
   }
 }
 
@@ -146,7 +154,10 @@ const LINK_BY_TYPE: Partial<Record<string, string>> = {
   opportunity_closed: '/dashboard/opportunities/responses',
   introduction_reminder: '/dashboard/introductions',
   waiting_response: '/dashboard/introductions',
-  introductions_waiting: '/dashboard/introductions'
+  introductions_waiting: '/dashboard/introductions',
+  // The member's OWN profile. /dashboard/profile/<own id> redirects here anyway, so linking
+  // straight to it avoids the hop — and the link carries no id a browser could influence.
+  andrel_connector_awarded: '/dashboard/profile'
 }
 
 export async function createNotificationSafe({
@@ -323,6 +334,10 @@ export function getNotificationRoute(type: NotificationType, data?: Notification
         : '/dashboard/network'
     case 'nudge_interest':
       return '/dashboard'
+    case 'andrel_connector_awarded':
+      // Without this case the default below would silently land on /dashboard — the notification
+      // would "work" while going to the wrong place.
+      return '/dashboard/profile'
     default:
       return '/dashboard'
   }
