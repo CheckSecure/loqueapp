@@ -468,7 +468,7 @@ export function computeNeedsAttention(input: {
     if ((inv.notActivated7d ?? 0) > 0) items.push({ id: 'inv-na-7d', severity: 'medium', count: inv.notActivated7d as number, title: 'Delivered but not activated (7d+)', explanation: 'Delivered over 7 days ago; the invitee has never signed in — review on the Waitlist and consider a nudge.', href: '/dashboard/admin/waitlist' })
     else if ((inv.notActivated3d ?? 0) > 0) items.push({ id: 'inv-na-3d', severity: 'low', count: inv.notActivated3d as number, title: 'Delivered but not activated (3d+)', explanation: 'Delivered over 3 days ago; the invitee has never signed in — review on the Waitlist.', href: '/dashboard/admin/waitlist' })
   }
-  if ((input.webhookErrors ?? 0) > 0) items.push({ id: 'webhook-errors', severity: 'high', count: input.webhookErrors as number, title: 'Invitation webhook errors', explanation: `Resend webhook events recorded an error/not-found result in the last ${THRESHOLDS.WEBHOOK_LOOKBACK_HOURS / 24}d — delivery status may be stale; inspect delivery/webhook state in Operations.`, href: '/dashboard/admin/operations' })
+  if ((input.webhookErrors ?? 0) > 0) items.push({ id: 'webhook-errors', severity: 'high', count: input.webhookErrors as number, title: 'Invitation webhook errors', explanation: `Resend webhook events recorded an error/not-found result in the last ${THRESHOLDS.WEBHOOK_LOOKBACK_HOURS / 24}d — delivery status may be stale. Review delivery and webhook details on this page.`, href: '/dashboard/admin/operations' })
 
   const rec = input.recommendations
   if (rec) {
@@ -498,4 +498,89 @@ export function monitoringGaps(): MonitoringGap[] {
     { id: 'gap-recgen', label: 'Recommendation-generation failures', reason: 'Generation errors are logged (console) but not persisted — check Vercel logs.', href: 'https://vercel.com/dashboard' },
     { id: 'gap-auth', label: 'Auth / service 5xx', reason: 'No internal error-log table; not queryable from the database.', href: 'https://vercel.com/dashboard' },
   ]
+}
+
+// ── Homepage triage (pure, PRESENTATION ONLY) ────────────────────────────────────────
+//
+// computeNeedsAttention above is unchanged and still produces the COMPLETE list — nothing
+// here alters how any metric is calculated. This layer only decides which of those already
+// computed items belong on the short admin homepage and which belong on Operations.
+//
+// The distinction the operator actually needs: "a person is stuck / waiting on me" versus
+// "a machine is misbehaving". A webhook that recorded three error events is three events,
+// not three affected members, so it must never sit on the homepage looking like a member
+// incident. Same for pending schema migrations, rotation lag, and exposure concentration:
+// real, worth fixing, but infrastructure — they live under Operations.
+
+/** Non-member-facing attention items: infrastructure telemetry, routed to Operations. */
+export const TECHNICAL_ATTENTION_IDS = ['webhook-errors', 'rec-stale', 'rec-concentration'] as const
+/** Pending-migration items are id-prefixed (`mig-<name>`), so they are matched by prefix. */
+export const TECHNICAL_ATTENTION_PREFIXES = ['mig-'] as const
+/** Hard cap on homepage attention rows. Anything beyond this is reached via Operations. */
+export const MAX_HOME_ATTENTION = 4
+
+export function isTechnicalAttention(id: string): boolean {
+  if (TECHNICAL_ATTENTION_PREFIXES.some((p) => id.startsWith(p))) return true
+  return (TECHNICAL_ATTENTION_IDS as readonly string[]).includes(id)
+}
+
+/**
+ * Homepage ordering for member-impacting items. Highest member impact first: someone was
+ * never reached (failed / stuck delivery), then someone is waiting on a decision from the
+ * operator, then someone is on the platform with nothing to act on.
+ * An id absent from this list sorts after every listed one, then by severity.
+ */
+export const ATTENTION_PRIORITY: readonly string[] = [
+  'inv-failed',    // invitation never arrived — the person cannot join at all
+  'inv-stuck',     // invitation in flight past the stuck threshold — same outcome, not yet terminal
+  'op-waitlist',   // applicants waiting on an approval decision
+  'op-issues',     // members reported a problem and nobody has looked
+  'rec-none',      // eligible members seeing an empty Introductions page
+  'op-concierge',  // member-requested introductions awaiting triage
+  'inv-na-7d',     // delivered a week ago, never signed in
+  'inv-na-3d',
+  'op-batch',      // a generated batch is blocking new introductions
+  'op-intros',     // admin-initiated intros a member has not answered
+]
+
+const ATTENTION_SEV_RANK: Record<Severity, number> = { high: 0, medium: 1, low: 2 }
+
+/** Plain-language destination label per admin page. Never a verb the homepage can execute. */
+export function attentionActionLabel(href: string): string {
+  switch (href) {
+    case '/dashboard/admin/waitlist': return 'Review waitlist'
+    case '/dashboard/admin/issues': return 'Review reports'
+    case '/dashboard/admin/batches': return 'Review batches'
+    case '/dashboard/admin/concierge': return 'Open concierge'
+    case '/dashboard/admin/members': return 'View members'
+    case '/dashboard/admin/operations': return 'Open operations'
+    default: return 'Review'
+  }
+}
+
+export interface AttentionTriage {
+  /** Member-impacting items, in homepage priority order. */
+  memberImpacting: AttentionItem[]
+  /** Infrastructure items — shown on Operations, never as a top-level homepage alert. */
+  technical: AttentionItem[]
+  /** The at-most-MAX_HOME_ATTENTION rows the homepage renders. */
+  top: AttentionItem[]
+  /** Member-impacting items that did not fit on the homepage (0 when everything fits). */
+  overflow: number
+  /** True when there is anything at all to see on Operations beyond the homepage rows. */
+  hasMore: boolean
+}
+
+/** Split the computed attention list into what Daniel must decide vs what a machine reports. */
+export function triageAttention(items: AttentionItem[]): AttentionTriage {
+  const all = items ?? []
+  const rank = (i: AttentionItem) => {
+    const p = ATTENTION_PRIORITY.indexOf(i.id)
+    return p === -1 ? ATTENTION_PRIORITY.length + ATTENTION_SEV_RANK[i.severity] : p
+  }
+  const memberImpacting = all.filter((i) => !isTechnicalAttention(i.id)).sort((a, b) => rank(a) - rank(b))
+  const technical = all.filter((i) => isTechnicalAttention(i.id))
+  const top = memberImpacting.slice(0, MAX_HOME_ATTENTION)
+  const overflow = memberImpacting.length - top.length
+  return { memberImpacting, technical, top, overflow, hasMore: overflow > 0 || technical.length > 0 }
 }
