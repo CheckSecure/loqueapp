@@ -16,6 +16,7 @@ import { parseExpertise } from '@/lib/parseExpertise'
 import { applyMemberEligibility, filterEligible, assertAllEligible, isEligibleMember, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { classifyIntroHistory, exhaustionThreshold, ACTIVE_STATUSES } from '@/lib/introRequests/history'
 import { shouldNotifyVisibleBatch, notifyNewVisibleBatch } from '@/lib/notifications/engagement'
+import { randomUUID } from 'crypto'
 import { VISIBLE_STATUS, RESERVED_STATUS, NO_EXPOSURE, visibleSlotsFree, type CardCounts } from '@/lib/introductions/capacity'
 
 // Unified scoring model for all tiers
@@ -1071,7 +1072,10 @@ export function classifyGenerationOutcome(
   if (opts.timedOut) return 'transient_error'                 // uncertain — never a definitive empty
   if (finalOutcomes.includes('error')) return 'transient_error' // residual/mixed transient uncertainty
   if (finalOutcomes.length === 0) return 'empty_pool'
-  if (finalOutcomes.every((o) => o === 'capacity' || o === 'exists_active')) return 'capacity'
+  // 'unresolved' (081) joins the capacity family: a deterministic, self-clearing block. A walk in
+  // which every candidate was refused for capacity or for owing a response is retryable — it
+  // succeeds on its own once those members act.
+  if (finalOutcomes.every((o) => o === 'capacity' || o === 'exists_active' || o === 'unresolved')) return 'capacity'
   return 'no_compatible_candidate'                            // deterministic non-capacity rejections
 }
 
@@ -1212,6 +1216,22 @@ export async function generateReciprocalBatchForMember(
     const remaining = Math.min(target, visibleSlotsFree({ visible: aVisible ?? 0, reserved: 0 }))
     if (remaining === 0) return finish('noop_at_capacity', 0, 0, 0) // idempotent re-run — already has cards
 
+    // ── RESPONSE ELIGIBILITY (migration 081) ───────────────────────────────────────────────────
+    //
+    // ONE release envelope for this whole run. Every card placed under it is a sibling, so the
+    // second card of a two-card release is not refused because the first is unanswered — which is
+    // the naive rule this deliberately is not.
+    //
+    // A run is always a NEW release, so at this point the envelope is empty and the member must be
+    // genuinely clear. This prefilter only avoids issuing pointless RPC calls; it is NOT the
+    // enforcement. Two generators can both read zero here and both proceed, which is exactly why
+    // the same check is re-derived inside create_reciprocal_suggestion under the member advisory
+    // locks. 'capacity' is reported rather than a new outcome so the retry queue's existing
+    // deterministic-reschedule path applies unchanged — it is a self-clearing block, like capacity.
+    const outstanding = await countUnresolvedRecommendations(adminClient, userId)
+    if (outstanding > 0) return finish('capacity', 0, 0, 0)
+    const releaseId = randomUUID()
+
     if (Date.now() >= deadlineAt || controller.signal.aborted) return finish('transient_error', 0, 0, 0)
 
     // Ranker + exposure use the SAME deadline-bound client → all their reads are cancellable.
@@ -1228,7 +1248,7 @@ export async function generateReciprocalBatchForMember(
     // refuses to start one past the deadline. Remaining budget bounds the walk's own clock check.
     const walk = await walkCandidates(
       ordered, remaining,
-      (id) => createReciprocalSuggestion(adminClient, userId, id, { source: pairSource }).then((r) => r.outcome),
+      (id) => createReciprocalSuggestion(adminClient, userId, id, { source: pairSource, releaseId }).then((r) => r.outcome),
       () => Date.now(), sleep,
       { ...WALK_LIMITS, timeBudgetMs: Math.max(0, deadlineAt - Date.now()) },
       controller.signal,

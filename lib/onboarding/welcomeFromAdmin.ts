@@ -11,6 +11,8 @@ Our goal is to thoughtfully introduce accomplished people who can genuinely help
 
 As one of our founding members, your feedback will help shape where Andrel goes from here. If you have ideas, questions, or someone specific you'd like to meet, just send me a message here — I'd love to hear from you.
 
+A note on how introductions work: each one waits for your response—choose Express interest or Pass. If you express interest, we keep it private until the other person responds independently, so you may be waiting a little while without hearing anything. Responding to the introductions you have keeps you eligible for future introductions. They remain curated rather than scheduled, so there may not be a new introduction in every batch.
+
 — Daniel`
 
 export interface WelcomeResult {

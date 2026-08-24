@@ -123,7 +123,35 @@ export async function getQueuedBatch(adminClient: any, memberId: string): Promis
  * Only the ACTIVE batch ever holds 'suggested' rows, so this equals the active
  * batch's open count. Returns 0 when the active batch is complete (or none exists).
  */
-export async function countUnresolvedRecommendations(adminClient: any, memberId: string): Promise<number> {
+export async function countUnresolvedRecommendations(
+  adminClient: any,
+  memberId: string,
+  opts?: { excludeReleaseId?: string | null; excludeBatchId?: string | null },
+): Promise<number> {
+  // THE AUTHORITY IS THE DATABASE. public.count_unresolved_introductions (migration 081) is what
+  // actually refuses a placement, inside the writers, under the member advisory locks. Calling it
+  // here rather than recomputing the predicate in TypeScript means the weekly gate and the writers
+  // can never drift apart — and it is one round trip instead of two.
+  if (typeof adminClient?.rpc === 'function') {
+    try {
+      const { data, error } = await adminClient.rpc('count_unresolved_introductions', {
+        p_member_id: memberId,
+        p_exclude_release: opts?.excludeReleaseId ?? null,
+        p_exclude_batch: opts?.excludeBatchId ?? null,
+      })
+      if (!error) return Number(data ?? 0)
+      console.error('[queue] count_unresolved_introductions unavailable (class):', (error as any)?.code ?? 'unknown')
+    } catch {
+      // A client that cannot issue the call at all (an older build, or a caller that passes a
+      // narrower client) falls through to the legacy computation rather than throwing.
+    }
+  }
+
+  // FALLBACK, deliberately kept. If 081 has not been applied yet the function does not exist, and
+  // failing closed here would stop ALL generation rather than degrade. The legacy computation below
+  // is the pre-081 behaviour: it is slightly LOOSER (it does not exclude inactive targets, incoming
+  // interest or matched pairs), which can only make a member look busier than they are — it never
+  // lets a placement through that the database would refuse, because the database re-checks anyway.
   const { data: suggested } = await adminClient
     .from('intro_requests').select('target_user_id')
     .eq('requester_id', memberId).eq('status', 'suggested')

@@ -20,6 +20,8 @@ import { currentCycleBatch } from '@/lib/introductions/thursdaySchedule'
 import ImproveRecommendationsCard from '@/components/ImproveRecommendationsCard'
 import IncomingInterestCard from '@/components/IncomingInterestCard'
 import WaitingOnResponse from '@/components/introductions/WaitingOnResponse'
+import RespondToIntroductionsNotice from '@/components/introductions/RespondToIntroductionsNotice'
+import { shouldShowRespondNotice } from '@/lib/introductions/unresolved'
 import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
@@ -886,6 +888,13 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             real candidate scarcity, so they could not reliably justify a warning. The
             single card above covers the actionable case (missing recommendation
             fields); the neutral empty state covers the rest. */}
+
+        {/* RESPOND-TO-STAY-ELIGIBLE — derived from the SAME array that renders the cards, so the
+            notice and the cards can never disagree. allSuggestions has already excluded correlated
+            waiting entries, capacity-released rows, queued rows, terminal rows, matched and
+            deactivated targets, and incoming-interest targets. Directly above the grid, in normal
+            flow: above the fold on both breakpoints and incapable of covering the fixed MobileNav. */}
+        {shouldShowRespondNotice(allSuggestions) && <RespondToIntroductionsNotice />}
 
         {/* TWO-COLUMN LAYOUT */}
         <div className="grid lg:grid-cols-3 gap-6 lg:gap-8">

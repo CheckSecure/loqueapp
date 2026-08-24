@@ -8,7 +8,10 @@ import { MAX_VISIBLE_INTRO_CARDS } from '@/lib/introductions/capacity'
 // from the structured pair_id (client), NOT from match_reason — so `reason` here is an OPTIONAL
 // genuine fit explanation, not the label.
 
-export type ReciprocalOutcome = 'created' | 'exists_active' | 'cooldown' | 'capacity' | 'ineligible' | 'invalid' | 'error'
+// 'unresolved' (migration 081): one of the two members still owes a response on an introduction
+// they already hold. A DETERMINISTIC skip, exactly like 'capacity' — never retried by
+// walkCandidates, and self-clearing the moment that member acts.
+export type ReciprocalOutcome = 'created' | 'exists_active' | 'cooldown' | 'capacity' | 'unresolved' | 'ineligible' | 'invalid' | 'error'
 
 export interface ReciprocalResult {
   ok: boolean
@@ -21,7 +24,22 @@ export async function createReciprocalSuggestion(
   bId: string,
   // NOTE: there is deliberately no `maxCards` option. The visible cap is a constant inside the RPC
   // and cannot be raised from here; offering the knob would only invite a caller to try.
-  opts?: { source?: string; reason?: string | null; cooldownDays?: number },
+  opts?: {
+    source?: string
+    reason?: string | null
+    cooldownDays?: number
+    /**
+     * The RELEASE ENVELOPE this placement belongs to (migration 081).
+     *
+     * Stamped on aId's card only, and excluded from aId's own unresolved count, so the second card
+     * of a two-card release is not refused because the first one is unanswered. Omitting it makes
+     * this an INDEPENDENT placement: aId must then be genuinely clear, which is what a coverage fill
+     * or a one-off pairing should require.
+     *
+     * bId is never exempted by it. They are the counterpart of somebody else's release.
+     */
+    releaseId?: string | null
+  },
 ): Promise<ReciprocalResult> {
   if (!aId || !bId || isSelfPair(aId, bId)) return { ok: false, outcome: 'invalid' }
   const { data, error } = await admin.rpc('create_reciprocal_suggestion', {
@@ -34,6 +52,7 @@ export async function createReciprocalSuggestion(
     // resolves by argument list. The RPC CLAMPS it downward against its own constant, so this value
     // can never raise the cap; it is passed as the contract's number purely so the two agree.
     p_max_cards: MAX_VISIBLE_INTRO_CARDS,
+    p_release_id: opts?.releaseId ?? null,
   })
   if (error) {
     // A deadline-cancelled RPC surfaces as an AbortError — never log the raw abort/payload. All

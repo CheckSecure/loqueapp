@@ -258,8 +258,8 @@ export async function sendPendingIntrosReminderEmail(
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
             You still have introductions waiting for your response.<br/><br/>
-            Review them and choose either Interested or Pass.<br/><br/>
-            Once you've responded, you'll automatically receive new introductions in the following batch.
+            Review them and choose either Express interest or Pass.<br/><br/>
+            Once you've responded, you'll be eligible for the next round of curated introductions. We only introduce when there's a genuine fit, so there may not be a new introduction in every batch.
           </p>
           <a href="https://andrel.app/dashboard/introductions"
              style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">

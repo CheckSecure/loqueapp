@@ -174,8 +174,13 @@ describe('PART 3 reminder email (structural)', () => {
   it('exact subject, body, and CTA', () => {
     expect(email).toContain("subject: 'Action needed before your next introductions'")
     expect(email).toContain('You still have introductions waiting for your response.')
-    expect(email).toContain('Review them and choose either Interested or Pass.')
-    expect(email).toContain("Once you've responded, you'll automatically receive new introductions in the following batch.")
+    expect(email).toContain('Review them and choose either Express interest or Pass.')
+    // The guarantee is GONE. Responding restores ELIGIBILITY; it does not produce an introduction —
+    // fit, capacity, cooldown and pool availability all still decide (migration 081 / the response
+    // education work). This assertion exists so it cannot quietly come back.
+    expect(email).not.toContain("you'll automatically receive new introductions in the following batch")
+    expect(email).toContain("Once you've responded, you'll be eligible for the next round of curated introductions.")
+    expect(email).toContain("We only introduce when there's a genuine fit, so there may not be a new introduction in every batch.")
     expect(email).toContain('https://andrel.app/dashboard/introductions')
     expect(email).toContain('Review Introductions')
   })
