@@ -227,7 +227,9 @@ describe('the admin control', () => {
   })
   it('shows a failure instead of a false success', () => {
     expect(ADMINUI).toMatch(/setConnectorMsg\(\{ kind: 'err'/)
-    expect(ADMINUI).toMatch(/The toggle is NOT moved on failure/)
+    // The checkbox renders the LIVE server row, and a failure records no confirmed result — so
+    // there is nothing for it to render but the prior state.
+    expect(ADMINUI).toMatch(/A failure can never leave a checked box/)
   })
   it('states the criterion where it is applied', () => {
     expect(ANDREL_CONNECTOR_ADMIN_HELP).toBe('Recognizes members who thoughtfully expand the Andrel community.')

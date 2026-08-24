@@ -63,7 +63,49 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
   const [filterCohort, setFilterCohort] = useState<string>('')
   const [filterActivation, setFilterActivation] = useState<string>('')
   const [showStuckOnly, setShowStuckOnly] = useState(false)
-  const [selectedUser, setSelectedUser] = useState<Profile | null>(null)
+  // THE STALE-PANEL BUG, AND ITS FIX.
+  //
+  // This used to hold the Profile OBJECT captured when the row was clicked. router.refresh() then
+  // re-rendered the server component and delivered a fresh `profiles` array — but nothing re-derived
+  // the captured object, so the panel kept rendering the values it saw when it opened. That is why
+  // the Andrel Connector checkbox stayed unchecked after a successful award: the write succeeded,
+  // the message was truthful, and the checkbox was reading a snapshot from before it.
+  //
+  // Holding only the ID and looking the member up in the LIVE array fixes it for every control in
+  // this panel, not just the badge — tier, status, verification and credits had the same latent
+  // staleness.
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+
+  // A CONFIRMED result, held only until the refreshed server data catches up.
+  //
+  // router.refresh() is asynchronous, so between the server confirming and the new props arriving
+  // there is a window where the live row still says `false`. This closes it — and it is NOT
+  // optimism: it is only ever set from a result the database already committed. It is discarded the
+  // moment the server row agrees, or when a different member is selected.
+  const [connectorConfirmed, setConnectorConfirmed] =
+    useState<{ id: string; enabled: boolean; awardedAt: string | null } | null>(null)
+
+  const liveSelected = selectedUserId ? profiles.find((p) => p.id === selectedUserId) ?? null : null
+  // Merge the confirmed result over the live row ONLY while the server has not caught up. Once the
+  // refreshed row reports the same value the override is redundant, so it is dropped and the server
+  // becomes the sole authority again.
+  const overrideApplies =
+    !!connectorConfirmed && !!liveSelected &&
+    connectorConfirmed.id === liveSelected.id &&
+    liveSelected.is_andrel_connector !== connectorConfirmed.enabled
+  const selectedUser: Profile | null = liveSelected && overrideApplies
+    ? { ...liveSelected,
+        is_andrel_connector: connectorConfirmed!.enabled,
+        andrel_connector_awarded_at: connectorConfirmed!.awardedAt }
+    : liveSelected
+  const setSelectedUser = (u: Profile | null) => {
+    setSelectedUserId(u?.id ?? null)
+    // Opening or closing the panel discards any override and any transient message, so reopening
+    // always shows authoritative server state.
+    setConnectorConfirmed(null)
+    setConnectorMsg(null)
+    setConnectorReason('')
+  }
   const [showForceMatch, setShowForceMatch] = useState(false)
   const [matchUserA, setMatchUserA] = useState<string>('')
   const [matchUserB, setMatchUserB] = useState<string>('')
@@ -196,13 +238,27 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
     try {
       const result = await adminSetAndrelConnector(userId, next, connectorReason)
       if ('error' in result && result.error) {
-        // The toggle is NOT moved on failure — it re-reads from server state, so it cannot show a
-        // success the database never performed.
+        // Nothing is recorded, so the checkbox keeps rendering the live server row — the prior
+        // visual state — and the message says why. A failure can never leave a checked box.
         setConnectorMsg({ kind: 'err', text: result.error })
         return
       }
+      // ONLY NOW, after the transaction is confirmed. `enabled` and `awardedAt` come from the
+      // server result rather than from `next`, so the checkbox and the awarded date reflect what the
+      // database actually did — including the idempotent 'unchanged' case, where the member was
+      // already in that state and the result still reports it truthfully.
+      setConnectorConfirmed({
+        id: userId,
+        enabled: (result as any).enabled === true,
+        awardedAt: ((result as any).awardedAt as string | null) ?? null,
+      })
       setConnectorReason('')
-      setConnectorMsg({ kind: 'ok', text: next ? 'Andrel Connector awarded.' : 'Andrel Connector removed.' })
+      setConnectorMsg({
+        kind: 'ok',
+        text: (result as any).enabled ? 'Andrel Connector awarded.' : 'Andrel Connector removed.',
+      })
+      // Bring the authoritative row forward. The override above covers the gap until it lands, and
+      // is discarded automatically once the refreshed row agrees.
       router.refresh()
     } catch {
       setConnectorMsg({ kind: 'err', text: 'Something went wrong. Please try again.' })
