@@ -21,6 +21,8 @@ import ImproveRecommendationsCard from '@/components/ImproveRecommendationsCard'
 import IncomingInterestCard from '@/components/IncomingInterestCard'
 import WaitingOnResponse from '@/components/introductions/WaitingOnResponse'
 import RespondToIntroductionsNotice from '@/components/introductions/RespondToIntroductionsNotice'
+import { AndrelConnectorBadge } from '@/components/ui/AndrelConnectorBadge'
+import { isAndrelConnector } from '@/lib/recognition/andrelConnector'
 import { shouldShowRespondNotice } from '@/lib/introductions/unresolved'
 import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
@@ -233,7 +235,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     if (uniqTargetIds.length > 0) {
       const { data: tp } = await createAdminClient()
         .from('profiles')
-        .select('id, full_name, title, exact_job_title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes, account_status')
+        .select('id, full_name, title, exact_job_title, company, location, bio, interests, seniority, role_type, mentorship_role, avatar_url, expertise, purposes, account_status, is_andrel_connector')
         .in('id', uniqTargetIds)
       for (const p of (tp ?? []) as any[]) if (p?.id) targetProfiles.set(p.id, p)
     }
@@ -259,6 +261,9 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
           expertise: p.expertise,
           purposes: p.purposes,
           account_status: p.account_status,
+          // Carried explicitly, like every other field: this map is an allowlist, so a column added
+          // to the select alone would never reach the card.
+          is_andrel_connector: p.is_andrel_connector,
         }
       : null
   }
@@ -569,6 +574,15 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xl sm:text-2xl font-bold text-brand-navy truncate leading-[1.1] tracking-tight">{s.full_name || 'New member'}</p>
+              {/* Andrel Connector — on the FEATURED card only. The compact additional/pending cards
+                  are already dense, and the brief is explicit that this must not crowd the primary
+                  information. On its own line below the name, so `truncate` above is untouched and
+                  no name shortens because of it. */}
+              {isAndrelConnector(s) && (
+                <div className="mt-1.5">
+                  <AndrelConnectorBadge size="sm" />
+                </div>
+              )}
               {(() => { const identity = professionalIdentity(s); return identity.primary ? (
                 <div className="mt-1.5">
                   <div className="flex items-center gap-2 text-sm text-slate-700 font-medium">

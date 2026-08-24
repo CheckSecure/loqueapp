@@ -10,6 +10,8 @@ import FormerMemberBadge from '@/components/FormerMemberBadge'
 import { EnlargeableAvatar } from '@/components/EnlargeableAvatar'
 import { professionalIdentity } from '@/lib/professionalIdentity'
 import IdentityLine from '@/components/IdentityLine'
+import { AndrelConnectorBadge } from '@/components/ui/AndrelConnectorBadge'
+import { isAndrelConnector } from '@/lib/recognition/andrelConnector'
 import PresenceBadge from '@/components/presence/PresenceBadge'
 import { usePresenceLabel } from '@/components/presence/PresenceProvider'
 
@@ -119,13 +121,17 @@ export default function NetworkCard({ matchId, profile, connectedAt, isNew, matc
             )}
           </EnlargeableAvatar>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <p className="text-sm font-semibold text-brand-navy break-words sm:truncate">
                 {isDeactivated ? 'Former member' : profile.full_name}
               </p>
               {highlighted && !isDeactivated && (
                 <span className="px-1.5 py-0.5 bg-brand-gold-soft text-brand-gold border border-brand-gold/30 text-[10px] font-bold rounded uppercase tracking-wide">New</span>
               )}
+              {/* Andrel Connector. Suppressed for a former member — a deactivated profile shows no
+                  identity, so it must not show a recognition either. flex-wrap (was nowrap) lets the
+                  badge drop to its own line on narrow widths instead of squeezing the name. */}
+              {!isDeactivated && isAndrelConnector(profile) && <AndrelConnectorBadge size="sm" />}
             </div>
             {!isDeactivated && (() => { const identity = professionalIdentity(profile); return identity.primary ? (
               <div className="mt-0.5">

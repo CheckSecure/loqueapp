@@ -12,6 +12,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { professionalIdentity } from '@/lib/professionalIdentity'
 import { canViewerDiscoverMember } from '@/lib/privacy/canViewerDiscoverMember'
 import { PUBLIC_PROFILE_SELECT } from '@/lib/profiles/publicProfile'
+import { AndrelConnectorBadge } from '@/components/ui/AndrelConnectorBadge'
+import { isAndrelConnector } from '@/lib/recognition/andrelConnector'
 import { isLinkableCompany } from '@/lib/company/slug'
 import CompanyLink from '@/components/CompanyLink'
 import IdentityLine from '@/components/IdentityLine'
@@ -282,6 +284,16 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
             </EnlargeableAvatar>
 
             <h1 className="text-2xl font-bold text-brand-navy tracking-tight">{name}</h1>
+            {/* Andrel Connector — immediately BELOW the name rather than inline, so a long name
+                never has to share a line with it and cannot truncate. Rendered only when the
+                profile actually holds it; `profile` here came from public_profiles, which is
+                already row-scoped by can_discover_profile, so a viewer who cannot see this member
+                never reaches this render at all. */}
+            {isAndrelConnector(profile) && (
+              <div className="mt-1.5">
+                <AndrelConnectorBadge size="sm" />
+              </div>
+            )}
 
             {/* Same live presence badge as the expanded Network modal (standalone poll here). */}
             <LivePresenceBadge memberId={params.id} initialLabel={presenceSeed} className="mt-1" />

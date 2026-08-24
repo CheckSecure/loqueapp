@@ -30,6 +30,8 @@ export const PUBLIC_PROFILE_COLUMNS = [
   'current_focus_areas',
   'previous_roles',
   'account_status',
+  // Andrel Connector: the public boolean only (migration 082).
+  'is_andrel_connector',
 ] as const
 
 /** Comma-joined form for `.select(...)`. */

@@ -6,7 +6,8 @@ import { professionalIdentityLine } from '@/lib/professionalIdentity'
 import { normalizeFocusAreas } from '@/lib/profile/focusAreas'
 import { roleQualityFlags, ROLE_CATEGORY_LABELS, type RoleCategory } from '@/lib/profileRoles'
 import { Search, Filter, UserPlus, Zap, Edit, CheckCircle, AlertTriangle, Users, TrendingUp } from 'lucide-react'
-import { adminForceMatch, adminUpdateUser, adminSetFoundingMember, adminAdjustCredits } from '@/app/actions'
+import { adminForceMatch, adminUpdateUser, adminSetFoundingMember, adminAdjustCredits, adminSetAndrelConnector } from '@/app/actions'
+import { ANDREL_CONNECTOR_ADMIN_HELP } from '@/lib/recognition/andrelConnector'
 import { useRouter } from 'next/navigation'
 import { requestMemberPasswordReset } from '@/lib/admin/sendPasswordReset'
 
@@ -40,6 +41,8 @@ interface Profile {
   profile_complete: boolean
   created_at: string
   is_founding_member: boolean
+  is_andrel_connector?: boolean
+  andrel_connector_awarded_at?: string | null
   founding_member_email_sent_at: string | null
   founding_member_expires_at: string | null
   launch_cohort: string | null
@@ -172,6 +175,39 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
       router.refresh()
     } else {
       alert(result.error)
+    }
+  }
+
+  // ── Andrel Connector ───────────────────────────────────────────────────────────────────────
+  // Manual recognition. Never derived from nominations, invitations or referral totals — there is
+  // deliberately no code path here that reads any of those.
+  const [connectorReason, setConnectorReason] = useState('')
+  const [connectorBusy, setConnectorBusy] = useState(false)
+  const [connectorMsg, setConnectorMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  const handleAndrelConnectorToggle = async (userId: string, next: boolean) => {
+    // Guard FIRST: an in-flight request must not be joined by a second one. The database is
+    // idempotent anyway, but a second request would still race the refresh and could repaint a
+    // stale state.
+    if (connectorBusy) return
+    if (!next && !confirm('Remove the Andrel Connector recognition from this member?')) return
+    setConnectorBusy(true)
+    setConnectorMsg(null)
+    try {
+      const result = await adminSetAndrelConnector(userId, next, connectorReason)
+      if ('error' in result && result.error) {
+        // The toggle is NOT moved on failure — it re-reads from server state, so it cannot show a
+        // success the database never performed.
+        setConnectorMsg({ kind: 'err', text: result.error })
+        return
+      }
+      setConnectorReason('')
+      setConnectorMsg({ kind: 'ok', text: next ? 'Andrel Connector awarded.' : 'Andrel Connector removed.' })
+      router.refresh()
+    } catch {
+      setConnectorMsg({ kind: 'err', text: 'Something went wrong. Please try again.' })
+    } finally {
+      setConnectorBusy(false)
     }
   }
 
@@ -925,6 +961,50 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                     {selectedUser.founding_member_expires_at && (
                       <p>
                         Founding access expires {new Date(selectedUser.founding_member_expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* ANDREL CONNECTOR — manual recognition. The checkbox reflects SERVER state
+                    (selectedUser), never local optimism, so a failed write cannot leave it showing
+                    a success. */}
+                <div className="space-y-1 pt-2 border-t border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="andrel-connector-toggle"
+                      type="checkbox"
+                      disabled={connectorBusy}
+                      checked={selectedUser.is_andrel_connector === true}
+                      onChange={e => handleAndrelConnectorToggle(selectedUser.id, e.target.checked)}
+                      className="rounded border-slate-300 disabled:opacity-50"
+                    />
+                    <label htmlFor="andrel-connector-toggle" className="text-sm text-slate-700">
+                      Andrel Connector
+                    </label>
+                  </div>
+                  <div className="pl-6 text-xs text-slate-500 space-y-1">
+                    <p>{ANDREL_CONNECTOR_ADMIN_HELP}</p>
+                    {selectedUser.is_andrel_connector === true && selectedUser.andrel_connector_awarded_at && (
+                      <p>
+                        Awarded {new Date(selectedUser.andrel_connector_awarded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    )}
+                    {selectedUser.is_andrel_connector !== true && (
+                      <input
+                        type="text"
+                        value={connectorReason}
+                        onChange={e => setConnectorReason(e.target.value)}
+                        disabled={connectorBusy}
+                        maxLength={500}
+                        placeholder="Private note (optional, internal only)"
+                        className="w-full mt-1 rounded border border-slate-200 px-2 py-1 text-xs disabled:opacity-50"
+                      />
+                    )}
+                    {connectorBusy && <p className="text-slate-400">Saving…</p>}
+                    {connectorMsg && (
+                      <p role="status" className={connectorMsg.kind === 'ok' ? 'text-emerald-600' : 'text-red-600'}>
+                        {connectorMsg.text}
                       </p>
                     )}
                   </div>

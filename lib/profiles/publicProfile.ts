@@ -20,6 +20,9 @@ export const PUBLIC_PROFILE_COLUMNS = [
   'role_type', 'seniority', 'location', 'bio', 'expertise', 'interests', 'purposes',
   'intro_preferences', 'mentorship_role', 'open_to_mentorship',
   'open_to_business_solutions', 'current_focus_areas', 'previous_roles',
+  // Andrel Connector: the BOOLEAN only. awarded_at and awarded_by are private and are deliberately
+  // absent from the view, so no member-facing read can reach them (migration 082).
+  'is_andrel_connector',
 ] as const
 
 /** Comma-joined column list for a `.select(...)` on the public_profiles view. */

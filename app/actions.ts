@@ -15,6 +15,7 @@ import {
   rejectIntroRequest,
 } from '@/lib/introRequests'
 import { expressInterestOnCard } from '@/lib/introRequests/expressInterest'
+import { ADMIN_EMAIL } from '@/lib/admin/requireAdmin'
 import { generateOnboardingRecommendations } from '@/lib/generate-recommendations'
 import { enqueueOnboardingRetry } from '@/lib/onboarding/retryQueue'
 import { promoteIfResolved } from '@/lib/introductions/queue'
@@ -1593,6 +1594,77 @@ export async function adminUpdateUser(userId: string, updates: {
 // is null). Removing the status preserves sent_at so the audit trail survives.
 // Manual resend path: nullify profiles.founding_member_email_sent_at via
 // Supabase Dashboard, then re-grant from the admin UI.
+/**
+ * Award or remove the Andrel Connector recognition.
+ *
+ * AUTHORIZATION IS DECIDED TWICE, ON PURPOSE. Here, against the authenticated session and the
+ * configured admin address — the same guard every other admin action in this file uses — and again
+ * inside set_andrel_connector(), which re-checks profiles.is_admin under service_role. Hiding the
+ * control in the UI is not part of the authorization at all.
+ *
+ * THE ACTING ADMIN IS NEVER A PARAMETER. It is resolved from the session below. A browser cannot
+ * supply awarded_by, and a forged value would fail the database's own check regardless.
+ *
+ * CONSISTENCY AND THE AUDIT ENTRY ARE THE DATABASE'S JOB. One RPC writes the flag, the timestamp,
+ * the awarding admin and exactly one append-only audit row in a single transaction, under a row
+ * lock — so a double submission is a no-op that records nothing, and there is no partial state for
+ * this function to clean up.
+ */
+export async function adminSetAndrelConnector(
+  memberId: string,
+  enabled: boolean,
+  reason?: string,
+) {
+  const { user } = await getSupabaseAndUser()
+  if (!user || user.email !== ADMIN_EMAIL) return { error: 'Not authorized' }
+  if (!memberId) return { error: 'Member is required' }
+
+  const admin = createAdminClient()
+
+  // The acting administrator's PROFILE id — the session gives an auth id, and the database checks
+  // profiles.is_admin, so the two must be reconciled server-side rather than assumed equal.
+  const { data: actor, error: actorErr } = await admin
+    .from('profiles').select('id, is_admin').eq('id', user.id).maybeSingle()
+  if (actorErr) return { error: 'Could not verify your administrator account. Please try again.' }
+  if (!actor?.id) return { error: 'Your administrator profile could not be found.' }
+
+  const { data, error } = await admin.rpc('set_andrel_connector', {
+    p_member_id: memberId,
+    p_admin_id: actor.id,
+    p_enabled: enabled,
+    p_reason: reason?.trim() ? reason.trim() : null,
+  })
+
+  if (error) {
+    // Class only — never the raw database message.
+    console.error('[adminSetAndrelConnector] rpc failed:', (error as any)?.code ?? 'unknown')
+    return { error: 'Could not update the recognition. Please try again.' }
+  }
+
+  const outcome = (data as any)?.outcome as string | undefined
+  if (outcome === 'forbidden') {
+    return { error: 'Your account is not permitted to award this recognition.' }
+  }
+  if (outcome === 'invalid') {
+    const detail = (data as any)?.detail
+    if (detail === 'self_award') return { error: 'You cannot award this recognition to yourself.' }
+    if (detail === 'member_not_found') return { error: 'Member not found.' }
+    if (detail === 'reason_too_long') return { error: 'That private note is too long (500 characters max).' }
+    return { error: 'That request was not valid.' }
+  }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/admin/members')
+  // 'unchanged' is a SUCCESS: the member is already in the requested state. Reporting it as an error
+  // would make an idempotent retry look like a failure.
+  return {
+    success: true,
+    enabled,
+    changed: outcome === 'awarded' || outcome === 'removed',
+    awardedAt: ((data as any)?.awarded_at as string | null) ?? null,
+  }
+}
+
 export async function adminSetFoundingMember(userId: string, isFoundingMember: boolean) {
   const { user } = await getSupabaseAndUser()
   if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }

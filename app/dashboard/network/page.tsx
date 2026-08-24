@@ -101,12 +101,12 @@ export default async function NetworkPage() {
     matchedUserIds.length > 0
       ? createAdminClient()
           .from('profiles')
-          .select('id, full_name, title, company, company_id, location, city, state, bio, role_type, seniority, avatar_url, purposes, intro_preferences, interests, expertise, open_to_mentorship, open_to_business_solutions, linkedin_url, account_status, company_rel:companies!company_id(id, name, slug, logo_url)')
+          .select('id, full_name, title, company, company_id, location, city, state, bio, role_type, seniority, avatar_url, purposes, intro_preferences, interests, expertise, open_to_mentorship, open_to_business_solutions, linkedin_url, account_status, is_andrel_connector, company_rel:companies!company_id(id, name, slug, logo_url)')
           .in('id', matchedUserIds)
       : Promise.resolve({ data: [] as any[], error: null }),
     createAdminClient()
       .from('profiles')
-      .select('id, full_name, title, company, bio, seniority, role_type, purposes, intro_preferences, interests, expertise, open_to_mentorship')
+      .select('id, full_name, title, company, bio, seniority, role_type, purposes, intro_preferences, interests, expertise, open_to_mentorship, is_andrel_connector')
       .eq('id', profileId)
       .maybeSingle(),
   ])
