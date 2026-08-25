@@ -1,22 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
-import {
-  triageAttention, attentionActionLabel, isTechnicalAttention,
-  MAX_HOME_ATTENTION, ATTENTION_PRIORITY, computeNeedsAttention,
-  type AttentionItem,
-} from '@/lib/admin/dashboardMetrics'
+import { computeNeedsAttention, isTechnicalAttention } from '@/lib/admin/dashboardMetrics'
 
 /**
- * The admin homepage is an OPERATIONS CONSOLE, not a monitoring report.
+ * The admin homepage is a DOOR, not a dashboard.
  *
- * It answers two questions — "what needs me?" and "where do I go?" — and nothing else. Every
- * dense diagnostic that used to live on it now lives at /dashboard/admin/operations. These
- * tests lock BOTH halves of that contract: the homepage stays short and the detail is not
- * silently deleted.
+ * It raises no alerts of its own. It offers Quick Actions, four At-a-Glance numbers, and a
+ * Console of destinations — in that order. Every alert and every diagnostic, member-impacting
+ * and technical alike, lives at /dashboard/admin/operations, one click away via
+ * Console → System → Operations. These tests lock BOTH halves: the homepage stays bare and
+ * the detail is not silently deleted.
  *
  * The pages are JSX server components this vitest setup cannot render (tsconfig jsx=preserve),
  * so — consistent with admin-nav-referral-campaign.test.ts and admin-badge-count.test.ts —
- * the page assertions are made on source. The triage layer itself is pure and IS executed.
+ * the page assertions are made on source. computeNeedsAttention is pure and IS executed.
  */
 const HOME = readFileSync('app/dashboard/admin/page.tsx', 'utf8')
 const OPS = readFileSync('app/dashboard/admin/operations/page.tsx', 'utf8')
@@ -34,100 +31,54 @@ describe('header', () => {
   })
 })
 
-// ── 2. Needs Attention: member-impacting only, capped at four ────────────────────────
-describe('Needs Attention triage (pure)', () => {
-  const item = (id: string, over: Partial<AttentionItem> = {}): AttentionItem => ({
-    id, severity: 'medium', count: 1, title: id, explanation: id, href: '/dashboard/admin/waitlist', ...over,
+// ── 2. Needs Attention is GONE from the homepage ────────────────────────────────────
+describe('Needs Attention is absent', () => {
+  it('renders no attention section, heading, or row', () => {
+    expect(HOME).not.toContain('Needs Attention')
+    expect(HOME).not.toContain('needs-attention')
+    expect(HOME).not.toContain('View all in Operations')
+    expect(HOME).not.toContain('Nothing needs you right now')
   })
 
-  it('routes technical telemetry to Operations, never to a top-level homepage alert', () => {
-    for (const id of ['webhook-errors', 'rec-stale', 'rec-concentration', 'mig-084_something']) {
-      expect(isTechnicalAttention(id)).toBe(true)
+  it('reads no attention data and imports no attention helper', () => {
+    for (const token of ['needsAttention', 'triageAttention', 'attentionActionLabel', 'MAX_HOME_ATTENTION', 'severityDot']) {
+      expect(HOME, `${token} still referenced`).not.toContain(token)
     }
-    const t = triageAttention([
-      item('webhook-errors', { href: '/dashboard/admin/operations' }),
-      item('mig-084_something', { href: '/dashboard/admin/operations' }),
-      item('op-issues', { href: '/dashboard/admin/issues' }),
-    ])
-    expect(t.top.map((i) => i.id)).toEqual(['op-issues'])
-    expect(t.technical.map((i) => i.id).sort()).toEqual(['mig-084_something', 'webhook-errors'])
+    // the whole dashboardMetrics import existed only for that section
+    expect(HOME).not.toContain("from '@/lib/admin/dashboardMetrics'")
   })
 
-  it('keeps every member-impacting id OUT of the technical bucket', () => {
-    for (const id of ['inv-failed', 'inv-stuck', 'inv-na-7d', 'inv-na-3d', 'rec-none', 'op-waitlist', 'op-concierge', 'op-issues', 'op-intros', 'op-batch']) {
-      expect(isTechnicalAttention(id)).toBe(false)
+  it('drops the icons and severity styling only that section used', () => {
+    for (const token of ['ArrowRight', 'CheckCircle2', 'bg-red-500', 'bg-amber-500', 'bg-sky-400']) {
+      expect(HOME, `${token} is now unused`).not.toContain(token)
     }
   })
 
-  it('caps the homepage at four items and reports the overflow', () => {
-    const many = ['inv-failed', 'inv-stuck', 'op-waitlist', 'op-issues', 'rec-none', 'op-concierge', 'op-batch'].map((id) => item(id))
-    const t = triageAttention(many)
-    expect(MAX_HOME_ATTENTION).toBe(4)
-    expect(t.top).toHaveLength(4)
-    expect(t.overflow).toBe(3)
-    expect(t.hasMore).toBe(true)
-  })
-
-  it('orders the four by member impact, not array order', () => {
-    const t = triageAttention([item('op-batch'), item('op-concierge'), item('inv-stuck'), item('op-issues'), item('inv-failed'), item('op-waitlist')])
-    expect(t.top.map((i) => i.id)).toEqual(['inv-failed', 'inv-stuck', 'op-waitlist', 'op-issues'])
-  })
-
-  it('an unranked id still sorts (after every ranked one) instead of throwing', () => {
-    const t = triageAttention([item('brand-new-id', { severity: 'low' }), item('op-issues')])
-    expect(t.top.map((i) => i.id)).toEqual(['op-issues', 'brand-new-id'])
-    expect(ATTENTION_PRIORITY).not.toContain('brand-new-id')
-  })
-
-  it('nothing actionable → no rows and no "view all" unless Operations really has more', () => {
-    const empty = triageAttention([])
-    expect(empty.top).toHaveLength(0)
-    expect(empty.hasMore).toBe(false)
-    const onlyTechnical = triageAttention([item('webhook-errors')])
-    expect(onlyTechnical.top).toHaveLength(0)
-    expect(onlyTechnical.hasMore).toBe(true) // there IS something to see, just not a member incident
-  })
-
-  it('every real computeNeedsAttention id is classified and gets an action label', () => {
-    const produced = computeNeedsAttention({
-      invitations: { failed: 1, deliveryStuck: 1, notActivated7d: 1, notActivated3d: 1 } as any,
-      recommendations: { eligibleWithoutRec: 1, staleOverdue: 1, exposure: { median: 1, max: 9, concentrationAlert: true } } as any,
-      pendingMigrations: [{ migration: '084_x', message: 'm', impact: 'i' }],
-      webhookErrors: 2,
-      operational: { waitlistPending: 1, concierge: 1, issues: 1, adminIntros: 1, batchNeedsReview: true },
-    })
-    const t = triageAttention(produced)
-    expect(t.memberImpacting.length + t.technical.length).toBe(produced.length)
-    // Every homepage row has a plain-language destination label, never a bare verb-less link.
-    for (const i of t.top) expect(attentionActionLabel(i.href).length).toBeGreaterThan(4)
-    // The four the operator sees are exactly the member-impacting priorities.
-    expect(t.top.map((i) => i.id)).toEqual(['inv-failed', 'inv-stuck', 'op-waitlist', 'op-issues'])
-  })
-
-  it('labels destinations in plain language', () => {
-    expect(attentionActionLabel('/dashboard/admin/waitlist')).toBe('Review waitlist')
-    expect(attentionActionLabel('/dashboard/admin/members')).toBe('View members')
-    expect(attentionActionLabel('/dashboard/admin/operations')).toBe('Open operations')
-    expect(attentionActionLabel('/dashboard/admin/unknown')).toBe('Review')
+  it('still loads the dashboard once — the badges and glance numbers need it', () => {
+    expect((HOME.match(/loadAdminDashboard\(/g) || []).length).toBe(1)
   })
 })
 
-describe('Needs Attention rendering', () => {
-  it('renders through the triage layer and re-asserts the cap in the markup', () => {
-    expect(HOME).toContain('triageAttention(dash.needsAttention)')
-    expect(HOME).toContain('triage.top.slice(0, MAX_HOME_ATTENTION)')
-    expect(HOME).not.toContain('dash.needsAttention.map') // never the unfiltered list
+describe('section order', () => {
+  const order = ['quick-actions-heading', 'at-a-glance-heading', 'console-heading']
+
+  it('is Quick Actions, then At a Glance, then Console — and nothing before them', () => {
+    const positions = order.map((id) => HOME.indexOf(`<SectionHeading id="${id}"`))
+    expect(positions.every((n) => n > -1)).toBe(true)
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions)
   })
 
-  it('shows count, explanation, and a labeled destination on every row', () => {
-    expect(HOME).toContain('{item.count}')
-    expect(HOME).toContain('{item.explanation}')
-    expect(HOME).toContain('attentionActionLabel(item.href)')
+  it('Quick Actions is the FIRST section after the header', () => {
+    const firstSection = HOME.indexOf('<section')
+    const header = HOME.indexOf('<header>')
+    expect(header).toBeGreaterThan(-1)
+    expect(header).toBeLessThan(firstSection)
+    expect(HOME.slice(firstSection, firstSection + 200)).toContain('quick-actions-heading')
   })
 
-  it('offers "View all in Operations" when more exists, and a calm state when nothing does', () => {
-    expect(HOME).toMatch(/triage\.hasMore[\s\S]{0,300}View all in Operations/)
-    expect(HOME).toMatch(/triage\.top\.length === 0[\s\S]{0,400}Nothing needs you right now/)
+  it('renders exactly three sections', () => {
+    expect((HOME.match(/<section aria-labelledby=/g) || []).length).toBe(3)
+    expect((HOME.match(/<SectionHeading /g) || []).length).toBe(3)
   })
 })
 
@@ -246,7 +197,7 @@ describe('destination links are valid routes', () => {
 // ── 7. The dense sections are GONE from the homepage ─────────────────────────────────
 describe('removed homepage sections', () => {
   const GONE = [
-    'Invitations & Activation', 'Recommendations & Matching', 'Members & Engagement',
+    'Needs Attention', 'Invitations & Activation', 'Recommendations & Matching', 'Members & Engagement',
     'Platform Health', 'Monitoring not connected', 'Deployed commit', 'Schema migrations',
     'Auth activation source', 'Invitation webhook', 'Attempts (operational, not people)',
     'Not activated 24h', 'Exposure — median / max inbound',
@@ -264,7 +215,7 @@ describe('removed homepage sections', () => {
   })
 
   it('is materially shorter than the report it replaced', () => {
-    expect(HOME.split('\n').length).toBeLessThan(272) // the previous page was 272 lines
+    expect(HOME.split('\n').length).toBeLessThan(200) // the original report page was 272 lines
   })
 })
 
@@ -281,9 +232,37 @@ describe('Operations is the destination for everything removed', () => {
     }
   })
 
-  it('shows the COMPLETE attention list, technical items included', () => {
+  it('shows the COMPLETE attention list — unfiltered, uncapped, technical included', () => {
     expect(OPS).toContain('dash.needsAttention.map')
-    expect(OPS).not.toContain('triageAttention')
+    expect(OPS).not.toContain('triageAttention')   // no triage: Operations shows everything
+    // never truncated: the assertion is scoped to the attention block, since the deployed-SHA
+    // card legitimately slices a commit hash further down the page
+    const block = OPS.slice(OPS.indexOf('dash.needsAttention.length'), OPS.indexOf('Invitations & Activation'))
+    expect(block).not.toContain('.slice(')
+    expect(OPS).toContain('{dash.needsAttention.length}') // the count it renders is the full count
+  })
+
+  it('every item computeNeedsAttention can emit is reachable there, member-impacting or not', () => {
+    const produced = computeNeedsAttention({
+      invitations: { failed: 1, deliveryStuck: 1, notActivated7d: 1, notActivated3d: 1 } as any,
+      recommendations: { eligibleWithoutRec: 1, staleOverdue: 1, exposure: { median: 1, max: 9, concentrationAlert: true } } as any,
+      pendingMigrations: [{ migration: '084_x', message: 'm', impact: 'i' }],
+      webhookErrors: 2,
+      operational: { waitlistPending: 1, concierge: 1, issues: 1, adminIntros: 1, batchNeedsReview: true },
+    })
+    expect(produced.length).toBeGreaterThanOrEqual(12)
+    // the technical ones — the reason the homepage never carried this list — are all present
+    expect(produced.filter((i) => isTechnicalAttention(i.id)).length).toBeGreaterThanOrEqual(4)
+    // and every single href is a real admin route the operator can actually open
+    for (const i of produced) {
+      const seg = i.href.replace('/dashboard/admin/', '')
+      expect(existsSync(`app/dashboard/admin/${seg}/page.tsx`), `${i.id} -> ${i.href}`).toBe(true)
+    }
+  })
+
+  it('is one click from the homepage, so nothing is stranded', () => {
+    expect(HOME).toContain("href: '/dashboard/admin/operations'")
+    expect(HOME).toMatch(/group: 'System'[\s\S]{0,300}\/dashboard\/admin\/operations/)
   })
 
   it('keeps the pre-existing Intro Requests tool and the external log links', () => {
@@ -295,6 +274,12 @@ describe('Operations is the destination for everything removed', () => {
 
   it('states plainly that webhook events are not affected members', () => {
     expect(OPS).toContain('Webhook events are provider callbacks, not affected members.')
+  })
+
+  it('never tells the operator to go to Operations while already on Operations', () => {
+    const src = readFileSync('lib/admin/dashboardMetrics.ts', 'utf8')
+    expect(src).not.toContain('inspect delivery/webhook state in Operations')
+    expect(src).toContain('Review delivery and webhook details on this page.')
   })
 
   it('reuses the shared thresholds instead of re-deriving any number', () => {
@@ -345,7 +330,7 @@ describe('responsive layout', () => {
 
   it('every grid is single-column on a phone and widens only at a breakpoint', () => {
     const grids = HOME.match(/grid grid-cols-[^"'`]*/g) || []
-    expect(grids.length).toBeGreaterThanOrEqual(3) // quick actions, at-a-glance, console
+    expect(grids.length).toBe(3) // quick actions, at-a-glance, console — no others
     for (const cls of grids) {
       expect(cls, cls).toMatch(/^grid grid-cols-1\b/)
       expect(cls, cls).toMatch(/\b(sm|md|lg|xl):grid-cols-\d/) // widens, never stuck at one column
@@ -358,7 +343,7 @@ describe('responsive layout', () => {
 
   it('flex/grid children can actually shrink, so long text wraps instead of scrolling', () => {
     expect((HOME.match(/min-w-0/g) || []).length).toBeGreaterThanOrEqual(4)
-    expect((HOME.match(/break-words/g) || []).length).toBeGreaterThanOrEqual(3)
+    expect((HOME.match(/break-words/g) || []).length).toBeGreaterThanOrEqual(2)
     expect(HOME).not.toMatch(/\boverflow-x-auto\b|\bwhitespace-nowrap\b/)
     // no fixed width wide enough to force a scrollbar on the narrowest phone (320px)
     for (const m of HOME.match(/\b(?:min-)?w-\[(\d+)px\]/g) || []) {
@@ -368,10 +353,10 @@ describe('responsive layout', () => {
 
   it('keeps accessible labels, visible focus, and adequate tap targets', () => {
     expect(HOME).toContain('focus-visible:ring-2')
-    expect((HOME.match(/aria-labelledby=/g) || []).length).toBe(4) // one per section
-    expect((HOME.match(/aria-hidden="true"/g) || []).length).toBeGreaterThanOrEqual(3)
+    expect((HOME.match(/aria-labelledby=/g) || []).length).toBe(3) // one per section
+    expect((HOME.match(/aria-hidden="true"/g) || []).length).toBeGreaterThanOrEqual(2) // decorative icons
     expect(HOME).toContain('aria-label={`${count} waiting`}')
-    expect((HOME.match(/min-h-\[3\.5rem\]/g) || []).length).toBeGreaterThanOrEqual(2)
+    expect((HOME.match(/min-h-\[3\.5rem\]/g) || []).length).toBeGreaterThanOrEqual(2) // quick actions + console cards
   })
 
   it('uses no nested accordion or dense table on the homepage', () => {

@@ -4,10 +4,9 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
   Users, GitBranch, UserPlus, TrendingUp, Search, Wrench, AlertCircle, Sparkles,
-  Building2, Network, Send, ArrowRight, CheckCircle2,
+  Building2, Network, Send,
 } from 'lucide-react'
 import { loadAdminDashboard } from '@/lib/admin/dashboardData'
-import { triageAttention, attentionActionLabel, MAX_HOME_ATTENTION } from '@/lib/admin/dashboardMetrics'
 
 export const metadata = { title: 'Admin | Andrel' }
 // Admin-only + never cached: this page renders one operator's sensitive operational data.
@@ -16,23 +15,22 @@ export const dynamic = 'force-dynamic'
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
 /**
- * OPERATIONS CONSOLE, not a monitoring report.
+ * A DOOR, not a dashboard.
  *
- * This page answers two questions and nothing else: "what needs me?" and "where do I go?".
- * Every detailed diagnostic that used to live here — invitation attempt counts, the
+ * This page answers one question — "where do I go?" — plus four numbers that say how big
+ * the queues are. It raises no alerts of its own.
+ *
+ * EVERYTHING ELSE LIVES AT /dashboard/admin/operations: the complete attention list
+ * (member-impacting and technical alike), invitation and delivery diagnostics, the
  * recommendation/matching grid, member engagement, schema-migration status, the deployed
- * commit, webhook event totals, Auth-listing completeness and the disconnected monitoring
- * sources — still exists, in full, at /dashboard/admin/operations. Nothing was deleted, and
- * no metric is calculated differently; only where it is presented changed.
+ * commit, webhook event totals, Auth-listing completeness, and the disconnected monitoring
+ * sources. Reachable in one click from Console → System → Operations. Nothing was deleted
+ * and no metric is calculated differently; only where it is presented changed.
  */
 
 // Shared focus treatment: every interactive element on this page is a link, and each one
 // must show a visible ring under keyboard navigation.
 const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2850] focus-visible:ring-offset-2'
-
-const severityDot: Record<'high' | 'medium' | 'low', string> = {
-  high: 'bg-red-500', medium: 'bg-amber-500', low: 'bg-sky-400',
-}
 
 /** Small count pill. Rendered only for a real, non-zero count so a badge is never decorative. */
 function Badge({ count }: { count: number }) {
@@ -68,7 +66,6 @@ export default async function AdminDashboard() {
   })
 
   const { waitlistPending, concierge: pendingConciergeCount, issues: newIssueCount } = dash.operational
-  const triage = triageAttention(dash.needsAttention)
   const activeMembers = dash.members.ok ? dash.members.data.activeMembers : null
   const missingIntros = dash.recommendations.ok ? dash.recommendations.data.eligibleWithoutRec : null
 
@@ -130,54 +127,7 @@ export default async function AdminDashboard() {
           <p className="text-sm text-slate-500 mt-1">Manage members, introductions, invitations, and platform operations.</p>
         </header>
 
-        {/* ── 1. Needs Attention ─────────────────────────────────────────────────── */}
-        <section aria-labelledby="needs-attention-heading">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <h2 id="needs-attention-heading" className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Needs Attention</h2>
-            {triage.hasMore && (
-              <Link href="/dashboard/admin/operations" className={`text-sm font-medium text-[#1B2850] hover:underline rounded ${FOCUS}`}>
-                View all in Operations
-              </Link>
-            )}
-          </div>
-
-          {triage.top.length === 0 ? (
-            <div className="bg-white rounded-xl border border-slate-200 px-4 py-4 flex items-center gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" aria-hidden="true" />
-              <p className="text-sm text-slate-700">
-                Nothing needs you right now.
-                <span className="text-slate-500"> Everything with a person waiting on it is clear.</span>
-              </p>
-            </div>
-          ) : (
-            <ul className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
-              {triage.top.slice(0, MAX_HOME_ATTENTION).map((item) => (
-                <li key={item.id}>
-                  <Link
-                    href={item.href}
-                    className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-4 py-3 min-h-[3.5rem] hover:bg-slate-50 transition-colors ${FOCUS}`}
-                  >
-                    <span className="flex items-start gap-3 flex-1 min-w-0">
-                      <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${severityDot[item.severity]}`} aria-hidden="true" />
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-slate-900">
-                          {item.title} <span className="text-slate-500 font-normal">· {item.count}</span>
-                        </span>
-                        <span className="block text-xs text-slate-500 mt-0.5 leading-snug break-words">{item.explanation}</span>
-                      </span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-sm font-medium text-[#1B2850] flex-shrink-0 pl-5 sm:pl-0">
-                      {attentionActionLabel(item.href)}
-                      <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* ── 2. Quick Actions ───────────────────────────────────────────────────── */}
+        {/* ── 1. Quick Actions ───────────────────────────────────────────────────── */}
         <section aria-labelledby="quick-actions-heading">
           <SectionHeading id="quick-actions-heading" title="Quick Actions" />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -195,7 +145,7 @@ export default async function AdminDashboard() {
           </div>
         </section>
 
-        {/* ── 3. At a Glance ─────────────────────────────────────────────────────── */}
+        {/* ── 2. At a Glance ─────────────────────────────────────────────────────── */}
         <section aria-labelledby="at-a-glance-heading">
           <SectionHeading id="at-a-glance-heading" title="At a Glance" />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -212,7 +162,7 @@ export default async function AdminDashboard() {
           </div>
         </section>
 
-        {/* ── 4. Console ─────────────────────────────────────────────────────────── */}
+        {/* ── 3. Console ─────────────────────────────────────────────────────────── */}
         <section aria-labelledby="console-heading">
           <SectionHeading id="console-heading" title="Console" />
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-4 gap-y-5">
