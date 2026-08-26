@@ -110,6 +110,8 @@ export async function POST(request: Request) {
   const result = await finalizeMutualMatch({
     supabase,
     adminClient,
+    // RELEASE A: see express-interest — separate name, same service-role client, one read only.
+    graphClient: adminClient,
     actingUserId: viewerId,
     otherUserId: expresserId,
     isAdminInitiated: false,

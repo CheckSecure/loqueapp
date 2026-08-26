@@ -15,9 +15,16 @@ export default async function MeetingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  // RELEASE A — connection-graph reads move to service_role so Release B can revoke browser
+  // SELECT on public.matches / public.blocked_users. `graphClient` is scoped to THOSE READS
+  // ONLY; the session client above still performs authentication and every other query. The
+  // viewer constraint below is unchanged, and the id it filters on still comes from the
+  // verified session — never from anything the browser supplied.
+  const graphClient = createAdminClient()
+
   // ── Phase 1: matches + the user's meetings (independent → parallel) ──
   const [{ data: matchRows }, { data: meetingRows }] = await Promise.all([
-    supabase
+    graphClient
       .from('matches')
       .select('id, user_a_id, user_b_id')
       .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`),

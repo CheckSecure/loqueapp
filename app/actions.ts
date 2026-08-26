@@ -1422,8 +1422,14 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
   const { supabase, user } = await getSupabaseAndUser()
   if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
 
+  // Admin-authorized above (session email gate). RELEASE A: the existence check reads as
+  // service_role too, so Release B can revoke browser SELECT on public.matches. The bidirectional
+  // predicate is unchanged — buildBidirectionalMatchFilter still covers both column orders — and
+  // the caller's authority still comes from getSupabaseAndUser(), never from the arguments.
+  const adminClient = createAdminClient()
+
   // Check if match already exists
-  const { data: existing } = await supabase
+  const { data: existing } = await adminClient
     .from('matches')
     .select('id')
     .or(buildBidirectionalMatchFilter(userAId, userBId))
@@ -1431,8 +1437,6 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
 
   if (existing) return { error: 'Match already exists' }
 
-  // Admin-authorized; write as service_role (browser DML on matches/conversations is revoked, migration 055).
-  const adminClient = createAdminClient()
   const { data: match, error: matchError } = await adminClient
     .from('matches')
     .insert({

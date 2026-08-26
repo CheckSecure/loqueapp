@@ -62,7 +62,12 @@ export default async function AdminMembersPage() {
   })
 
   // Get match counts
-  const { data: matches } = await supabase
+  // RELEASE A: this whole-table aggregate read runs as service_role. It is reached ONLY after the
+  // admin gate at the top of this component (user.email !== ADMIN_EMAIL → redirect), so authority
+  // still comes from the verified session, not from the client used to query. Columns are unchanged
+  // and the rows are reduced to per-member counts below — no match row reaches the client.
+  const graphClient = createAdminClient()
+  const { data: matches } = await graphClient
     .from('matches')
     .select('user_a_id, user_b_id, status')
 

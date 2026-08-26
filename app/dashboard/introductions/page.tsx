@@ -123,6 +123,12 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   const introPromptDismissed = (profileRow as any)?.intro_profile_prompt_dismissed_at != null
   const showImproveCard = mc.missing.length > 0 && !introPromptDismissed
   const profileId = profileRow?.id ?? user.id
+
+  // RELEASE A — connection-graph reads move to service_role so Release B can revoke browser
+  // SELECT on public.matches / public.blocked_users. `graphClient` is scoped to THOSE READS
+  // ONLY; the session client still performs authentication and every other query. The viewer
+  // constraint is unchanged, and the id it filters on still comes from the verified session.
+  const graphClient = createAdminClient()
   const firstName = profileRow?.full_name?.split(' ')[0] || 'there'
   const userTier = (profileRow as any)?.subscription_tier ?? 'free'
   const effectiveTier = profileRow ? getEffectiveTier(profileRow) : 'free'
@@ -156,7 +162,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     { data: activeConciergeRequest },
     { data: pendingIntrosRaw },
   ] = await Promise.all([
-    supabase
+    graphClient
       .from('matches')
       .select('user_a_id, user_b_id')
       .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`),

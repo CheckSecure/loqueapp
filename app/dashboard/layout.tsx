@@ -48,6 +48,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const user = await getAuthUser()
   if (!user) redirect('/login')
 
+  // RELEASE A — connection-graph reads move to service_role so Release B can revoke browser
+  // SELECT on public.matches / public.blocked_users. `graphClient` is scoped to THOSE READS
+  // ONLY; the session client still performs authentication and every other query. The viewer
+  // constraint is unchanged, and the id it filters on still comes from the verified session.
+  const graphClient = createAdminClient()
+
   const ADMIN_EMAIL = 'bizdev91@gmail.com'
   const isAdmin = user.email === ADMIN_EMAIL
 
@@ -92,7 +98,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // anywhere yields 0 without affecting the other badges.
     (async (): Promise<number> => {
       try {
-        const { data: matchRows } = await supabase
+        // RELEASE A: service_role read (see graphClient above). Same viewer constraint, same
+        // single column; the surrounding try/catch still yields 0 on any failure.
+        const { data: matchRows } = await graphClient
           .from('matches')
           .select('id')
           .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)

@@ -23,17 +23,24 @@ export default async function NetworkPage() {
 
   const profileId = profileRows?.[0]?.id ?? user.id
 
+  // RELEASE A — connection-graph reads move to service_role so Release B can revoke browser
+  // SELECT on public.matches / public.blocked_users. `graphClient` is scoped to THOSE READS
+  // ONLY; the session client above still performs authentication and every other query. The
+  // viewer constraint below is unchanged, and the id it filters on still comes from the
+  // verified session — never from anything the browser supplied.
+  const graphClient = createAdminClient()
+
   // Fetch matches, blocks, and notifications in parallel
   const [
     { data: rawMatches, error: matchesError },
     { data: blocks },
     { data: unreadNotifs },
   ] = await Promise.all([
-    supabase
+    graphClient
       .from('matches')
       .select('id, user_a_id, user_b_id, matched_at, status, removed_at')
       .or(`user_a_id.eq.${profileId},user_b_id.eq.${profileId}`),
-    supabase
+    graphClient
       .from('blocked_users')
       .select('user_id, blocked_user_id')
       .or(`user_id.eq.${profileId},blocked_user_id.eq.${profileId}`),

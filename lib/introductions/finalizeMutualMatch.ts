@@ -51,13 +51,32 @@ export async function retireWaitingResponseForPair(
 }
 
 export async function finalizeMutualMatch(params: {
+  /**
+   * The CALLER'S SESSION CLIENT. Still carries member/RLS authority and is deliberately kept for
+   * every operation that had it before — see the two profiles reads near the end of this function.
+   * It is NO LONGER used for the connection-graph read (see graphClient).
+   */
   supabase: any
+  /** Service-role client for the existing write/RPC/notification path. Unchanged. */
   adminClient: any
+  /**
+   * RELEASE A — service-role authority for the connection-graph read ONLY.
+   *
+   * `public.matches` loses browser SELECT in Release B, so the idempotency lookup below cannot keep
+   * running on the caller's session client. This is a SEPARATE parameter rather than a reuse of
+   * `supabase` so the boundary is explicit at every call site: exactly one read may use it, and a
+   * future edit that reaches for it elsewhere is visible in review.
+   *
+   * IT CONFERS NO IDENTITY. actingUserId / otherUserId are still whatever the caller derived from
+   * its verified session; using service_role to READ does not make the arguments trustworthy, and
+   * both routes continue to establish those ids before calling this function.
+   */
+  graphClient: any
   actingUserId: string
   otherUserId: string
   isAdminInitiated: boolean
 }): Promise<FinalizeResult> {
-  const { supabase, adminClient, actingUserId, otherUserId, isAdminInitiated } = params
+  const { supabase, adminClient, graphClient, actingUserId, otherUserId, isAdminInitiated } = params
 
   // Defense-in-depth: same-company gate (primary gate is createIntroRequest; this
   // catches pairs that entered intro_requests before the gate existed).
@@ -79,7 +98,9 @@ export async function finalizeMutualMatch(params: {
   console.log('[Mutual Interest] Detected, creating active match...')
 
   // Idempotency: an existing match means we're done — no double-charge, no dup row.
-  const { data: existingMatch } = await supabase
+  // RELEASE A: reads via graphClient (service_role). Same columns, same bidirectional predicate,
+  // same maybeSingle() — only the client changed, so the duplicate-match branch below is untouched.
+  const { data: existingMatch } = await graphClient
     .from('matches')
     .select('id, status')
     .or(buildBidirectionalMatchFilter(actingUserId, otherUserId))
@@ -247,6 +268,9 @@ export async function finalizeMutualMatch(params: {
     })
   }
 
+  // DELIBERATELY the session client: these two reads carry member authority today and are not
+  // part of the connection-graph migration. Release B revokes SELECT on matches/blocked_users
+  // only, so they are unaffected by it.
   const { data: actingProfile } = await supabase
     .from('profiles')
     .select('full_name, email, title, company')

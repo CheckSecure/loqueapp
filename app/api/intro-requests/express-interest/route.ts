@@ -202,6 +202,9 @@ export async function POST(request: Request) {
       const result = await finalizeMutualMatch({
         supabase,
         adminClient,
+        // RELEASE A: the graph read gets its own service-role authority. Same client object the
+        // write path already uses, passed under a distinct name so its scope is explicit.
+        graphClient: adminClient,
         actingUserId: expresserId,
         otherUserId,
         isAdminInitiated: Boolean(introRequest.is_admin_initiated),

@@ -159,6 +159,13 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
 
   // Viewer's profile (for computed shared signals) + any active connection
   // between viewer and viewed (for the connection date line).
+  // RELEASE A — connection-graph reads move to service_role so Release B can revoke browser
+  // SELECT on public.matches / public.blocked_users. `graphClient` is scoped to THOSE READS
+  // ONLY; the session client above still performs authentication and every other query. The
+  // viewer constraint below is unchanged, and the id it filters on still comes from the
+  // verified session — never from anything the browser supplied.
+  const graphClient = createAdminClient()
+
   const nowIso = new Date().toISOString()
   const [{ data: viewerProfile, error: viewerError }, { data: matchRows }, { data: meetingRows }] = await Promise.all([
     admin
@@ -166,7 +173,10 @@ export default async function MemberProfilePage({ params }: { params: { id: stri
       .select('role_type, seniority, interests, mentorship_role, location, expertise, purposes')
       .eq('id', user.id)
       .maybeSingle(),
-    supabase
+    // RELEASE A: the pair read runs as service_role (see graphClient above). Both halves of the
+    // bidirectional predicate are preserved, `user.id` still comes from the verified session, and
+    // params.id was already gated by canViewerDiscoverMember before any read happened.
+    graphClient
       .from('matches')
       .select('matched_at, status')
       .or(`and(user_a_id.eq.${user.id},user_b_id.eq.${params.id}),and(user_a_id.eq.${params.id},user_b_id.eq.${user.id})`)
