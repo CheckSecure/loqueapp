@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import Link from 'next/link'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import RecruiterGuidancePanel from '@/components/onboarding/RecruiterGuidance'
 import EmploymentStatusField from '@/components/profile/EmploymentStatusField'
@@ -19,6 +20,7 @@ import { validateLocation, LOCATION_HELP_TEXT } from '@/lib/validation/location'
 import { RequiredMark, RequiredLegend } from '@/components/ui/RequiredMark'
 import CurrentFocusAreasInput from '@/components/CurrentFocusAreasInput'
 import { onboardingStepList, initialOnboardingStep } from '@/lib/onboarding/steps'
+import { LOGO_ARIA_LABEL } from '@/lib/nav/logoHref'
 
 // Role-type picker — Phase B replaces the flat A-1 button list with a
 // category → title picker (components/RoleCategoryPicker.tsx) sourced from
@@ -57,7 +59,7 @@ type Step = 'password' | 'profile' | 'preferences'
 // `needsPassword` is REQUIRED (no default) so every caller must decide explicitly and fail closed —
 // it is the server-confirmed gate: only a genuine legacy temp-password account (flag true, password
 // not yet server-confirmed) starts at the password step; everyone else starts at the profile step.
-export default function OnboardingForm({ initialFullName = '', needsPassword }: { initialFullName?: string; needsPassword: boolean }) {
+export default function OnboardingForm({ initialFullName = '', needsPassword, logoHref }: { initialFullName?: string; needsPassword: boolean; logoHref: string }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Location is required to finish onboarding. Its error is rendered next to the
@@ -296,7 +298,16 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
       <div className="w-full max-w-xl">
 
         <div className="text-center mb-8">
-          <span className="text-2xl font-bold text-[#1B2850] tracking-tight block mb-6">Andrel</span>
+          {/* Resolved on the server by app/onboarding/page.tsx, which has already required a
+              session. A member who is still incomplete and follows this link is sent straight
+              back here by the dashboard layout guard — the guard, not the link, decides. */}
+          <Link
+            href={logoHref}
+            aria-label={LOGO_ARIA_LABEL}
+            className="text-2xl font-bold text-[#1B2850] tracking-tight block mb-6 w-fit mx-auto rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2850] focus-visible:ring-offset-2"
+          >
+            Andrel
+          </Link>
           <h1 className="text-2xl font-bold text-slate-900 mb-2">
             {step === 'password' ? 'Set your password' : step === 'profile' ? 'Complete your profile' : 'Who do you want to meet?'}
           </h1>

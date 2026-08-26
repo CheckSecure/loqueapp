@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { PUBLIC_LOGO_HREF, LOGO_ARIA_LABEL } from '@/lib/nav/logoHref'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Users, MessageSquare, Calendar, UserCircle, CheckCircle, ShieldCheck, Briefcase, Lightbulb } from 'lucide-react'
@@ -76,7 +77,13 @@ export default async function Home() {
     <div className="min-h-screen bg-white flex flex-col">
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <span className="text-xl font-bold text-brand-navy tracking-tight">Andrel</span>
+          <Link
+            href={PUBLIC_LOGO_HREF}
+            aria-label={LOGO_ARIA_LABEL}
+            className="text-xl font-bold text-brand-navy tracking-tight rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-navy focus-visible:ring-offset-2"
+          >
+            Andrel
+          </Link>
           <div className="flex items-center gap-3">
             <Link href="/about" className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-1.5">
               About

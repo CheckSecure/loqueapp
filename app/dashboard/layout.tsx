@@ -6,6 +6,10 @@ import { needsReacceptance } from '@/lib/legal/terms'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import MobileNav from '@/components/MobileNav'
+// Resolved HERE, on the server, where the session is already known. Every surface this layout
+// renders — dashboard and admin alike — is behind the auth guard below, so the wordmark
+// destination is a constant the client is handed rather than something it has to ask about.
+import { AUTHENTICATED_LOGO_HREF } from '@/lib/nav/logoHref'
 import Tutorial from '@/components/Tutorial'
 import FloatingHelp from '@/components/FloatingHelp'
 import PresenceHeartbeat from '@/components/PresenceHeartbeat'
@@ -256,7 +260,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <>
       <Tutorial />
       <MainScrollReset />
-      <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} opportunityBadgeCount={opportunityBadgeCount} adminBadgeCount={adminBadgeCount} />
+      <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} opportunityBadgeCount={opportunityBadgeCount} adminBadgeCount={adminBadgeCount} logoHref={AUTHENTICATED_LOGO_HREF} />
       <div className="dashboard-shell min-h-screen md:flex bg-[#FAF6EE]">
         <Sidebar
           displayName={displayName}
@@ -270,6 +274,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           meetingNotifCount={meetingNotifCount}
           opportunityBadgeCount={opportunityBadgeCount}
           adminBadgeCount={adminBadgeCount}
+          logoHref={AUTHENTICATED_LOGO_HREF}
         />
         <main id="dashboard-main" className="flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto overflow-x-hidden pb-[env(safe-area-inset-bottom)] md:pb-0">
           {children}

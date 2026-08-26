@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { OPEN_TUTORIAL_EVENT } from './Tutorial'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { LOGO_ARIA_LABEL } from '@/lib/nav/logoHref'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -19,7 +20,7 @@ const bottomNavItems = [
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
 ]
 
-export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0, opportunityBadgeCount = 0, adminBadgeCount = 0 }: { credits: number | null; unreadCount?: number; meetingNotifCount?: number; opportunityBadgeCount?: number; adminBadgeCount?: number }) {
+export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0, opportunityBadgeCount = 0, adminBadgeCount = 0, logoHref }: { credits: number | null; unreadCount?: number; meetingNotifCount?: number; opportunityBadgeCount?: number; adminBadgeCount?: number; /** Resolved on the server by app/dashboard/layout.tsx. */ logoHref: string }) {
   const pathname = usePathname()
   const router = useRouter()
   const [showMore, setShowMore] = useState(false)
@@ -53,7 +54,14 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
     <>
       {/* Top header - REDESIGNED: Logo + Credits + Bell */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-100 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center justify-between px-4 gap-3">
-        <span className="text-lg font-bold text-[#1B2850] tracking-tight flex-shrink-0">Andrel</span>
+        {/* Same resolved-on-the-server href as the desktop sidebar. */}
+        <Link
+          href={logoHref}
+          aria-label={LOGO_ARIA_LABEL}
+          className="text-lg font-bold text-[#1B2850] tracking-tight flex-shrink-0 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2850] focus-visible:ring-offset-2"
+        >
+          Andrel
+        </Link>
         
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Compact credits chip */}

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { safeReplaceState } from '@/lib/browser/safeApis'
 import { RESUME_GENERIC_RESPONSE } from '@/lib/invitations/resumeMessages'
 import { Loader2, ShieldCheck } from 'lucide-react'
+import { PUBLIC_LOGO_HREF, LOGO_ARIA_LABEL } from '@/lib/nav/logoHref'
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
@@ -64,10 +65,14 @@ export default function ResumePage() {
   return (
     <div className="min-h-screen bg-[#F5F6FB] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-slate-100 p-8 space-y-5">
-        <div className="flex items-center gap-2 text-[#1B2850]">
+        <Link
+          href={PUBLIC_LOGO_HREF}
+          aria-label={LOGO_ARIA_LABEL}
+          className="flex items-center gap-2 text-[#1B2850] w-fit rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2850] focus-visible:ring-offset-2"
+        >
           <ShieldCheck className="w-5 h-5" aria-hidden />
           <span className="text-sm font-semibold">Andrel</span>
-        </div>
+        </Link>
 
         {phase === 'checking' && (
           <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 text-slate-400 animate-spin" /></div>

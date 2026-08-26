@@ -4,6 +4,9 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import OnboardingForm from '@/components/OnboardingForm'
+// This route requires a session (see the !user redirect below), so the wordmark destination is
+// resolved here on the server rather than guessed in the browser.
+import { AUTHENTICATED_LOGO_HREF } from '@/lib/nav/logoHref'
 import { pickOnboardingPrefillName } from '@/lib/validation/fullName'
 import { resolveOnboardingGate, selfProfileFromRpc, type OnboardingProfileLite } from '@/lib/onboarding/steps'
 import { verifyContinuationToken, CONTINUATION_COOKIE } from '@/lib/auth/resetContinuation'
@@ -64,5 +67,5 @@ export default async function OnboardingPage() {
   }
   const initialFullName = pickOnboardingPrefillName(profile?.full_name ?? null, waitlistName)
 
-  return <OnboardingForm initialFullName={initialFullName} needsPassword={gate.needsPassword} />
+  return <OnboardingForm initialFullName={initialFullName} needsPassword={gate.needsPassword} logoHref={AUTHENTICATED_LOGO_HREF} />
 }

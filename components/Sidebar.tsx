@@ -7,6 +7,7 @@ import NotificationBell from './NotificationBell'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useState, useEffect } from 'react'
+import { LOGO_ARIA_LABEL } from '@/lib/nav/logoHref'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -33,6 +34,8 @@ interface SidebarProps {
   meetingNotifCount: number
   opportunityBadgeCount: number
   adminBadgeCount: number
+  /** Resolved on the server by app/dashboard/layout.tsx — never derived in the browser. */
+  logoHref: string
 }
 
 function CreditsChip({ credits }: { credits: number | null }) {
@@ -78,6 +81,7 @@ export default function Sidebar({
   meetingNotifCount,
   opportunityBadgeCount,
   adminBadgeCount,
+  logoHref,
 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -102,8 +106,16 @@ export default function Sidebar({
     <aside className="hidden md:flex flex-col w-64 h-full min-h-0 bg-[#0A1530] shrink-0 border-r border-white/5">
       {/* Brand mark — premium private-network treatment */}
       <div className="shrink-0 px-6 py-7 border-b border-white/5 flex items-center justify-between">
-        <div className="flex items-baseline gap-2">
-          <span className="text-xl font-bold text-white tracking-tight">Andrel</span>
+        <div className="flex items-baseline gap-2 min-w-0">
+          {/* Destination resolved on the server (app/dashboard/layout.tsx) and passed in, so this
+              client component never asks Supabase who the viewer is just to render a link. */}
+          <Link
+            href={logoHref}
+            aria-label={LOGO_ARIA_LABEL}
+            className="text-xl font-bold text-white tracking-tight truncate rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A1530]"
+          >
+            Andrel
+          </Link>
         </div>
         <NotificationBell />
       </div>
