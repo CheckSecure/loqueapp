@@ -10,6 +10,7 @@ import { revalidatePath } from 'next/cache'
 import { sendMeetingRequestEmail, sendMeetingAcceptedEmail, sendMeetingDeclinedEmail, sendMeetingRescheduledEmail, sendMatchCreatedEmail, sendAdminAlertEmail, sendWaitlistConfirmationEmail, escapeHtml } from '@/lib/email'
 import { formatMeetingTimes, normalizeIanaTimeZone } from '@/lib/meetings/formatMeetingTime'
 import { isMissingColumnError } from '@/lib/db/isMissingColumn'
+import { checkRoleEmploymentCompatibility } from '@/lib/profile/roleEmploymentCompatibility'
 import {
   approveIntroRequest,
   rejectIntroRequest,
@@ -329,6 +330,20 @@ export async function completeOnboarding(formData: FormData) {
     ? { is_founding_member: true, founding_member_expires_at: null as string | null }
     : {}
 
+  // ROLE ↔ EMPLOYMENT COMPATIBILITY. An in-house role asserts a current employer, so it cannot be
+  // chosen against a placeholder company ("Independent", "Consultant", …) or none at all. Rejected
+  // here rather than corrected: the member picks which of the two to change, and their selected
+  // role is never silently rewritten. Employment status is now collected during onboarding, so the
+  // submitted value is the authority here; a client that omits it falls back to the company text.
+  {
+    const verdict = checkRoleEmploymentCompatibility({
+      role_type: (formData.get('role_type') as string) || null,
+      current_status: ((formData.get('current_status') as string) || '').trim() || null,
+      company,
+    })
+    if (!verdict.ok) return { error: verdict.message }
+  }
+
   // Auto-link the free-text company to its canonical companies.id (one clear match
   // only). `preserve` (lookup failed) → omit company_id; never blocks onboarding.
   const companyLink = await resolveCanonicalCompanyLink(adminClient, company)
@@ -347,6 +362,12 @@ export async function completeOnboarding(formData: FormData) {
     state: state || null,
     location: location,
     role_type: (formData.get('role_type') as string) || null,
+    // Employment status is now asked directly during onboarding instead of being inferred from
+    // placeholder company text. Present-only: an older client that does not submit it leaves the
+    // stored value untouched rather than clearing it.
+    ...(formData.has('current_status') && {
+      current_status: ((formData.get('current_status') as string) || '').trim() || null,
+    }),
     seniority: (formData.get('seniority') as string) || null,
     expertise: expertise,
     bio: (formData.get('bio') as string) || null,
@@ -1522,6 +1543,23 @@ export async function adminUpdateUser(userId: string, updates: {
   if (updates.boost_score !== undefined) profileUpdates.boost_score = updates.boost_score
   if (updates.account_status !== undefined) profileUpdates.account_status = updates.account_status
   if (updates.current_status !== undefined) profileUpdates.current_status = updates.current_status
+
+  // The same rule applies to an admin edit. Changing a member's status to consulting/between-roles
+  // while they hold an in-house role would create exactly the contradiction this rule prevents —
+  // and the member never asked for it. Read the stored role/company and refuse rather than write.
+  if (updates.current_status !== undefined) {
+    const { data: cur } = await admin
+      .from('profiles')
+      .select('role_type, company')
+      .eq('id', userId)
+      .maybeSingle()
+    const verdict = checkRoleEmploymentCompatibility({
+      role_type: (cur as any)?.role_type ?? null,
+      current_status: updates.current_status,
+      company: (cur as any)?.company ?? null,
+    })
+    if (!verdict.ok) return { error: verdict.message }
+  }
 
   if (Object.keys(profileUpdates).length > 0) {
     const { error } = await admin

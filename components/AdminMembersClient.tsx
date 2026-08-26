@@ -3,6 +3,7 @@
 
 import { useState, useMemo } from 'react'
 import { professionalIdentityLine } from '@/lib/professionalIdentity'
+import { EMPLOYMENT_STATUS_OPTIONS } from '@/lib/profile/employmentStatus'
 import { normalizeFocusAreas } from '@/lib/profile/focusAreas'
 import { roleQualityFlags, ROLE_CATEGORY_LABELS, type RoleCategory } from '@/lib/profileRoles'
 import { Search, Filter, UserPlus, Zap, Edit, CheckCircle, AlertTriangle, Users, TrendingUp } from 'lucide-react'
@@ -961,9 +962,11 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                     onChange={e => handleQuickEdit(selectedUser.id, 'current_status', e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg"
                   >
-                    <option value="employed">Employed</option>
-                    <option value="between_roles">Between Roles</option>
-                    <option value="consulting_advisory">Consulting/Advisory</option>
+                    {/* One vocabulary — same values and labels as onboarding and profile edit.
+                        adminUpdateUser re-checks compatibility server-side before writing. */}
+                    {EMPLOYMENT_STATUS_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
                   </select>
                 </div>
 

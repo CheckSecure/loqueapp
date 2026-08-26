@@ -187,6 +187,8 @@ const ALIAS_ENTRIES: SearchableTitle[] = [
   { display: 'Strategic Advisor',                  role_type: 'Advisor',                          category: 'Consulting / Advisory' },
 
   // ─── Legal aliases (mapped to legacy values per spec) ───
+  { display: 'Corporate Counsel',                  role_type: 'In-House Counsel',                 category: 'Legal' },
+  { display: 'Senior Corporate Counsel',           role_type: 'In-House Counsel',                 category: 'Legal' },
   { display: 'Chief Compliance Officer',           role_type: 'Compliance',                       category: 'Legal' },
   { display: 'Compliance Officer',                 role_type: 'Compliance',                       category: 'Legal' },
   { display: 'Chief Privacy Officer',              role_type: 'Privacy',                          category: 'Legal' },

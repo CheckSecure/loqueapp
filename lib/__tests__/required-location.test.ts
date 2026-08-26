@@ -361,7 +361,10 @@ describe('server boundaries — profile_complete can never be set on an invalid 
   })
 
   it('/api/profile/update passes the row’s real completion state to the shared builder', () => {
-    expect(UPDATE_ROUTE).toMatch(/buildProfileUpdate\(formData, \{ profileComplete \}\)/)
+    // The builder now also receives `current` (the stored role/status/company) for the
+    // role↔employment compatibility rule. profileComplete is still passed, first and unchanged;
+    // the location behaviour this test guards is untouched.
+    expect(UPDATE_ROUTE).toMatch(/buildProfileUpdate\(formData, \{ profileComplete, current: currentIdentity \}\)/)
     expect(UPDATE_ROUTE).toMatch(/select\('profile_complete'\)/)
   })
 

@@ -4,6 +4,7 @@ import { useRef, useState, useEffect } from 'react'
 import { validateLocation, LOCATION_HELP_TEXT } from '@/lib/validation/location'
 import { useRouter } from 'next/navigation'
 import { normalizeExpertise } from '@/lib/expertise'
+import { EMPLOYMENT_STATUS_OPTIONS, previewCompatibility, betweenRolesCompanyPrompt } from '@/lib/profile/employmentStatus'
 import { shouldShowRecentRoleHint } from '@/lib/professionalIdentity'
 import { usablePreviousRoles } from '@/lib/profile/previousRoles'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
@@ -339,10 +340,28 @@ export default function ProfileEditForm({ initialData }: { initialData: any }) {
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B2850]/20 focus:border-[#1B2850]"
             >
               <option value="">Select status</option>
-              <option value="employed">Currently employed</option>
-              <option value="between_roles">Between roles</option>
-              <option value="consulting_advisory">Consulting / advisory</option>
+              {/* One vocabulary — the same options, labels and rules onboarding and the server use. */}
+              {EMPLOYMENT_STATUS_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
             </select>
+            {/* The conflict, explained beside the field. The server re-checks it regardless. */}
+            {(() => {
+              const v = currentStatus
+                ? previewCompatibility({ role_type: roleType, current_status: currentStatus, company })
+                : null
+              const prompt = betweenRolesCompanyPrompt({ nextStatus: currentStatus, company })
+              return (
+                <>
+                  {prompt && (
+                    <p role="status" className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 leading-relaxed break-words">{prompt}</p>
+                  )}
+                  {v && !v.ok && (
+                    <p role="alert" className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 leading-relaxed break-words">{v.message}</p>
+                  )}
+                </>
+              )
+            })()}
           </div>
 
           {['between_roles', 'consulting_advisory'].includes(currentStatus) && (

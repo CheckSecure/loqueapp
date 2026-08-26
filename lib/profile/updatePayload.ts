@@ -1,4 +1,5 @@
 import { parseMultiSelectField } from '@/lib/profile/multiSelect'
+import { checkRoleEmploymentCompatibility } from '@/lib/profile/roleEmploymentCompatibility'
 import { validateFullName } from '@/lib/validation/fullName'
 import { resolveLocationUpdate } from '@/lib/validation/location'
 
@@ -24,6 +25,14 @@ export type ProfileUpdateResult = { error: string } | { payload: Record<string, 
  */
 export interface ProfileUpdateContext {
   profileComplete?: boolean
+  /**
+   * The row's CURRENT role_type / current_status / company. Required only to evaluate the
+   * role↔employment compatibility rule, which is about a COMBINATION: a partial update may submit
+   * a new role without a company, and the contradiction only exists once the submitted fields are
+   * merged over what is already stored. The caller supplies this exactly when the request touches
+   * one of the three (same pattern the location rule already uses).
+   */
+  current?: { role_type?: string | null; current_status?: string | null; company?: string | null }
 }
 
 export function buildProfileUpdate(
@@ -122,6 +131,23 @@ export function buildProfileUpdate(
       }
     } catch { /* malformed JSON — ignore */ }
     payload.previous_roles = parsed
+  }
+
+  // --- ROLE ↔ EMPLOYMENT COMPATIBILITY (rejects; never rewrites) ---------------------------
+  // Evaluated on the EFFECTIVE row: submitted values merged over what is stored, because the
+  // contradiction is a property of the combination, not of any one field. When the caller did not
+  // supply `current` (a request touching none of the three) there is nothing new to check.
+  if (ctx.current !== undefined) {
+    const effective = {
+      role_type: 'role_type' in payload ? (payload.role_type as string | null) : ctx.current.role_type,
+      current_status: 'current_status' in payload ? (payload.current_status as string | null) : ctx.current.current_status,
+      company: 'company' in payload ? (payload.company as string | null) : ctx.current.company,
+    }
+    const verdict = checkRoleEmploymentCompatibility(effective)
+    // The member's selected role is returned untouched: we refuse the write and say which of the
+    // two things to change. Silently rewriting the role would assert an employment relationship
+    // they never claimed.
+    if (!verdict.ok) return { error: verdict.message }
   }
 
   return { payload }

@@ -75,12 +75,28 @@ describe('the required marker itself', () => {
 describe('wizard step 1 — required fields are marked', () => {
   // Required by: HTML required, the client gate in handleSubmit, and/or the server
   // (buildProfileUpdate rejects an empty submitted value; /api/profile/complete re-validates).
-  const REQUIRED = ['Full name', 'Company or organization', 'Location', 'Bio', 'Seniority', 'Role title']
+  // 'Company or organization' moved out of the unconditional list: since employment status is
+  // asked directly, the organisation is required only for "Currently employed". Its own test is
+  // below, and it asserts the marker is CONDITIONAL rather than absent.
+  const REQUIRED = ['Full name', 'Location', 'Bio', 'Seniority', 'Role title']
   for (const label of REQUIRED) {
     it(`marks "${label}"`, () => expect(labelMarked(STEP1, label)).toBe(true))
   }
   it('marks the Expertise group (server rejects an empty expertise list)', () => {
     expect(labelMarked(STEP1, 'Expertise')).toBe(true)
+  })
+
+  it('marks the organisation field only when the member says they are employed', () => {
+    // the label itself is now driven by the chosen status …
+    expect(STEP1).toContain("employmentStatusOption(currentStatus)?.companyLabel ?? 'Company or organization'")
+    // … and both the marker and the browser-level requirement are conditional on 'employed'
+    expect(STEP1).toMatch(/\{currentStatus === 'employed' && <RequiredMark \/>\}/)
+    expect(STEP1).toContain("required={currentStatus === 'employed'}")
+  })
+
+  it('marks the new Employment status question as required', () => {
+    const FIELD = readFileSync('components/profile/EmploymentStatusField.tsx', 'utf8')
+    expect(FIELD).toMatch(/Employment status\{required &&/)
   })
   it('shows the legend explaining the asterisk', () => {
     expect(STEP1).toMatch(/<RequiredLegend\s*\/>/)

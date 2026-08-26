@@ -34,6 +34,24 @@ export async function POST(req: NextRequest) {
     // the pure builder cannot read. Fetch it only when this request actually submits
     // a location-bearing field. A3: self read via service_role, scoped to user.id.
     const submitsLocation = formData.has('location') || formData.has('city') || formData.has('state')
+    // The role↔employment compatibility rule is about a COMBINATION, so it needs the stored values
+    // this request does not submit. Fetched only when the request actually touches one of the three
+    // — same shape as the location rule below, and no extra read for any other edit.
+    const submitsIdentity =
+      formData.has('role_type') || formData.has('current_status') || formData.has('company')
+    let currentIdentity: { role_type?: string | null; current_status?: string | null; company?: string | null } | undefined
+    if (submitsIdentity) {
+      const { data: cur } = await createAdminClient()
+        .from('profiles')
+        .select('role_type, current_status, company')
+        .eq('id', user.id)
+        .maybeSingle()
+      currentIdentity = {
+        role_type: (cur as any)?.role_type ?? null,
+        current_status: (cur as any)?.current_status ?? null,
+        company: (cur as any)?.company ?? null,
+      }
+    }
     let profileComplete = false
     if (submitsLocation) {
       const { data: current } = await createAdminClient()
@@ -44,7 +62,7 @@ export async function POST(req: NextRequest) {
       profileComplete = current?.profile_complete === true
     }
 
-    const built = buildProfileUpdate(formData, { profileComplete })
+    const built = buildProfileUpdate(formData, { profileComplete, current: currentIdentity })
     if ('error' in built) {
       return NextResponse.json({ error: built.error }, { status: 400 })
     }

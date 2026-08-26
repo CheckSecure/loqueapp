@@ -6,6 +6,8 @@ import { isValidFullName, FULL_NAME_ERROR, pickOnboardingPrefillName } from '@/l
 import { validateLocation, LOCATION_HELP_TEXT } from '@/lib/validation/location'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import RecruiterGuidancePanel from '@/components/onboarding/RecruiterGuidance'
+import EmploymentStatusField from '@/components/profile/EmploymentStatusField'
+import { isEmploymentStatus, previewCompatibility, employmentStatusOption } from '@/lib/profile/employmentStatus'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Loader2, ArrowRight } from 'lucide-react'
 import { Linkedin, Twitter, Link as LinkIcon } from 'lucide-react'
@@ -54,6 +56,11 @@ export default function OnboardingStep1({
   // Unified: every previously-saved value loads into one removable selected list.
   const [expertise, setExpertise] = useState<string[]>(normalizeExpertise(profile?.expertise))
   const [roleType, setRoleType] = useState<string>(profile?.role_type || '')
+  // Resumes safely: a partially-completed profile keeps whatever it already stored.
+  const [currentStatus, setCurrentStatus] = useState<string>(profile?.current_status || '')
+  const [companyValue, setCompanyValue] = useState<string>(profile?.company || '')
+  const companyFieldLabel =
+    employmentStatusOption(currentStatus)?.companyLabel ?? 'Company or organization'
   const [exactJobTitle, setExactJobTitle] = useState<string | null>(profile?.exact_job_title ?? null)
   // Derived from the role-title selector (selected role label, or custom role
   // text for 'Other'). Kept populated so the server-side title validation in
@@ -96,6 +103,7 @@ export default function OnboardingStep1({
     setLocationError(null)
     formData.set('expertise', expertise.join(','))
     formData.set('role_type', roleType)
+    formData.set('current_status', currentStatus)
     // Derived title (selected role label, or custom role text for 'Other').
     // The standalone free-text title input was removed, so set it explicitly.
     formData.set('title', title.trim())
@@ -153,14 +161,22 @@ export default function OnboardingStep1({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Company or organization<RequiredMark /></label>
+          {/* The label and requirement follow the chosen employment status — one vocabulary, from
+              lib/profile/employmentStatus. The old placeholder invited exactly the values the
+              compatibility rule now rejects ("Independent", "Between roles"), which is how the
+              contradiction got taught to members in the first place. */}
+          <label className="block text-xs font-medium text-slate-600 mb-1">
+            {companyFieldLabel}
+            {currentStatus === 'employed' && <RequiredMark />}
+          </label>
           <input
             name="company"
+            onChange={(e) => setCompanyValue(e.target.value)}
             type="text"
             defaultValue={profile?.company || ''}
-            placeholder="Acme Corp, Independent, Self-employed, Retired, or Between roles"
+            placeholder="Acme Corp"
             className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition"
-            required
+            required={currentStatus === 'employed'}
           />
         </div>
         <div>
@@ -231,6 +247,16 @@ export default function OnboardingStep1({
           {/* Optional recruiter framing — see components/onboarding/RecruiterGuidance. Renders
               only for the two recruiter role_type values and stores nothing. */}
           <RecruiterGuidancePanel roleType={roleType} />
+        </div>
+
+        <div className="mt-4">
+          <EmploymentStatusField
+            value={currentStatus}
+            onChange={setCurrentStatus}
+            roleType={roleType}
+            company={companyValue}
+            idPrefix="step1-employment-status"
+          />
         </div>
       </div>
 

@@ -3,6 +3,8 @@
 import { useState, useRef } from 'react'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
 import RecruiterGuidancePanel from '@/components/onboarding/RecruiterGuidance'
+import EmploymentStatusField from '@/components/profile/EmploymentStatusField'
+import { isEmploymentStatus, previewCompatibility, employmentStatusOption } from '@/lib/profile/employmentStatus'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import ConnectionTargetPicker from '@/components/ConnectionTargetPicker'
 import type { CategoryTitleSelection } from '@/lib/role-taxonomy'
@@ -80,6 +82,7 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
   const [fullName, setFullName] = useState(initialFullName)
   const [title, setTitle] = useState('')
   const [company, setCompany] = useState('')
+  const [currentStatus, setCurrentStatus] = useState('')
   const [city, setCity] = useState('')
   const [state, setState] = useState('')
   const [roleType, setRoleType] = useState('')
@@ -162,7 +165,18 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
     e.preventDefault()
     if (!isValidFullName(fullName)) { setError(FULL_NAME_ERROR); return }
     if (title.trim().length < 2) { setError('Please enter your title or role'); return }
-    if (company.trim().length < 2) { setError('Please enter your company or organization'); return }
+    if (!isEmploymentStatus(currentStatus)) { setError('Please choose your employment status'); return }
+    // 'Currently employed' is the only status that requires an organisation. The others may leave
+    // it blank, so the old unconditional company check would have blocked them.
+    if (currentStatus === 'employed' && company.trim().length < 2) {
+      setError('Please enter the organisation you work for'); return
+    }
+    {
+      // The SAME verdict the server will reach — surfaced here so the member is not sent to the
+      // submit button to find out.
+      const v = previewCompatibility({ role_type: roleType, current_status: currentStatus, company: company.trim() })
+      if (!v.ok) { setError(v.message); return }
+    }
     if (!checkLocation()) return
     if (!roleType.trim()) { setError('Please select your professional role'); return }
     if (!seniority.trim()) { setError('Please select your seniority level'); return }
@@ -178,7 +192,18 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
     // could be cleared between steps. Catch here before sending to the server.
     if (!isValidFullName(fullName)) { setError(FULL_NAME_ERROR); return }
     if (title.trim().length < 2) { setError('Please enter your title or role'); return }
-    if (company.trim().length < 2) { setError('Please enter your company or organization'); return }
+    if (!isEmploymentStatus(currentStatus)) { setError('Please choose your employment status'); return }
+    // 'Currently employed' is the only status that requires an organisation. The others may leave
+    // it blank, so the old unconditional company check would have blocked them.
+    if (currentStatus === 'employed' && company.trim().length < 2) {
+      setError('Please enter the organisation you work for'); return
+    }
+    {
+      // The SAME verdict the server will reach — surfaced here so the member is not sent to the
+      // submit button to find out.
+      const v = previewCompatibility({ role_type: roleType, current_status: currentStatus, company: company.trim() })
+      if (!v.ok) { setError(v.message); return }
+    }
     // Location can only have been entered on the previous step, so send the member
     // back there rather than showing an error next to a field they cannot see.
     const locationCheck = validateLocation(derivedLocation())
@@ -217,6 +242,7 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
     fd.append('full_name', fullName.trim())
     fd.append('title', title.trim())
     fd.append('company', company.trim())
+    fd.append('current_status', currentStatus)
     fd.append('city', city.trim())
     fd.append('state', state.trim())
     fd.append('role_type', roleType)
@@ -336,8 +362,11 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
               <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Smith" required className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-800 mb-1.5">Company or organization<RequiredMark /></label>
-              <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Acme Corp, Independent, Self-employed, Retired, or Between roles" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                {employmentStatusOption(currentStatus)?.companyLabel ?? 'Company or organization'}
+                {currentStatus === 'employed' && <RequiredMark />}
+              </label>
+              <input type="text" value={company} onChange={e => setCompany(e.target.value)} placeholder="Acme Corp" className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1B2850] focus:border-transparent transition" />
             </div>
             
             {/*
@@ -409,6 +438,14 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
                   answer when the member changes role. */}
               <RecruiterGuidancePanel roleType={roleType} />
             </div>
+
+            <EmploymentStatusField
+              value={currentStatus}
+              onChange={setCurrentStatus}
+              roleType={roleType}
+              company={company}
+              idPrefix="onb-employment-status"
+            />
 
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-2">Seniority level<RequiredMark /></label>

@@ -31,7 +31,7 @@ export interface ProfessionalIdentity {
   secondary: string | null
 }
 
-type Situation = 'employed' | 'independent' | 'between_roles' | 'retired' | 'confidential' | 'stealth'
+export type Situation = 'employed' | 'independent' | 'between_roles' | 'retired' | 'confidential' | 'stealth'
 
 /** Lowercase, strip punctuation, collapse whitespace — for placeholder matching. */
 function norm(s: string | null | undefined): string {
@@ -44,6 +44,13 @@ function norm(s: string | null | undefined): string {
 
 // Whole-string placeholder matches (kept exact to avoid false positives like a
 // real firm named "Advisor Group" or "XYZ Consulting Inc").
+//
+// 'self' IS ON THIS LIST AND MUST STAY. A member typing "Self" as their company is stating a
+// working arrangement, not naming an employer — and because these are WHOLE-STRING matches after
+// norm() (lowercase, punctuation to space, whitespace collapsed), it catches "Self", "self",
+// "SELF" and "  Self  " while leaving real companies whose name merely contains the word —
+// "Self Financial, Inc.", "Selfridges", "Self Esteem Brands" — untouched. Only the standalone
+// placeholder is caught. "Self-employed" is caught by its own entry, via the same normalisation.
 const INDEPENDENT_EXACT = new Set([
   'independent', 'self employed', 'selfemployed', 'self', 'freelance', 'freelancer',
   'fractional', 'consultant', 'consulting', 'advisor', 'advisory', 'sole proprietor',
@@ -65,7 +72,7 @@ const STEALTH_EXACT = new Set(['stealth', 'stealth startup', 'stealth mode', 'st
  *  - 'employed' for a real company, or
  *  - null when the company is empty.
  */
-function companySituation(company: string | null | undefined): Situation | 'employed' | null {
+export function companySituation(company: string | null | undefined): Situation | 'employed' | null {
   const n = norm(company)
   if (!n) return null
   if (INDEPENDENT_EXACT.has(n) || /^(independent|freelance|self employed|selfemployed|fractional)\b/.test(n)) return 'independent'
@@ -76,9 +83,19 @@ function companySituation(company: string | null | undefined): Situation | 'empl
   return 'employed'
 }
 
-/** Map the current_status enum onto a situation, when it carries signal. */
+/**
+ * Map the stored current_status onto a situation. ALL THREE stored values carry signal — see
+ * effectiveSituation() in lib/profile/roleEmploymentCompatibility, which this must agree with.
+ *
+ * 'employed' used to return null here, which quietly let a placeholder company outrank an
+ * explicit employed status in RENDERING while validation said the opposite. A member who had
+ * told us they are employed was rendered "Independent Corporate Counsel". The status is the
+ * authority in both places now; the employed branch below still refuses to print a placeholder
+ * after "at", so the contradiction is never dressed up as a real employer either.
+ */
 function statusSituation(current_status: string | null | undefined): Situation | null {
   switch ((current_status || '').toLowerCase()) {
+    case 'employed': return 'employed'
     case 'consulting_advisory': return 'independent'
     case 'between_roles': return 'between_roles'
     default: return null
@@ -123,16 +140,28 @@ export function professionalIdentity(input: ProfessionalIdentityInput | null | u
   const title = displayTitle(p)
   const company = (p.company || '').trim()
 
-  // Decide the situation: a placeholder/real company wins; else fall back to
-  // current_status; else it's a plain (possibly title-only) employed line.
+  // ── SITUATION PRECEDENCE — one rule, shared with validation ────────────────────────────────
+  // STORED current_status IS THE AUTHORITY whenever it is present. Company text is a LEGACY
+  // FALLBACK, read only when the status was never set.
+  //
+  // WHY THIS ORDER. The company used to win, which meant a member who had told us they were
+  // between roles was still rendered "Counsel at <former employer>" — the profile asserting a
+  // current position they had explicitly said they no longer hold. A stale company is history;
+  // saying "at" it is the one thing this line must not do.
+  //
+  // 'employed' + a PLACEHOLDER company keeps the employed situation deliberately: that
+  // combination is a contradiction the member is asked to fix
+  // (lib/profile/roleEmploymentCompatibility), not something to conceal by re-rendering it as
+  // independent. The placeholder still never appears after "at" — see the employed branch.
   let situation: Situation
   const fromCompany = companySituation(company)
-  if (fromCompany && fromCompany !== 'employed') {
+  const fromStatus = statusSituation(p.current_status)
+  if (fromStatus) {
+    situation = fromStatus
+  } else if (fromCompany && fromCompany !== 'employed') {
     situation = fromCompany
-  } else if (fromCompany === 'employed') {
-    situation = 'employed'
   } else {
-    situation = statusSituation(p.current_status) ?? 'employed'
+    situation = 'employed'
   }
 
   const prev = recentPreviousRole(p)
@@ -155,8 +184,14 @@ export function professionalIdentity(input: ProfessionalIdentityInput | null | u
           : `Former ${title}`
       return { primary, secondary: prevAt('Previously at') }
     }
-    case 'between_roles':
-      return { primary: title || 'Professional', secondary: prevAt('Most recently at') ?? 'Currently between roles' }
+    case 'between_roles': {
+      // The company is NOT erased and NOT shown as current. A genuine one becomes "Most recently
+      // at …" — history, which is what it is — so a member who told us they are between roles is
+      // never rendered as working somewhere. previous_roles still takes precedence when present.
+      const recent = prevAt('Most recently at')
+        ?? (companySituation(company) === 'employed' ? `Most recently at ${company}` : null)
+      return { primary: title || 'Professional', secondary: recent ?? 'Currently between roles' }
+    }
     case 'confidential':
       return { primary: title || 'Professional', secondary: 'Current organization confidential' }
     case 'stealth':
