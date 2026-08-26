@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { UserPlus, CheckCircle, XCircle, Mail, Clock, Send, MessageSquare, RotateCcw } from 'lucide-react'
+import { UserPlus, CheckCircle, XCircle, Mail, Clock, Send, MessageSquare, RotateCcw, Search, X } from 'lucide-react'
 import { buildRecommendationIntroEmail } from '@/lib/email/recommendationIntro'
+import { filterInvitedBySearch, invitedResultSummary, invitedNoResultsDetail, normalizeSearchQuery } from '@/lib/waitlist/searchInvited'
 import type { InviteStatusModel, InviteTone } from '@/lib/waitlist/inviteStatus'
 
 // One tone → badge style map for the shared invitation-state model.
@@ -101,6 +102,24 @@ export default function AdminWaitlistClient({
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'contacted' | 'invited' | 'declined'>('pending')
   const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleFilter>('all')
+  /**
+   * Invited-tab search. COMPONENT STATE, NOT THE URL — deliberately.
+   *
+   * URL-backed state was preferred and was rejected for one concrete reason: in the App Router,
+   * router.replace() with a new query string re-renders the server component and fetches an RSC
+   * payload. On this page that is a network round trip PER KEYSTROKE, which is exactly what the
+   * requirement forbids. Debouncing would only make the requests less frequent, not absent, and
+   * would put the visible text and the URL out of step while typing. The page also has no explicit
+   * dynamic export, so introducing useSearchParams() here would add a Suspense/prerender concern to
+   * a 1000-line component for no operator-visible gain.
+   *
+   * Component state gives the two things actually asked for: instant filtering with zero requests,
+   * and a query that survives switching to another tab and back within the session (this state is
+   * not reset by the tab buttons). What it does not survive is a full page reload — the accepted
+   * trade, recorded here rather than discovered later.
+   */
+  const [invitedSearch, setInvitedSearch] = useState('')
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [processing, setProcessing] = useState<string | null>(null)
 
   // Warm recommendation-email preview/confirm modal state.
@@ -333,9 +352,30 @@ export default function AdminWaitlistClient({
   }
 
   // Invited tab also honors the lifecycle sub-filter (shared matcher).
-  const filtered = waitlist
-    .filter(entry => entry.status === activeTab)
-    .filter(entry => activeTab !== 'invited' || matchesLifecycleFilter(entry, lifecycleFilter))
+  // Tab → lifecycle sub-filter → search, in that order. Search is applied LAST and only on the
+  // Invited tab, so it can never surface a row from another status and never reorders anything:
+  // filterInvitedBySearch preserves input order exactly, so clearing the box restores the page's
+  // existing Invited ordering untouched.
+  const filtered = useMemo(() => {
+    const byTab = waitlist
+      .filter(entry => entry.status === activeTab)
+      .filter(entry => activeTab !== 'invited' || matchesLifecycleFilter(entry, lifecycleFilter))
+    return activeTab === 'invited' ? filterInvitedBySearch(byTab, invitedSearch) : byTab
+  }, [waitlist, activeTab, lifecycleFilter, invitedSearch])
+
+  const searchActive = activeTab === 'invited' && normalizeSearchQuery(invitedSearch) !== ''
+  const clearInvitedSearch = () => {
+    setInvitedSearch('')                       // the lifecycle filter is deliberately untouched
+    searchInputRef.current?.focus()
+  }
+  /** Label of the active lifecycle sub-filter, or null when it is 'all' (i.e. not narrowing). */
+  const activeLifecycleLabel =
+    lifecycleFilter === 'all' ? null : (LIFECYCLE_FILTERS.find(f => f.key === lifecycleFilter)?.label ?? null)
+  /** Widen to All WITHOUT losing what was typed — the search is the thing worth keeping. */
+  const searchAllLifecycles = () => {
+    setLifecycleFilter('all')                  // the query is deliberately untouched
+    searchInputRef.current?.focus()
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
@@ -448,7 +488,55 @@ export default function AdminWaitlistClient({
               </div>
             )}
             {activeTab === 'invited' && (
-              <div className="mb-4">
+              <div className="mb-4 min-w-0">
+                {/* SEARCH — Invited only. Filters data already on the page: no request, no write,
+                    no resend, no status change. Sits above the lifecycle chips on a phone and beside
+                    them from sm up, so on desktop it reads as one control group. */}
+                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-3 min-w-0">
+                  <div className="min-w-0 w-full sm:max-w-sm">
+                    <label htmlFor="invited-search" className="block text-xs font-medium text-slate-500 mb-1.5">
+                      Search invited people
+                    </label>
+                    <div className="relative">
+                      <Search
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                        aria-hidden="true"
+                      />
+                      <input
+                        id="invited-search"
+                        ref={searchInputRef}
+                        type="text"
+                        value={invitedSearch}
+                        onChange={(e) => setInvitedSearch(e.target.value)}
+                        placeholder="Name or email"
+                        autoComplete="off"
+                        spellCheck={false}
+                        aria-describedby="invited-search-summary"
+                        className="w-full min-w-0 rounded-lg border border-slate-300 bg-white pl-9 pr-9 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2850] focus-visible:border-[#1B2850]"
+                      />
+                      {invitedSearch !== '' && (
+                        <button
+                          type="button"
+                          onClick={clearInvitedSearch}
+                          aria-label="Clear search"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2850]"
+                        >
+                          <X className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {/* The count of what is on screen. The Invited TAB badge is a separate,
+                      server-computed total and is deliberately not derived from this. */}
+                  <p
+                    id="invited-search-summary"
+                    role="status"
+                    aria-live="polite"
+                    className="text-xs text-slate-500 sm:pb-2 break-words min-w-0"
+                  >
+                    {invitedResultSummary(filtered.length, invitedSearch)}
+                  </p>
+                </div>
                 <p className="text-xs font-medium text-slate-500 mb-2">Email lifecycle</p>
                 <div className="flex flex-wrap gap-2">
                   {LIFECYCLE_FILTERS.map(f => {
@@ -471,10 +559,45 @@ export default function AdminWaitlistClient({
               </div>
             )}
             {filtered.length === 0 ? (
-              <div className="text-center py-12">
-                <UserPlus className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                <p className="text-slate-500 text-sm">No {activeTab} entries</p>
-              </div>
+              searchActive ? (
+                /* Search-specific empty state: says what was searched, and offers the way out. */
+                <div className="text-center py-12 px-4">
+                  <Search className="w-12 h-12 text-slate-300 mx-auto mb-4" aria-hidden="true" />
+                  <p className="text-slate-500 text-sm break-words">
+                    {invitedResultSummary(0, invitedSearch)}
+                  </p>
+                  <p className="text-slate-400 text-xs mt-1 break-words max-w-md mx-auto">
+                    {invitedNoResultsDetail(activeLifecycleLabel)}
+                  </p>
+                  <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-2 min-w-0">
+                    {/* Offered ONLY while a bucket is narrowing the result, and it keeps the query:
+                        the operator has already typed the name they are looking for. */}
+                    {activeLifecycleLabel && (
+                      <button
+                        type="button"
+                        onClick={searchAllLifecycles}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#1B2850] bg-[#1B2850] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#1B2850]/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2850] focus-visible:ring-offset-2"
+                      >
+                        <Search className="w-3.5 h-3.5" aria-hidden="true" />
+                        Search all incomplete
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={clearInvitedSearch}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-[#1B2850] hover:text-[#1B2850] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2850]"
+                    >
+                      <X className="w-3.5 h-3.5" aria-hidden="true" />
+                      Clear search
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <UserPlus className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-500 text-sm">No {activeTab} entries</p>
+                </div>
+              )
             ) : (
               <div className="space-y-4">
                 {filtered.map(entry => {
