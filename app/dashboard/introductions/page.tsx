@@ -23,13 +23,16 @@ import WaitingOnResponse from '@/components/introductions/WaitingOnResponse'
 import RespondToIntroductionsNotice from '@/components/introductions/RespondToIntroductionsNotice'
 import { AndrelConnectorBadge } from '@/components/ui/AndrelConnectorBadge'
 import { isAndrelConnector } from '@/lib/recognition/andrelConnector'
-import { shouldShowRespondNotice } from '@/lib/introductions/unresolved'
+import { selectActionableCards, overCapacityWarning } from '@/lib/introductions/actionableCards'
+import { resolveGuidanceState, hasEverReceivedIntroduction, ACTIONABLE_ANCHOR_ID } from '@/lib/introductions/guidance'
+import FirstIntroductionsExplainer from '@/components/introductions/FirstIntroductionsExplainer'
+import AllCaughtUpNotice from '@/components/introductions/AllCaughtUpNotice'
 import PageHint from '@/components/PageHint'
 import { Avatar as UIAvatar } from '@/components/ui/Avatar'
 import { Pill } from '@/components/ui/Pill'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { matchProfileCompletion } from '@/lib/matching/profile-completion'
-import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
+import { RECOMMENDATIONS_PER_BATCH, MAX_VISIBLE_INTRO_CARDS } from '@/lib/introductions/limits'
 import { fetchActionableIncomingInterest } from '@/lib/introductions/incomingInterest'
 import { getEffectiveTier } from '@/lib/tier-override'
 import { toList } from '@/lib/match-signals'
@@ -106,7 +109,7 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // in the minimal browser self RPC.
   const { data: myProfileRows } = await createAdminClient()
     .from('profiles')
-    .select('id, full_name, subscription_tier, is_founding_member, founding_member_expires_at, expertise, interests, intro_preferences, purposes, intro_profile_prompt_dismissed_at, created_at, account_status, profile_complete, is_test_account, matching_paused, is_admin')
+    .select('id, full_name, subscription_tier, is_founding_member, founding_member_expires_at, expertise, interests, intro_preferences, purposes, intro_profile_prompt_dismissed_at, created_at, account_status, profile_complete, is_test_account, matching_paused, is_admin, intro_guidance_enrolled_at, intro_first_batch_explainer_dismissed_at')
     .eq('id', user.id)
     .limit(1)
   const profileRow = (Array.isArray(myProfileRows) ? myProfileRows[0] : myProfileRows) ?? null
@@ -346,15 +349,40 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     ...(suggestedIntros || []).map((i: any) => i.target_user_id),
   ]))
   const deactivatedIds = new Set<string>()
+  // UNAVAILABLE targets — the UI mirror of public.count_unresolved_introductions() as migration 085
+  // defines it: missing, inactive, profile-incomplete, test-only, matching-paused, or blocked in
+  // EITHER direction. A card pointing at one of these is neither counted by the database nor shown
+  // here, so it can neither strand the member nor ask them to answer somebody they must not see.
+  const unavailableIds = new Set<string>()
   if (allOtherPartyIds.length > 0) {
-    // A3: account_status is an internal field (removed from public_profiles) — read it server-side via
-    // service_role for the viewer's own intro counterparts to compute the deactivated filter.
-    const { data: statusRows } = await createAdminClient()
-      .from('profiles')
-      .select('id, account_status')
-      .in('id', allOtherPartyIds)
-      .neq('account_status', 'active')
-    for (const r of statusRows || []) deactivatedIds.add(r.id)
+    // A3: these are internal fields (removed from public_profiles) — read server-side via
+    // service_role, scoped to the viewer's own intro counterparts.
+    const admin = createAdminClient()
+    const [{ data: statusRows }, { data: blockRows }] = await Promise.all([
+      admin
+        .from('profiles')
+        .select('id, account_status, profile_complete, is_test_account, matching_paused')
+        .in('id', allOtherPartyIds),
+      // Blocking, both directions, scoped to this viewer and these counterparts.
+      admin
+        .from('blocked_users')
+        .select('user_id, blocked_user_id')
+        .or(`and(user_id.eq.${profileId},blocked_user_id.in.(${allOtherPartyIds.join(',')})),` +
+            `and(blocked_user_id.eq.${profileId},user_id.in.(${allOtherPartyIds.join(',')}))`),
+    ])
+    const seen = new Set<string>()
+    for (const r of (statusRows as any[]) || []) {
+      seen.add(r.id)
+      if (r.account_status !== 'active') deactivatedIds.add(r.id)      // unchanged legacy signal
+      if (r.account_status !== 'active' || r.profile_complete !== true
+          || r.is_test_account === true || r.matching_paused === true) unavailableIds.add(r.id)
+    }
+    // A counterpart whose profile row did not come back does not exist (or is unreadable): there is
+    // nothing to answer, so it is unavailable rather than silently actionable.
+    for (const id of allOtherPartyIds) if (!seen.has(id)) unavailableIds.add(id)
+    for (const b of (blockRows as any[]) || []) {
+      unavailableIds.add(b.user_id === profileId ? b.blocked_user_id : b.user_id)
+    }
   }
 
   const adminIntrosVisible = adminIntrosFiltered.filter(
@@ -435,18 +463,39 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     })
     .map((r: any) => ({ id: r.responds_to_id as string, name: r.target?.full_name || 'A member' }))
 
-  // Never more than RECOMMENDATIONS_PER_BATCH visible. The active batch already
-  // holds at most that many 'suggested' rows by construction; the slice is a
-  // belt-and-suspenders guard so the invariant holds even if stray rows exist.
-  const allSuggestions = Array.from(
-    new Map(
-      suggestedProfiles
-        // Never show a pair as a fresh suggestion once interest is expressed —
-        // it belongs in the Pending section (no duplicate cards across sections).
-        .filter((item: any) => item?.profile?.id && !pendingTargetIds.has(item.profile.id))
-        .map((item: any) => [item.profile.id, item])
-    ).values()
-  ).slice(0, RECOMMENDATIONS_PER_BATCH)
+  // THE actionable set. Produced by the canonical predicate (lib/introductions/actionableCards)
+  // rather than an inline filter, so the guidance copy above the grid counts exactly the cards
+  // below it. Every exclusion — queued, terminal, answered, matched, unavailable (missing/inactive/
+  // incomplete/test/paused/blocked, migration 085), incoming-interest, orphaned — is documented in
+  // that module and mirrors public.count_unresolved_introductions() clause for clause.
+  //
+  // The visible cap is a CREATION rule enforced by the database writers, not a display rule: it is
+  // deliberately NOT applied here (see the belt-and-suspenders defence in depth below — a warning,
+  // never a hidden card), because hiding an actionable card the strict gate still counts would
+  // leave the member unable to reach the very card holding them.
+  const allSuggestions = selectActionableCards(
+    suggestedProfiles.map((item: any) => ({
+      ...item,
+      // adapt the page's already-derived shape to the predicate's row contract
+      id: item.rowId,
+      target_user_id: item.profile?.id,
+      target: item.profile,
+    })),
+    {
+      matchedTargetIds: matchedUserIds,
+      unavailableTargetIds: unavailableIds,
+      incomingInterestTargetIds: incomingRequesterIds,
+      // "already answered" — a live outbound expression, correlated (080) or legacy pending/approved.
+      answeredTargetIds: pendingTargetIds,
+    },
+  )
+  // NO CAP. The visible-card cap governs CREATION in the database writers; slicing here would hide
+  // a card the strict gate still counts, leaving the member unable to reach the one holding them.
+  // An over-capacity member is logged for operations and shown nothing unusual.
+  {
+    const warning = overCapacityWarning(allSuggestions.length, MAX_VISIBLE_INTRO_CARDS)
+    if (warning) console.warn(warning)
+  }
 
   // Featured = first; additional = rest. If allSuggestions is empty, neither renders.
   const featuredSuggestion = allSuggestions[0] ?? null
@@ -456,6 +505,27 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
   // from match_reason or display text. Reciprocal Andrel pairs → "Introduced by Andrel"; ordinary/
   // legacy (pair_id NULL) → "Recommended for you". Each card is in EXACTLY ONE section.
   const introSections = buildIntroSections(allSuggestions as any[])
+
+  // ── INTRODUCTION GUIDANCE ────────────────────────────────────────────────────────────────────
+  // ONE state, resolved server-side, so two guidance panels can never compete. Every input is the
+  // viewer's OWN: how many cards they can act on (the exact array rendered below), whether a card
+  // has ever been placed for them, and their two guidance stamps. Nothing here reads, or can imply,
+  // the counterparty's interest.
+  const actionableCount = allSuggestions.length
+  // A stale row pointing at an unavailable member is hidden here AND costs the member nothing in
+  // the database: migration 085 excludes it from both the unresolved gate and usable visible
+  // capacity. So it does not delay "You're all caught up" — the member's full allocation is
+  // available whether or not maintenance has physically neutralised the row yet.
+  const guidanceState = resolveGuidanceState({
+    actionableCount,
+    hasEverReceivedIntroduction: hasEverReceivedIntroduction(existingRequests as any),
+    enrolledAt: (profileRow as any)?.intro_guidance_enrolled_at ?? null,
+    explainerDismissedAt: (profileRow as any)?.intro_first_batch_explainer_dismissed_at ?? null,
+  })
+  // The first card the member will actually see, in render order: the reciprocal section is drawn
+  // before the ordinary one. This is what the reminder's action scrolls to and focuses.
+  const firstActionableRowId: string | null =
+    (introSections.andrel.featured as any)?.rowId ?? (introSections.ordinary.featured as any)?.rowId ?? null
 
   // UI Review overlay — when isDevReview, swap to static demo data (routed into the Andrel section
   // for preview). In production these alias the real per-section splits by reference.
@@ -658,7 +728,12 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
       return <DemoCardHider key={row.rowId || s.id}>{innerCard}</DemoCardHider>
     }
     return (
-      <IntroductionCard key={row.rowId || s.id} targetId={s.id} rowId={row.rowId}>
+      <IntroductionCard
+        key={row.rowId || s.id}
+        targetId={s.id}
+        rowId={row.rowId}
+        anchorId={row.rowId && row.rowId === firstActionableRowId ? ACTIONABLE_ANCHOR_ID : undefined}
+      >
         {innerCard}
       </IntroductionCard>
     )
@@ -908,7 +983,10 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             waiting entries, capacity-released rows, queued rows, terminal rows, matched and
             deactivated targets, and incoming-interest targets. Directly above the grid, in normal
             flow: above the fold on both breakpoints and incapable of covering the fixed MobileNav. */}
-        {shouldShowRespondNotice(allSuggestions) && <RespondToIntroductionsNotice />}
+        {guidanceState === 'first_batch' && <FirstIntroductionsExplainer count={actionableCount} />}
+        {guidanceState === 'reminder' && (
+          <RespondToIntroductionsNotice count={actionableCount} targetId={ACTIONABLE_ANCHOR_ID} />
+        )}
 
         {/* TWO-COLUMN LAYOUT */}
         <div className="grid lg:grid-cols-3 gap-6 lg:gap-8">
@@ -1020,7 +1098,14 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
             )}
 
             {/* Empty state — ONLY when neither section renders and there is no incoming interest. */}
-            {!effectiveAndrelFeatured && !effectiveOrdinaryFeatured && incomingInterest.length === 0 && (
+            {/* ALL CAUGHT UP — replaces the "being curated" panel for a member who has received
+                introductions before and has answered every one. A member who has never been sent a
+                card falls through to the existing waiting state below. Same slot, never both. */}
+            {!effectiveAndrelFeatured && !effectiveOrdinaryFeatured && incomingInterest.length === 0
+              && guidanceState === 'caught_up' && <AllCaughtUpNotice />}
+
+            {!effectiveAndrelFeatured && !effectiveOrdinaryFeatured && incomingInterest.length === 0
+              && guidanceState !== 'caught_up' && (
               <section className="rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-7">
                 <div className="flex items-start gap-4">
                   <div className="w-10 h-10 rounded-xl bg-brand-navy/[0.04] text-brand-gold flex items-center justify-center flex-shrink-0">

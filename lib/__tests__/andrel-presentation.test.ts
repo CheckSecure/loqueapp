@@ -35,9 +35,15 @@ describe('Andrel presentation — shared pair_id, both members, structured label
     expect(page).toMatch(/effectiveOrdinaryFeatured && \([\s\S]{0,700}Recommended for you/)
     // Andrel section is conditional (item 10 — no empty section).
     expect(page).toContain('{effectiveAndrelFeatured && (')
-    // one source list feeds the split, deduped by profile id + excluded when pending.
-    expect(page).toContain('.map((item: any) => [item.profile.id, item])')
-    expect(page).toContain('!pendingTargetIds.has(item.profile.id)')
+    // one source list feeds the split, deduped by profile id + excluded when pending. Both are now
+    // properties of the canonical selector (lib/introductions/actionableCards) rather than an
+    // inline map/filter — same guarantees, asserted where they now live.
+    expect(page).toContain('const allSuggestions = selectActionableCards(')
+    expect(page).toContain('answeredTargetIds: pendingTargetIds')
+    const PRED = readFileSync('lib/introductions/actionableCards.ts', 'utf8')
+    expect(PRED).toContain('const byTarget = new Map<string, T>()')       // dedup BY TARGET
+    expect(PRED).toContain('if (!byTarget.has(id)) byTarget.set(id, row)')
+    expect(PRED).toContain('if (ctx.answeredTargetIds.has(id)) return false')
   })
 
   it('9. the admin/concierge area is labeled "Andrel Concierge" — never the identical reciprocal wording', () => {

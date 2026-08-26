@@ -1731,3 +1731,42 @@ export async function adminSetFoundingMember(userId: string, isFoundingMember: b
   return { success: true, emailSent }
 }
 
+
+/**
+ * Dismiss the one-time "Your introductions are ready" explainer for the SIGNED-IN member.
+ *
+ * SELF-ONLY BY CONSTRUCTION. It takes no arguments — there is no id to tamper with. The subject is
+ * whoever the server-validated session says it is, and the write is keyed on that id, so this
+ * action cannot be aimed at another member no matter what the browser sends.
+ *
+ * It writes exactly one member-private UI-preference column and nothing else. It does not touch
+ * matching, capacity, eligibility, cards, credits, notifications or email, and it never enrolls
+ * anyone — dismissal is only meaningful for a member the profile-completion path already enrolled.
+ *
+ * Fail-open on a missing column so the page keeps working if migration 084 has not been applied
+ * yet: the panel closes for the session and simply does not persist. Reported honestly in the
+ * return value rather than claimed as success.
+ */
+export async function dismissFirstIntroductionsExplainer(): Promise<
+  { ok: true; persisted: boolean } | { ok: false; error: string }
+> {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Not authenticated' }
+
+  // Browser UPDATE on profiles is revoked (migration 055), so this is a service_role write scoped
+  // to the caller's own row — the same pattern every other self-preference write here uses.
+  const { error } = await createAdminClient()
+    .from('profiles')
+    .update({ intro_first_batch_explainer_dismissed_at: new Date().toISOString() })
+    .eq('id', user.id)
+
+  if (error) {
+    if (isMissingColumnError(error)) return { ok: true, persisted: false } // 084 not applied yet
+    return { ok: false, error: error.message }
+  }
+
+  revalidatePath('/dashboard/introductions')
+  return { ok: true, persisted: true }
+}
+

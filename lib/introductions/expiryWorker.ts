@@ -18,11 +18,13 @@ export interface ExpiryStageResult {
   legacyExpired: number
   truncated: boolean
   outcomes: Record<string, number>
+  /** Unavailable-pair sweep (migration 085). Aggregate counts only — never member data. */
+  unavailable: { processed: number; released: number; skipped: number; failed: number; truncated: boolean } | null
 }
 
 export async function runExpiryStage(
   admin: any,
-  opts: { maxPairs?: number; maxLegacy?: number; budgetMs: number },
+  opts: { maxPairs?: number; maxLegacy?: number; maxUnavailable?: number; budgetMs: number },
 ): Promise<ExpiryStageResult> {
   const started = Date.now()
   const maxPairs = opts.maxPairs ?? 150
@@ -85,5 +87,39 @@ export async function runExpiryStage(
     }
   }
 
-  return { pairsProcessed, legacyExpired, truncated, outcomes }
+  // ── UNAVAILABLE-PAIR SWEEP (migration 085) ────────────────────────────────────────────────
+  // Lives HERE, in the existing maintenance stage, rather than in a cron of its own: this stage is
+  // already scheduled, already bounded, already budget-aware, and already owns "tidy up stale
+  // introduction rows". A second cron for the same job would be a second thing to forget.
+  //
+  // IT IS NOT THE CORRECTNESS MECHANISM. All four database writers reconcile synchronously inside
+  // their advisory locks, so a delayed, truncated, or failed sweep can never reduce a member's
+  // weekly allocation. This only shortens the window in which a stale row sits in a slot.
+  //
+  // Everything else is delegated to public.sweep_unavailable_introductions: it is bounded, it takes
+  // the canonical member advisory locks per card, it refuses anything that changed underneath it,
+  // and it returns aggregate counts only. Nothing here logs a member id, name, or email.
+  let unavailable: ExpiryStageResult['unavailable'] = null
+  if (!outOfTime()) {
+    const { data, error } = await admin.rpc('sweep_unavailable_introductions', {
+      p_limit: opts.maxUnavailable ?? 100,
+    })
+    if (error) {
+      // Coarse class only. A missing function (migration 085 not applied yet) is a no-op, not a
+      // failure of the whole stage — the writers already reconcile without it.
+      console.error('[intro-expiry] unavailable sweep failed (class):', (error as any).code ?? 'unknown')
+      outcomes['unavailable_sweep_failed'] = (outcomes['unavailable_sweep_failed'] ?? 0) + 1
+    } else if (data) {
+      unavailable = {
+        processed: Number(data.processed ?? 0),
+        released: Number(data.released ?? 0),
+        skipped: Number(data.skipped ?? 0),
+        failed: Number(data.failed ?? 0),
+        truncated: Boolean(data.truncated),
+      }
+      console.log('[intro-expiry] unavailable sweep:', JSON.stringify(unavailable))
+    }
+  }
+
+  return { pairsProcessed, legacyExpired, truncated, outcomes, unavailable }
 }

@@ -5,11 +5,15 @@ import { useRouter } from 'next/navigation'
 export default function IntroductionCard({
   children,
   targetId,
-  rowId
+  rowId,
+  /** Set on exactly ONE card per page — the first actionable one — so the "You have introductions
+   *  waiting" reminder has a real element to scroll to and move keyboard focus into. */
+  anchorId
 }: {
   children: React.ReactNode
   targetId: string
   rowId?: string
+  anchorId?: string
 }) {
   const router = useRouter()
 
@@ -21,7 +25,7 @@ export default function IntroductionCard({
   }
 
   return (
-    <div data-target-id={targetId} data-row-id={rowId || ''} onClick={handleClick} className="cursor-pointer">
+    <div id={anchorId} data-target-id={targetId} data-row-id={rowId || ''} onClick={handleClick} className="cursor-pointer">
       {children}
     </div>
   )

@@ -366,10 +366,13 @@ describe('bounded processing and privacy of the worker', () => {
   it('reports aggregate counts only, no identities', () => {
     expect(CRON).toMatch(/considered: wedConsidered, claimed: wedClaimed, sent: wedSent, failed: wedFailed/)
     expect(EXPIRE).toMatch(/suggestedExpiry: exp/)
-    expect(WORKER).toMatch(/return \{ pairsProcessed, legacyExpired, truncated, outcomes \}/)
+    // migration 085 added the unavailable-pair sweep to this same stage; its result is aggregate
+    // counts only, and is returned alongside the existing ones
+    expect(WORKER).toMatch(/return \{ pairsProcessed, legacyExpired, truncated, outcomes, unavailable \}/)
+    expect(WORKER).toMatch(/unavailable: \{ processed: number; released: number; skipped: number; failed: number; truncated: boolean \}/)
     // No identity in any log line. Checked per line on code only: a greedy cross-line regex
     // would run from one console.error into unrelated text further down the file.
-    for (const line of codeOf(CRON).split('\n')) {
+    for (const line of (codeOf(CRON) + '\n' + codeOf(WORKER)).split('\n')) {
       if (!/console\.(log|error|warn)\(/.test(line)) continue
       expect(line, `log line leaks identity: ${line.trim()}`)
         .not.toMatch(/memberId|batchId|recipientId|introRequestId|\.email|full_name|\$\{[a-zA-Z]*[Ii]d\}/)

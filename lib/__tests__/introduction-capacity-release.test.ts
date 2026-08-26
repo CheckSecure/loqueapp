@@ -534,7 +534,11 @@ describe('the waiting state is wired into the Introductions page', () => {
 
   it('the answered card disappears from the actionable list', () => {
     expect(PAGE).toMatch(/correlatedTargetIds\.forEach\(\(id\) => pendingTargetIds\.add\(id\)\)/)
-    expect(PAGE).toMatch(/!pendingTargetIds\.has\(item\.profile\.id\)/)
+    // pendingTargetIds is now handed to the canonical predicate as the "already answered" set;
+    // a target in it is excluded there, so an answered card still leaves the actionable list.
+    expect(PAGE).toMatch(/answeredTargetIds: pendingTargetIds/)
+    expect(readFileSync('lib/introductions/actionableCards.ts', 'utf8'))
+      .toContain('if (ctx.answeredTargetIds.has(id)) return false')
   })
 
   it('and is not ALSO shown as an "Interest expressed" card', () => {

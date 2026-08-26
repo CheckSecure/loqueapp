@@ -691,10 +691,17 @@ describe('7c. only the capacity RPCs can create or reveal a card', () => {
     expect(SQL).toMatch(/UPDATE public\.intro_requests SET status = 'suggested'/)
   })
 
-  it('UI slicing remains defence-in-depth, and is labelled as such', () => {
+  it('the UI applies NO cap — the cap is a CREATION rule, and hiding a card would strand a member', () => {
     const PAGE = readFileSync('app/dashboard/introductions/page.tsx', 'utf8')
-    expect(PAGE).toMatch(/\.slice\(0, RECOMMENDATIONS_PER_BATCH\)/)
-    expect(PAGE).toMatch(/belt-and-suspenders|defence|defense/i)
+    const PRED = readFileSync('lib/introductions/actionableCards.ts', 'utf8')
+    // The earlier "belt-and-suspenders" slice was itself the hazard: the strict 081/085 gate counts
+    // every actionable card, so hiding one left the member told to respond to everything while
+    // unable to reach the card holding them. Every actionable card is now rendered, and an
+    // over-capacity member is a SERVER warning instead.
+    expect(PRED).not.toMatch(/\.slice\(/)
+    expect(PAGE).not.toMatch(/selectActionableCards\([\s\S]{0,900}RECOMMENDATIONS_PER_BATCH,\s*\n\s*\)/)
+    expect(PAGE).toContain('overCapacityWarning(allSuggestions.length, MAX_VISIBLE_INTRO_CARDS)')
+    expect(PRED).toContain('NO DISPLAY CAP')
     // and it is NOT the enforcement point: the page never writes a card
     expect(PAGE).not.toMatch(/from\('intro_requests'\)[\s\S]{0,120}\.(insert|update|delete)\(/)
   })

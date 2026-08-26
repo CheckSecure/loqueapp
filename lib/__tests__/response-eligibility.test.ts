@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { GUIDANCE_COPY } from '@/lib/introductions/guidance'
 import {
   isUnresolvedIntroduction, countUnresolvedIntroductions, shouldShowRespondNotice,
   type UnresolvedCandidate,
@@ -101,34 +102,52 @@ describe('the Introductions-page notice', () => {
   })
 
   it('is driven by allSuggestions — the array that renders the cards', () => {
-    expect(PAGE).toMatch(/shouldShowRespondNotice\(allSuggestions\) && <RespondToIntroductionsNotice \/>/)
+    // The notice now carries a COUNT, which makes "same array" load-bearing rather than merely
+    // tidy: the number above the grid must be the number of cards in it.
+    expect(PAGE).toMatch(/const actionableCount = allSuggestions\.length/)
+    expect(PAGE).toMatch(/<RespondToIntroductionsNotice count=\{actionableCount\}/)
     // never from the raw rows, the waiting entries, the pending list or incoming interest
-    expect(PAGE).not.toMatch(/shouldShowRespondNotice\((suggestedIntros|waitingEntries|pendingProfiles|incomingInterest)/)
+    expect(PAGE).not.toMatch(/actionableCount = (suggestedIntros|waitingEntries|pendingProfiles|incomingInterest)/)
   })
 
   it('so correlated waiting, released, queued, terminal, matched and incoming rows are all excluded', () => {
     // allSuggestions is built from status='suggested' rows only, minus matched/deactivated/incoming
     // targets, minus every target with an outbound expression (which includes correlated + released).
-    expect(PAGE).toMatch(/const allSuggestions = Array\.from\(/)
-    expect(PAGE).toMatch(/!pendingTargetIds\.has\(item\.profile\.id\)/)
+    // The exclusions moved into the canonical predicate (lib/introductions/actionableCards) so the
+    // page and the guidance count cannot drift. Same four exclusion sets, now named and passed in.
+    expect(PAGE).toMatch(/const allSuggestions = selectActionableCards\(/)
+    expect(PAGE).toMatch(/answeredTargetIds: pendingTargetIds/)          // correlated + released + legacy
     expect(PAGE).toMatch(/correlatedTargetIds\.forEach\(\(id\) => pendingTargetIds\.add\(id\)\)/)
-    expect(PAGE).toMatch(/!matchedUserIds\.has\(intro\.target\.id\)/)
-    expect(PAGE).toMatch(/!deactivatedIds\.has\(intro\.target\.id\)/)
-    expect(PAGE).toMatch(/!incomingRequesterIds\.has\(intro\.target\.id\)/)
+    expect(PAGE).toMatch(/matchedTargetIds: matchedUserIds/)
+    // migration 085 widened "inactive" to the full unavailable set: missing / inactive /
+    // incomplete / test-only / matching-paused / blocked in either direction
+    expect(PAGE).toMatch(/unavailableTargetIds: unavailableIds/)
+    expect(PAGE).toContain("from('blocked_users')")
+    expect(PAGE).toMatch(/incomingInterestTargetIds: incomingRequesterIds/)
+    // and the predicate itself still refuses anything that is not a live 'suggested' row
+    const PRED = readFileSync('lib/introductions/actionableCards.ts', 'utf8')
+    expect(PRED).toMatch(/row\.status !== ACTIONABLE_CARD_STATUS/)
   })
 
   it('sits directly above the card grid, in normal flow', () => {
-    const at = PAGE.indexOf('<RespondToIntroductionsNotice />')
+    const at = PAGE.indexOf('<RespondToIntroductionsNotice count=')
     const grid = PAGE.indexOf('{/* TWO-COLUMN LAYOUT */}')
     expect(at).toBeGreaterThan(-1)
     expect(at).toBeLessThan(grid)
   })
 
   it('uses the exact copy and the exact product labels', () => {
-    expect(NOTICE).toContain('Respond to your introductions to stay eligible for new ones.')
-    expect(NOTICE).toContain('Choose Express interest or Pass on each one.')
-    expect(NOTICE).toMatch(/Responding keeps you eligible for future curated\s*\n?\s*introductions/)
-    expect(NOTICE).toMatch(/doesn&rsquo;t guarantee a new one in every batch/)
+    // Copy now lives in lib/introductions/guidance so the same strings can be asserted against the
+    // AUDITED eligibility policy in one place. The claim is unchanged: responding restores
+    // eligibility for CONSIDERATION, and nothing here promises an introduction.
+    const COPY = readFileSync('lib/introductions/guidance.ts', 'utf8')
+    expect(NOTICE).toContain('GUIDANCE_COPY.reminder.heading')
+    expect(NOTICE).toContain('GUIDANCE_COPY.reminder.body')
+    expect(COPY).toContain('You have introductions waiting')
+    // asserted on the ASSEMBLED string, not the source layout, so re-wrapping the literal is fine
+    expect(GUIDANCE_COPY.reminder.body).toContain('eligible for consideration in the next weekly round')
+    // on the copy itself — the module also NAMES the banned words in order to forbid them
+    expect(JSON.stringify(GUIDANCE_COPY)).not.toMatch(/\bguarantee/i)
     const BUTTON = readFileSync('components/RequestIntroButton.tsx', 'utf8')
     expect(BUTTON).toContain("'Express interest'")      // the real label
     expect(BUTTON).toContain('aria-label="Pass"')
@@ -138,7 +157,13 @@ describe('the Introductions-page notice', () => {
     expect(NOTICE).toMatch(/role="status"/)
     expect(NOTICE).toMatch(/aria-live="polite"/)
     expect(NOTICE_CODE).not.toMatch(/\bfixed\b|\bsticky\b|\bz-\d/)   // cannot cover MobileNav
-    expect(NOTICE_CODE).not.toMatch(/onClick|<button|useState|'use client'/)
+    // It IS a client component now, for exactly one reason: the action moves keyboard focus to the
+    // first actionable card. That is a real <button> — never a click handler on a div — and it
+    // navigates nowhere and mutates nothing, which is what the following assertions pin.
+    expect(NOTICE_CODE).toMatch(/<button[\s\S]{0,120}type="button"/)
+    expect(NOTICE_CODE).not.toMatch(/<div[^>]*onClick/)
+    expect(NOTICE_CODE).not.toMatch(/fetch\(|\.rpc\(|\.insert\(|\.update\(|router\.push/)
+    expect(NOTICE_CODE).toContain('focus-visible:ring-2')
   })
 
   it('has no countdown, dismissal or tracking', () => {
