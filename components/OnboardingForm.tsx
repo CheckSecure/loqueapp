@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
+import RecruiterGuidancePanel from '@/components/onboarding/RecruiterGuidance'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import ConnectionTargetPicker from '@/components/ConnectionTargetPicker'
 import type { CategoryTitleSelection } from '@/lib/role-taxonomy'
@@ -403,6 +404,10 @@ export default function OnboardingForm({ initialFullName = '', needsPassword }: 
                   setTitle(title)
                 }}
               />
+              {/* Optional recruiter framing. Renders only for the two recruiter role_type values,
+                  stores nothing of its own, and therefore cannot block completion or lose an
+                  answer when the member changes role. */}
+              <RecruiterGuidancePanel roleType={roleType} />
             </div>
 
             <div>

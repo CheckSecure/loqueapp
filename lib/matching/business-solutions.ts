@@ -28,8 +28,26 @@
  * in the callers.
  */
 
+/**
+ * EXTERNAL service-provider role_type values that are matched EXACTLY, not by substring.
+ *
+ * Substring matching is how 'Executive Recruiter' would otherwise be classified by accident: it
+ * contains none of the existing fragments today, but a future value like 'Recruiting Consultant'
+ * would silently be swept in by `includes('consultant')`. An exact set says precisely which values
+ * are providers and cannot drift.
+ *
+ * 'Executive Recruiter' IS here: an external search consultant sells a service to companies, so a
+ * member being shown one is vendor exposure and belongs under the buyer/provider throttle.
+ * 'In-House Talent Leader' is deliberately NOT here: they are an employee of a member company, a
+ * peer, and a buyer of search services themselves.
+ */
+export const EXPLICIT_PROVIDER_ROLE_TYPES: readonly string[] = ['Executive Recruiter']
+
 export function isBusinessSolutionProvider(candidate: { role_type?: string }): boolean {
-  const roleType = (candidate.role_type || '').toLowerCase()
+  const raw = (candidate.role_type || '').trim()
+  // Exact-match layer first — additive, and it can never widen the substring rules below.
+  if (EXPLICIT_PROVIDER_ROLE_TYPES.includes(raw)) return true
+  const roleType = raw.toLowerCase()
   return (
     roleType.includes('law firm') ||
     roleType.includes('consultant') ||

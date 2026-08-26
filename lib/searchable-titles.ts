@@ -87,6 +87,25 @@ const ALIAS_ENTRIES: SearchableTitle[] = [
   { display: 'Director of FP&A',                   role_type: 'Head of FP&A',                     category: 'Finance' },
   { display: 'Corporate Development Executive',    role_type: 'VP Finance',                       category: 'Finance' },
 
+  // ─── Recruiting / Talent ───
+  // The user-facing label for the external role is longer than its canonical stored value, so it
+  // is an ALIAS: picking it writes role_type='Executive Recruiter' and exact_job_title='Executive
+  // Recruiter / Search Consultant'. Every alias below resolves to one of the two canonical values
+  // — the module-load firewall proves it at build time.
+  { display: 'Executive Recruiter / Search Consultant', role_type: 'Executive Recruiter',        category: 'Recruiting / Talent' },
+  { display: 'Search Consultant',                  role_type: 'Executive Recruiter',              category: 'Recruiting / Talent' },
+  { display: 'Executive Search Consultant',        role_type: 'Executive Recruiter',              category: 'Recruiting / Talent' },
+  { display: 'Retained Search Consultant',         role_type: 'Executive Recruiter',              category: 'Recruiting / Talent' },
+  { display: 'Legal Recruiter',                    role_type: 'Executive Recruiter',              category: 'Recruiting / Talent' },
+  { display: 'Headhunter',                         role_type: 'Executive Recruiter',              category: 'Recruiting / Talent' },
+  { display: 'Agency Recruiter',                   role_type: 'Executive Recruiter',              category: 'Recruiting / Talent' },
+  { display: 'Managing Partner, Executive Search', role_type: 'Executive Recruiter',              category: 'Recruiting / Talent' },
+  { display: 'Head of Talent Acquisition',         role_type: 'In-House Talent Leader',           category: 'Recruiting / Talent' },
+  { display: 'VP Talent Acquisition',              role_type: 'In-House Talent Leader',           category: 'Recruiting / Talent' },
+  { display: 'Director of Recruiting',             role_type: 'In-House Talent Leader',           category: 'Recruiting / Talent' },
+  { display: 'Talent Acquisition Leader',          role_type: 'In-House Talent Leader',           category: 'Recruiting / Talent' },
+  { display: 'Internal Recruiter',                 role_type: 'In-House Talent Leader',           category: 'Recruiting / Talent' },
+
   // ─── HR / People ───
   { display: 'VP of Human Resources',              role_type: 'HR Executive',                     category: 'HR / People' },
   { display: 'HR Director',                        role_type: 'HR Executive',                     category: 'HR / People' },

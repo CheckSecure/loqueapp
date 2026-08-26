@@ -5,6 +5,7 @@ import { normalizeExpertise } from '@/lib/expertise'
 import { isValidFullName, FULL_NAME_ERROR, pickOnboardingPrefillName } from '@/lib/validation/fullName'
 import { validateLocation, LOCATION_HELP_TEXT } from '@/lib/validation/location'
 import SearchableTitleSelect from '@/components/SearchableTitleSelect'
+import RecruiterGuidancePanel from '@/components/onboarding/RecruiterGuidance'
 import SearchableExpertiseSelect from '@/components/SearchableExpertiseSelect'
 import { Loader2, ArrowRight } from 'lucide-react'
 import { Linkedin, Twitter, Link as LinkIcon } from 'lucide-react'
@@ -227,6 +228,9 @@ export default function OnboardingStep1({
               setTitle(title)
             }}
           />
+          {/* Optional recruiter framing — see components/onboarding/RecruiterGuidance. Renders
+              only for the two recruiter role_type values and stores nothing. */}
+          <RecruiterGuidancePanel roleType={roleType} />
         </div>
       </div>
 

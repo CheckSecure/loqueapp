@@ -84,6 +84,28 @@ function computeNetworkValueScore(profile: any): { score: number; components: Re
     'In-house attorney': 75,
     'Legal services professional': 70,
     'Consultant': 65,
+    // ── Recruiting / Talent ──────────────────────────────────────────────────────────────────
+    // Both values have an EXPLICIT entry. 'In-House Talent Leader' is explicitly 40 — the same
+    // number the fallback would give, but stated as a decision rather than reached by omission.
+    //
+    // 'Executive Recruiter' = 65, IDENTICAL to 'Consultant' — the existing external
+    //   professional-services provider. Equal, never higher, so an external recruiter gains no
+    //   advantage over other providers, and it sits below every executive-family score
+    //   (Founder 85, Investor 90, Executive / C-Suite 100). A test pins both facts.
+    //
+    // 'In-House Talent Leader' = 40, EXPLICITLY. This is the HR / People baseline: CHRO, Chief
+    //   People Officer, Head of Talent and HR Executive have no entry in this map and therefore
+    //   score 40 today. Scoring an in-house talent leader any higher would hand a member 35 points
+    //   for choosing a new label that overlaps roles they could already have picked — a scoring
+    //   difference with no basis in what the member does.
+    //
+    //   The entry is written out rather than left to the `?? 40` fallback so the value is a stated
+    //   decision, greppable and testable, instead of an accident of a missing key. If the HR /
+    //   People cohort is ever rescored, this line is one of the ones to revisit — see
+    //   docs/FOLLOWUP_HR_PEOPLE_ROLE_SCORES.md. That review is deliberately NOT done here: it would
+    //   change existing members' network-value scores, which is outside this change.
+    'Executive Recruiter': 65,
+    'In-House Talent Leader': 40,
     'Other': 40,
   }
   const roleRaw = roleScores[profile.role_type ?? ''] ?? 40

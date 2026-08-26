@@ -479,8 +479,25 @@ export const nullSafeRole =
   (p: (m: { role_type?: string }) => boolean) =>
   (m: { role_type?: string | null }): boolean => p({ role_type: m.role_type ?? undefined })
 
+/**
+ * RECRUITER role_type values, matched EXACTLY. They are classified separately from
+ * 'exec_or_other' so a recruiter can never silently inherit the preferred law-firm cross-market
+ * path simply by not being a lawyer. Today classifyPair feeds reporting only (pairTypeCounts), so
+ * this changes no selection — which is exactly why it must be installed NOW, before any future
+ * change makes PairType behavioural and sweeps recruiters in unnoticed.
+ *
+ * Recruiter↔attorney prioritisation must come from stated inputs — desired connections, purposes,
+ * expertise, industry — never from role_type alone.
+ */
+export const RECRUITER_ROLE_TYPES: readonly string[] = ['Executive Recruiter', 'In-House Talent Leader']
+
+export function isRecruiterRole(m: { role_type?: string | null }): boolean {
+  return RECRUITER_ROLE_TYPES.includes(String(m?.role_type ?? '').trim())
+}
+
 export type PairType =
   | 'law_firm__in_house' | 'law_firm__exec_or_other' | 'law_firm__law_firm'
+  | 'law_firm__recruiter' | 'recruiter__other'
   | 'in_house__exec_or_other' | 'other'
 
 /**
@@ -497,9 +514,14 @@ export function classifyPair(
   if (la && lb) return 'law_firm__law_firm'
   if (la || lb) {
     const other = la ? b : a
-    return inHouse(other) ? 'law_firm__in_house' : 'law_firm__exec_or_other'
+    if (inHouse(other)) return 'law_firm__in_house'
+    // A recruiter opposite a law-firm role is NOT the preferred cross-market executive pairing.
+    // It gets its own name so it is never counted, or later treated, as one.
+    if (isRecruiterRole(other)) return 'law_firm__recruiter'
+    return 'law_firm__exec_or_other'
   }
   if (inHouse(a) !== inHouse(b)) return 'in_house__exec_or_other'
+  if (isRecruiterRole(a) || isRecruiterRole(b)) return 'recruiter__other'
   return 'other'
 }
 
@@ -511,6 +533,7 @@ export function pairTypeCounts<E extends BEdge>(
 ): Record<PairType, number> {
   const out: Record<PairType, number> = {
     law_firm__in_house: 0, law_firm__exec_or_other: 0, law_firm__law_firm: 0,
+    law_firm__recruiter: 0, recruiter__other: 0,
     in_house__exec_or_other: 0, other: 0,
   }
   for (const e of selected) out[classifyPair(e.userA, e.userB, isLawFirm, isLegalProfessional)]++

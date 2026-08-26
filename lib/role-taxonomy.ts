@@ -108,6 +108,19 @@ export const ROLE_CATEGORIES = {
     'Advisor',
     'Professional Services Executive',
   ],
+  // Added for recruiter onboarding. TWO values, deliberately, because they behave differently in
+  // matching: an EXTERNAL recruiter is a service provider to companies and is throttled as one; an
+  // IN-HOUSE talent leader is an employee of one and is not. Collapsing them into a single value
+  // would make that distinction unrepresentable.
+  //
+  // 'Head of Talent' stays exactly where it is under 'HR / People' — no existing member moves.
+  // A recruiter's SPECIALISM (legal, technology, healthcare) belongs in expertise / industry /
+  // desired_connections, never in role_type: a specialism axis here would multiply with every new
+  // vertical and could not be matched on anyway.
+  'Recruiting / Talent': [
+    'Executive Recruiter',
+    'In-House Talent Leader',
+  ],
 } as const
 
 export type Category = keyof typeof ROLE_CATEGORIES
