@@ -612,27 +612,33 @@ export async function adminAdjustCredits(userId: string, delta: number, reason: 
   const { user } = await getSupabaseAndUser()
   if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
 
-  // Admin-authorized; write as service_role (browser DML on credit_transactions is revoked, migration 055).
+  // Admin-authorized above. The adjustment itself runs INSIDE THE DATABASE, under a row lock.
+  //
+  // This used to be a read-modify-write in JavaScript: read `balance`, add `delta`, upsert it back.
+  // Two concurrent adjustments both read the same starting point and the second overwrote the
+  // first — one silently lost. Writing `balance` alone is also what broke the additive invariant
+  // on eleven production rows.
+  //
+  // public.admin_adjust_credits (migration 087) locks the member's row FOR UPDATE, moves a BUCKET
+  // rather than the denormalised balance, spends included-before-purchased on a negative delta,
+  // refuses to drive either bucket negative, recomputes balance, and writes the ledger event in the
+  // same transaction. A concurrent caller waits and then reads the already-adjusted row, so neither
+  // adjustment can be lost. It is service_role-only; authorization stays here, in the session gate
+  // above, exactly as before.
   const adminClient = createAdminClient()
-  const { data: current } = await adminClient
-    .from('meeting_credits')
-    .select('balance')
-    .eq('user_id', userId)
-    .single()
-
-  const newBalance = Math.max(0, (current?.balance ?? 0) + delta)
-
-  const { error: updateErr } = await adminClient
-    .from('meeting_credits')
-    .upsert({ user_id: userId, balance: newBalance }, { onConflict: 'user_id' })
+  const { data: adjusted, error: updateErr } = await adminClient.rpc('admin_adjust_credits', {
+    p_user_id: userId,
+    p_delta: delta,
+    p_reason: reason || `Manual admin adjustment (${delta > 0 ? '+' : ''}${delta})`,
+    p_event_key: null,
+  })
 
   if (updateErr) return { error: updateErr.message }
 
-  await adminClient.from('credit_transactions').insert({
-    user_id: userId,
-    amount: delta,
-    description: reason || `Manual admin adjustment (${delta > 0 ? '+' : ''}${delta})`,
-  })
+  // `applied` may be smaller in magnitude than `delta` when a negative adjustment was clamped at
+  // the member's combined balance — surfaced rather than hidden, so the caller sees what happened.
+  const row = Array.isArray(adjusted) ? adjusted[0] : adjusted
+  const newBalance = row?.balance ?? 0
 
   revalidatePath('/dashboard/admin')
   return { success: true, newBalance }

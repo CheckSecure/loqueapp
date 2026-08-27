@@ -40,7 +40,14 @@ vi.mock('@/lib/supabase/admin', () => ({
       }
       return b
     },
-    rpc: async () => ({ data: [{}], error: null }),
+    // A SECURITY-DEFINER RPC is a service-role write just as much as .update()/.insert() is, so
+    // it is recorded in the same ledger. adminAdjustCredits moved its balance mutation into
+    // public.admin_adjust_credits (migration 087) to make it atomic under a row lock; the
+    // authorization gate it must pass is unchanged and is what these tests exercise.
+    rpc: async (fn: string, args: any) => {
+      adminWrites.push({ table: `rpc:${fn}`, op: 'rpc', payload: args })
+      return { data: [{ free_credits: 0, premium_credits: 0, balance: 0, applied: 0 }], error: null }
+    },
   }),
 }))
 
@@ -76,11 +83,15 @@ describe('admin-gated service-role writes reject a non-admin actor (no write att
 })
 
 describe('admin actor is allowed (positive control — a service-role write IS attempted)', () => {
-  it('adminAdjustCredits as admin writes credits + a transaction', async () => {
+  it('adminAdjustCredits as admin performs a service-role credit write', async () => {
     cfg.user = { id: 'admin', email: ADMIN }
     const r = await adminAdjustCredits('target', 5, 'grant')
     expect((r as any).success).toBe(true)
-    expect(adminWrites.some((w) => w.table === 'credit_transactions')).toBe(true)
+    // The mutation is now ONE atomic RPC (row-locked, ledger written inside the same transaction)
+    // instead of a read-modify-write plus a separate credit_transactions insert.
+    const call = adminWrites.find((w) => w.table === 'rpc:admin_adjust_credits')
+    expect(call).toBeTruthy()
+    expect(call.payload).toMatchObject({ p_user_id: 'target', p_delta: 5 })
   })
 })
 
