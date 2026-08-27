@@ -139,9 +139,17 @@ export default async function NetworkPage() {
 
   // Fetch conversations keyed by match_id so cards can link directly
   const matchIdList = matches.map((m: any) => m.id)
-  const { data: matchConversations } = matchIdList.length > 0
-    ? await supabase.from('conversations').select('id, match_id').in('match_id', matchIdList)
-    : { data: [] }
+  // graphClient, NOT the session client. convos_select_participant is an inline EXISTS over
+  // public.matches, which migration 086 revoked from `authenticated`; an RLS expression is
+  // evaluated as the querying role, so this raised 42501 for every member. The error was
+  // discarded, so every card silently lost its "message" link. Authority is unchanged:
+  // matchIdList is already scoped to this viewer's own matches.
+  const { data: matchConversations, error: matchConversationsError } = matchIdList.length > 0
+    ? await graphClient.from('conversations').select('id, match_id').in('match_id', matchIdList)
+    : { data: [], error: null }
+  if (matchConversationsError) {
+    console.error('[dashboard/network] conversations read failed:', matchConversationsError)
+  }
   const conversationByMatchId: Record<string, string> = {}
   for (const c of (matchConversations || [])) {
     conversationByMatchId[c.match_id] = c.id

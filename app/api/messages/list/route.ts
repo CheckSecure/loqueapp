@@ -85,7 +85,17 @@ export async function GET(request: Request) {
     // (authenticated SELECT on public.profiles is revoked). Fetch base message rows
     // (including sender_id), then join safe sender fields via the discovery-scoped
     // public_profiles view so the downstream `sender` shape is identical.
-    const { data: rawMessages, error } = await supabase
+    // graphClient, NOT the session client. messages_select_participant is an inline EXISTS over
+    // conversations JOIN matches, and an RLS expression is evaluated as the querying role — so
+    // after 086 this read raised 42501 for every member exactly like the two reads above.
+    //
+    // AUTHORIZATION. The RLS predicate this replaces said: the message's conversation's match
+    // includes auth.uid(). The explicit check above proves precisely that for THIS conversation,
+    // and the filter below pins the read to it — so the participant check already covers this
+    // read and it needs no separate one. The one behavioural difference is the admin bypass:
+    // messages_select_participant has no admin clause, so an admin who was not a participant
+    // previously passed the check and then received an EMPTY list. They now receive the messages.
+    const { data: rawMessages, error } = await graphClient
       .from('messages')
       .select('*')
       .eq('conversation_id', conversationId)

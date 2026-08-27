@@ -108,15 +108,26 @@ export default async function DashboardLayout({ children }: { children: React.Re
         const matchIds = (matchRows || []).map((r: any) => r.id)
         if (matchIds.length === 0) return 0
 
-        const { data: convRows } = await supabase
+        // graphClient, NOT the session client. convos_select_participant and
+        // messages_select_participant are inline EXISTS expressions over public.matches, which
+        // migration 086 revoked from `authenticated`; an RLS expression is evaluated as the
+        // querying role, so both of these raised 42501 for every member. The errors were
+        // discarded, convIds fell to [], and this badge silently returned 0 for everyone.
+        // Authority is unchanged: matchIds above is already scoped to this member's own matches.
+        const { data: convRows, error: convError } = await graphClient
           .from('conversations')
           .select('id')
           .in('match_id', matchIds)
 
+        if (convError) {
+          console.error('[dashboard/layout] unread badge: conversations read failed:', convError)
+          return 0
+        }
+
         const convIds = (convRows || []).map((r: any) => r.id)
         if (convIds.length === 0) return 0
 
-        const { count, error } = await supabase
+        const { count, error } = await graphClient
           .from('messages')
           .select('id', { count: 'exact', head: true })
           .in('conversation_id', convIds)
@@ -127,13 +138,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
         if (!error) {
           return count ?? 0
         }
+        console.error('[dashboard/layout] unread badge: unread count failed, falling back:', error)
 
-        const { count: fallbackCount } = await supabase
+        const { count: fallbackCount, error: fallbackError } = await graphClient
           .from('messages')
           .select('id', { count: 'exact', head: true })
           .in('conversation_id', convIds)
           .neq('sender_id', user.id)
           .eq('is_system', false)
+        if (fallbackError) {
+          console.error('[dashboard/layout] unread badge: fallback count failed:', fallbackError)
+          return 0
+        }
         return fallbackCount ?? 0
       } catch {
         return 0
