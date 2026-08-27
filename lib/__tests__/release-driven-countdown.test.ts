@@ -67,10 +67,12 @@ vi.mock('@/lib/supabase/admin', () => ({
       return { data: [{ ...fact, was_existing: false }], error: null }
     },
     from: (t: string) => {
-      const b: any = { t }
-      b.select = () => b; b.eq = () => b; b.gte = () => b; b.limit = () => b; b.order = () => b
+      const b: any = { t, filters: {} as Record<string, unknown> }
+      b.select = () => b; b.eq = (column: string, value: unknown) => { b.filters[column] = value; return b }; b.gte = () => b; b.limit = () => b; b.order = () => b
       b.maybeSingle = async () => ({
-        data: t === 'weekly_batch_releases' ? (h.facts.find((f: any) => f.release_key === h.currentKey) ?? null) : null,
+        data: t === 'weekly_batch_releases' ? (h.facts.find((f: any) =>
+          f.release_key === b.filters.release_key &&
+          (b.filters.source === undefined || f.source === b.filters.source)) ?? null) : null,
         error: t === 'weekly_batch_releases' ? h.readError : null,
       })
       b.then = (res: any) => Promise.resolve({ data: h.committedCards, error: h.cardsReadError }).then(res)
@@ -266,9 +268,9 @@ describe('completion is proven by the writer, never inferred from cards', () => 
     // ...and the finalize call is inside the ELSE branch, so a partial run cannot reach it
     const gate = APPROVE.indexOf('if (transientFailures > 0)')
     expect(gate).toBeLessThan(APPROVE.indexOf('finalizeWeeklyRelease(adminClient'))
-    // weekly: the same rule, counting caught member errors AND coverage transients
-    expect(WEEKLY).toMatch(/const transientGenerationErrors = memberErrors \+ \(coverage\.transient \?\? 0\)/)
-    expect(WEEKLY).toMatch(/if \(transientGenerationErrors > 0\) \{[\s\S]{0,120}skipped_transient_errors/)
+    // weekly maintenance is not a release writer at all; only Daniel's admin Send may finalize
+    expect(WEEKLY).not.toMatch(/finalizeWeeklyRelease|finalize_weekly_release/)
+    expect(WEEKLY).toMatch(/admin_send_required/)
   })
 
   it('2+10. NOTHING infers completion from cards — no reconciliation exists anywhere', () => {
@@ -293,14 +295,16 @@ describe('completion is proven by the writer, never inferred from cards', () => 
     const retry = await finalizeWeeklyRelease(admin(), { source: 'admin_approval', batchId: 'b1' })
     expect(retry.finalized).toBe(true)
     expect((retry as any).wasExisting).toBe(false)
-    // both writers document that recovery is a rerun, not an inference
+    // the sole writer documents that recovery is a rerun, not an inference
     expect(APPROVE).toMatch(/retry re-materialises what is\n    \/\/ missing/)
-    expect(WEEKLY).toMatch(/idempotent and retryable for the same/)
+    expect(WEEKLY).toMatch(/Only\n  \/\/ approve-batch finalizes a release marker/)
   })
 
   it('11. the banner reads the immutable fact and nothing else', async () => {
     expect(await getCurrentCycleRelease(admin(), AFTER_WINDOW)).toBeNull()
-    h.facts = [{ release_key: weeklyRunKey(AFTER_WINDOW), released_at: AFTER_WINDOW.toISOString() }]
+    h.facts = [{ release_key: weeklyRunKey(AFTER_WINDOW), released_at: AFTER_WINDOW.toISOString(), source: 'weekly_cron' }]
+    expect(await getCurrentCycleRelease(admin(), AFTER_WINDOW)).toBeNull() // maintenance is not Daniel's Send
+    h.facts = [{ release_key: weeklyRunKey(AFTER_WINDOW), released_at: AFTER_WINDOW.toISOString(), source: 'admin_approval' }]
     expect(await getCurrentCycleRelease(admin(), AFTER_WINDOW)).not.toBeNull()
     h.readError = { code: 'PGRST' }
     expect(await getCurrentCycleRelease(admin(), AFTER_WINDOW)).toBeNull()   // fail closed
@@ -323,13 +327,12 @@ describe('completion is proven by the writer, never inferred from cards', () => 
 })
 
 describe('15-16. writers, wiring and scope', () => {
-  it('15. both release writers record, and only after cards exist', () => {
-    // Neither writer gates on its own tally any more — recordWeeklyRelease verifies from the DB.
+  it('15. only admin Send records a release, and only after cards exist', () => {
+    // Admin Send does not gate on its own tally — finalizeWeeklyRelease verifies from the DB.
     expect(APPROVE).toMatch(/finalizeWeeklyRelease\(adminClient, \{ source: 'admin_approval', batchId \}\)/)
-    expect(WEEKLY).toMatch(/finalizeWeeklyRelease\(adminClient, \{ source: 'weekly_cron' \}\)/)
-    // neither gates on its own tally — the RPC verifies inside its own transaction
+    expect(WEEKLY).not.toMatch(/finalizeWeeklyRelease|finalize_weekly_release/)
+    // the admin writer does not gate on its own tally — the RPC verifies inside its own transaction
     expect(APPROVE).not.toMatch(/if \(createdVisible > 0\)/)
-    expect(WEEKLY).not.toMatch(/if \(generated > 0\)/)
     // finalization happens AFTER the materialisation loop, never at the status flip
     expect(APPROVE.indexOf('materializeAdminPair(adminClient'))
       .toBeLessThan(APPROVE.indexOf('finalizeWeeklyRelease(adminClient'))
