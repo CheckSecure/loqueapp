@@ -302,7 +302,7 @@ describe('both member-facing generators apply cross-market-first + versions bump
     // Crucially: the relevance floor is applied to the UNADJUSTED score, so the penalty can never
     // push a same-side edge out of the candidate pool — the exact objection recorded in
     // lib/matching/batch-scoring.ts, which is why it was never a scoreMatch penalty.
-    expect(batchRoute).toContain('if (avgScore < MIN_RELEVANCE_SCORE) continue')
+    expect(batchRoute).toContain('if (avgScore < MIN_RELEVANCE_SCORE)')
     expect(batchRoute).not.toContain('allPairs.filter((p) => !isPartnerPair(p.userA, p.userB))')
   })
   it('algorithm + scoring-model versions were bumped (contract)', () => {

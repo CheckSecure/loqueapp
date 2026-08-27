@@ -325,6 +325,17 @@ export async function POST(req: NextRequest) {
     for (const p of profiles as any[]) if (!visibleCards.has(p.id)) visibleCards.set(p.id, 0)
 
     const allPairs: PairScore[] = []
+    // SCORE-FLOOR INSTRUMENTATION. `pairsConsidered` in the response is the count AFTER the
+    // floor, so nothing reported how much of the graph the floor removes. Read-only
+    // bookkeeping — it changes no selection behaviour.
+    let pairsPassingHardGates = 0
+    let pairsCutByScoreFloor = 0
+    const scoreHistogram: Record<string, number> = {
+      '0-19': 0, '20-29': 0, '30-34': 0, '35-39': 0, '40-49': 0, '50-69': 0, '70+': 0,
+    }
+    const bucketOf = (v: number) =>
+      v < 20 ? '0-19' : v < 30 ? '20-29' : v < 35 ? '30-34' : v < 40 ? '35-39'
+      : v < 50 ? '40-49' : v < 70 ? '50-69' : '70+'
     
     for (let i = 0; i < profiles.length; i++) {
       for (let j = i + 1; j < profiles.length; j++) {
@@ -370,7 +381,9 @@ export async function POST(req: NextRequest) {
         const scoreBtoA = scoreMatchV2(userB, userA, scoringCtx)
         const avgScore = (scoreAtoB + scoreBtoA) / 2
         
-        if (avgScore < MIN_RELEVANCE_SCORE) continue
+        pairsPassingHardGates++
+        scoreHistogram[bucketOf(avgScore)]++
+        if (avgScore < MIN_RELEVANCE_SCORE) { pairsCutByScoreFloor++; continue }
         
         allPairs.push({
           userA,
@@ -630,6 +643,20 @@ export async function POST(req: NextRequest) {
         mutualMatchPercentile: MUTUAL_MATCH_PERCENTILE,
         pairsConsidered: allPairs.length,
         pairsQualified: allPairs.length,
+        // How much of the graph the score floor removes. pairsPassingHardGates counts every
+        // pair that survived eligibility, same-company, history and the same-side legal gate
+        // BEFORE any score test; the histogram is over avgScore for those same pairs, so every
+        // bucket below 40 is exactly what the floor rejects. Read-only bookkeeping — it changes
+        // no selection behaviour.
+        scoreFloor: {
+          pairsPassingHardGates,
+          pairsCutByScoreFloor,
+          pairsSurvivingFloor: allPairs.length,
+          pctCutByFloor: pairsPassingHardGates > 0
+            ? Math.round((pairsCutByScoreFloor / pairsPassingHardGates) * 1000) / 10
+            : 0,
+          scoreHistogram,
+        },
       }
     })
   } catch (err: any) {

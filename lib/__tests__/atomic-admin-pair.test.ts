@@ -280,7 +280,7 @@ describe('approval wiring', () => {
 
   it('generation still applies every hard gate before the optimizer sees an edge', () => {
     for (const gate of ['isSameCompany(userA, userB)', 'introHistory', 'aHiddenB', 'aPassedB',
-                        'aMatchedB', 'aShownB', 'if (avgScore < MIN_RELEVANCE_SCORE) continue']) {
+                        'aMatchedB', 'aShownB', 'if (avgScore < MIN_RELEVANCE_SCORE)']) {
       expect(GENERATE, `missing hard gate: ${gate}`).toContain(gate)
     }
   })
@@ -530,8 +530,8 @@ describe('cross-market penalty: unit compatibility', () => {
   it('the relevance gate stays on the UNADJUSTED score', () => {
     // The adjustment must never reach the gate: subtracting it before the floor would delete
     // same-side edges from the pool, which is the failure batch-scoring.ts documents at line 275.
-    expect(GENERATE).toContain('if (avgScore < MIN_RELEVANCE_SCORE) continue')
-    const gateIdx = GENERATE.indexOf('if (avgScore < MIN_RELEVANCE_SCORE) continue')
+    expect(GENERATE).toContain('if (avgScore < MIN_RELEVANCE_SCORE)')
+    const gateIdx = GENERATE.indexOf('if (avgScore < MIN_RELEVANCE_SCORE)')
     const adjIdx = GENERATE.indexOf('crossMarketAdjustment(lawFirmRole)')
     expect(gateIdx).toBeLessThan(adjIdx)          // gate is applied while building allPairs
     expect(GENERATE).not.toMatch(/avgScore\s*\+\s*legal|legalSameSidePenalty\([^)]*\)\s*\+\s*avgScore/)
