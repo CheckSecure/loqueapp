@@ -430,3 +430,107 @@ describe('existing behaviour preserved', () => {
     }
   })
 })
+
+// ── 6. PostgREST EMBEDDED resources — the blind spot that let a reader survive Release A ──
+//
+// Every check above identifies a graph reader by `.from('matches')`. A PostgREST embedded
+// resource is not written that way: `.from('conversations').select('*, match:matches(*)')`
+// reads public.matches without the substring ever appearing. app/api/messages/list/route.ts
+// did exactly that, was never classified as a reader, was never migrated to service_role, and
+// broke for every member the moment migration 086 revoked authenticated's privileges — while
+// this suite stayed green. These tests close that gap.
+describe('no PostgREST embed pulls the graph tables', () => {
+  const GRAPH = 'matches|blocked_users'
+
+  /**
+   * Embedded resources named inside one `.select()` argument.
+   * Handles: unaliased `matches(*)`, aliased `match:matches(*)`, explicit column lists
+   * `matches(id,user_a_id)`, join hints `matches!inner(*)` / `matches!fk(*)`, and nesting at any
+   * depth `conversations(match:matches(id))`. The leading boundary keeps `rematches(` from
+   * matching while still allowing `,` `(` `:` and whitespace as separators.
+   */
+  const selectEmbeds = (sel: string): string[] =>
+    scan(sel, new RegExp(`(?:^|[,\\s(:])(?:\\w+\\s*:\\s*)?(${GRAPH})\\s*(?:![\\w.]+)?\\s*\\(`, 'g'), 1)
+
+  /** Every `.select('...')` string literal in a file, with the receiver + base table if chained. */
+  const selectCalls = (src: string): Array<{ recv: string | null; base: string | null; sel: string }> => {
+    const out: Array<{ recv: string | null; base: string | null; sel: string }> = []
+    for (const m of execAll(src, /(?:(\w+)\s*\n?\s*\.from\(\s*['"`](\w+)['"`]\s*\)\s*\n?\s*)?\.select\(\s*(['"`])([\s\S]*?)\3/g))
+      out.push({ recv: m[1] ?? null, base: m[2] ?? null, sel: m[4] })
+    return out
+  }
+
+  // ── 6a. The detector itself. These fixtures are the regression: the first entry is the exact
+  // pre-fix line from app/api/messages/list/route.ts, so this case fails against that code. ──
+  it('detects every embed form, including the exact pre-fix messages/list select', () => {
+    const MUST_DETECT: ReadonlyArray<readonly [string, string]> = [
+      ['*, match:matches(*)',                          'the pre-fix app/api/messages/list/route.ts embed'],
+      ['*, matches(*)',                                'unaliased'],
+      ['id, matches(id, user_a_id, user_b_id)',        'explicit column list'],
+      ['id, m:matches!inner(*)',                       'aliased with an inner-join hint'],
+      ['id, matches!conversations_match_id_fkey(id)',  'aliased with a named-constraint hint'],
+      ['id, conversations(match:matches(id))',         'nested one level'],
+      ['id, a(b(blocked_users(id)))',                  'nested two levels, blocked_users'],
+      ['blocked_users(id)',                            'at the very start of the string'],
+      ['id,matches(*)',                                'no whitespace after the comma'],
+      ['id, blocked_users (id)',                       'whitespace before the paren'],
+    ]
+    for (const [sel, why] of MUST_DETECT)
+      expect(selectEmbeds(sel), `${why}: ${sel}`).not.toEqual([])
+
+    // Must NOT fire on things that merely look similar, or the check would be unfalsifiable.
+    const MUST_IGNORE: readonly string[] = [
+      'id, match_id, message_count',        // plain columns whose names contain "match"
+      'id, rematches(*)',                   // different table, same suffix
+      'id, matches_count',                  // column, no paren
+      'user_a_id, user_b_id, status',       // the legitimate explicit .from('matches') column list
+      'id, unmatched_reason',               // prefix collision
+    ]
+    for (const sel of MUST_IGNORE)
+      expect(selectEmbeds(sel), `must not fire: ${sel}`).toEqual([])
+  })
+
+  // ── 6b. Tree sweep: not one embed of either table survives, on ANY client. ──
+  // Deliberately stricter than "no cookie-session embed". An embed on a service-role client is
+  // safe at runtime but invisible to every `.from('matches')`-based check in this file, so it
+  // would silently re-open the same blind spot. Explicit `.from()` reads keep the audit honest.
+  it('no file in the tree embeds matches or blocked_users in a .select()', () => {
+    const offenders: string[] = []
+    for (const p of TREE) {
+      const src = code(p)
+      if (!new RegExp(`(${GRAPH})\\s*(?:![\\w.]+)?\\s*\\(`).test(src)) continue
+      const admin = new Set(scan(src, /(?:const|let|var)\s+(\w+)\s*=\s*(?:await\s+)?createAdminClient\(/g, 1))
+      const session = new Set(scan(src, /(?:const|let|var)\s+(\w+)\s*=\s*createClient\(/g, 1))
+      const isBrowser = /from '@\/lib\/supabase\/client'/.test(src)
+      for (const { recv, base, sel } of selectCalls(src)) {
+        for (const tbl of selectEmbeds(sel)) {
+          const kind = recv === null ? 'UNCHAINED'
+            : isBrowser && session.has(recv) ? 'BROWSER'
+            : session.has(recv) ? 'SESSION'
+            : admin.has(recv) ? 'service-role'
+            : `UNRESOLVED(${recv})`
+          offenders.push(`${p}: ${kind} ${recv ?? '?'}.from('${base ?? '?'}').select embeds ${tbl}`)
+        }
+      }
+    }
+    expect(offenders.sort()).toEqual([])
+  })
+
+  // ── 6c. The specific route that regressed, pinned. ──
+  it('app/api/messages/list/route.ts reads the graph explicitly, as service_role', () => {
+    const src = code('app/api/messages/list/route.ts')
+    expect(src).not.toMatch(new RegExp(`(${GRAPH})\\s*\\(`))          // no embed, in any form
+    expect(src).toMatch(/const graphClient\s*=\s*createAdminClient\(\)/)
+    expect(src).toMatch(/graphClient\s*\n?\s*\.from\('conversations'\)/)
+    expect(src).toMatch(/graphClient\s*\n?\s*\.from\('matches'\)/)
+    // The error must be destructured and logged — a permission failure must never be able to
+    // surface to the member as "Conversation not found" again.
+    expect(src).toMatch(/data:\s*conversation,\s*error:\s*conversationError/)
+    expect(src).toMatch(/data:\s*match,\s*error:\s*matchError/)
+    expect(src).toMatch(/console\.error\('\[List Messages\] conversation read failed:'/)
+    expect(src).toMatch(/console\.error\('\[List Messages\] match read failed:'/)
+    // …and the participant-or-admin check still gates on the session-derived user.
+    expect(src).toMatch(/match\.user_a_id !== user\.id && match\.user_b_id !== user\.id/)
+    expect(src).toMatch(/status:\s*403/)
+  })
+})
