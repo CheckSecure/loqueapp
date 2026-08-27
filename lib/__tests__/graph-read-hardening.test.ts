@@ -158,10 +158,12 @@ describe('narrowly scoped server client per site', () => {
   })
 
   it('the session client is NOT wholesale replaced — other RLS-dependent reads still use it', () => {
-    // network: notifications + conversations still go through the member session
+    // network: notifications still goes through the member session.
+    // conversations does NOT, and no longer can: convos_select_participant is an inline EXISTS
+    // over public.matches, so after 086 a session-client read of it raises 42501. See block 7.
     const net = code('app/dashboard/network/page.tsx')
     expect(net).toMatch(/supabase\s*\n?\s*\.from\('notifications'\)/)
-    expect(net).toMatch(/supabase\.from\('conversations'\)/)
+    expect(net).toMatch(/graphClient\.from\('conversations'\)/)
     // meetings: the meetings read stays on the session client
     expect(code('app/dashboard/meetings/page.tsx')).toMatch(/supabase\s*\n?\s*\.from\('meetings'\)/)
     // profile: public_profiles + meetings stay on the session client
@@ -532,5 +534,90 @@ describe('no PostgREST embed pulls the graph tables', () => {
     // …and the participant-or-admin check still gates on the session-derived user.
     expect(src).toMatch(/match\.user_a_id !== user\.id && match\.user_b_id !== user\.id/)
     expect(src).toMatch(/status:\s*403/)
+  })
+})
+
+// ── 7. Tables whose RLS POLICY references the graph tables ────────────────────────────────
+//
+// The failure that block 6 caught was not confined to embeds. An RLS policy expression is
+// evaluated as the querying role and requires that role to hold SELECT on every table the
+// expression touches — migration 043 flagged this exact hazard, and it was verified on a
+// PostgreSQL 16.15 fixture: with public.matches revoked from `authenticated`,
+//
+//   SELECT count(*) FROM public.conversations;  -->  ERROR: permission denied for table matches
+//   SELECT count(*) FROM public.messages;       -->  ERROR: permission denied for table matches
+//   UPDATE public.messages SET read_at = now(); -->  ERROR: permission denied for table matches
+//
+// So after 086, public.conversations and public.messages are UNREADABLE to `authenticated`,
+// even though nothing revoked a privilege on either. Three sites discarded that error and
+// degraded silently: the unread badge returned 0 for every member, the network cards lost their
+// message links, and the thread reported "Failed to load messages".
+//
+// These tables are transitively graph-scoped. Reading them on a cookie-session or browser client
+// is a bug, and this block makes it fail here instead of in production.
+describe('no cookie-session read of a table whose RLS references the graph', () => {
+  // Production policy shapes, confirmed against the live database:
+  //   convos_select_participant           SELECT  EXISTS(matches …)
+  //   messages_select_participant         SELECT  EXISTS(conversations JOIN matches …)
+  //   "Users can mark received messages as read"  UPDATE  USING + WITH CHECK, both the same
+  const GRAPH_SCOPED = ['conversations', 'messages'] as const
+
+  // components/MessagesClient.tsx marks messages read directly from the BROWSER. It is broken by
+  // the same mechanism (the UPDATE policy references matches) and is NOT fixed here: a working
+  // server route already exists at app/api/messages/read/route.ts, which ConversationView uses.
+  // Routing the inbox through it is a separate change, deliberately not bundled in.
+  const KNOWN_BROKEN_NOT_YET_FIXED = [
+    "components/MessagesClient.tsx: BROWSER supabase.from('messages')",
+  ]
+
+  it('every read of conversations / messages uses a service-role client', () => {
+    const offenders: string[] = []
+    for (const p of TREE) {
+      const src = code(p)
+      if (!new RegExp(`\\.from\\('(${GRAPH_SCOPED.join('|')})'\\)`).test(src)) continue
+      const admin = new Set(scan(src, /(?:const|let|var)\s+(\w+)\s*=\s*(?:await\s+)?createAdminClient\(/g, 1))
+      const session = new Set(scan(src, /(?:const|let|var)\s+(\w+)\s*=\s*createClient\(/g, 1))
+      const isBrowser = /from '@\/lib\/supabase\/client'/.test(src)
+      const params = new Set<string>()
+      for (const m of execAll(src, /function\s+\w+\s*\(([^)]*)\)/g))
+        for (const n of scan(m[1], /(\w+)\s*:/g, 1)) params.add(n)
+
+      for (const m of execAll(src, new RegExp(`(\\w+)\\s*\\n?\\s*\\.from\\('(${GRAPH_SCOPED.join('|')})'\\)`, 'g'))) {
+        const v = m[1]
+        if (admin.has(v) || params.has(v)) continue
+        if (isBrowser && session.has(v)) offenders.push(`${p}: BROWSER ${v}.from('${m[2]}')`)
+        else if (session.has(v)) offenders.push(`${p}: SESSION ${v}.from('${m[2]}')`)
+      }
+    }
+    expect(offenders.sort()).toEqual([...KNOWN_BROKEN_NOT_YET_FIXED].sort())
+  })
+
+  // ── The three sites that were silently degrading, pinned with their error handling. ──
+  it('the unread badge reads the graph as service_role and logs its failures', () => {
+    const src = code('app/dashboard/layout.tsx')
+    expect(src).toMatch(/graphClient\s*\n?\s*\.from\('conversations'\)/)
+    expect(src).toMatch(/graphClient\s*\n?\s*\.from\('messages'\)/)
+    expect(src).not.toMatch(/supabase\s*\n?\s*\.from\('(conversations|messages)'\)/)
+    // the error is destructured and logged, never swallowed into a silent 0
+    expect(src).toMatch(/data:\s*convRows,\s*error:\s*convError/)
+    expect(src).toMatch(/console\.error\('\[dashboard\/layout\] unread badge: conversations read failed:'/)
+    expect(src).toMatch(/console\.error\('\[dashboard\/layout\] unread badge: fallback count failed:'/)
+  })
+
+  it('the network page reads conversations as service_role and logs its failure', () => {
+    const src = code('app/dashboard/network/page.tsx')
+    expect(src).toMatch(/graphClient\.from\('conversations'\)/)
+    expect(src).not.toMatch(/supabase\.from\('conversations'\)/)
+    expect(src).toMatch(/error:\s*matchConversationsError/)
+    expect(src).toMatch(/console\.error\('\[dashboard\/network\] conversations read failed:'/)
+  })
+
+  it('the thread reads its messages as service_role, not on the session client', () => {
+    const src = code('app/api/messages/list/route.ts')
+    expect(src).toMatch(/graphClient\s*\n?\s*\.from\('messages'\)/)
+    expect(src).not.toMatch(/supabase\s*\n?\s*\.from\('messages'\)/)
+    // public_profiles MUST stay on the session client: it is a security_invoker view and the
+    // discovery scoping from migration 043 is the only thing limiting what it returns.
+    expect(src).toMatch(/supabase\s*\n?\s*\.from\('public_profiles'\)/)
   })
 })
