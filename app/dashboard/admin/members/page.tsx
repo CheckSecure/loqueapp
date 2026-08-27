@@ -52,7 +52,14 @@ export default async function AdminMembersPage() {
   const rolesByMember = await listRolesForProfiles(createAdminClient(), (profiles || []).map((p: any) => p.id))
 
   // Get credits for all users
-  const { data: credits } = await supabase
+  // CREDIT RELEASE 1: migration 087 puts an own-row-only RLS policy on public.meeting_credits and
+  // revokes every write privilege from the browser roles. This read has NO user_id filter — it is
+  // the whole table — so under that policy the cookie-session client would return only the
+  // administrator's own row and every other member's credit column would silently read 0.
+  // It is reached only after the admin gate at the top of this component, so authority still comes
+  // from the verified session; only the client changed. Columns and shape are unchanged.
+  const creditsClient = createAdminClient()
+  const { data: credits } = await creditsClient
     .from('meeting_credits')
     .select('user_id, balance')
 
