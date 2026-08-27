@@ -400,13 +400,16 @@ describe('existing behaviour preserved', () => {
   })
 
   it('no NEW browser-callable route was added for these reads', () => {
-    // Release A adds no route handler. The only api routes that mention graphClient are the two
+    // Release A adds no route handler. The api routes that mention graphClient are the two
     // PRE-EXISTING intro-request routes, which now name the parameter they were already passing a
-    // service-role client to. Every other read stays in a server component or a server action.
+    // service-role client to, plus messages/list — a PRE-EXISTING route whose graph read was an
+    // embed Release A never detected (block 6). Every other read stays in a server component or a
+    // server action. No route handler was created for any of them.
     const mentions = allTsx('app/api').filter(p => /graphClient/.test(read(p))).sort()
     expect(mentions).toEqual([
       'app/api/intro-requests/accept-incoming/route.ts',
       'app/api/intro-requests/express-interest/route.ts',
+      'app/api/messages/list/route.ts',
     ])
     // and neither is new — both exist at the Release A base commit
     for (const p of mentions) expect(existsSync(p), p).toBe(true)

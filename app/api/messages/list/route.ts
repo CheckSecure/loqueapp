@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchPublicProfilesByIds } from '@/lib/profiles/publicProfile'
 import { NextResponse } from 'next/server'
 
@@ -18,27 +19,60 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Verify user is part of this conversation
-    const { data: conversation } = await supabase
-      .from('conversations')
-      .select('*, match:matches(*)')
-      .eq('id', conversationId)
-      .single()
+    // RELEASE A (missed site): the connection graph is read as service_role.
+    //
+    // Migration 086 revoked every privilege on public.matches from `authenticated`. Two things
+    // therefore failed here for every member: the `.select('*, match:matches(*)')` embed, and the
+    // conversations read itself, because the convos_select_participant policy contains an inline
+    // EXISTS against public.matches and an RLS expression is evaluated as the querying role.
+    //
+    // The Release A inventory and lib/__tests__/graph-read-hardening.test.ts identify a graph
+    // reader by the pattern `.from('matches')`, which a PostgREST embedded resource does not
+    // match — which is why this site was never migrated. It is deliberately rewritten as two
+    // explicit `.from()` reads rather than an embed on the admin client, so the test can see it.
+    //
+    // Authority still comes from the verified session in the check below, never from the client
+    // used to run the query. Only these two graph reads use graphClient.
+    const graphClient = createAdminClient()
 
+    const { data: conversation, error: conversationError } = await graphClient
+      .from('conversations')
+      .select('id, match_id, suggested_prompts, first_message_sent_at, last_message_at, message_count')
+      .eq('id', conversationId)
+      .maybeSingle()
+
+    // Destructured and logged: a privilege or query failure must never be reported to the member
+    // as "Conversation not found", which is what hid this outage for two days.
+    if (conversationError) {
+      console.error('[List Messages] conversation read failed:', conversationError)
+      return NextResponse.json({ error: 'Failed to load conversation' }, { status: 500 })
+    }
     if (!conversation) {
       return NextResponse.json({ 
         error: 'Conversation not found' 
       }, { status: 404 })
     }
 
-    const match = conversation.match
+    const { data: match, error: matchError } = await graphClient
+      .from('matches')
+      .select('id, user_a_id, user_b_id')
+      .eq('id', conversation.match_id)
+      .maybeSingle()
+
+    if (matchError) {
+      console.error('[List Messages] match read failed:', matchError)
+      return NextResponse.json({ error: 'Failed to load conversation' }, { status: 500 })
+    }
     if (!match) {
       return NextResponse.json({ 
         error: 'Match not found' 
       }, { status: 404 })
     }
 
-    // Verify user is part of match (admins have read access to any conversation)
+    // AUTHORIZATION. The two reads above run as service_role and therefore bypass RLS, so this
+    // explicit check is the only thing between a member and someone else's thread. user.id and
+    // user.email come from getUser() on the cookie-session client — never from the request.
+    // (admins have read access to any conversation)
     const ADMIN_EMAIL_BYPASS = process.env.ADMIN_USER_EMAIL || 'bizdev91@gmail.com'
     const isAdmin = user.email === ADMIN_EMAIL_BYPASS
     if (!isAdmin && match.user_a_id !== user.id && match.user_b_id !== user.id) {
