@@ -135,6 +135,7 @@ export type RarityMap = Map<string, number>
 export type ScoringContext = { memberCount: number; purposeRarity: RarityMap; interestRarity: RarityMap; config: ScoringConfig }
 
 import { assertAllEligible } from '@/lib/matching/eligibility'
+import { preferenceMatchesRole } from '@/lib/matching/introPreferenceMatch'
 import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
 
 const low = (s: unknown) => String(s ?? '').toLowerCase().trim()
@@ -225,10 +226,26 @@ export function scoreMatch(recipient: any, candidate: any, ctx: ScoringContext):
   if (candidate.is_priority) score += cfg.priorityBonus
 
   // 1–2. Intro-preference match (directional)
-  const rPref = uniqLow(recipient.intro_preferences)
-  const cPref = uniqLow(candidate.intro_preferences)
-  if (rPref.includes(low(candidate.role_type))) score += 30
-  if (cPref.includes(low(recipient.role_type))) score += 20
+  //
+  // These two columns hold DIFFERENT VOCABULARIES. intro_preferences stores role CATEGORIES
+  // ('Legal', 'Executive / C-Suite') or relationships ('Founders'); role_type stores job TITLES
+  // ('General Counsel', 'Law Firm Partner'). The previous test was array membership on the
+  // lowercased title, so 'Legal' never matched 'General Counsel' and this bonus — 50 of the 40
+  // points needed to clear MIN_RELEVANCE_SCORE — fired for essentially nobody. On production
+  // exactly ONE member held a role_type that literally equalled a preference value.
+  //
+  // preferenceMatchesRole resolves the title to its taxonomy category (lib/role-taxonomy.ts,
+  // already the source of truth for every edit surface) and compares THAT. Unknown preference
+  // values fall back to the old exact match, so nothing that worked before stops working.
+  //
+  // SCOPE: deliberately wired here only. lib/generate-recommendations.ts (3 sites) and
+  // app/api/admin/batch/[batchId]/generate-replacements/route.ts still compare raw strings with
+  // their own semantics, so the admin batch can be measured on its own. See
+  // docs/FOLLOWUP_INTRO_PREFERENCE_VOCABULARY.md.
+  const rPref = parseList(recipient.intro_preferences)
+  const cPref = parseList(candidate.intro_preferences)
+  if (rPref.some((p) => preferenceMatchesRole(p, candidate.role_type))) score += 30
+  if (cPref.some((p) => preferenceMatchesRole(p, recipient.role_type))) score += 20
 
   // 3. Purpose alignment — rarity-weighted, diminishing returns
   const sharedPurposes = uniqLow(recipient.purposes).filter(p => uniqLow(candidate.purposes).includes(p))
