@@ -549,14 +549,19 @@ describe('Generate New Batch — legal peer exemption from BS throttle', () => {
     expect(hasEdge(rows, 'lp', 'gc')).toBe(true) // exempt → allowed despite no opt-in
   })
 
-  it('Law Firm Partner + non-legal, non-opted buyer STAYS throttled (no edge without opt-in)', async () => {
+  it('Law Firm Partner + non-legal, non-opted buyer is now ALLOWED (throttle disabled)', async () => {
+    // INVERTED. This asserted the throttle blocked the edge without an opt-in. That block is
+    // exactly what left 112 of 116 production members unable to meet any of the 23 provider
+    // members: at capacity 2 the percentage quota floors to 0, so "limit vendor exposure"
+    // became "no introduction at all". The quota is floored at targetCount until it is
+    // recalibrated for small batches — see lib/matching/business-solutions.ts.
     state.profiles = [
       withOpt('lp', 'Law Firm Partner', 'firm-A', false), // provider
       withOpt('fnd', 'Founder', 'startup-B', false),       // non-legal buyer, NOT opted in
     ]
     await post()
     const rows = state.insertedSuggestions || []
-    expect(hasEdge(rows, 'lp', 'fnd')).toBe(false) // throttle preserved for non-legal
+    expect(hasEdge(rows, 'lp', 'fnd')).toBe(true)
   })
 
   it('same non-legal buyer matches the law firm once they DO opt in (throttle still governs non-legal)', async () => {

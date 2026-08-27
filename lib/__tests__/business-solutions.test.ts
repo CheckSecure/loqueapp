@@ -16,28 +16,45 @@ describe('isBusinessSolutionProvider', () => {
   })
 })
 
-describe('maxBusinessSolutionCount — buyer provider quota (v3.2)', () => {
-  it('guarantees an opted-in member ≥1 provider at the launch cap of 2 (the collapse is fixed)', () => {
-    expect(maxBusinessSolutionCount(true, 'free', 2)).toBe(1)
-    expect(maxBusinessSolutionCount(true, 'professional', 2)).toBe(1)
-    expect(maxBusinessSolutionCount(true, 'executive', 2)).toBe(1)
+describe('maxBusinessSolutionCount — buyer provider quota (DISABLED at launch capacity)', () => {
+  // The quota is a PERCENTAGE of batch size, calibrated for batches of 5-8. BATCH_CONFIG caps
+  // everyone at 2, and at that size the percentage collapses to zero for every tier — which
+  // turned a "limit vendor exposure" preference into a hard block. Measured on production
+  // 2026-08-27: 112 of 116 members held a quota of 0 and could not be introduced to any of the
+  // 23 provider members at all. maxBusinessSolutionCount is therefore floored at targetCount
+  // (provably non-binding) unless BUSINESS_SOLUTION_THROTTLE=on.
+  //
+  // These assertions were inverted, not deleted: the ones below record what the function used
+  // to return, so the regression is legible when the throttle is recalibrated and re-enabled.
+
+  it('the underlying percentage still collapses to 0 at capacity 2 — the reason it is off', () => {
+    const BASE = 0.30, PREF = 0.5
+    const MULT: Record<string, number> = { free: 1.0, professional: 0.7, executive: 0.5, founding: 0.7 }
+    for (const tier of ['free', 'professional', 'executive', 'founding']) {
+      const raw = Math.floor(2 * BASE * MULT[tier])
+      expect(raw, tier).toBe(0)                       // was: opted-in floored up to 1
+      expect(Math.floor(raw * PREF), tier).toBe(0)    // was: NON-opted-in left at 0
+    }
   })
 
-  it('keeps a NON-opted-in member at zero providers (they are shielded unless they ask)', () => {
-    expect(maxBusinessSolutionCount(false, 'free', 2)).toBe(0)
-    expect(maxBusinessSolutionCount(false, 'professional', 2)).toBe(0)
-    expect(maxBusinessSolutionCount(false, 'executive', 2)).toBe(0)
+  it('an opted-in member is never blocked at the launch cap (was: exactly 1)', () => {
+    for (const tier of ['free', 'professional', 'executive'])
+      expect(maxBusinessSolutionCount(true, tier, 2), tier).toBeGreaterThanOrEqual(2)
   })
 
-  it('opted-in quota grows with the percentage as the cap rises; never below 1', () => {
-    expect(maxBusinessSolutionCount(true, 'free', 3)).toBe(1) // floor(0.9)=0 → floored to 1
-    expect(maxBusinessSolutionCount(true, 'free', 4)).toBe(1) // floor(1.2)=1
-    expect(maxBusinessSolutionCount(true, 'free', 10)).toBe(3) // floor(3.0)=3
+  it('a NON-opted-in member is no longer shielded to zero (was: 0 — the production block)', () => {
+    // The "shielded unless they ask" intent is deferred, not abandoned: it needs an absolute
+    // quota rather than a percentage before it can be switched back on. See the module comment.
+    for (const tier of ['free', 'professional', 'executive'])
+      expect(maxBusinessSolutionCount(false, tier, 2), tier).toBeGreaterThanOrEqual(2)
   })
 
-  it('non-opted allowance stays the reduced percentage (0 until the batch is large)', () => {
-    expect(maxBusinessSolutionCount(false, 'free', 4)).toBe(0) // floor(floor(1.2)*0.5)=0
-    expect(maxBusinessSolutionCount(false, 'free', 10)).toBe(1) // floor(3*0.5)=1
+  it('the quota can never bind at any batch size, opted in or not', () => {
+    for (const tier of ['free', 'professional', 'executive', 'founding'])
+      for (const opted of [true, false])
+        for (const target of [1, 2, 3, 4, 5, 8, 10])
+          expect(maxBusinessSolutionCount(opted, tier, target), `${tier}/${opted}/${target}`)
+            .toBeGreaterThanOrEqual(target)
   })
 })
 

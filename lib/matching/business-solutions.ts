@@ -113,6 +113,43 @@ const PREFERENCE_ADJUSTMENT = 0.5
  * Mirrors the throttle logic in applyThrottling() in generate-recommendations.ts.
  * Both paths must stay in sync — change this file, not the callers.
  */
+/**
+ * THROTTLE KILL SWITCH — off by default, because the quota is miscalibrated for the
+ * launch-phase batch size. Set BUSINESS_SOLUTION_THROTTLE=on to restore the original
+ * behaviour; any other value (including unset) floors the quota at `targetCount`.
+ *
+ * WHY IT IS OFF. The quota is a PERCENTAGE of the batch size, calibrated when batches were
+ * 5-8 introductions (floor(8 * 0.30) = 2 providers for a buyer). BATCH_CONFIG now caps
+ * everyone at 2 introductions, and at targetCount = 2 the arithmetic collapses:
+ *
+ *     raw = floor(2 * 0.30 * mult) = floor(0.60 / 0.42 / 0.30) = 0   for EVERY tier
+ *     opted in     -> max(1, 0)      = 1
+ *     NOT opted in -> floor(0 * 0.5) = 0
+ *
+ * MEASURED on production, 2026-08-27: 112 of 116 eligible members held a provider quota of
+ * ZERO, so none of them could be introduced to any of the 23 members classified as providers
+ * (role_type containing 'law firm', 'consultant', 'legal services', 'legal tech', or the exact
+ * value 'Executive Recruiter'). providerCapOf is a HARD constraint in the optimizer, not a
+ * ranking preference, so those edges could never be seated however good the score. Batch 5
+ * left ~90 members below 2, dominated by members with FULL capacity and 80-115 nominally
+ * eligible partners receiving ZERO — the signature of a hard constraint, not thin supply.
+ *
+ * That is an arithmetic accident between two independently-reasonable settings, not a product
+ * rule anyone chose. The intent — limiting vendor exposure for members who did not ask for it
+ * — is still worth having; it needs recalibrating for small batches, not deleting.
+ *
+ * REINSTATING IT PROPERLY. Do not simply flip this to 'on' once batches grow: at targetCount 3
+ * the same floor still yields 0 for non-opted-in members (floor(0.9) = 0). Either express the
+ * quota as an absolute number rather than a percentage, or make the percentage round UP for
+ * members who have not opted in. Then set BUSINESS_SOLUTION_THROTTLE=on and re-measure with
+ * the section-A/B queries in supabase/audits (composition + per-member pool collapse).
+ *
+ * NOT CHANGED HERE: MIN_RELEVANCE_SCORE. The score floor is a separate hypothesis and is being
+ * measured on its own.
+ */
+export const BUSINESS_SOLUTION_THROTTLE_ENABLED =
+  (process.env.BUSINESS_SOLUTION_THROTTLE ?? '').trim().toLowerCase() === 'on'
+
 export function maxBusinessSolutionCount(
   openToSolutions: boolean,
   userTier: string,
@@ -120,5 +157,11 @@ export function maxBusinessSolutionCount(
 ): number {
   const raw = Math.floor(targetCount * BASE_CAP * (TIER_MULTIPLIERS[userTier] ?? 1.0))
   // Opted-in ⇒ guaranteed ≥1 provider at any cap; not opted-in ⇒ reduced (0 at low caps).
-  return openToSolutions ? Math.max(1, raw) : Math.floor(raw * PREFERENCE_ADJUSTMENT)
+  const computed = openToSolutions ? Math.max(1, raw) : Math.floor(raw * PREFERENCE_ADJUSTMENT)
+  if (BUSINESS_SOLUTION_THROTTLE_ENABLED) return computed
+  // Floored at targetCount, which is PROVABLY non-binding: a member can never receive more
+  // than targetCount introductions in total, so a provider quota of targetCount can never be
+  // the constraint that rejects an edge. The original computation is preserved above and is
+  // one environment variable away, rather than deleted.
+  return Math.max(targetCount, computed)
 }
