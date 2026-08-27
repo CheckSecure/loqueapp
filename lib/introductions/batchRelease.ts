@@ -127,6 +127,7 @@ export async function getCurrentCycleRelease(admin: any, now: Date = new Date())
       .from('weekly_batch_releases')
       .select('release_key, released_at')
       .eq('release_key', releaseKey)
+      .eq('source', 'admin_approval')
       .maybeSingle()
     if (error) {
       console.error('[batch-release] read failed (class):', (error as any).code ?? 'unknown')
