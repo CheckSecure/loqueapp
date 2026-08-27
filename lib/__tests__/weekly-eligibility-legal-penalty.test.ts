@@ -306,7 +306,7 @@ describe('both member-facing generators apply cross-market-first + versions bump
     expect(batchRoute).not.toContain('allPairs.filter((p) => !isPartnerPair(p.userA, p.userB))')
   })
   it('algorithm + scoring-model versions were bumped (contract)', () => {
-    expect(batchScorer).toContain("RECOMMENDATION_ALGORITHM_VERSION = 'v3.3'") // selection changed
+    expect(batchScorer).toContain("RECOMMENDATION_ALGORITHM_VERSION = 'v3.4'") // selection changed
     expect(batchScorer).toContain("SCORING_MODEL_VERSION = 'v2.0.0'")           // scoreMatch unchanged
   })
 })

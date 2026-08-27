@@ -12,7 +12,7 @@ import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/b
 import { MAX_VISIBLE_INTRO_CARDS } from '@/lib/introductions/capacity'
 import { validateGeneration, visibleDeficit } from '@/lib/matching/generationInvariants'
 import { solveGlobalBMatching, crossMarketAdjustment, pairTypeCounts, underfillReasonCounts, nullSafeRole } from '@/lib/matching/globalBMatching'
-import { isSameSideLegalPartnerEdge, lawFirmRole, legalSameSidePenalty } from '@/lib/matching/legalSameSidePenalty'
+import { isSameSideLegalPair, isSameSideLegalPartnerEdge, lawFirmRole, legalSameSidePenalty } from '@/lib/matching/legalSameSidePenalty'
 import { isLegalProfessional } from '@/lib/matching/business-solutions'
 import { buildIntroHistoryExclusions } from '@/lib/introRequests/history'
 
@@ -343,6 +343,25 @@ export async function POST(req: NextRequest) {
         // Queue history (intro_requests) — bidirectional, so either direction excludes.
         const introHistory = introHistoryMap.get(userA.id)?.has(userB.id) || introHistoryMap.get(userB.id)?.has(userA.id)
 
+        // SAME-SIDE LEGAL IS AN ABSOLUTE EXCLUSION, NOT A TIEBREAK.
+        //
+        // Two members who both sit on the law-firm side of the market are never introduced to each
+        // other — partner<->partner, partner<->attorney AND attorney<->attorney alike. Enforced HERE,
+        // with the other hard gates, so no such edge is ever built into `allPairs`; the optimizer
+        // selects only from that set, so neither selection pass can emit one however thin the pool
+        // gets. Ranking cannot express "never": legalSameSidePenalty and crossMarketAdjustment only
+        // lower a score, and a low score still wins when nothing else is available.
+        //
+        // isSameSideLegalPair (BOTH endpoints law-firm) is the correct predicate. The narrower
+        // isSameSideLegalPartnerEdge requires one side to be a PARTNER, so it never fired on
+        // attorney<->attorney — the exact pair this gate exists to stop.
+        //
+        // DETECTION LIMIT, stated rather than implied: lawFirmRole tests role_type for the literal
+        // substring 'law firm'. Drift that removes the space ('Lawfirm attorney', 'Law-firm
+        // Attorney') or omits the employer entirely ('Attorney', 'Partner') classifies as null and
+        // is invisible to this gate. The gate is exactly as strong as role_type hygiene.
+        if (isSameSideLegalPair(userA, userB)) continue
+
         // Exclude if: hidden, passed, matched, recently shown, queue-history, or same company
         if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA || introHistory || isSameCompany(userA, userB)) continue
 
@@ -404,7 +423,7 @@ export async function POST(req: NextRequest) {
     // Every HARD gate has already been applied to `allPairs` above (eligibility, same-company,
     // blocking, existing matches, hard history, cooldown, and the unadjusted relevance floor). The
     // optimizer only ever selects from that set; it can never re-admit an excluded pair.
-    const bmatch = solveGlobalBMatching(allPairs as any[], {
+    const baseSolverConfig = {
       // VISIBLE DEFICIT ONLY. The previous version added the member's free RESERVED slots to their
       // free VISIBLE slots, so a member holding 2 visible and 0 reserved cards scored a deficit of
       // 2 and was proposed to as though empty. Migration 064 places pairs into the VISIBLE tier or
@@ -430,8 +449,54 @@ export async function POST(req: NextRequest) {
       roleOf: (m: any) => String(m?.role_type ?? 'unknown'),
       roleCapOf: (id: string) => { const m = M(id); return m ? Math.max(1, Math.ceil(capOf(m) * MAX_SAME_ROLE_PERCENT)) : 1 },
       roleRepeatPenalty: 25,
+    }
+
+    // PASS 1 — the whole eligible graph. Same-side legal edges were removed by the hard gate above,
+    // so this filter is defence in depth and selects everything: it re-states the invariant at the
+    // point of use rather than trusting a gate 60 lines away. The predicate is the FULL same-side
+    // test, not the partner-only one, so attorney<->attorney is covered here too.
+    const primaryPairs = allPairs.filter((e) => !isSameSideLegalPair(e.userA, e.userB))
+    const primary = solveGlobalBMatching(primaryPairs as any[], baseSolverConfig)
+
+    // PASS 2 — last-resort coverage on residual capacity only.
+    //
+    // Its input WAS the partner-involving same-side edges retired from Pass 1, which made it the
+    // path that reintroduced exactly the pairs the rule forbids. Under an absolute rule it must not,
+    // so its input is now provably EMPTY: the hard gate keeps same-side edges out of `allPairs`, and
+    // the filter below excludes any that could somehow reach it. Pass 2 therefore selects nothing
+    // today. It is retained, rather than deleted, as the staging point for any future last-resort
+    // category — but it can no longer serve legal, by construction.
+    const primaryDegree = primary.degree
+    const residualCapacity = new Map<string, number>()
+    const visibleAfterPrimary = new Map<string, number>()
+    for (const p of profiles as any[]) {
+      const used = primaryDegree.get(p.id) ?? 0
+      residualCapacity.set(p.id, Math.max(0, (capacityByMember.get(p.id) ?? 0) - used))
+      visibleAfterPrimary.set(p.id, (visibleCards.get(p.id) ?? 0) + used)
+    }
+    const fallbackPairs = allPairs.filter(
+      (e) => isPartnerPair(e.userA, e.userB) && !isSameSideLegalPair(e.userA, e.userB),
+    )
+    const fallback = solveGlobalBMatching(fallbackPairs as any[], {
+      ...baseSolverConfig,
+      capacityByMember: residualCapacity,
+      existingVisibleByMember: visibleAfterPrimary,
+      // Every fallback edge is already same-side. Its original quality still chooses the best last
+      // resort; applying the cross-market adjustment again would add no composition signal.
+      qualityAdjustment: () => 0,
     })
-    const selectedEdgesRepaired = bmatch.selected as typeof allPairs
+    const selectedEdgesRepaired = [...primary.selected, ...fallback.selected] as typeof allPairs
+    const bmatch = {
+      exact: primary.exact && fallback.exact,
+      reason: primary.reason ?? fallback.reason,
+      nodesExplored: primary.nodesExplored + fallback.nodesExplored,
+      selected: selectedEdgesRepaired,
+      degree: new Map<string, number>(),
+    }
+    for (const e of selectedEdgesRepaired) {
+      bmatch.degree.set(e.userA.id, (bmatch.degree.get(e.userA.id) ?? 0) + 1)
+      bmatch.degree.set(e.userB.id, (bmatch.degree.get(e.userB.id) ?? 0) + 1)
+    }
 
     // Aggregate, identity-free reporting. No member id, name, email or company is logged.
     const isLawFirm = (x: any) => lawFirmRole(x) !== null

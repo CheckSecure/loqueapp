@@ -35,18 +35,24 @@
  * can compare historical batches, know exactly which algorithm produced one, and
  * evolve safely. `scoringModelVersion` tracks the scoreMatch model specifically.
  */
-// v3.3: adds the CROSS-MARKET-FIRST legal rule as a SELECTION change — the primary
-// reciprocal pass now excludes every same-side legal edge that involves a Law Firm
-// Partner (partner↔partner AND partner↔attorney), reintroduced only by the coverage
-// fallback, so partners fill from cross-market candidates first. The pairwise scoring
+// v3.4: SAME-SIDE LEGAL PAIRS ARE ABSOLUTELY EXCLUDED. Two law-firm-side members are never
+// introduced to each other — partner↔partner, partner↔attorney AND attorney↔attorney alike.
+// This is a HARD GATE at pair construction, applied alongside eligibility and same-company, so
+// no such edge is ever built and no selection pass can emit one however thin the pool gets.
+// v3.3 shipped only a soft -32/-24 ranking preference and let 14 same-side partner pairs into
+// one production review batch; ranking cannot express "never", because a penalised score still
+// wins when nothing else is available. An interim two-pass draft excluded partner-involving
+// edges from the primary pass but reintroduced them on residual capacity, and never covered
+// attorney↔attorney at all. Both are superseded. The pairwise scoring
 // model (scoreMatch / rarity / decay) is UNCHANGED — no score penalty is applied here
 // (that would remove last-resort edges below the relevance gate), so SCORING_MODEL_VERSION
-// stays v2.0.0; only RECOMMENDATION_ALGORITHM_VERSION bumps v3.2 → v3.3 per the contract.
+// stays v2.0.0; only RECOMMENDATION_ALGORITHM_VERSION bumps v3.3 → v3.4 per the contract.
 // Lineage: v3 (reciprocal, greedy-only) → v3.1 (Pareto-safe augmenting-path phase) → v3.2
-// (business-solution throttle fix) → v3.3 (cross-market-first selection).
+// (business-solution throttle fix) → v3.3 (soft cross-market preference) → v3.4 (absolute
+// same-side legal exclusion at the gate).
 // See app/api/admin/generate-batch/route.ts and lib/matching/legalSameSidePenalty.ts.
 
-export const RECOMMENDATION_ALGORITHM_VERSION = 'v3.3'
+export const RECOMMENDATION_ALGORITHM_VERSION = 'v3.4'
 export const SCORING_MODEL_VERSION = 'v2.0.0'
 
 export type ScoringConfig = {

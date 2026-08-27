@@ -125,12 +125,12 @@ describe('Generate New Batch — full insert', () => {
     // No orphan cleanup on the happy path.
     expect(state.deletedBatchIds).toEqual([])
     // Batch is stamped with the algorithm version + config snapshot (reproducibility).
-    expect(state.insertedBatch.algorithm_version).toBe('v3.3')
+    expect(state.insertedBatch.algorithm_version).toBe('v3.4')
     expect(state.insertedBatch.scoring_model_version).toMatch(/^v\d/)
     expect(state.insertedBatch.algorithm_config).toBeTruthy()
     expect(state.insertedBatch.config_hash).toMatch(/^[0-9a-f]{8}$/)
     // API response surfaces the version to the admin.
-    expect(body.algorithmVersion).toBe('v3.3')
+    expect(body.algorithmVersion).toBe('v3.4')
     expect(body.configHash).toMatch(/^[0-9a-f]{8}$/)
   })
 
@@ -438,7 +438,7 @@ describe('Generate New Batch — availability tier is no longer a candidate part
 // Partner-to-partner LAST-RESORT (two-pass selection) + two-intro coverage. LFP↔LFP is
 // excluded from the primary pass and reintroduced only for members who cannot otherwise
 // reach 2 intros; role diversity is a preference that must not strand a member below 2.
-describe('Generate New Batch — partner two-pass fallback + coverage fill', () => {
+describe('Generate New Batch — absolute same-side legal exclusion + coverage fill', () => {
   const hasEdge = (rows: any[], x: string, y: string) =>
     rows.some((r: any) => (r.recipient_id === x && r.suggested_id === y) || (r.recipient_id === y && r.suggested_id === x))
   const degree = (rows: any[], id: string) => rows.filter((r: any) => r.recipient_id === id).length
@@ -465,16 +465,34 @@ describe('Generate New Batch — partner two-pass fallback + coverage fill', () 
     expect(degree(rows, 'lp1')).toBe(2)
   })
 
-  it('partner with NO viable non-partner option → partner↔partner ALLOWED (last resort)', async () => {
+  it('partner with NO viable non-partner option → NO introduction at all (absolute rule)', async () => {
+    // v3.4 inverts this case. It previously asserted the fallback pass seated lp1↔lp2 "when nothing
+    // else exists" — a last resort. Same-side legal is now absolute, so the correct outcome is that
+    // BOTH members go without. The cost is real and is the point: an absolute rule buys its
+    // guarantee with fill rate, and no pass may trade it back.
     state.profiles = [withRole('lp1', 'Law Firm Partner'), withRole('lp2', 'Law Firm Partner')]
     await post()
     const rows = state.insertedSuggestions || []
-    expect(hasEdge(rows, 'lp1', 'lp2')).toBe(true) // fallback pass seats it when nothing else exists
+    expect(hasEdge(rows, 'lp1', 'lp2')).toBe(false)
+    expect(degree(rows, 'lp1')).toBe(0)
+    expect(degree(rows, 'lp2')).toBe(0)
   })
 
-  it('partner reaches 2 via one non-partner + one partner (partner ONLY for the shortfall slot)', async () => {
-    // lp1 (firm B) has exactly ONE non-partner option (gc1, firm A) and one partner (lp2,
-    // firm A). Pass 1 gives lp1 the non-partner; pass 2 adds the partner for the 2nd slot.
+  it('attorney↔attorney with no alternative is also refused, not just partner edges', async () => {
+    // The gap that made this change necessary: isSameSideLegalPartnerEdge needs a PARTNER on one
+    // side, so two law-firm ATTORNEYS were never same-side to the old rule and Pass 1 could seat
+    // them on score alone.
+    state.profiles = [withRole('la1', 'Law firm attorney'), withRole('la2', 'Law Firm Attorney')]
+    await post()
+    const rows = state.insertedSuggestions || []
+    expect(hasEdge(rows, 'la1', 'la2')).toBe(false)
+    expect(degree(rows, 'la1')).toBe(0)
+  })
+
+  it('partner takes the cross-market option and STOPS at 1 — shortfall is not filled same-side', async () => {
+    // Previously: "pass 2 adds the partner for the 2nd slot", degree 2. Under the absolute rule lp1
+    // keeps its one cross-market introduction and the second slot stays empty rather than being
+    // filled with lp2. A member at 1 is the correct outcome here, not a bug to repair.
     state.profiles = [
       withRole('lp1', 'Law Firm Partner', 'firm-B'),
       withRole('lp2', 'Law Firm Partner', 'firm-A'),
@@ -482,9 +500,9 @@ describe('Generate New Batch — partner two-pass fallback + coverage fill', () 
     ]
     await post()
     const rows = state.insertedSuggestions || []
-    expect(hasEdge(rows, 'lp1', 'gc1')).toBe(true) // preferred non-partner taken first
-    expect(hasEdge(rows, 'lp1', 'lp2')).toBe(true) // partner only to fill the remaining slot
-    expect(degree(rows, 'lp1')).toBe(2)
+    expect(hasEdge(rows, 'lp1', 'gc1')).toBe(true)  // cross-market still taken
+    expect(hasEdge(rows, 'lp1', 'lp2')).toBe(false) // same-side never fills the shortfall
+    expect(degree(rows, 'lp1')).toBe(1)
   })
 
   it('role diversity cannot strand a member at 1 intro (coverage fill tops up the 2nd)', async () => {
