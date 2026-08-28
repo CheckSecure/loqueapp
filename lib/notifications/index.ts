@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 export type NotificationType = 
   | 'new_batch'
   | 'interest_received'
+  | 'interest_expired'
   | 'mutual_match'
   | 'message_received'
   | 'low_credits'
@@ -53,6 +54,20 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
   new_batch: {
     title: 'New curated introductions',
     message: 'Your latest set of curated connections is ready to review.'
+  },
+  /**
+   * Fired when a member's expressed interest is closed because the counterpart can no longer
+   * answer — see the ORPHANED ONE-SIDED INTEREST stage in lib/introductions/expiryWorker.ts.
+   *
+   * COPY DELIBERATELY ASSIGNS NO FAULT. The counterpart may never have been shown anything
+   * actionable: admin-initiated rows are excluded from the "Interested in you" surface
+   * (fetchActionableIncomingInterest filters is_admin_initiated), and a deactivated member is
+   * dropped by the same helper. "They didn't respond" would be an accusation the data does not
+   * support, so the copy states the outcome and the window and stops there.
+   */
+  interest_expired: {
+    title: 'Introduction closed',
+    message: 'This introduction has closed — no response within 14 days.'
   },
   interest_received: {
     title: "Someone's interested in connecting",
@@ -157,6 +172,7 @@ const LINK_BY_TYPE: Partial<Record<string, string>> = {
   introductions_waiting: '/dashboard/introductions',
   // The member's OWN profile. /dashboard/profile/<own id> redirects here anyway, so linking
   // straight to it avoids the hop — and the link carries no id a browser could influence.
+  interest_expired: '/dashboard/introductions',
   andrel_connector_awarded: '/dashboard/profile'
 }
 

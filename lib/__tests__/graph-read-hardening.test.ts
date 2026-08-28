@@ -89,7 +89,9 @@ describe('no cookie-session reader of matches / blocked_users remains', () => {
     // ZERO cookie-session, ZERO browser, ZERO unresolved readers anywhere in the tree.
     expect(offenders.sort()).toEqual(KNOWN_OUT_OF_SCOPE)
     // Parameter-injected readers are legitimate; the next test traces every caller.
-    expect(paramSites.length).toBe(11)
+    // 12 since the ORPHANED ONE-SIDED INTEREST stage added a matches read to expiryWorker.ts.
+    // It is parameter-injected and both callers are traced in the MODULES table below.
+    expect(paramSites.length).toBe(12)
     expect(paramSites).toContain("lib/introductions/finalizeMutualMatch.ts: PARAMETER graphClient.from('matches')")
   })
 
@@ -98,6 +100,7 @@ describe('no cookie-session reader of matches / blocked_users remains', () => {
     const MODULES: ReadonlyArray<readonly [string, string, readonly string[]]> = [
       ['lib/admin/dashboardData.ts',                'admin',       ['app/dashboard/admin/operations/page.tsx', 'app/dashboard/admin/page.tsx']],
       ['lib/introductions/finalizeMutualMatch.ts',  'graphClient', ['app/api/intro-requests/express-interest/route.ts', 'app/api/intro-requests/accept-incoming/route.ts']],
+      ['lib/introductions/expiryWorker.ts',         'admin',       ['app/api/cron/engagement-reminders/route.ts', 'app/api/cron/expire-pending-intros/route.ts']],
       ['lib/introductions/incomingInterest.ts',     'db',          ['app/api/cron/engagement-reminders/route.ts', 'app/api/intro-requests/accept-incoming/route.ts', 'app/dashboard/introductions/page.tsx']],
       ['lib/introductions/poolHealth.ts',           'admin',       ['app/api/admin/pool-health/route.ts']],
       ['lib/introductions/queue-metrics.ts',        'adminClient', ['app/api/admin/queue-metrics/route.ts']],
