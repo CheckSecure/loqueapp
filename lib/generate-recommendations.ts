@@ -869,19 +869,7 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number, a
   
   // Apply mentorship filtering
   const mentorshipFiltered = filtered.filter(c => !shouldFilterByMentorship(newUserProfile, c, userSeniorityLevel))
-  const rankerStages: RankerStages = {
-    eligible: allUsers.length,
-    hardExcludedCount: hardExcluded.size,
-    softExcludedCount: softExcluded.size,
-    afterHardExcluded: afterHardExcluded.length,
-    afterSameCompany: afterSameCompany.length,
-    afterDataValid: base.length,
-    afterSoftExcluded: afterSoft.length,
-    exhaustionValveActive: valveActive,
-    scored: scoredCandidates.length,
-    afterScoreFloor10: filtered.length,
-    afterMentorship: mentorshipFiltered.length,
-  }
+
 
   console.log('[generate-recommendations] After mentorship filter:', mentorshipFiltered.length)
 
@@ -945,6 +933,26 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number, a
   )
   
   const sorted = mentorshipControlled.slice(0, maxCount ?? recommendationCount)
+  const rankerStages: RankerStages = {
+    eligible: allUsers.length,
+    hardExcludedCount: hardExcluded.size,
+    softExcludedCount: softExcluded.size,
+    afterHardExcluded: afterHardExcluded.length,
+    afterSameCompany: afterSameCompany.length,
+    afterDataValid: base.length,
+    afterSoftExcluded: afterSoft.length,
+    exhaustionValveActive: valveActive,
+    scored: scoredCandidates.length,
+    afterScoreFloor10: filtered.length,
+    afterMentorship: mentorshipFiltered.length,
+    afterTierRanking: rankedCandidates.length,
+    afterVerticalBoost: boostedCandidates.length,
+    afterExposureBalancing: exposureBalanced.length,
+    afterLawFirmComposition: composed.length,
+    afterThrottling: throttled.length,
+    afterJuniorDistribution: mentorshipControlled.length,
+    returned: sorted.length,
+  }
   
   console.log('[generate-recommendations] Top 3 final scores:', sorted.slice(0, 3).map(c => ({ email: c.email, score: c.finalScore.toFixed(1) })))
 
@@ -1096,6 +1104,16 @@ export interface RankerStages {
   scored: number
   afterScoreFloor10: number
   afterMentorship: number
+  // ── Post-mentorship transforms. Several of these FILTER, not just re-rank, and none was
+  //    observable: a pool of 99 after mentorship arrived at the walk as 2.
+  afterTierRanking: number
+  afterVerticalBoost: number
+  afterExposureBalancing: number
+  afterLawFirmComposition: number
+  afterThrottling: number
+  afterJuniorDistribution: number
+  /** After the final slice to maxCount — this is what the walk actually receives. */
+  returned: number
 }
 
 export interface GenerationDiagnostics {
