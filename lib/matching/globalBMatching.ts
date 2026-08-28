@@ -177,6 +177,31 @@ export function pairKey(a: string, b: string): string {
  * Components that still exceed it return a feasible answer with exact:false — never a
  * silently degraded one.
  */
+/**
+ * KEPT AT 2,000,000 AFTER MEASUREMENT — lowering it was proposed and the evidence refuted it.
+ *
+ * The proposal came from a measurement taken while the component reduction was broken (fixed
+ * K=8, see below): under that reduction the search returned a byte-identical selection at
+ * 10,000 nodes and at 2,000,000, so the budget looked like pure cost. Once the reduction is
+ * fixed that no longer holds, and the numbers invert:
+ *
+ *   24-member cohort, 110 edges — the audited production shape:
+ *     10,000 nodes   -> a DIFFERENT, worse selection
+ *     200,000        -> the optimal selection, not yet proven
+ *     1,895,559      -> optimality PROVEN (exact: true)
+ *
+ *   116 members, ~4,800 edges, after reduction:
+ *     10,000 nodes   -> 116/116 at capacity, 37ms
+ *     2,000,000      -> 116/116 at capacity, 3,183ms
+ *
+ * So the budget is free at large sizes (the reduced graph is easy) and load-bearing at small
+ * ones (where the whole cohort fits in one component and proof is reachable). Batch generation
+ * is a manual, infrequent operation, so ~3s worst case is a good trade for not silently
+ * degrading small cohorts.
+ *
+ * If this is ever revisited: measure the SELECTION, not nodesExplored, and measure at BOTH ends
+ * of the size range. A budget change that looks free at 116 members costs quality at 24.
+ */
 const DEFAULT_NODE_BUDGET = 2_000_000
 /**
  * Per-component edge ceiling. Above this the component is reduced to each member's top-K
@@ -184,8 +209,69 @@ const DEFAULT_NODE_BUDGET = 2_000_000
  * recursion is one frame per edge, so an unbounded edge list is a crash, not just a slow
  * run. Exceeding the ceiling is reported as exact:false — never hidden.
  */
-const MAX_COMPONENT_EDGES = 220
-const TOP_K_PER_MEMBER = 8
+/**
+ * Measured ceiling. 2,019 edges solved in 18ms at 116 members; 2,391 edges in 69ms at 500. The
+ * previous value of 220 was never actually enforced — see reduceComponentToCap — so a component
+ * of ~550 edges was routinely passed to a search sized for 220.
+ */
+const MAX_COMPONENT_EDGES = 2_500
+/**
+ * The reduction starts at MAX and HALVES until the component fits MAX_COMPONENT_EDGES, rather
+ * than using one fixed K.
+ *
+ * WHY NOT A FIXED K. Edges after reduction are ~N*K/2, so a fixed K makes the component grow
+ * linearly with member count while the per-component setup (dominated-edge dedup, greedy seed)
+ * grows superlinearly. Measured: K=32 is 18ms at 116 members and 25ms at 200, but at 500 members
+ * it produces 8,781 edges and does not complete AT ALL — not even with a 10,000-node budget,
+ * because the blowup is in setup, which no node budget bounds. A fixed K=32 would have been a
+ * latent production hang as the network grew.
+ *
+ * What must stay constant is the resulting COMPONENT SIZE, not K. K is derived from it.
+ *
+ * At K=1 every member still keeps their single best edge, so the reduction can never strand a
+ * member with no edge at all, however aggressive it has to be.
+ */
+const TOP_K_PER_MEMBER_MAX = 32
+const TOP_K_PER_MEMBER_MIN = 1
+
+/**
+ * Reduce a component to at most `cap` edges by keeping each member's top-K, halving K until it
+ * fits. Exported for tests: the defect this replaces was that the cap was REPORTED as enforced
+ * and never actually met.
+ *
+ * Deterministic: members are walked in sorted id order and each member's edges are ordered by
+ * score then pair key, so the same input always yields the same reduction.
+ */
+export function reduceComponentToCap<E extends BEdge>(
+  edges: E[],
+  cap: number = MAX_COMPONENT_EDGES,
+  maxK: number = TOP_K_PER_MEMBER_MAX,
+  minK: number = TOP_K_PER_MEMBER_MIN,
+): { edges: E[]; k: number; reduced: boolean } {
+  if (edges.length <= cap) return { edges, k: Infinity, reduced: false }
+
+  const byMember = new Map<string, E[]>()
+  for (const e of edges) for (const id of [e.userA.id, e.userB.id]) {
+    const l = byMember.get(id); if (l) l.push(e); else byMember.set(id, [e])
+  }
+  const ids = Array.from(byMember.keys()).sort()
+  for (const id of ids) {
+    byMember.get(id)!.sort((x, y) =>
+      y.mutualScore - x.mutualScore ||
+      pairKey(x.userA.id, x.userB.id).localeCompare(pairKey(y.userA.id, y.userB.id)))
+  }
+
+  let k = Math.max(minK, maxK)
+  let out = edges
+  for (;;) {
+    const keep = new Set<E>()
+    for (const id of ids) for (const e of byMember.get(id)!.slice(0, k)) keep.add(e)
+    out = edges.filter((e) => keep.has(e))
+    if (out.length <= cap || k <= minK) break
+    k = Math.max(minK, Math.floor(k / 2))
+  }
+  return { edges: out, k, reduced: true }
+}
 
 /** Compare two lexicographic objective tuples. > 0 when `x` is strictly better. */
 export function compareObjective(x: number[], y: number[]): number {
@@ -630,20 +716,9 @@ export function solveGlobalBMatching<E extends BEdge>(
 
   for (const key of keys) {
     let compEdges = groups.get(key)!
-    if (compEdges.length > MAX_COMPONENT_EDGES) {
-      // Deterministic reduction: keep each member's TOP_K_PER_MEMBER best edges, union them.
-      const byMember = new Map<string, E[]>()
-      for (const e of compEdges) for (const id of [e.userA.id, e.userB.id]) {
-        const l = byMember.get(id); if (l) l.push(e); else byMember.set(id, [e])
-      }
-      const keep = new Set<E>()
-      for (const id of Array.from(byMember.keys()).sort()) {
-        const list = byMember.get(id)!.slice().sort((x, y) =>
-          y.mutualScore - x.mutualScore ||
-          pairKey(x.userA.id, x.userB.id).localeCompare(pairKey(y.userA.id, y.userB.id)))
-        for (const e of list.slice(0, TOP_K_PER_MEMBER)) keep.add(e)
-      }
-      compEdges = compEdges.filter((e) => keep.has(e))
+    const capped = reduceComponentToCap(compEdges)
+    if (capped.reduced) {
+      compEdges = capped.edges
       exact = false
       reason = 'component_edge_cap'
     }
