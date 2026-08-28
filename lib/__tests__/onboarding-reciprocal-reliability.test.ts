@@ -163,7 +163,12 @@ describe('walkCandidates — deadline & ambiguous-RPC safety', () => {
     expect(calls.a).toBe(2)        // retried once
     expect(r.created).toBe(0)      // the aborted RPC may have committed; retry sees exists_active — no 2nd pair
     const outcome = classifyGenerationOutcome(r.finalOutcomes, { createdCount: r.created, candidatesEmpty: false, memberIneligible: false, timedOut: r.timedOut })
-    expect(outcome).toBe('capacity') // safe/definite; NOT a duplicate creation
+    // 'already_related', not 'capacity': the retry saw the pair already exists. The subject of this
+    // test is idempotency — no second pair — and that is unchanged. The label was split because
+    // folding exists_active into 'capacity' reported "the network is full" for a member with 92
+    // counterparts holding free slots. Both remain retryable (retryableFor), so the retry queue's
+    // deterministic-reschedule path is unaffected.
+    expect(outcome).toBe('already_related') // safe/definite; NOT a duplicate creation
   })
 })
 

@@ -1012,6 +1012,15 @@ const RECIPROCAL_BATCH_SIZE = 5
 // Broad fit-ranked pool to fair-select from, so live exposure can influence WHICH members pair
 // (not just their order) — this is what spreads new members across good-fit counterparts.
 const RECIPROCAL_CANDIDATE_POOL = 50
+/** Mirrors public.create_reciprocal_suggestion's p_cooldown_days DEFAULT 30 (migration 063). */
+const RECIPROCAL_COOLDOWN_DAYS = 30
+/** Statuses that block a pair outright — migration 063, the exists_active predicate. */
+const EXISTS_ACTIVE_STATUSES = new Set<string>([
+  'suggested', 'queued', 'pending', 'accepted', 'accepted_pending_payment',
+  'admin_pending', 'approved', 'declined', 'rejected', 'hidden', 'hidden_permanent',
+])
+/** Statuses that block only while inside the cooldown window — same predicate. */
+const EXISTS_ACTIVE_COOLDOWN_STATUSES = new Set<string>(['passed', 'expired'])
 
 /**
  * HARD limits on a single interactive generation — bound candidate count, RPC calls, and wall time
@@ -1039,7 +1048,7 @@ export const WALK_LIMITS = { maxRpcCalls: 8, maxCandidateAttempts: 2, timeBudget
  *   transient_error      — a real DB/RPC exception or 'error' response prevented a conclusive result
  */
 export type GenerationOutcome =
-  | 'created' | 'noop_at_capacity' | 'empty_pool' | 'capacity' | 'no_compatible_candidate' | 'ineligible' | 'transient_error'
+  | 'created' | 'noop_at_capacity' | 'empty_pool' | 'capacity' | 'already_related' | 'no_compatible_candidate' | 'ineligible' | 'transient_error'
 
 export interface GenerationResult {
   count: number
@@ -1054,6 +1063,10 @@ export interface GenerationResult {
 /** Whether an outcome is a candidate for a later, explicitly-targeted retry (never an auto-sweep). */
 export function retryableFor(outcome: GenerationOutcome): boolean {
   return outcome === 'transient_error' || outcome === 'capacity' ||
+    // 'already_related' is retryable for the same reason 'capacity' is: a self-clearing block. It
+    // resolves as the member's open rows settle or the ranker surfaces candidates they have no
+    // history with.
+    outcome === 'already_related' ||
     outcome === 'empty_pool' || outcome === 'no_compatible_candidate'
 }
 
@@ -1072,9 +1085,17 @@ export function classifyGenerationOutcome(
   if (opts.timedOut) return 'transient_error'                 // uncertain — never a definitive empty
   if (finalOutcomes.includes('error')) return 'transient_error' // residual/mixed transient uncertainty
   if (finalOutcomes.length === 0) return 'empty_pool'
+  // EXISTS_ACTIVE IS NOT CAPACITY. It used to be folded in below, and the label actively misled: a
+  // member whose 8 RPC calls were all spent on counterparts he was already engaged with was reported
+  // as 'capacity', which reads as "the network is full" — while 92 counterparts had free slots. Two
+  // different failures with two different remedies: 'capacity' clears when other members ACT;
+  // 'already_related' clears when the ranker offers someone new, and it means the budget was spent on
+  // foregone conclusions (see the ALREADY-RELATED PREFILTER in generateReciprocalBatchForMember).
+  if (finalOutcomes.length > 0 && finalOutcomes.every((o) => o === 'exists_active')) return 'already_related'
   // 'unresolved' (081) joins the capacity family: a deterministic, self-clearing block. A walk in
   // which every candidate was refused for capacity or for owing a response is retryable — it
-  // succeeds on its own once those members act.
+  // succeeds on its own once those members act. A MIX of exists_active and
+  // capacity still reports 'capacity', because at least one counterpart was genuinely full.
   if (finalOutcomes.every((o) => o === 'capacity' || o === 'exists_active' || o === 'unresolved')) return 'capacity'
   return 'no_compatible_candidate'                            // deterministic non-capacity rejections
 }
@@ -1239,10 +1260,57 @@ export async function generateReciprocalBatchForMember(
     if (!candidates.length) return finish('empty_pool', 0, 0, 0)
 
     const exposure = await getActiveInboundExposure(adminClient, candidates.map((c: any) => c.id))
-    const ordered = selectFairCounterparts(
+    const orderedAll = selectFairCounterparts(
       candidates.map((c: any) => ({ id: c.id, score: c.finalScore ?? 0, exposure: exposure.get(c.id) ?? NO_EXPOSURE })),
       candidates.length,
     ).map((c) => c.id)
+
+    // ── ALREADY-RELATED PREFILTER ───────────────────────────────────────────────────────────
+    //
+    // WHY. walkCandidates spends one of its maxRpcCalls (8) on EVERY candidate it tries, and
+    // create_reciprocal_suggestion returns 'exists_active' for a pair that already has a row —
+    // instantly, but at the cost of a call. The walk could not know that in advance, so a member
+    // carrying prior interest burned the whole budget rediscovering it.
+    //
+    // MEASURED on production: a member with 6 open 'approved' rows had 92 eligible counterparts
+    // with free slots. The ranker puts already-engaged counterparts near the TOP — they are his
+    // best fits, which is why he expressed interest in them — so 6 of 8 calls returned
+    // 'exists_active' and the walk genuinely tried 2. It reported 'capacity', which reads as "the
+    // network is full" when 92 counterparts had room.
+    //
+    // PREFILTER, NOT ENFORCEMENT — exactly like the `outstanding` check above.
+    // create_reciprocal_suggestion re-derives this predicate under the member advisory locks and
+    // remains the only authority; two generators may both read this and both proceed. This only
+    // stops the budget being spent on foregone conclusions.
+    //
+    // The predicate MIRRORS 063's exists_active, cooldown included. Drift costs a wasted call (too
+    // loose) or a skipped viable candidate (too strict), so it is kept identical — and it fails
+    // OPEN: a read error leaves the list unfiltered rather than blocking generation.
+    let ordered = orderedAll
+    try {
+      const cutoffIso = new Date(Date.now() - RECIPROCAL_COOLDOWN_DAYS * 86_400_000).toISOString()
+      const { data: relatedRows, error: relErr } = await adminClient
+        .from('intro_requests')
+        .select('requester_id, target_user_id, status, updated_at')
+        .or(`requester_id.eq.${userId},target_user_id.eq.${userId}`)
+      if (relErr) throw relErr
+      const blocked = new Set<string>()
+      for (const r of (relatedRows ?? []) as any[]) {
+        const other = r.requester_id === userId ? r.target_user_id
+                    : r.target_user_id === userId ? r.requester_id : null
+        if (!other) continue
+        if (EXISTS_ACTIVE_STATUSES.has(r.status)) { blocked.add(other); continue }
+        if (EXISTS_ACTIVE_COOLDOWN_STATUSES.has(r.status) && r.updated_at && r.updated_at >= cutoffIso) {
+          blocked.add(other)
+        }
+      }
+      const filtered = orderedAll.filter((id) => !blocked.has(id))
+      // If EVERY ranked candidate is already related, keep the unfiltered list so the walk reports
+      // exists_active honestly rather than the caller seeing an empty pool it cannot act on.
+      ordered = filtered.length > 0 ? filtered : orderedAll
+    } catch {
+      // Class only, and non-fatal: a prefilter failure must never stop generation.
+    }
 
     // Each RPC is issued through the deadline-bound client (cancelled at the deadline) and the walk
     // refuses to start one past the deadline. Remaining budget bounds the walk's own clock check.

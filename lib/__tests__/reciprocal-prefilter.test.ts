@@ -1,0 +1,75 @@
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { classifyGenerationOutcome, retryableFor } from '@/lib/generate-recommendations'
+
+const SRC = readFileSync('lib/generate-recommendations.ts', 'utf8')
+const code = SRC.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, ' ')
+
+/**
+ * THE DEFECT. walkCandidates spends one of maxRpcCalls (8) on every candidate it tries, and
+ * create_reciprocal_suggestion returns 'exists_active' instantly for an already-related pair — at
+ * the cost of a call. A member with 6 open 'approved' rows had 92 eligible counterparts with free
+ * slots; his already-engaged counterparts ranked highest, so 6 of 8 calls were spent on them and
+ * the walk genuinely tried 2. It reported 'capacity'.
+ */
+describe('already-related candidates do not consume the RPC budget', () => {
+  it('the prefilter runs BEFORE the walk, on the ordered list', () => {
+    // Scoped to generateReciprocalBatchForMember: walkCandidates is DEFINED earlier in the file,
+    // so an unscoped indexOf compares against the definition rather than the call site.
+    const fn = code.slice(code.indexOf('export async function generateReciprocalBatchForMember'))
+    const iPrefilter = fn.indexOf('EXISTS_ACTIVE_STATUSES.has')
+    const iWalk = fn.indexOf('await walkCandidates(')
+    expect(iPrefilter).toBeGreaterThan(-1)
+    expect(iWalk).toBeGreaterThan(-1)
+    expect(iPrefilter).toBeLessThan(iWalk)
+  })
+
+  it('its predicate mirrors 063 exists_active — statuses and the cooldown', () => {
+    for (const st of ['suggested','queued','pending','accepted','accepted_pending_payment',
+                      'admin_pending','approved','declined','rejected','hidden','hidden_permanent'])
+      expect(code, st).toContain(`'${st}'`)
+    expect(code).toMatch(/EXISTS_ACTIVE_COOLDOWN_STATUSES = new Set<string>\(\['passed', 'expired'\]\)/)
+    expect(code).toMatch(/RECIPROCAL_COOLDOWN_DAYS = 30/)   // 063's p_cooldown_days DEFAULT
+  })
+
+  it('fails OPEN — a prefilter error must never stop generation', () => {
+    // The filter is an optimisation; create_reciprocal_suggestion is the authority.
+    expect(code).toMatch(/let ordered = orderedAll/)
+    expect(code).toMatch(/catch\s*\{/)
+  })
+
+  it('never empties the pool: if everything is related, the walk still runs', () => {
+    expect(code).toMatch(/ordered = filtered\.length > 0 \? filtered : orderedAll/)
+  })
+
+  // ── The label. ──
+  it('all-exists_active reports already_related, NOT capacity', () => {
+    const o = classifyGenerationOutcome(['exists_active', 'exists_active'],
+      { createdCount: 0, candidatesEmpty: false, memberIneligible: false, timedOut: false })
+    expect(o).toBe('already_related')
+  })
+
+  it('a MIX of exists_active and capacity still reports capacity', () => {
+    // At least one counterpart was genuinely full, so the capacity story is true.
+    const o = classifyGenerationOutcome(['exists_active', 'capacity'],
+      { createdCount: 0, candidatesEmpty: false, memberIneligible: false, timedOut: false })
+    expect(o).toBe('capacity')
+  })
+
+  it('pure capacity is unchanged', () => {
+    expect(classifyGenerationOutcome(['capacity', 'capacity'],
+      { createdCount: 0, candidatesEmpty: false, memberIneligible: false, timedOut: false })).toBe('capacity')
+  })
+
+  it('created / transient / ineligible precedence is unchanged', () => {
+    const base = { candidatesEmpty: false, memberIneligible: false, timedOut: false }
+    expect(classifyGenerationOutcome(['exists_active'], { ...base, createdCount: 1 })).toBe('created')
+    expect(classifyGenerationOutcome(['exists_active', 'error'], { ...base, createdCount: 0 })).toBe('transient_error')
+    expect(classifyGenerationOutcome(['exists_active'], { ...base, createdCount: 0, memberIneligible: true })).toBe('ineligible')
+  })
+
+  it('already_related is retryable, like capacity — the retry queue is unaffected', () => {
+    expect(retryableFor('already_related')).toBe(true)
+    expect(retryableFor('capacity')).toBe(true)
+  })
+})
