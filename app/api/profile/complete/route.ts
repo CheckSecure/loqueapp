@@ -248,7 +248,13 @@ export async function POST(req: Request) {
             // each pass the cap check and double-award. Practically impossible — onboarding
             // is a single UI path. No DB lock for V1.
 
-            // Increment referrer's free credits
+            // Increment the referrer's PURCHASED bucket.
+            //
+            // A referral credit is an EARNED REWARD, not a monthly allowance. Migration 089 caps
+            // free_credits (the included/refill pool) at 20 and refuses any update that raises it
+            // past that, so a reward written there would both compete with the member's monthly
+            // refill for the same 20 slots and hard-fail for anyone already at the ceiling.
+            // premium_credits is bounded only by the combined cap of 50.
             const { data: currentCredits } = await referralClient
               .from('meeting_credits')
               .select('free_credits, premium_credits, balance, lifetime_earned')
@@ -259,27 +265,57 @@ export async function POST(req: Request) {
             const currentPremium = currentCredits?.premium_credits ?? 0
             const currentLifetime = currentCredits?.lifetime_earned ?? 0
 
-            await referralClient
+            // DESTRUCTURED. supabase-js RETURNS a database error, it does not throw one, so the
+            // enclosing try/catch never saw this write fail. The award was then recorded as paid
+            // and logged as success while the member received nothing — silent and unrecoverable
+            // without a manual audit. Nothing below may run unless this write actually landed.
+            const { error: creditError } = await referralClient
               .from('meeting_credits')
               .upsert({
                 user_id: referrerId,
-                free_credits: currentFree + 1,
-                premium_credits: currentPremium,
+                free_credits: currentFree,
+                premium_credits: currentPremium + 1,
                 balance: currentFree + currentPremium + 1,
                 lifetime_earned: currentLifetime + 1,
               }, { onConflict: 'user_id' })
 
-            // Mark referral as credited
-            await referralClient
-              .from('referrals')
-              .update({ awarded_credit: true, awarded_at: new Date().toISOString() })
-              .eq('id', referralRow.id)
+            if (creditError) {
+              // awarded_credit stays FALSE, so this referral remains eligible to be granted later
+              // and does not consume a slot in the monthly cap. The referral is already marked
+              // 'activated' above, which is correct — the relationship is real either way.
+              console.error('[profile/complete] REFERRAL_CREDIT_WRITE_FAILED', JSON.stringify({
+                referrerId,
+                referralId: referralRow.id,
+                code: (creditError as any)?.code ?? null,
+                message: creditError.message,
+              }))
+            } else {
+              // Mark referral as credited — only now that the credit demonstrably exists.
+              const { error: markError } = await referralClient
+                .from('referrals')
+                .update({ awarded_credit: true, awarded_at: new Date().toISOString() })
+                .eq('id', referralRow.id)
 
-            console.log('[profile/complete] referral credit awarded', {
-              referrerId,
-              referralId: referralRow.id,
-              userId: user.id,
-            })
+              if (markError) {
+                // The credit WAS granted but the marker did not persist: the referrer keeps the
+                // credit and the row stays eligible, so a later run could award a second one.
+                // Logged loudly rather than reversed — over-crediting one member is a far smaller
+                // harm than clawing back a credit that was correctly earned.
+                console.error('[profile/complete] REFERRAL_CREDIT_MARK_FAILED', JSON.stringify({
+                  referrerId,
+                  referralId: referralRow.id,
+                  code: (markError as any)?.code ?? null,
+                  message: markError.message,
+                }))
+              } else {
+                console.log('[profile/complete] referral credit awarded', {
+                  referrerId,
+                  referralId: referralRow.id,
+                  userId: user.id,
+                  bucket: 'premium_credits',
+                })
+              }
+            }
           }
         }
       }
