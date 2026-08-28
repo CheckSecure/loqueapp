@@ -28,7 +28,7 @@ export const PLANS = {
     annual: process.env.STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID!,
     monthlyAmount: 49,
     annualAmount: 470,
-    credits: 15,
+    credits: 10,
     introductions: '4–6 per week',
   },
   executive: {
@@ -37,7 +37,7 @@ export const PLANS = {
     annual: process.env.STRIPE_EXECUTIVE_ANNUAL_PRICE_ID!,
     monthlyAmount: 99,
     annualAmount: 990,
-    credits: 30,
+    credits: 20,
     introductions: '6–10 per week',
   },
 } as const

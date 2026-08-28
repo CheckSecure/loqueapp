@@ -450,8 +450,10 @@ When `is_founding_member = true` and not expired, `lib/tier-override.ts` resolve
 
 **What founding members get** (via the override + tier-aware code paths already in the system):
 
-- 30 credits/month (vs 3 free / 15 pro)
-- Higher daily credit cap (60)
+- 15 credits/month (vs 3 free / 10 pro / 20 executive), per `tier_included_credits` in migration 053
+- Combined credit cap of 50 (included + purchased + active reservations), enforced by
+  `tg_enforce_credit_capacity` in migration 089. Included credits separately stop accruing at 20.
+  This is a holdings cap, not a daily cap, and it is the same 50 for every tier.
 - 5 active intro slots (same as professional)
 - Auto-eligible for opportunities (per `lib/opportunities/eligibility.ts`)
 - Tier-weighted scoring at 0.7 (similar to pro)
