@@ -836,7 +836,16 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number, a
     !!u.full_name && !!u.role_type && parseExpertise(u.expertise).length > 0
   // HARD + same-company are always excluded; SOFT is excluded unless the exhaustion
   // safety valve engages for this member (fresh pool below the configured threshold).
-  const base = allUsers.filter((u: any) => !hardExcluded.has(u.id) && !isSameCompany(newUserProfile, u) && dataValid(u))
+  // SPLIT INTO OBSERVABLE STAGES. Semantically identical to the single combined filter this
+  // replaces (AND is commutative) — separated only so the diagnostic can report WHICH stage cuts
+  // the pool. A zero-result generation was traced to ranked:2 out of 115 eligible members, and the
+  // combined filter could not say why.
+  const afterHardExcluded = allUsers.filter((u: any) => !hardExcluded.has(u.id))
+  const afterSameCompany = afterHardExcluded.filter((u: any) => !isSameCompany(newUserProfile, u))
+  // dataValid = full_name AND role_type AND at least one parsed expertise entry. The expertise
+  // requirement is the strict one: a member who never filled it in is invisible to EVERY other
+  // member's candidate pool, in both directions.
+  const base = afterSameCompany.filter((u: any) => dataValid(u))
   const afterSoft = base.filter((u: any) => !softExcluded.has(u.id))
   const threshold = exhaustionThreshold()
   const valveActive = threshold > 0 && afterSoft.length < threshold
@@ -860,6 +869,19 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number, a
   
   // Apply mentorship filtering
   const mentorshipFiltered = filtered.filter(c => !shouldFilterByMentorship(newUserProfile, c, userSeniorityLevel))
+  const rankerStages: RankerStages = {
+    eligible: allUsers.length,
+    hardExcludedCount: hardExcluded.size,
+    softExcludedCount: softExcluded.size,
+    afterHardExcluded: afterHardExcluded.length,
+    afterSameCompany: afterSameCompany.length,
+    afterDataValid: base.length,
+    afterSoftExcluded: afterSoft.length,
+    exhaustionValveActive: valveActive,
+    scored: scoredCandidates.length,
+    afterScoreFloor10: filtered.length,
+    afterMentorship: mentorshipFiltered.length,
+  }
 
   console.log('[generate-recommendations] After mentorship filter:', mentorshipFiltered.length)
 
@@ -933,7 +955,7 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number, a
     match_reason: generateIntroReason(newUserProfile, candidate),
   }))
 
-  return { candidates, newUserProfile, targetedRequest }
+  return { candidates, newUserProfile, targetedRequest, rankerStages }
 }
 
 // Re-exported from the queue service so existing importers keep resolving to the
@@ -1048,7 +1070,7 @@ export const WALK_LIMITS = { maxRpcCalls: 8, maxCandidateAttempts: 2, timeBudget
  *   transient_error      — a real DB/RPC exception or 'error' response prevented a conclusive result
  */
 export type GenerationOutcome =
-  | 'created' | 'noop_at_capacity' | 'empty_pool' | 'capacity' | 'already_related' | 'no_compatible_candidate' | 'ineligible' | 'transient_error'
+  | 'created' | 'noop_at_capacity' | 'empty_pool' | 'capacity' | 'already_related' | 'counterpart_owes_response' | 'no_compatible_candidate' | 'ineligible' | 'transient_error'
 
 /**
  * OBSERVATION, not telemetry. Returned only in the admin-gated response of
@@ -1060,7 +1082,24 @@ export type GenerationOutcome =
  * them. This shows exactly which candidates the walk tried, in order, what each returned, and
  * how many visible cards each held immediately BEFORE the walk started.
  */
+/** Pool size after each ranker filter, in order. Observation only. */
+export interface RankerStages {
+  eligible: number
+  hardExcludedCount: number
+  softExcludedCount: number
+  afterHardExcluded: number
+  afterSameCompany: number
+  /** full_name + role_type + non-empty expertise. Historically the sharpest cut. */
+  afterDataValid: number
+  afterSoftExcluded: number
+  exhaustionValveActive: boolean
+  scored: number
+  afterScoreFloor10: number
+  afterMentorship: number
+}
+
 export interface GenerationDiagnostics {
+  rankerStages?: RankerStages
   ranked: number
   alreadyRelated: number
   triable: number
@@ -1086,7 +1125,7 @@ export function retryableFor(outcome: GenerationOutcome): boolean {
     // 'already_related' is retryable for the same reason 'capacity' is: a self-clearing block. It
     // resolves as the member's open rows settle or the ranker surfaces candidates they have no
     // history with.
-    outcome === 'already_related' ||
+    outcome === 'already_related' || outcome === 'counterpart_owes_response' ||
     outcome === 'empty_pool' || outcome === 'no_compatible_candidate'
 }
 
@@ -1112,6 +1151,13 @@ export function classifyGenerationOutcome(
   // 'already_related' clears when the ranker offers someone new, and it means the budget was spent on
   // foregone conclusions (see the ALREADY-RELATED PREFILTER in generateReciprocalBatchForMember).
   if (finalOutcomes.length > 0 && finalOutcomes.every((o) => o === 'exists_active')) return 'already_related'
+  // 'unresolved' IS NOT CAPACITY EITHER. create_reciprocal_suggestion (085:750-754) returns it when
+  // count_unresolved_introductions(x) > 0 — one of the two members still OWES A RESPONSE on a
+  // 'suggested' card they have not acted on. Observed: both of a member's two candidates returned
+  // 'unresolved' while each held ONE visible card and a free slot, and the caller was told
+  // 'capacity'. The counterparts had room; they had homework. Different fact, different remedy:
+  // capacity clears when cards are consumed, this clears when the counterpart ACTS.
+  if (finalOutcomes.length > 0 && finalOutcomes.every((o) => o === 'unresolved')) return 'counterpart_owes_response'
   // 'unresolved' (081) joins the capacity family: a deterministic, self-clearing block. A walk in
   // which every candidate was refused for capacity or for owing a response is retryable — it
   // succeeds on its own once those members act. A MIX of exists_active and
@@ -1284,8 +1330,8 @@ export async function generateReciprocalBatchForMember(
     if (Date.now() >= deadlineAt || controller.signal.aborted) return finish('transient_error', 0, 0, 0)
 
     // Ranker + exposure use the SAME deadline-bound client → all their reads are cancellable.
-    const { candidates } = await rankCandidatesForUser(userId, RECIPROCAL_CANDIDATE_POOL, adminClient)
-    if (!candidates.length) return finish('empty_pool', 0, 0, 0)
+    const { candidates, rankerStages } = await rankCandidatesForUser(userId, RECIPROCAL_CANDIDATE_POOL, adminClient)
+    if (!candidates.length) return { ...finish('empty_pool', 0, 0, 0), diagnostics: { rankerStages, ranked: 0, alreadyRelated: 0, triable: 0, attempts: [] } }
 
     const exposure = await getActiveInboundExposure(adminClient, candidates.map((c: any) => c.id))
     const orderedAll = selectFairCounterparts(
@@ -1389,6 +1435,7 @@ export async function generateReciprocalBatchForMember(
     return {
       ...finish(outcome, walk.created, walk.considered, walk.rpcCalls),
       diagnostics: {
+        rankerStages,
         ranked: orderedAll.length,
         alreadyRelated: diagAlreadyRelated,
         triable: ordered.length,

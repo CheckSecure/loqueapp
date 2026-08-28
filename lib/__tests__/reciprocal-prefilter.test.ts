@@ -99,4 +99,41 @@ describe('already-related candidates do not consume the RPC budget', () => {
     const calls = SRC.match(/logReciprocalGeneration\([^)]*\)/g) ?? []
     for (const call of calls) expect(call).not.toMatch(/email|\.id\b|requester_id|target_user_id|pair_id|full_name|attempts/i)
   })
+
+  // ── 'unresolved' is not capacity. Observed: both candidates returned it while each held ONE
+  //    visible card and a free slot, and the caller was told 'capacity'.
+  it('all-unresolved reports counterpart_owes_response, NOT capacity', () => {
+    const o = classifyGenerationOutcome(['unresolved', 'unresolved'],
+      { createdCount: 0, candidatesEmpty: false, memberIneligible: false, timedOut: false })
+    expect(o).toBe('counterpart_owes_response')
+  })
+
+  it('a MIX of unresolved and capacity still reports capacity', () => {
+    expect(classifyGenerationOutcome(['unresolved', 'capacity'],
+      { createdCount: 0, candidatesEmpty: false, memberIneligible: false, timedOut: false })).toBe('capacity')
+  })
+
+  it('counterpart_owes_response is retryable — it clears when the counterpart acts', () => {
+    expect(retryableFor('counterpart_owes_response')).toBe(true)
+  })
+
+  // ── Ranker stages: the pool went 115 -> 2 and the combined filter could not say where. ──
+  it('the ranker reports a count after every filter stage', () => {
+    for (const k of ['eligible', 'afterHardExcluded', 'afterSameCompany', 'afterDataValid',
+                     'afterSoftExcluded', 'scored', 'afterScoreFloor10', 'afterMentorship'])
+      expect(code, k).toMatch(new RegExp(`${k}:`))
+  })
+
+  it('splitting the combined filter preserved its semantics (same predicates, same order)', () => {
+    const c = code
+    expect(c).toMatch(/afterHardExcluded = allUsers\.filter\(\(u: any\) => !hardExcluded\.has\(u\.id\)\)/)
+    expect(c).toMatch(/afterSameCompany = afterHardExcluded\.filter\(\(u: any\) => !isSameCompany\(newUserProfile, u\)\)/)
+    expect(c).toMatch(/base = afterSameCompany\.filter\(\(u: any\) => dataValid\(u\)\)/)
+    // and the combined form is gone, so the two cannot drift
+    expect(c).not.toMatch(/allUsers\.filter\(\(u: any\) => !hardExcluded\.has\(u\.id\) && !isSameCompany/)
+  })
+
+  it('empty_pool still carries the stages — that is exactly when they are needed', () => {
+    expect(code).toMatch(/finish\('empty_pool', 0, 0, 0\)[\s\S]{0,120}rankerStages/)
+  })
 })
