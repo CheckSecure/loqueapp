@@ -162,9 +162,34 @@ export async function runExpiryStage(
           outcomes['orphan_skipped_counterpart_live'] = (outcomes['orphan_skipped_counterpart_live'] ?? 0) + 1
           continue
         }
+
+        // NEVER SHOWN — 'queued' is the RESERVED tier. The card exists but has never been rendered
+        // to the counterpart, so this is not "they did not answer", it is "they were never asked".
+        //
+        // Closing it would expire an introduction the other member never saw AND tell the expresser
+        // "no response within 14 days", which is false about a card nobody was shown. The whole
+        // point of that copy was to assign no fault; auto-closing a queued counterpart would make
+        // it an untrue statement instead of an unfair one.
+        //
+        // These are HELD, not closed, and counted so the backlog is visible rather than silently
+        // absorbed. A queued row becomes visible only via public.promote_queued_rows, which is
+        // called ONLY from the counterpart's own actions (express-interest, accept-incoming,
+        // createIntroRequest, app/actions.ts) — there is no cron. A counterpart with nothing
+        // visible to act on therefore has no way to reach it, and this counter is how that backlog
+        // is noticed. Triage with supabase/repairs/backfill_orphaned_interest.sql section A.
+        if (counterpart && counterpart.status === 'queued') {
+          outcomes['orphan_held_counterpart_queued'] = (outcomes['orphan_held_counterpart_queued'] ?? 0) + 1
+          continue
+        }
+
         // Reachable states now: no counterpart row at all (never accepted), or a terminal one
         // (expired / passed / declined / rejected / archived / hidden). Both mean the question
         // can no longer be answered.
+        //
+        // This list was previously wrong: it omitted 'queued', so a never-shown card fell through
+        // to CLOSE. Seven production rows sat in exactly that state. If a new status is added to
+        // intro_requests, decide explicitly which branch it belongs in rather than letting it
+        // reach here by default.
 
         const { error: updErr } = await admin
           .from('intro_requests')

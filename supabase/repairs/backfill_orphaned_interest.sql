@@ -6,6 +6,11 @@
 -- itself; this exists so the 34 already-stuck rows clear on YOUR schedule, with the set
 -- inspected before anything moves.
 --
+-- VERDICTS: CLOSE (counterpart cannot answer) · SKIP (matched / mutual / still answerable) ·
+-- HOLD (counterpart's row is 'queued' — the card was NEVER SHOWN to them, so closing it would
+-- expire an introduction they never saw and tell the expresser "no response within 14 days",
+-- which would be false. Held here and in the worker; see the promotion backlog note below.)
+--
 -- SECTION A is read-only and shows exactly what would change. SECTION B is gated:
 -- it does nothing until v_apply is edited to true.
 --
@@ -38,6 +43,9 @@ SELECT pe.full_name AS expresser, pc.full_name AS counterpart,
          WHEN c.has_match                                                    THEN 'SKIP — matched'
          WHEN c.counterpart_status IN ('approved','accepted','pending')      THEN 'SKIP — mutual, finalization owns it'
          WHEN c.counterpart_status = 'suggested'                             THEN 'SKIP — counterpart can still answer'
+         -- 'queued' is the RESERVED tier: the card exists but has NEVER been shown. That is not
+         -- "they did not answer", it is "they were never asked", so it is held, never closed.
+         WHEN c.counterpart_status = 'queued'                                THEN 'HOLD — counterpart never shown (queued)'
          ELSE 'CLOSE — counterpart cannot answer'
        END AS action
 FROM cand c
@@ -65,10 +73,12 @@ BEGIN
       AND NOT EXISTS (SELECT 1 FROM public.matches m
                        WHERE (m.user_a_id = ir.requester_id AND m.user_b_id = ir.target_user_id)
                           OR (m.user_b_id = ir.requester_id AND m.user_a_id = ir.target_user_id))
+      -- 'queued' is included here so a NEVER-SHOWN card is never closed by the backfill either.
+      -- Section A reports these as HOLD; the worker counts them as orphan_held_counterpart_queued.
       AND NOT EXISTS (SELECT 1 FROM public.intro_requests c
                        WHERE c.requester_id = ir.target_user_id
                          AND c.target_user_id = ir.requester_id
-                         AND c.status IN ('approved','accepted','pending','suggested'))
+                         AND c.status IN ('approved','accepted','pending','suggested','queued'))
   )
   UPDATE public.intro_requests t
      SET status = 'expired', expired_at = now(), updated_at = now()

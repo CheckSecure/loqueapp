@@ -49,6 +49,35 @@ describe('orphaned one-sided interest is closable', () => {
     expect(code(WORKER)).toMatch(/orphan_skipped_counterpart_live/)
   })
 
+  // ── The status that was missed the first time. ──
+  it("HOLDS a 'queued' counterpart — never shown is not the same as never answered", () => {
+    const c = code(WORKER)
+    expect(c).toMatch(/counterpart\.status === 'queued'/)
+    expect(c).toMatch(/orphan_held_counterpart_queued/)
+    // The queued branch must come BEFORE the close, or it is unreachable. Scoped to the ORPHAN
+    // stage: the legacy branch earlier in the file also writes status:'expired', and an unscoped
+    // indexOf would compare against that instead.
+    const stage = c.slice(c.indexOf('orphan_read_failed'))
+    expect(stage.indexOf("counterpart.status === 'queued'"))
+      .toBeLessThan(stage.indexOf("status: 'expired'"))
+  })
+
+  it("the backfill HOLDS 'queued' in section A and excludes it in section B", () => {
+    expect(BACKFILL).toMatch(/HOLD — counterpart never shown \(queued\)/)
+    // Section B's guard must list 'queued' too, or the SQL would close what the worker holds.
+    const sqlOnly = BACKFILL.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')
+    expect(sqlOnly).toMatch(/'approved','accepted','pending','suggested','queued'/)
+  })
+
+  it('the worker and the backfill agree on what is closable', () => {
+    // Both must hold: matched, mutual, still-answerable, never-shown. A divergence means the cron
+    // would close rows the operator was told would be held.
+    const c = code(WORKER)
+    for (const guard of ['orphan_skipped_matched', 'orphan_skipped_mutual',
+                         'orphan_skipped_counterpart_live', 'orphan_held_counterpart_queued'])
+      expect(c, guard).toMatch(new RegExp(guard))
+  })
+
   it('re-checks status on write, so a row that changed underneath is not moved', () => {
     expect(code(WORKER)).toMatch(/\.eq\('id', row\.id\)[\s\S]{0,120}\.eq\('status', 'approved'\)/)
   })
