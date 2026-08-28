@@ -142,7 +142,6 @@ describe('sibling routes no longer depend on the forbidden read', () => {
   const cases: Array<[string, RegExp]> = [
     ['app/api/stripe/checkout/route.ts', /readProfileById/],
     ['app/api/stripe/portal/route.ts', /readProfileById/],
-    ['app/api/billing/check-credit-purchase/route.ts', /readProfileById/],
     ['app/api/intro-requests/express-interest/route.ts', /readProfileById/],
     ['app/actions.ts', /readProfileById|readProfilesByIds/],
     ['app/dashboard/admin/members/page.tsx', /createAdminClient\(\)/],

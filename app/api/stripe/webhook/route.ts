@@ -3,12 +3,13 @@ import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Stripe from 'stripe'
 import { fulfillCreditPurchase, realFulfillDeps, type SessionLike } from '@/lib/stripe/fulfillCreditPurchase'
+import { bindCreditReservation, isUuid, releaseCreditReservation } from '@/lib/stripe/creditReservations'
 
 /**
  * CANONICAL Stripe webhook (https://www.andrel.app/api/stripe/webhook).
  *
  * Credit purchases are fulfilled by the shared, atomic, idempotent `fulfillCreditPurchase` (server-side
- * pack resolution + migration-052 grant_credit_pack RPC). Its idempotency marker (credit_grants) and
+ * pack resolution + migration-089 reserved grant RPC). Its idempotency marker (credit_grants) and
  * the balance mutation commit in ONE transaction, so a failed grant stays RETRYABLE — it is never
  * marked processed before the grant is durable. Subscription/invoice events (which are naturally
  * idempotent top-up/downgrade operations) keep the INSERT-first `stripe_events` guard.
@@ -33,6 +34,36 @@ export async function POST(req: NextRequest) {
   }
 
   const adminClient = createAdminClient()
+
+  // Release capacity when Stripe expires an unpaid credit checkout. Binding first also repairs the
+  // narrow crash window where Stripe created the session but the checkout route never persisted its
+  // session id. Invalid or conflicting metadata is terminal; transient database failures return 500
+  // so Stripe retries the signed event.
+  if (event.type === 'checkout.session.expired') {
+    const session = event.data.object as unknown as SessionLike
+    const reservationId = session.metadata?.credit_reservation_id
+    const userId = session.metadata?.supabase_user_id
+    if (!reservationId || !userId || !isUuid(reservationId)) {
+      return NextResponse.json({ received: true })
+    }
+    try {
+      const expiresAt = new Date((session.expires_at ?? Math.floor(Date.now() / 1000)) * 1000)
+      const bind = await bindCreditReservation(adminClient, {
+        reservationId, userId, sessionId: session.id, expiresAt,
+      })
+      if (bind === 'conflict') {
+        console.log('[webhook]', JSON.stringify({ event: 'credit_reservation_expired', outcome: 'conflict' }))
+        return NextResponse.json({ received: true })
+      }
+      const released = await releaseCreditReservation(adminClient, {
+        reservationId, sessionId: session.id, reason: 'stripe_expired',
+      })
+      console.log('[webhook]', JSON.stringify({ event: 'credit_reservation_expired', outcome: released }))
+      return NextResponse.json({ received: true })
+    } catch {
+      return NextResponse.json({ error: 'retry' }, { status: 500 })
+    }
+  }
 
   // CREDIT PURCHASES: fulfilled atomically + idempotently via credit_grants (NOT the stripe_events
   // marker), so a partial/DB failure returns a retryable 500 with nothing recorded → Stripe retries →
@@ -153,4 +184,3 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ received: true })
 }
-

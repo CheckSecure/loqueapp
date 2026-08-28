@@ -34,7 +34,9 @@ function harness(cfg: Cfg = {}) {
     retrieveSession: async (id) => { calls.push({ name: 'retrieveSession', args: id }); if (cfg.retrieveThrows) throw new Error('x'); return cfg.session ?? jesseSession({ id }) },
     listLineItems: async (id) => { calls.push({ name: 'listLineItems', args: id }); if (cfg.lineItemsThrows) throw new Error('x'); return cfg.lineItems ?? [{ priceId: 'price_25', quantity: 1 }] },
     loadProfileById: async (uid) => { calls.push({ name: 'loadProfileById', args: uid }); return cfg.profile === undefined ? { id: uid, stripe_customer_id: CUS } : cfg.profile },
-    grant: async (a) => { calls.push({ name: 'grant', args: a }); if (cfg.grantThrows) throw new Error('db'); return cfg.grantResult ?? 'granted' },
+    bindReservation: async (a) => { calls.push({ name: 'bindReservation', args: a }); return 'bound' },
+    grantReserved: async (a) => { calls.push({ name: 'grantReserved', args: a }); if (cfg.grantThrows) throw new Error('db'); return cfg.grantResult ?? 'granted' },
+    grantLegacy: async (a) => { calls.push({ name: 'grant', args: a }); if (cfg.grantThrows) throw new Error('db'); return cfg.grantResult ?? 'granted' },
     creditPacks: PACKS,
     log: (event, fields) => logs.push({ event, fields }),
   }

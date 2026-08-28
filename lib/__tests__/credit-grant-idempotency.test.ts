@@ -8,7 +8,7 @@ import { fulfillCreditPurchase, type FulfillDeps, type SessionLike } from '@/lib
 function ledger() {
   const grants: Array<{ event: string; session: string }> = []
   const bal = new Map<string, { free: number | null; premium: number | null; lifetime: number | null }>()
-  const grant: FulfillDeps['grant'] = async (a) => {
+  const grant: FulfillDeps['grantLegacy'] = async (a) => {
     if (grants.some((g) => g.event === a.eventId)) return 'already_processed'   // event replay
     if (grants.some((g) => g.session === a.sessionId)) return 'already_processed' // session under any event
     grants.push({ event: a.eventId, session: a.sessionId })
@@ -34,7 +34,9 @@ function deps(l: ReturnType<typeof ledger>): FulfillDeps {
     retrieveSession: async () => session,
     listLineItems: async () => [{ priceId: 'price_25', quantity: 1 }],
     loadProfileById: async (uid) => ({ id: uid, stripe_customer_id: CUS }),
-    grant: l.grant,
+    bindReservation: async () => 'bound',
+    grantReserved: l.grant,
+    grantLegacy: l.grant,
     creditPacks: [{ priceId: 'price_25', credits: 25, amount: 99 }],
     log: () => {},
   }
@@ -79,7 +81,7 @@ describe('recovery ↔ webhook can never double-grant (session uniqueness is the
   it('a later successful retry after an early failure grants exactly once (no poisoning)', async () => {
     const l = ledger()
     // First attempt: grant throws (transient) → error/retryable, nothing recorded.
-    const flaky: FulfillDeps = { ...deps(l), grant: async () => { throw new Error('db down') } }
+    const flaky: FulfillDeps = { ...deps(l), grantLegacy: async () => { throw new Error('db down') } }
     expect((await fulfillCreditPurchase(flaky, { eventId: REAL_EVENT, session })).outcome).toBe('error')
     expect(l.grants).toHaveLength(0) // not poisoned — no ledger row
     // Retry succeeds.

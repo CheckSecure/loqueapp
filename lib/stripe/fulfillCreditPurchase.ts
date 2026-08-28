@@ -1,4 +1,5 @@
 import { CREDIT_PACKS } from '@/lib/stripe'
+import { isUuid } from '@/lib/stripe/creditReservations'
 
 /**
  * Canonical, idempotent credit-pack fulfillment — the SINGLE source of truth for turning a paid
@@ -10,10 +11,9 @@ import { CREDIT_PACKS } from '@/lib/stripe'
  * consistency check (a shared $ amount can never by itself select a pack — the Price ID is
  * authoritative). Ownership is proven: the metadata `supabase_user_id` must own the session customer.
  *
- * IDEMPOTENCY/ATOMICITY is delegated to the `grant` dep (the migration-052 `grant_credit_pack` RPC),
- * which records the grant marker and mutates the balance in ONE transaction, keyed by BOTH the Stripe
- * event id and the session id — so an event replay, a session re-fulfilled under a new event, and
- * concurrent deliveries all grant exactly once, and a partial DB failure stays retryable.
+ * New checkouts are bound to a migration-089 capacity reservation and granted through
+ * `grant_reserved_credit_pack`, which consumes the reservation, records the grant marker, and mutates
+ * the balance in one transaction. A narrow legacy fallback preserves already-open pre-089 sessions.
  */
 
 export type FulfillOutcome =
@@ -33,6 +33,7 @@ export interface SessionLike {
   payment_status: string | null
   currency: string | null
   amount_total: number | null
+  expires_at?: number | null
   customer: string | null
   metadata: Record<string, string> | null
 }
@@ -44,8 +45,10 @@ export interface FulfillDeps {
   listLineItems: (sessionId: string) => Promise<Array<{ priceId: string | null; quantity: number | null }>>
   /** profile lookup by the metadata user id (to prove customer ownership). */
   loadProfileById: (userId: string) => Promise<{ id: string; stripe_customer_id: string | null } | null>
-  /** atomic idempotent grant RPC → 'granted' | 'already_processed'. Throws on a transient DB error. */
-  grant: (args: { eventId: string; sessionId: string; userId: string; priceId: string; credits: number; amountTotal: number; currency: string }) => Promise<'granted' | 'already_processed'>
+  bindReservation: (args: { reservationId: string; userId: string; sessionId: string; expiresAt: Date }) => Promise<'bound' | 'already_bound' | 'conflict'>
+  grantReserved: (args: { reservationId: string; eventId: string; sessionId: string; userId: string; priceId: string; credits: number; amountTotal: number; currency: string }) => Promise<'granted' | 'already_processed' | 'conflict'>
+  /** Transitional path solely for Stripe sessions created before reservation metadata shipped. */
+  grantLegacy: (args: { eventId: string; sessionId: string; userId: string; priceId: string; credits: number; amountTotal: number; currency: string }) => Promise<'granted' | 'already_processed'>
   /** server-controlled pack config (priceId → credits + expected USD amount). */
   creditPacks: ReadonlyArray<{ priceId?: string; credits: number; amount: number }>
   /** privacy-safe log (event + coarse fields ONLY — never customer/user id, email, amount, or session). */
@@ -104,13 +107,27 @@ export async function fulfillCreditPurchase(
   if ((session.currency ?? '').toLowerCase() !== EXPECTED_CURRENCY) return done('conflict', false, 'currency_mismatch')
   if (session.amount_total !== pack.amount * 100) return done('conflict', false, 'amount_mismatch')
 
-  // 5) Atomic idempotent grant of EXACTLY pack.credits purchased credits (uncapped).
+  // 5) New sessions must prove and bind their pre-payment capacity reservation. Sessions without
+  // reservation metadata are treated as pre-089 legacy sessions so already-open checkouts remain
+  // fulfillable during the safe deployment transition.
+  const reservationId = session.metadata?.credit_reservation_id
+  const grantArgs = {
+    eventId: input.eventId, sessionId: session.id, userId, priceId,
+    credits: pack.credits, amountTotal: session.amount_total ?? pack.amount * 100, currency: EXPECTED_CURRENCY,
+  }
   let result: 'granted' | 'already_processed'
   try {
-    result = await deps.grant({
-      eventId: input.eventId, sessionId: session.id, userId, priceId,
-      credits: pack.credits, amountTotal: session.amount_total ?? pack.amount * 100, currency: EXPECTED_CURRENCY,
-    })
+    if (reservationId) {
+      if (!isUuid(reservationId)) return done('conflict', false, 'invalid_reservation')
+      const expiresAt = new Date((session.expires_at ?? Math.floor(Date.now() / 1000)) * 1000)
+      const bind = await deps.bindReservation({ reservationId, userId, sessionId: session.id, expiresAt })
+      if (bind === 'conflict') return done('conflict', false, 'reservation_conflict')
+      const reservedResult = await deps.grantReserved({ reservationId, ...grantArgs })
+      if (reservedResult === 'conflict') return done('conflict', false, 'reserved_grant_conflict')
+      result = reservedResult
+    } else {
+      result = await deps.grantLegacy(grantArgs)
+    }
   } catch {
     return done('error', true, 'grant_failed') // DB/RPC transient → nothing recorded → safe to retry
   }
@@ -129,12 +146,29 @@ export function realFulfillDeps(admin: any, stripe: any): FulfillDeps {
       const { data } = await admin.from('profiles').select('id, stripe_customer_id').eq('id', uid).maybeSingle()
       return data ?? null
     },
-    grant: async (a) => {
+    bindReservation: async (a) => {
+      const { data, error } = await admin.rpc('bind_credit_purchase_reservation', {
+        p_reservation_id: a.reservationId, p_user_id: a.userId, p_session_id: a.sessionId,
+        p_expires_at: a.expiresAt.toISOString(),
+      })
+      if (error) throw new Error('bind_rpc_failed')
+      return data as 'bound' | 'already_bound' | 'conflict'
+    },
+    grantReserved: async (a) => {
+      const { data, error } = await admin.rpc('grant_reserved_credit_pack', {
+        p_reservation_id: a.reservationId,
+        p_event_id: a.eventId, p_session_id: a.sessionId, p_user_id: a.userId, p_price_id: a.priceId,
+        p_credits: a.credits, p_amount_total: a.amountTotal, p_currency: a.currency,
+      })
+      if (error) throw new Error('reserved_grant_rpc_failed')
+      return data as 'granted' | 'already_processed' | 'conflict'
+    },
+    grantLegacy: async (a) => {
       const { data, error } = await admin.rpc('grant_credit_pack', {
         p_event_id: a.eventId, p_session_id: a.sessionId, p_user_id: a.userId, p_price_id: a.priceId,
         p_credits: a.credits, p_amount_total: a.amountTotal, p_currency: a.currency,
       })
-      if (error) throw new Error('grant_rpc_failed')
+      if (error) throw new Error('legacy_grant_rpc_failed')
       return (data as 'granted' | 'already_processed')
     },
     creditPacks: CREDIT_PACKS,

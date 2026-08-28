@@ -82,7 +82,7 @@ const TIER_VALUE: Record<string, string> = {
 const FOUNDING_BENEFITS = [
   'Founding Member status',
   '15 credits per month',
-  'Higher credit balance (up to 60)',
+  'Up to 50 total credits with purchased packs',
   'Priority matching',
   'Create hiring and business development opportunities',
   'Early access to founding community benefits',
@@ -388,11 +388,11 @@ function BillingInner() {
               </li>
               <li className="flex items-start gap-2.5 text-sm text-slate-600 leading-relaxed">
                 <Check className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
-                <span>Your membership includes monthly introduction credits. Unused membership credits roll over up to your plan&apos;s maximum balance.</span>
+                <span>Your membership includes monthly introduction credits. Unused included credits roll over up to 20.</span>
               </li>
               <li className="flex items-start gap-2.5 text-sm text-slate-600 leading-relaxed">
                 <Check className="w-4 h-4 text-brand-gold flex-shrink-0 mt-0.5" />
-                <span>Purchased credit packs do not expire and are added on top of your membership credits. Concierge requests and opportunity responses currently do not use introduction credits.</span>
+                <span>Purchased credit packs do not expire and can bring your combined balance up to 50 credits. Concierge requests and opportunity responses currently do not use introduction credits.</span>
               </li>
             </ul>
           </div>

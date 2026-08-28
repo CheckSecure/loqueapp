@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const constructEvent = vi.fn()
 const fulfill = vi.fn()
+const bindReservation = vi.fn()
+const releaseReservation = vi.fn()
 const eventsInserted: any[] = []
 
 vi.mock('@/lib/stripe', () => ({
@@ -10,6 +12,11 @@ vi.mock('@/lib/stripe', () => ({
 vi.mock('@/lib/stripe/fulfillCreditPurchase', () => ({
   fulfillCreditPurchase: (...a: any[]) => fulfill(...a),
   realFulfillDeps: () => ({}),
+}))
+vi.mock('@/lib/stripe/creditReservations', () => ({
+  isUuid: (v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v),
+  bindCreditReservation: (...a: any[]) => bindReservation(...a),
+  releaseCreditReservation: (...a: any[]) => releaseReservation(...a),
 }))
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
@@ -29,7 +36,11 @@ const req = (headers: Record<string, string> = {}) => ({
   headers: new Headers({ 'stripe-signature': 'sig', ...headers }),
 }) as any
 
-beforeEach(() => { constructEvent.mockReset(); fulfill.mockReset(); eventsInserted.length = 0 })
+beforeEach(() => {
+  constructEvent.mockReset(); fulfill.mockReset(); eventsInserted.length = 0
+  bindReservation.mockReset().mockResolvedValue('bound')
+  releaseReservation.mockReset().mockResolvedValue('released')
+})
 
 describe('canonical webhook — credit fulfillment path', () => {
   it('routes checkout.session.completed to fulfillCreditPurchase (NOT the stripe_events marker)', async () => {
@@ -66,6 +77,38 @@ describe('canonical webhook — credit fulfillment path', () => {
       const res = await POST(req())
       expect(res.status, outcome).toBe(200)
     }
+  })
+
+  it('an expired credit checkout binds the crash-window reservation before releasing capacity', async () => {
+    constructEvent.mockReturnValue({
+      id: 'evt_expired', type: 'checkout.session.expired', data: { object: {
+        id: 'cs_expired', expires_at: 1_800_000_000,
+        metadata: {
+          supabase_user_id: '1230d5b2-2f28-442a-bae0-1ba4f32cd7c4',
+          credit_reservation_id: '6f5a3028-ce18-4a25-96f9-d761066dfa19',
+        },
+      } },
+    })
+    const response = await POST(req())
+    expect(response.status).toBe(200)
+    expect(bindReservation).toHaveBeenCalledTimes(1)
+    expect(releaseReservation).toHaveBeenCalledTimes(1)
+    expect(bindReservation.mock.invocationCallOrder[0]).toBeLessThan(releaseReservation.mock.invocationCallOrder[0])
+    expect(releaseReservation.mock.calls[0][1]).toMatchObject({ sessionId: 'cs_expired', reason: 'stripe_expired' })
+    expect(eventsInserted).toEqual([])
+  })
+
+  it('a transient expiration-release failure returns 500 so Stripe retries', async () => {
+    constructEvent.mockReturnValue({
+      id: 'evt_expired', type: 'checkout.session.expired', data: { object: {
+        id: 'cs_expired', metadata: {
+          supabase_user_id: '1230d5b2-2f28-442a-bae0-1ba4f32cd7c4',
+          credit_reservation_id: '6f5a3028-ce18-4a25-96f9-d761066dfa19',
+        },
+      } },
+    })
+    releaseReservation.mockRejectedValue(new Error('db unavailable'))
+    expect((await POST(req())).status).toBe(500)
   })
 
   it('an invalid signature → 400, no fulfillment', async () => {

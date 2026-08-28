@@ -36,13 +36,8 @@ export function getMonthlyCredits(effectiveTier: string): number {
   return MONTHLY_CREDITS[effectiveTier] || 3
 }
 
-export function getCreditCap(effectiveTier: string): number {
-  const CREDIT_CAPS: Record<string, number> = {
-    free: 6,
-    professional: 20,
-    executive: 40,
-    founding: 60  // Higher cap for founding members
-  }
-  
-  return CREDIT_CAPS[effectiveTier] || 6
+export function getCreditCap(_effectiveTier: string): number {
+  // Combined holdings cap: included + purchased + active purchase reservations.
+  // Included credits separately stop accruing at 20; purchased credits never expire.
+  return 50
 }
