@@ -368,7 +368,7 @@ describe('bounded processing and privacy of the worker', () => {
     expect(EXPIRE).toMatch(/suggestedExpiry: exp/)
     // migration 085 added the unavailable-pair sweep to this same stage; its result is aggregate
     // counts only, and is returned alongside the existing ones
-    expect(WORKER).toMatch(/return \{ pairsProcessed, legacyExpired, orphanExpired, truncated, outcomes, unavailable \}/)
+    expect(WORKER).toMatch(/return \{ pairsProcessed, legacyExpired, orphanExpired, promotion, truncated, outcomes, unavailable \}/)
     expect(WORKER).toMatch(/unavailable: \{ processed: number; released: number; skipped: number; failed: number; truncated: boolean \}/)
     // No identity in any log line. Checked per line on code only: a greedy cross-line regex
     // would run from one console.error into unrelated text further down the file.

@@ -1,5 +1,21 @@
 import { expireIntroPair, EXPIRY_AGE_DAYS } from '@/lib/introductions/expiry'
 import { createNotificationSafe } from '@/lib/notifications'
+import { promoteIfResolved } from '@/lib/introductions/queue'
+import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
+
+/**
+ * BACKLOG CUTOFF for the promotion sweep — the instant the sweep shipped.
+ *
+ * A queued batch created BEFORE this is backlog: it has been hidden for weeks because nothing
+ * ever called promotion for a member with an empty screen. Revealing it is right; announcing it
+ * is not. A batch created AFTER is a normal new arrival and is announced.
+ *
+ * WHY A TIMESTAMP AND NOT A RUN COUNTER. "Silent on the first run, loud afterwards" is the
+ * intent, but a run counter implements it wrongly: the sweep is budget-bounded, so a large
+ * backlog spills into run 2 and those members would be announced simply because they sorted
+ * later. The cutoff makes silence a property of the CARD, not of which pass happened to reach it.
+ */
+const SWEEP_BACKLOG_CUTOFF = new Date('2026-08-28T00:00:00Z')
 
 /**
  * The bounded suggested-card expiry stage.
@@ -17,6 +33,8 @@ import { createNotificationSafe } from '@/lib/notifications'
 export interface ExpiryStageResult {
   pairsProcessed: number
   legacyExpired: number
+  /** Queued-batch promotion sweep. Aggregate counts only. */
+  promotion: { swept: number; promoted: number; announced: number; silentBacklog: number; failed: number; truncated: boolean } | null
   /** Non-pair 'approved' rows closed because the counterpart can no longer answer. */
   orphanExpired: number
   truncated: boolean
@@ -34,6 +52,7 @@ export async function runExpiryStage(
   const maxLegacy = opts.maxLegacy ?? 150
   const outcomes: Record<string, number> = {}
   let pairsProcessed = 0, legacyExpired = 0, orphanExpired = 0, truncated = false
+  let promotion: ExpiryStageResult['promotion'] = null
   const outOfTime = () => Date.now() - started > opts.budgetMs
   const cutoff = new Date(Date.now() - EXPIRY_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString()
 
@@ -230,6 +249,89 @@ export async function runExpiryStage(
     }
   }
 
+  // ── QUEUED PROMOTION SWEEP ────────────────────────────────────────────────────────────────
+  //
+  // THE DEADLOCK THIS BREAKS. A 'queued' row becomes visible only via
+  // public.promote_queued_rows, and every caller is one of the member's OWN actions
+  // (express-interest, accept-incoming, createIntroRequest, app/actions.ts). There was no cron.
+  // So a member holding ZERO visible cards has nothing to act on, nothing calls promotion, and
+  // their queued cards stay hidden — permanently. Coverage generation used to break the cycle by
+  // filling members with no visible card; WEEKLY_COVERAGE_GENERATION was turned off 2026-08-27,
+  // after which nothing did.
+  //
+  // This is PULL becoming PUSH. It adds no new capacity logic: promote_queued_rows already holds
+  // the member advisory lock, re-counts visible slots after completing the active batch, clamps to
+  // free slots, and is idempotent — so calling it for a member who is not promotable is a cheap
+  // no-op that returns a reason. The sweep only decides WHO to call it for.
+  //
+  // ── THE FIRST SWEEP IS SILENT, DELIBERATELY. DO NOT "FIX" THIS. ────────────────────────────
+  // Batches created before SWEEP_BACKLOG_CUTOFF are backlog — hidden for weeks through no act of
+  // the member's. Revealing them is right; announcing them is not: a burst of "new introductions"
+  // for cards that have been sitting invisible is a worse first impression than the silence it
+  // replaces, exactly as decided for supabase/repairs/backfill_orphaned_interest.sql. Batches
+  // created after the cutoff are ordinary new arrivals and ARE announced. If you are tempted to
+  // announce the backlog, that decision was already taken the other way — reopen it deliberately.
+  if (!truncated && !outOfTime()) {
+    let swept = 0, promoted = 0, announced = 0, silentBacklog = 0, failed = 0, sweepTruncated = false
+    const { data: queuedBatches, error: qErr } = await admin
+      .from('recommendation_batches')
+      .select('member_id, batch_id, created_at')
+      .eq('state', 'queued')
+      .order('created_at', { ascending: true })
+      .limit(maxLegacy)
+    if (qErr) {
+      console.error('[intro-expiry] promotion sweep read failed (class):', (qErr as any).code ?? 'unknown')
+      outcomes['promotion_read_failed'] = 1
+    } else {
+      const seen = new Set<string>()
+      for (const b of queuedBatches ?? []) {
+        if (outOfTime()) { sweepTruncated = true; truncated = true; break }
+        if (!b?.member_id || seen.has(b.member_id)) continue
+        seen.add(b.member_id)
+
+        // Eligibility is re-checked here, not assumed from the batch's existence: a member may have
+        // deactivated or paused matching since the batch was queued.
+        const { data: prof } = await admin
+          .from('profiles')
+          .select('account_status, profile_complete, is_test_account, is_admin, matching_paused')
+          .eq('id', b.member_id)
+          .maybeSingle()
+        if (!prof || prof.account_status !== 'active' || prof.profile_complete !== true
+            || prof.is_test_account === true || prof.is_admin === true || prof.matching_paused === true) {
+          outcomes['promotion_skipped_ineligible'] = (outcomes['promotion_skipped_ineligible'] ?? 0) + 1
+          continue
+        }
+
+        swept++
+        const promo = await promoteIfResolved(admin, b.member_id)
+        if (!promo.promoted || !promo.newActive) {
+          // Not an error: 'incomplete' (active batch unresolved), 'empty_queue', 'no_active' and
+          // 'inconsistent_batches' are all normal answers. Counted coarsely by reason.
+          outcomes[`promotion_noop_${promo.reason ?? 'unknown'}`] =
+            (outcomes[`promotion_noop_${promo.reason ?? 'unknown'}`] ?? 0) + 1
+          continue
+        }
+        promoted++
+
+        // Backlog vs new arrival — see the cutoff note above.
+        const queuedAt = b.created_at ? new Date(b.created_at) : null
+        if (queuedAt && queuedAt < SWEEP_BACKLOG_CUTOFF) {
+          silentBacklog++
+          continue
+        }
+        try {
+          await notifyNewVisibleBatch(b.member_id, promo.newActive)
+          announced++
+        } catch (e) {
+          // Non-fatal: the cards ARE visible. A missed announcement must not un-promote them.
+          console.error('[intro-expiry] promotion notify failed (non-fatal):', (e as any)?.message ?? 'unknown')
+          failed++
+        }
+      }
+    }
+    promotion = { swept, promoted, announced, silentBacklog, failed, truncated: sweepTruncated }
+  }
+
   // ── UNAVAILABLE-PAIR SWEEP (migration 085) ────────────────────────────────────────────────
   // Lives HERE, in the existing maintenance stage, rather than in a cron of its own: this stage is
   // already scheduled, already bounded, already budget-aware, and already owns "tidy up stale
@@ -264,5 +366,5 @@ export async function runExpiryStage(
     }
   }
 
-  return { pairsProcessed, legacyExpired, orphanExpired, truncated, outcomes, unavailable }
+  return { pairsProcessed, legacyExpired, orphanExpired, promotion, truncated, outcomes, unavailable }
 }

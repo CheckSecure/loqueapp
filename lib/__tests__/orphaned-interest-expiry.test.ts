@@ -120,4 +120,53 @@ describe('orphaned one-sided interest is closable', () => {
     expect(BACKFILL).toMatch(/v_apply constant boolean := false/)
     expect(BACKFILL).toMatch(/DRY RUN: v_apply is false/)
   })
+  // ── The promotion sweep (option a). ──
+  it('sweeps queued batches and calls the existing RPC — no new capacity logic', () => {
+    const c = code(WORKER)
+    expect(c).toMatch(/\.from\('recommendation_batches'\)[\s\S]{0,200}\.eq\('state', 'queued'\)/)
+    expect(c).toMatch(/promoteIfResolved\(admin, b\.member_id\)/)
+  })
+
+  it('re-checks eligibility rather than trusting the batch exists', () => {
+    const c = code(WORKER)
+    expect(c).toMatch(/promotion_skipped_ineligible/)
+    for (const f of ['account_status', 'profile_complete', 'is_test_account', 'is_admin', 'matching_paused'])
+      expect(c, f).toMatch(new RegExp(f))
+  })
+
+  it('the FIRST sweep is silent: backlog batches are promoted but not announced', () => {
+    const c = code(WORKER)
+    expect(c).toMatch(/SWEEP_BACKLOG_CUTOFF/)
+    expect(c).toMatch(/queuedAt < SWEEP_BACKLOG_CUTOFF/)
+    expect(c).toMatch(/silentBacklog\+\+/)
+    // The silent branch must SKIP the announcement, not merely count it. Scoped to the sweep
+    // stage: an unscoped indexOf('notifyNewVisibleBatch') finds the IMPORT at the top of the file.
+    const stage = c.slice(c.indexOf('promotion_read_failed'))
+    const idxSilent = stage.indexOf('silentBacklog++')
+    const idxNotify = stage.indexOf('notifyNewVisibleBatch')
+    expect(idxSilent).toBeGreaterThan(-1)
+    expect(idxNotify).toBeGreaterThan(-1)
+    expect(idxSilent).toBeLessThan(idxNotify)
+    expect(stage.slice(idxSilent, idxNotify)).toMatch(/continue/)
+  })
+
+  it('post-cutoff batches ARE announced', () => {
+    expect(code(WORKER)).toMatch(/notifyNewVisibleBatch\(b\.member_id, promo\.newActive\)/)
+  })
+
+  it('a failed announcement never un-promotes the cards', () => {
+    const c = code(WORKER)
+    expect(c).toMatch(/promotion notify failed \(non-fatal\)/)
+  })
+
+  it('the silent-first-sweep decision is recorded where someone would change it', () => {
+    expect(WORKER).toMatch(/THE FIRST SWEEP IS SILENT, DELIBERATELY\. DO NOT "FIX" THIS\./)
+    // and it explains WHY a run counter would be wrong, so the reasoning survives
+    expect(WORKER).toMatch(/WHY A TIMESTAMP AND NOT A RUN COUNTER/)
+  })
+
+  it('reports aggregate counts only', () => {
+    expect(WORKER).toMatch(/promotion: \{ swept: number; promoted: number; announced: number; silentBacklog: number; failed: number; truncated: boolean \}/)
+    expect(code(WORKER)).toMatch(/return \{ pairsProcessed, legacyExpired, orphanExpired, promotion, truncated, outcomes, unavailable \}/)
+  })
 })
