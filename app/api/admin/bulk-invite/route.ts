@@ -232,7 +232,7 @@ export async function POST(req: Request) {
       if (error || !ht) throw new Error(error?.message || 'generateLink failed')
       return { hashedToken: ht, userId: (data as any)?.user?.id ?? null }
     },
-    sendEmail: (a) => sendSecureInviteEmail({ to: a.to, toName: a.toName, link: a.link, idempotencyKey: a.idempotencyKey }),
+    sendEmail: (a) => sendSecureInviteEmail({ to: a.to, toName: a.toName, link: a.link, purpose: a.purpose, idempotencyKey: a.idempotencyKey }),
   })
 
   for (const { email, name } of ready_to_invite) {

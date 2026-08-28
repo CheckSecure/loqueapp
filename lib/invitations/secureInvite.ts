@@ -114,7 +114,10 @@ export interface SecureInviteDeps {
   revokeResumeToken?: (tokenId: string) => Promise<void>
   /** send the secure email with a stable idempotency key; NO token echoed. `uncertain` ⇒ a
    *  timeout/unknown outcome that must be retried with the SAME key (not a definite failure). */
-  sendEmail: (args: { to: string; toName: string; link: string; resumeLink?: string | null; idempotencyKey?: string }) => Promise<{ success: boolean; messageId?: string | null; errorClass?: string; uncertain?: boolean }>
+  // `purpose` is the SAME value used for the delivery claim, handed to the sender so the copy and
+  // the claim can never disagree about whether this person has been invited before. A caller that
+  // ignores it still compiles — but then an expired-invite resend reads as a first contact.
+  sendEmail: (args: { to: string; toName: string; link: string; resumeLink?: string | null; idempotencyKey?: string; purpose: 'first_invite' | 'access_resend' }) => Promise<{ success: boolean; messageId?: string | null; errorClass?: string; uncertain?: boolean }>
   markAccepted: (deliveryId: string | null, providerMessageId: string | null, authUserId: string | null) => Promise<void>
   markFailed: (deliveryId: string | null, errorClass: string) => Promise<void>
   siteUrl: string
@@ -242,6 +245,7 @@ export async function sendSecureInvite(deps: SecureInviteDeps, input: SecureInvi
 
   const send = await deps.sendEmail({
     to: email, toName: input.fullName || 'there', link, resumeLink: resume?.link ?? null, idempotencyKey,
+    purpose,
   })
 
   if (send.success) {

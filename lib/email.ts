@@ -500,19 +500,22 @@ export async function sendSecureInviteEmail(args: {
    */
   resumeLink?: string | null
   /**
-   * WHY THIS EMAIL IS BEING SENT. It decides opt-out treatment, and the two cases are genuinely
-   * different kinds of mail that happen to share a template:
+   * WHY THIS EMAIL IS BEING SENT. It drives BOTH the opt-out treatment and the copy, and the three
+   * cases are genuinely different kinds of mail that happen to share one template. The vocabulary
+   * mirrors lib/invitations/secureInvite.ts, which computes the same distinction for the delivery
+   * claim — one decision, not two that can drift apart.
    *
-   *   'invitation'       — cold outreach to someone who has not asked for it (send-invite,
-   *                        bulk-invite). Carries unsubscribe headers and honors suppressions.
+   *   'first_invite'     — cold outreach to someone who has never been invited. Unsubscribable.
+   *   'access_resend'    — this person WAS invited and the link expired before they used it.
+   *                        Unsubscribable, but the copy must not pretend to be a first contact.
    *   'account_recovery' — an admin corrected a member's address and Supabase minted a recovery
    *                        link (waitlist/change-email). TRANSACTIONAL: a member who unsubscribed
    *                        from invitations must still be able to get back into their account.
    *
-   * Defaults to 'invitation' — the safe default, since treating outreach as transactional is the
+   * Defaults to 'first_invite' — the safe default, since treating outreach as transactional is the
    * failure that gets a domain blocked.
    */
-  purpose?: 'invitation' | 'account_recovery'
+  purpose?: 'first_invite' | 'access_resend' | 'account_recovery'
   /** Stable key from the durable delivery claim id → passed to Resend so a retry with the same
    *  key is de-duplicated provider-side. */
   idempotencyKey?: string
@@ -524,21 +527,44 @@ export async function sendSecureInviteEmail(args: {
   const firstName = ((args.toName || '').trim().split(/\s+/)[0]) || 'there'
   const resume = (args.resumeLink || '').trim()
   const recommendedBy = (args.referrerName || '').trim()
-  const introLine = recommendedBy
-    ? `${escapeHtml(recommendedBy)} recommended you for Andrel. Use the secure link below to set your password and finish setting up your account.`
-    : `You've been invited to join Andrel. Use the secure link below to set your password and finish setting up your account.`
+  // CATCH-UP COPY. A person whose first invitation expired before they used it must not be sent
+  // something that reads as a first contact — to them it looks either like a duplicate they already
+  // ignored, or like the original never arrived. It names the gap and takes responsibility for the
+  // silence, which is also the honest answer to "why am I hearing from you now".
+  //
+  // NO DATE. The affected cohort was invited across several months, and a hardcoded month would be
+  // wrong for most of them. invited_at is deliberately not interpolated either: "we sent you an
+  // invitation" is true regardless of when, and a six-week-old date in the body invites the reader
+  // to wonder why it took six weeks rather than to click the link.
+  const isResend = args.purpose === 'access_resend'
+  const headline = isResend ? 'Your Andrel invitation' : "You're invited to Andrel"
+  const subject = isResend
+    ? 'Your Andrel invitation — a working link'
+    : 'Welcome to Andrel — set up your account'
+  const introLine = isResend
+    ? (recommendedBy
+        ? `${escapeHtml(recommendedBy)} recommended you for Andrel, and we sent you an invitation that expired before you had a chance to use it. We didn't follow up — that's on us.`
+        : `You were recommended for Andrel, and we sent you an invitation that expired before you had a chance to use it. We didn't follow up — that's on us.`)
+    : (recommendedBy
+        ? `${escapeHtml(recommendedBy)} recommended you for Andrel. Use the secure link below to set your password and finish setting up your account.`
+        : `You've been invited to join Andrel. Use the secure link below to set your password and finish setting up your account.`)
+  // Only the resend variant gets the second line; a first invite reads fine without it.
+  const secondLine = isResend
+    ? `<p style="font-size:16px; line-height:1.6;">Here's a fresh link, and this time a backup if it lapses again.</p>`
+    : ''
   try {
     const { data, error } = await sendManaged({
       // 'transactional' for the recovery path: see the `purpose` doc above.
       unsubscribeCategory: args.purpose === 'account_recovery' ? 'transactional' : 'invitations',
       from: 'Andrel <hello@andrel.app>',
       to: args.to,
-      subject: 'Welcome to Andrel — set up your account',
+      subject,
       html: `
         <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; color:#334155;">
-          <h2 style="color:#1B2850; margin-bottom:16px;">You're invited to Andrel</h2>
+          <h2 style="color:#1B2850; margin-bottom:16px;">${headline}</h2>
           <p style="font-size:16px; line-height:1.6;">Hi ${escapeHtml(firstName)},</p>
           <p style="font-size:16px; line-height:1.6;">${introLine}</p>
+          ${secondLine}
           <p style="margin:28px 0;">
             <a href="${args.link}" style="display:inline-block; background:#1B2850; color:#ffffff; text-decoration:none; font-size:16px; font-weight:600; padding:14px 32px; border-radius:10px;">Set up my account</a>
           </p>
@@ -557,9 +583,14 @@ export async function sendSecureInviteEmail(args: {
           </p>
           <p style="font-size:13px; color:#94a3b8; margin-top:28px;">— The Andrel Team</p>
         </div>`,
+      // The text part branches identically — a recipient reading text/plain must not see first-invite
+      // wording on a resend just because their client prefers plain text.
       text:
-        `You're invited to Andrel.\n\nHi ${firstName},\n\n` +
-        `${recommendedBy ? `${recommendedBy} recommended you for Andrel.` : `You've been invited to join Andrel.`} Use the secure link below to set your password and finish setting up your account:\n\n` +
+        `${headline}.\n\nHi ${firstName},\n\n` +
+        (isResend
+          ? `${recommendedBy ? `${recommendedBy} recommended you for Andrel, and we` : `You were recommended for Andrel, and we`} sent you an invitation that expired before you had a chance to use it. We didn't follow up — that's on us.\n\n` +
+            `Here's a fresh link, and this time a backup if it lapses again:\n\n`
+          : `${recommendedBy ? `${recommendedBy} recommended you for Andrel.` : `You've been invited to join Andrel.`} Use the secure link below to set your password and finish setting up your account:\n\n`) +
         `${args.link}\n\n` +
         `This link is personal to you — please don't forward it. This secure link expires for your protection.\n\n` +
         (resume

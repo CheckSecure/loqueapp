@@ -116,7 +116,10 @@ export async function POST(req: Request) {
           referrerName = (referralRow?.referrer as any)?.full_name ?? null
         }
       }
-      return sendSecureInviteEmail({ to: a.to, toName: a.toName, link: a.link, resumeLink: a.resumeLink ?? null, referrerName, idempotencyKey: a.idempotencyKey })
+      // a.purpose is secureInvite's own computation: 'access_resend' whenever this person already
+      // has an auth account from an earlier invitation. Passing it through means the per-row
+      // Resend in the admin panel gets the catch-up copy automatically.
+      return sendSecureInviteEmail({ to: a.to, toName: a.toName, link: a.link, resumeLink: a.resumeLink ?? null, referrerName, purpose: a.purpose, idempotencyKey: a.idempotencyKey })
     },
   }
 

@@ -15,15 +15,26 @@ import { mintBoundResumeLink, revokeResumeToken } from '@/lib/invitations/resume
  * email sender. A second hand-rolled copy of that orchestration is exactly how one of them would
  * eventually drift into sending twice, or into logging a link.
  *
- * DELIBERATELY OMITTED versus the admin route: founding-member metadata (only ever set on a first
- * invite, and this is never a first invite) and the referrer-consent copy (a resume email is a
- * transactional nudge to a person who already has an invitation, not an introduction to Andrel).
+ * DELIBERATELY OMITTED versus the admin route: founding-member metadata, which is only ever set on
+ * a first invite, and this is never a first invite.
+ *
+ * REFERRER NAME IS NOW PASSED, reversing an earlier decision recorded here. The original reasoning
+ * was that a resume email is a transactional nudge rather than an introduction to Andrel. That
+ * holds for a member-initiated resume, where the recipient just asked for the link. It does not
+ * hold for the catch-up campaign: those people were nominated, never got in, and heard nothing for
+ * weeks. "X recommended you" is the only thing in the message that explains why a stranger is
+ * emailing them, and dropping it makes the mail harder to place, not more transactional.
+ *
+ * The name remains CONSENT-GATED at the caller (migration 037 referrer_consent_to_share); this
+ * function never looks it up itself, so it cannot accidentally bypass that gate.
  *
  * The generated link is passed ONLY to sendEmail. It is never returned, logged or stored.
  */
 export async function sendSecureInviteForWaitlist(
   admin: any,
-  args: { waitlistId: string; email: string; fullName: string | null; siteUrl: string },
+  args: { waitlistId: string; email: string; fullName: string | null; siteUrl: string;
+          /** Consent-gated by the CALLER. Null → anonymous copy. */
+          referrerName?: string | null },
 ): Promise<SecureInviteResult> {
   const deps: SecureInviteDeps = {
     siteUrl: args.siteUrl,
@@ -52,7 +63,11 @@ export async function sendSecureInviteForWaitlist(
     revokeResumeToken: async (tokenId) => { await revokeResumeToken(admin, tokenId) },
     sendEmail: (a) => sendSecureInviteEmail({
       to: a.to, toName: a.toName, link: a.link, resumeLink: a.resumeLink ?? null,
-      referrerName: null, idempotencyKey: a.idempotencyKey,
+      referrerName: args.referrerName ?? null,
+      // secureInvite's own computation. For every caller of this function it resolves to
+      // 'access_resend' (an auth user already exists), which selects the catch-up copy.
+      purpose: a.purpose,
+      idempotencyKey: a.idempotencyKey,
     }),
   }
 
