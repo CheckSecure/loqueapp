@@ -136,4 +136,38 @@ describe('already-related candidates do not consume the RPC budget', () => {
   it('empty_pool still carries the stages — that is exactly when they are needed', () => {
     expect(code).toMatch(/finish\('empty_pool', 0, 0, 0\)[\s\S]{0,120}rankerStages/)
   })
+
+  // ── BATCH SIZE ≠ POOL SIZE. applyThrottling conflated them: it truncated to targetCount (2),
+  //    so a 99-candidate pool reached the walk as 2 and every downstream stage — the 50-candidate
+  //    ask, fair-selection, the 8-call budget, the already-related prefilter — operated on 2.
+  it('the ranker passes a POOL size distinct from the placement target', () => {
+    expect(code).toMatch(/const poolSize = maxCount \?\? recommendationCount/)
+    // targetCount stays recommendationCount (what the provider quota is denominated in);
+    // outputSize is what the caller asked for.
+    expect(code).toMatch(/applyThrottling\(\s*composed,\s*newUserProfile,\s*userTier,\s*recommendationCount,\s*poolSize,?\s*\)/)
+  })
+
+  it('outputSize defaults to targetCount, so one-sided callers are unchanged', () => {
+    expect(code).toMatch(/outputSize: number = targetCount/)
+  })
+
+  it('pool mode never truncates to targetCount', () => {
+    expect(code).toMatch(/const pool = candidates\.slice\(0, outputSize\)/)
+    // and it must not re-partition: concatenating peers+providers would reorder, not filter
+    expect(code).not.toMatch(/\[\.\.\.peers, \.\.\.businessSolutions\]/)
+  })
+
+  it('pool mode applies NO provider cap — the quota shapes placements, not the pool', () => {
+    const fn = code.slice(code.indexOf('function applyThrottling'))
+    const iPool = fn.indexOf('return pool')
+    const iQuota = fn.indexOf('maxBusinessSolutionCount(')
+    expect(iPool).toBeGreaterThan(-1)
+    expect(iQuota).toBeGreaterThan(-1)
+    expect(iPool).toBeLessThan(iQuota)   // pool mode returns BEFORE any quota arithmetic
+  })
+
+  it('interleaving is only reached on the rendered path', () => {
+    const fn = code.slice(code.indexOf('function applyThrottling'))
+    expect(fn.indexOf('return pool')).toBeLessThan(fn.indexOf('interleaveBusinessSolutions('))
+  })
 })

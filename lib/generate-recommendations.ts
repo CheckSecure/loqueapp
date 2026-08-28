@@ -348,11 +348,30 @@ function applyTargetedRequestBoost(
  * - Prevents clustering (distributes business solutions)
  * - Respects user preference and tier
  */
+/**
+ * BATCH SIZE AND POOL SIZE ARE DIFFERENT THINGS. This function used to conflate them.
+ *
+ * It was written for the ONE-SIDED model, where the ranker's output IS the final rendered list:
+ * pick `targetCount` items, cap how many of them are providers, interleave, done. Truncating to
+ * `targetCount` is correct there.
+ *
+ * The reciprocal path uses the same ranker to build a CANDIDATE POOL that a walk then attempts in
+ * order until enough pairs are CREATED. Truncating that to `targetCount` (=2) silently made every
+ * downstream stage a fiction: RECIPROCAL_CANDIDATE_POOL asks for 50, selectFairCounterparts
+ * spreads across a pool, WALK_LIMITS.maxRpcCalls=8 is sized to absorb ~6 skips, and the
+ * already-related prefilter filters a pool. All of them received 2. A member with 99 viable
+ * candidates had a walk that could try 2, and reported failure when both were blocked.
+ *
+ * `outputSize` therefore names the OUTPUT explicitly and defaults to `targetCount`, so the
+ * one-sided callers are unchanged. `targetCount` continues to mean "how many will actually be
+ * PLACED", which is what the provider quota is about.
+ */
 function applyThrottling(
   candidates: any[],
   userProfile: any,
   userTier: string,
-  targetCount: number
+  targetCount: number,
+  outputSize: number = targetCount,
 ): any[] {
   if (candidates.length === 0) return []
   
@@ -365,22 +384,58 @@ function applyThrottling(
   const businessSolutions = recipientIsProvider ? [] : candidates.filter(c => isBusinessSolutionProvider(c))
   const peers = recipientIsProvider ? candidates : candidates.filter(c => !isBusinessSolutionProvider(c))
 
-  // 2. Calculate max allowed business solutions (shared helper — see lib/matching/business-solutions.ts)
+  // 2. POOL MODE: the quota shapes FINAL PLACEMENTS, not the candidate pool.
+  //
+  // When outputSize > targetCount the output is a pool to be walked, and capping providers here
+  // would shape the pool by a quota denominated in placements — the same category error as
+  // truncating it. A pool of 99 whose peers number 4 would collapse to 6. Rank order is kept and
+  // the only bound is outputSize.
+  //
+  // The quota is not lost, it is simply not enforced HERE. Today it cannot bind anyway:
+  // maxBusinessSolutionCount is floored at targetCount (see the kill switch in
+  // lib/matching/business-solutions.ts), so it always permits at least as many providers as there
+  // are placements. If BUSINESS_SOLUTION_THROTTLE is ever re-enabled, enforcement belongs in the
+  // WALK — skip a provider candidate once the quota is spent — not in pool construction.
   const userOpenToSolutions = userProfile.open_to_business_solutions || false
+  const poolMode = outputSize !== targetCount
+  if (poolMode) {
+    // candidates, NOT [...peers, ...businessSolutions]: the incoming array is already in rank
+    // order, and concatenating the two partitions would silently re-sort every peer ahead of every
+    // provider — a reordering, dressed up as a filter.
+    const pool = candidates.slice(0, outputSize)
+    console.log('[throttling]', {
+      mode: 'pool', total_candidates: candidates.length, target_count: targetCount,
+      output_size: outputSize, business_solutions_available: businessSolutions.length,
+      peers_available: peers.length, returned: pool.length,
+      user_open_to_solutions: userOpenToSolutions, tier: userTier,
+    })
+    return pool
+  }
+
   const maxBusinessSolutions = maxBusinessSolutionCount(userOpenToSolutions, userTier, targetCount)
   
   // 4. Select business solutions up to cap
   const selectedBusinessSolutions = businessSolutions.slice(0, maxBusinessSolutions)
   
-  // 5. Fill remaining slots with peers
-  const remainingSlots = targetCount - selectedBusinessSolutions.length
+  // 5. Fill remaining slots with peers — up to outputSize, NOT targetCount. When the two are equal
+  //    (the one-sided callers) this is byte-identical to the previous behaviour.
+  const remainingSlots = Math.max(0, outputSize - selectedBusinessSolutions.length)
   const selectedPeers = peers.slice(0, remainingSlots)
   
-  // 6. Interleave to prevent clustering
+  // 6. Interleave to prevent clustering — ONLY when this output is a rendered list.
+  //
+  // Interleaving spreads providers evenly so a reader does not meet three vendors in a row. That is
+  // a presentation property. When the output is a POOL to be walked, the order is re-sorted
+  // downstream by selectFairCounterparts (score − bounded exposure penalty, re-applied after every
+  // pick), so the interleaved order is discarded entirely — the work is wasted, not harmful. It is
+  // skipped rather than left in place so that nobody later reads the interleave as a guarantee
+  // about what the walk attempts first, which it is not.
   const result = interleaveBusinessSolutions(selectedPeers, selectedBusinessSolutions)
   
   console.log('[throttling]', {
     total_candidates: candidates.length,
+    target_count: targetCount,
+    output_size: outputSize,
     business_solutions_available: businessSolutions.length,
     peers_available: peers.length,
     max_business_allowed: maxBusinessSolutions,
@@ -917,11 +972,17 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number, a
   // peers fall below the batch size.
   const composed = applyLawFirmCompositionPolicy(exposureBalanced, newUserProfile)
   // Apply throttling to prevent consultant/law firm clustering
+  // POOL SIZE, NOT BATCH SIZE. maxCount is what the CALLER asked for — 50 on the reciprocal path
+  // (RECIPROCAL_CANDIDATE_POOL), 5 for the concierge candidate list. recommendationCount stays as
+  // targetCount because that is what the provider quota is denominated in: how many will actually
+  // be placed. Passing recommendationCount as BOTH is what cut a 99-candidate pool to 2.
+  const poolSize = maxCount ?? recommendationCount
   const throttled = applyThrottling(
     composed,
     newUserProfile,
     userTier,
-    recommendationCount
+    recommendationCount,
+    poolSize,
   )
   
   // Apply junior user distribution control
