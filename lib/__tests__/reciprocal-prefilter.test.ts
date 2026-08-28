@@ -72,4 +72,31 @@ describe('already-related candidates do not consume the RPC budget', () => {
     expect(retryableFor('already_related')).toBe(true)
     expect(retryableFor('capacity')).toBe(true)
   })
+
+  // ── Observation, added after three refuted explanations for a zero-result generation. ──
+  it('walkCandidates records every attempt in order, both passes', () => {
+    const c = code
+    expect(c).toMatch(/attempts: Array<\{ id: string; outcome: ReciprocalOutcome \}>/)
+    // pass 1 and the retry pass must BOTH record, or a retried candidate vanishes from the trace
+    expect((c.match(/attempts\.push\(\{ id, outcome: o \}\)/g) ?? []).length).toBe(2)
+  })
+
+  it('the visible-card snapshot is taken BEFORE the walk', () => {
+    const fn = code.slice(code.indexOf('export async function generateReciprocalBatchForMember'))
+    expect(fn.indexOf('visibleBefore')).toBeLessThan(fn.indexOf('await walkCandidates('))
+  })
+
+  it('the snapshot never influences selection — it is read-only observation', () => {
+    const fn = code.slice(code.indexOf('export async function generateReciprocalBatchForMember'))
+    // `ordered` is assigned by the prefilter only; the snapshot must not filter it.
+    expect(fn).not.toMatch(/ordered = ordered\.filter\([^)]*visibleBefore/)
+  })
+
+  it('diagnostics are returned to the admin caller, never logged', () => {
+    const c = code
+    expect(c).toMatch(/diagnostics\?: GenerationDiagnostics/)
+    // The logging invariant stands: no logReciprocalGeneration call may carry an identifier.
+    const calls = SRC.match(/logReciprocalGeneration\([^)]*\)/g) ?? []
+    for (const call of calls) expect(call).not.toMatch(/email|\.id\b|requester_id|target_user_id|pair_id|full_name|attempts/i)
+  })
 })

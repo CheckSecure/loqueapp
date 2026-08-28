@@ -1004,7 +1004,7 @@ export async function generateBatchForMember(
 export async function generateOnboardingRecommendations(userId: string, maxCount?: number) {
   // Routed through the ONE reciprocal, concurrency-safe path (not the legacy one-sided enqueue).
   const result = await generateReciprocalBatchForMember(userId, 'onboarding', maxCount)
-  return { count: result.count, outcome: result.outcome, retryable: result.retryable }
+  return { count: result.count, outcome: result.outcome, retryable: result.retryable, diagnostics: result.diagnostics }
 }
 
 // Default number of reciprocal pairs to create per member batch.
@@ -1050,6 +1050,24 @@ export const WALK_LIMITS = { maxRpcCalls: 8, maxCandidateAttempts: 2, timeBudget
 export type GenerationOutcome =
   | 'created' | 'noop_at_capacity' | 'empty_pool' | 'capacity' | 'already_related' | 'no_compatible_candidate' | 'ineligible' | 'transient_error'
 
+/**
+ * OBSERVATION, not telemetry. Returned only in the admin-gated response of
+ * /api/admin/generate-recommendations-for-user — never logged, because
+ * logReciprocalGeneration is asserted to carry no identifiers and that invariant stands.
+ *
+ * It exists because three separate explanations for a zero-result generation were each refuted
+ * by the data, and the aggregate counters (created/considered/rpcCalls) could not distinguish
+ * them. This shows exactly which candidates the walk tried, in order, what each returned, and
+ * how many visible cards each held immediately BEFORE the walk started.
+ */
+export interface GenerationDiagnostics {
+  ranked: number
+  alreadyRelated: number
+  triable: number
+  /** In attempt order. visibleCardsBefore is a snapshot taken before the walk, not at RPC time. */
+  attempts: Array<{ order: number; id: string; outcome: string; visibleCardsBefore: number | null }>
+}
+
 export interface GenerationResult {
   count: number
   considered: number
@@ -1058,6 +1076,8 @@ export interface GenerationResult {
    *  SEPARATELY-AUTHORIZED, explicitly-targeted operation (no automatic global sweep exists). */
   retryable: boolean
   rpcCalls: number
+  /** Admin-gated observation only. Never logged — see GenerationDiagnostics. */
+  diagnostics?: GenerationDiagnostics
 }
 
 /** Whether an outcome is a candidate for a later, explicitly-targeted retry (never an auto-sweep). */
@@ -1113,7 +1133,12 @@ function nextCorrelationId(): string { genSeq = (genSeq + 1) % 1_000_000; return
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-export interface WalkResult { created: number; considered: number; rpcCalls: number; finalOutcomes: ReciprocalOutcome[]; timedOut: boolean; createdIds: string[] }
+export interface WalkResult {
+  created: number; considered: number; rpcCalls: number
+  finalOutcomes: ReciprocalOutcome[]; timedOut: boolean; createdIds: string[]
+  /** Every attempt IN ORDER, with what the RPC returned. Diagnostic only — see GenerationDiagnostics. */
+  attempts: Array<{ id: string; outcome: ReciprocalOutcome }>
+}
 
 /**
  * Bounded candidate traversal — the testable core. Walks the fair-ordered candidate ids ONCE,
@@ -1137,6 +1162,7 @@ export async function walkCandidates(
   const createdIds = new Set<string>()
   const transientIds: string[] = []
   let created = 0, considered = 0, rpcCalls = 0, timedOut = false
+  const attempts: Array<{ id: string; outcome: ReciprocalOutcome }> = []
   // Never START a DB op with no budget left (point 4): out of time OR the deadline signal fired.
   const outOfBudget = () => clock() >= deadline || signal?.aborted === true
 
@@ -1148,6 +1174,7 @@ export async function walkCandidates(
     considered++; rpcCalls++
     const o = await createFn(id)
     outcomeById.set(id, o)
+    attempts.push({ id, outcome: o })
     if (o === 'created') { created++; createdIds.add(id) }
     else if (o === 'error') transientIds.push(id)   // ONLY transient errors are retry-eligible
   }
@@ -1164,11 +1191,12 @@ export async function walkCandidates(
       rpcCalls++
       const o = await createFn(id)
       outcomeById.set(id, o) // final outcome supersedes the transient one (aborted RPC → exists_active on retry)
+      attempts.push({ id, outcome: o }) // appended, not replaced: the retry IS a separate attempt
       if (o === 'created') { created++; createdIds.add(id) }
     }
   }
 
-  return { created, considered, rpcCalls, finalOutcomes: Array.from(outcomeById.values()), timedOut, createdIds: Array.from(createdIds) }
+  return { created, considered, rpcCalls, finalOutcomes: Array.from(outcomeById.values()), timedOut, createdIds: Array.from(createdIds), attempts }
 }
 
 /**
@@ -1287,6 +1315,7 @@ export async function generateReciprocalBatchForMember(
     // loose) or a skipped viable candidate (too strict), so it is kept identical — and it fails
     // OPEN: a read error leaves the list unfiltered rather than blocking generation.
     let ordered = orderedAll
+    let diagAlreadyRelated = 0
     try {
       const cutoffIso = new Date(Date.now() - RECIPROCAL_COOLDOWN_DAYS * 86_400_000).toISOString()
       const { data: relatedRows, error: relErr } = await adminClient
@@ -1305,12 +1334,33 @@ export async function generateReciprocalBatchForMember(
         }
       }
       const filtered = orderedAll.filter((id) => !blocked.has(id))
+      diagAlreadyRelated = orderedAll.length - filtered.length
       // If EVERY ranked candidate is already related, keep the unfiltered list so the walk reports
       // exists_active honestly rather than the caller seeing an empty pool it cannot act on.
       ordered = filtered.length > 0 ? filtered : orderedAll
     } catch {
       // Class only, and non-fatal: a prefilter failure must never stop generation.
     }
+
+    // VISIBLE-CARD SNAPSHOT, taken BEFORE the walk so the diagnostic can say what each candidate
+    // held at the moment it was tried. Read-only and best-effort: a failure yields nulls in the
+    // diagnostic and changes nothing about selection. It is deliberately NOT used to filter — the
+    // authority is create_reciprocal_suggestion, and a capacity prefilter is a separate decision.
+    const visibleBefore = new Map<string, number>()
+    try {
+      const probe = ordered.slice(0, WALK_LIMITS.maxRpcCalls * 3)
+      if (probe.length > 0) {
+        const { data: vcRows } = await adminClient
+          .from('intro_requests')
+          .select('requester_id')
+          .eq('status', 'suggested')
+          .in('requester_id', probe)
+        for (const id of probe) visibleBefore.set(id, 0)
+        for (const r of (vcRows ?? []) as any[]) {
+          if (r?.requester_id) visibleBefore.set(r.requester_id, (visibleBefore.get(r.requester_id) ?? 0) + 1)
+        }
+      }
+    } catch { /* best effort — nulls in the diagnostic, no behaviour change */ }
 
     // Each RPC is issued through the deadline-bound client (cancelled at the deadline) and the walk
     // refuses to start one past the deadline. Remaining budget bounds the walk's own clock check.
@@ -1336,7 +1386,18 @@ export async function generateReciprocalBatchForMember(
         await drainForMember(drainClient, memberToAnnounce)
       }
     }
-    return finish(outcome, walk.created, walk.considered, walk.rpcCalls)
+    return {
+      ...finish(outcome, walk.created, walk.considered, walk.rpcCalls),
+      diagnostics: {
+        ranked: orderedAll.length,
+        alreadyRelated: diagAlreadyRelated,
+        triable: ordered.length,
+        attempts: walk.attempts.map((a, i) => ({
+          order: i + 1, id: a.id, outcome: a.outcome,
+          visibleCardsBefore: visibleBefore.has(a.id) ? (visibleBefore.get(a.id) as number) : null,
+        })),
+      },
+    }
   } catch {
     // Any exception incl. an AbortError from a cancelled op → conclusive uncertainty, never empty pool.
     return finish('transient_error', 0, 0, 0)
