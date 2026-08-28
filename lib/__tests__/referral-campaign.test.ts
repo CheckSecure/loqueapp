@@ -232,10 +232,15 @@ describe('campaign email copy, unsubscribe + consent gate (structural)', () => {
     expect(email).toMatch(/>\s*Recommend someone\s*</)
   })
 
-  it('the campaign email reuses the existing preference system for unsubscribe', () => {
-    expect(email).toContain('List-Unsubscribe')
-    expect(email).toContain('/dashboard/settings')       // manage-preferences destination
-    expect(email).toContain('Manage your email preferences')
+  it('the campaign email unsubscribes through the shared one-click sender', () => {
+    // This assertion USED to check for an inline List-Unsubscribe header and a hand-rolled footer
+    // pointing at /dashboard/settings. Both were removed deliberately: the header lacked
+    // List-Unsubscribe-Post, and a login-gated URL is unactionable for a gateway probe. The header
+    // and footer now come from sendManaged() for every send, and are covered in depth by
+    // lib/__tests__/unsubscribe-headers.test.ts. What this test still owns is that the campaign
+    // email did not opt OUT of that shared path.
+    expect(email).toMatch(/await sendManaged\(\{\s*\n\s*unsubscribeCategory: 'email_product_updates'/)
+    expect(email).not.toContain("'List-Unsubscribe':")   // no inline header may come back
   })
 
   it('the admin review interface surfaces the nominee LinkedIn profile when present', () => {

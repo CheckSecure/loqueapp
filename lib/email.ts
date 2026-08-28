@@ -4,6 +4,7 @@ import { buildRecommendationIntroEmail } from '@/lib/email/recommendationIntro'
 import { introReminderCopy } from '@/lib/notifications/engagement'
 import { formatMeetingTimes } from '@/lib/meetings/formatMeetingTime'
 import { buildNominationInviteEmail } from '@/lib/email/nominationInvite'
+import { unsubscribeHeaders, unsubscribeFooterHtml, unsubscribeFooterText, normalizeEmail } from '@/lib/email/unsubscribe'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -19,6 +20,12 @@ type NotifCategoryWithDigest = NotifCategory | 'email_daily_digest'
 async function isPrefEnabled(toEmail: string, category: NotifCategoryWithDigest): Promise<boolean> {
   try {
     const admin = createAdminClient()
+
+    // Email-keyed suppressions (091) are checked FIRST and independently of profiles. A one-click
+    // unsubscribe from a mail gateway may come from an address that has no account at all — an
+    // invitee or nominee — and the profile lookup below fails open for exactly those people.
+    if (await isEmailSuppressed(admin, toEmail, category)) return false
+
     const { data: profile } = await admin
       .from('profiles')
       .select('id')
@@ -44,6 +51,118 @@ async function isPrefEnabled(toEmail: string, category: NotifCategoryWithDigest)
   } catch {
     return true
   }
+}
+
+/**
+ * Categories used for unsubscribe purposes. The five notification_preferences columns, the digest,
+ * plus 'invitations' — the pre-account mail (invites, nominations, onboarding nudges, waitlist
+ * confirmation) that has NO preferences column because the recipient has no profile row yet. Those
+ * are precisely the messages hitting corporate gateways, so they are the ones that most need a
+ * working unsubscribe.
+ */
+type UnsubCategory = NotifCategoryWithDigest | 'invitations'
+
+/**
+ * TRANSACTIONAL — the explicit opt-out exemption.
+ *
+ * Mail a member cannot unsubscribe from because it is the direct, expected result of their own
+ * action, or because it carries account credentials. These get NO List-Unsubscribe headers, NO
+ * footer link, and are NEVER checked against suppressions: someone who unsubscribed from
+ * invitations must still be able to recover their account and receive the calendar file for a
+ * meeting they booked.
+ *
+ * Declared as a value rather than expressed by calling resend directly, so that every exemption is
+ * greppable in one place (`unsubscribeCategory: 'transactional'`) and the coverage lock in
+ * lib/__tests__/unsubscribe-headers.test.ts still sees the send.
+ *
+ * NOTE: password reset, magic link, and email verification are NOT here because they never reach
+ * this file — Supabase Auth sends them directly (supabase.auth.resend / signInWithOtp /
+ * resetPasswordForEmail). Nothing in lib/email.ts can attach a header to them.
+ */
+type SendCategory = UnsubCategory | 'transactional'
+
+/** Is this address suppressed for this category, or for everything? */
+async function isEmailSuppressed(
+  admin: ReturnType<typeof createAdminClient>,
+  toEmail: string,
+  category: UnsubCategory,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from('email_suppressions')
+    .select('category')
+    .eq('email', normalizeEmail(toEmail))
+    .in('category', [category, 'all'])
+    .limit(1)
+  // Fail OPEN, matching isPrefEnabled: a missing table (091 not yet applied) or a transient error
+  // must not silently stop all mail. The one-click write path logs its own failures loudly.
+  if (error) return false
+  return (data?.length ?? 0) > 0
+}
+
+/**
+ * Guard for the bulk sends that are NOT gated by isPrefEnabled — the pre-account mail, which has no
+ * notification_preferences row to consult because the recipient has no profile.
+ *
+ * Without this, a one-click unsubscribe on an invitation would write a suppression row that nothing
+ * ever reads, and we would keep mailing someone who asked us to stop. An unsubscribe link that does
+ * not unsubscribe is worse than no link at all, and it is the first thing a gateway re-tests.
+ */
+async function isSuppressed(toEmail: string, category: UnsubCategory): Promise<boolean> {
+  try {
+    return await isEmailSuppressed(createAdminClient(), toEmail, category)
+  } catch {
+    return false // fail open, matching isPrefEnabled
+  }
+}
+
+/**
+ * Every member-facing send goes through here.
+ *
+ * It does two things no individual call site should have to remember: attaches the RFC 8058
+ * one-click headers, and appends the visible footer link. Both are derived from the payload's own
+ * `to`, so a call site cannot attach the wrong recipient's token.
+ *
+ * The ONLY send that legitimately bypasses this is sendAdminAlertEmail, which is hardcoded to the
+ * operator's own address and is not list mail.
+ */
+async function sendManaged(
+  payload: {
+    from: string
+    to: string
+    subject: string
+    /** Optional: sendRecommendationIntroductionEmail is deliberately plain-text only. */
+    html?: string
+    /** Plain-text alternative, or the whole body when there is no html. */
+    text?: string
+    /** e.g. the calendar invite's .ics part. Passed through untouched. */
+    attachments?: unknown[]
+    headers?: Record<string, string>
+    unsubscribeCategory: SendCategory
+  },
+  // Second argument of resend.emails.send (idempotencyKey), passed straight through.
+  options?: Parameters<typeof resend.emails.send>[1],
+) {
+  const { unsubscribeCategory, headers, html, text, ...rest } = payload
+  const transactional = unsubscribeCategory === 'transactional'
+  return resend.emails.send(
+    {
+      ...(rest as any),
+      headers: {
+        ...(transactional ? {} : unsubscribeHeaders(rest.to, unsubscribeCategory)),
+        // Call-site headers win, so an existing Idempotency-Key can never be dropped by this wrapper.
+        ...(headers ?? {}),
+      },
+      // Each part gets a footer only if that part exists. A plain-text-only email must not
+      // acquire an html body, and vice versa.
+      ...(html !== undefined
+        ? { html: transactional ? html : html + unsubscribeFooterHtml(rest.to, unsubscribeCategory) }
+        : {}),
+      ...(text !== undefined
+        ? { text: transactional ? text : text + unsubscribeFooterText(rest.to, unsubscribeCategory) }
+        : {}),
+    } as any,
+    options,
+  )
 }
 
 export function escapeHtml(s: string | null | undefined): string {
@@ -72,7 +191,8 @@ export async function sendMatchCreatedEmail(
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
   const roleCompany = [matchRole, matchCompany].filter(Boolean).join(' at ')
   
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_new_introductions',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: 'New Connection on Andrel',
@@ -107,7 +227,8 @@ export async function sendNewMessageEmail(
   messagePreview: string
 ) {
   if (!await isPrefEnabled(toEmail, 'email_messages')) return
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_messages',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: `New message from ${fromName}`,
@@ -140,7 +261,8 @@ export async function sendNewBatchEmail(
   introCount: number
 ) {
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_new_introductions',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: 'New introductions waiting for you',
@@ -172,7 +294,8 @@ export async function sendNewBatchEmail(
  */
 export async function sendAdminBatchReadyEmail(toEmail: string, toName: string) {
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_new_introductions',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: 'You have new introductions waiting on Andrel',
@@ -206,7 +329,8 @@ export async function sendAdminBatchReadyEmail(toEmail: string, toName: string) 
  */
 export async function sendCurrentIntroductionsWaitingEmail(toEmail: string, toName: string) {
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_new_introductions',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: 'Your Andrel introductions are waiting',
@@ -246,7 +370,8 @@ export async function sendPendingIntrosReminderEmail(
 ): Promise<{ success: boolean; skipped?: boolean; error?: string }> {
   try {
     if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return { success: false, skipped: true }
-    await resend.emails.send({
+    await sendManaged({
+      unsubscribeCategory: 'email_new_introductions',
       from: 'Andrel <hello@andrel.app>',
       to: toEmail,
       subject: 'Action needed before your next introductions',
@@ -288,7 +413,8 @@ export async function sendIntroductionReminderEmail(
 ) {
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
   const copy = introReminderCopy(category, introCount)
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_new_introductions',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: copy.subject,
@@ -320,7 +446,8 @@ export async function sendWaitingResponseEmail(
   toName: string
 ) {
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_new_introductions',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: 'Someone is waiting on your response',
@@ -372,10 +499,28 @@ export async function sendSecureInviteEmail(args: {
    * which is the previous behaviour rather than a failure.
    */
   resumeLink?: string | null
+  /**
+   * WHY THIS EMAIL IS BEING SENT. It decides opt-out treatment, and the two cases are genuinely
+   * different kinds of mail that happen to share a template:
+   *
+   *   'invitation'       — cold outreach to someone who has not asked for it (send-invite,
+   *                        bulk-invite). Carries unsubscribe headers and honors suppressions.
+   *   'account_recovery' — an admin corrected a member's address and Supabase minted a recovery
+   *                        link (waitlist/change-email). TRANSACTIONAL: a member who unsubscribed
+   *                        from invitations must still be able to get back into their account.
+   *
+   * Defaults to 'invitation' — the safe default, since treating outreach as transactional is the
+   * failure that gets a domain blocked.
+   */
+  purpose?: 'invitation' | 'account_recovery'
   /** Stable key from the durable delivery claim id → passed to Resend so a retry with the same
    *  key is de-duplicated provider-side. */
   idempotencyKey?: string
 }): Promise<{ success: boolean; messageId?: string; errorClass?: string; uncertain?: boolean }> {
+  // Honors a one-click unsubscribe. This send is NOT gated by isPrefEnabled (no
+  // notification_preferences row is guaranteed to exist for this recipient), so without this
+  // check the suppression row written by /api/email/unsubscribe would never be read.
+  if (args.purpose !== 'account_recovery' && await isSuppressed(args.to, 'invitations')) return { success: true, skipped: true } as any
   const firstName = ((args.toName || '').trim().split(/\s+/)[0]) || 'there'
   const resume = (args.resumeLink || '').trim()
   const recommendedBy = (args.referrerName || '').trim()
@@ -383,7 +528,9 @@ export async function sendSecureInviteEmail(args: {
     ? `${escapeHtml(recommendedBy)} recommended you for Andrel. Use the secure link below to set your password and finish setting up your account.`
     : `You've been invited to join Andrel. Use the secure link below to set your password and finish setting up your account.`
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await sendManaged({
+      // 'transactional' for the recovery path: see the `purpose` doc above.
+      unsubscribeCategory: args.purpose === 'account_recovery' ? 'transactional' : 'invitations',
       from: 'Andrel <hello@andrel.app>',
       to: args.to,
       subject: 'Welcome to Andrel — set up your account',
@@ -462,12 +609,17 @@ export async function sendNominationInviteEmail(args: {
   intro?: string
   subject?: string
 }): Promise<{ success: boolean; messageId?: string; errorClass?: string; uncertain?: boolean }> {
+  // Honors a one-click unsubscribe. This send is NOT gated by isPrefEnabled (no
+  // notification_preferences row is guaranteed to exist for this recipient), so without this
+  // check the suppression row written by /api/email/unsubscribe would never be read.
+  if (await isSuppressed(args.to, 'invitations')) return { success: true, skipped: true } as any
   const nominatorName = args.nominatorName ?? 'James Kahrs'
   const intro = args.intro ?? 'a private network for senior leaders across legal, government affairs, business, and executive leadership'
   const subject = args.subject ?? 'James Kahrs invited you to join Andrel'
   const built = buildNominationInviteEmail({ nominatorName, intro, firstName: args.firstName, link: args.link, subject })
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await sendManaged({
+      unsubscribeCategory: 'invitations',
       from: 'Andrel <hello@andrel.app>',
       to: args.to,
       // Only include a cc key when the campaign actually copies the nominator.
@@ -500,13 +652,18 @@ export async function sendRecommendationIntroductionEmail(
   recommenderName: string,
   manageUrl: string,
 ): Promise<{ success: boolean; error?: string }> {
+  // Honors a one-click unsubscribe. This send is NOT gated by isPrefEnabled (no
+  // notification_preferences row is guaranteed to exist for this recipient), so without this
+  // check the suppression row written by /api/email/unsubscribe would never be read.
+  if (await isSuppressed(toEmail, 'invitations')) return { success: true }
   const { subject, text } = buildRecommendationIntroEmail({
     recommenderName,
     nomineeName: toName,
     manageUrl,
   })
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await sendManaged({
+      unsubscribeCategory: 'invitations',
       // Personal "from" (still a monitored address) so a reply reaches us.
       from: 'Daniel Abramoff <hello@andrel.app>',
       to: toEmail,
@@ -580,8 +737,13 @@ export async function sendOnboardingReminder(args: {
   resumeLink: string
   idempotencyKey?: string
 }): Promise<{ success: boolean; messageId?: string | null; error?: string; errorClass?: string; uncertain?: boolean }> {
+  // Honors a one-click unsubscribe. This send is NOT gated by isPrefEnabled (no
+  // notification_preferences row is guaranteed to exist for this recipient), so without this
+  // check the suppression row written by /api/email/unsubscribe would never be read.
+  if (await isSuppressed(args.to, 'invitations')) return { success: true, messageId: null } as any
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await sendManaged({
+      unsubscribeCategory: 'invitations',
       from: 'Andrel <hello@andrel.app>',
       to: args.to,
       subject: ONBOARDING_REMINDER_SUBJECTS[args.stage],
@@ -621,8 +783,13 @@ export async function sendOnboardingReminder(args: {
 }
 
 export async function sendFoundingMemberEmail(toEmail: string, toName: string): Promise<{ success: boolean; error?: string }> {
+  // Honors a one-click unsubscribe. This send is NOT gated by isPrefEnabled (no
+  // notification_preferences row is guaranteed to exist for this recipient), so without this
+  // check the suppression row written by /api/email/unsubscribe would never be read.
+  if (await isSuppressed(toEmail, 'email_product_updates')) return { success: true }
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await sendManaged({
+      unsubscribeCategory: 'email_product_updates',
       from: 'Andrel <hello@andrel.app>',
       to: toEmail,
       subject: "You've been selected as an Andrel Founding Member",
@@ -696,7 +863,8 @@ export async function sendMeetingRequestEmail(
   meetingPurpose?: string
 ) {
   if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_meeting_updates',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: `Meeting request from ${fromName}`,
@@ -734,7 +902,8 @@ export async function sendMeetingAcceptedEmail(
   utcLabel: string
 ) {
   if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_meeting_updates',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: `${acceptedByName} accepted your meeting`,
@@ -768,7 +937,8 @@ export async function sendMeetingDeclinedEmail(
   declinedByName: string
 ) {
   if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_meeting_updates',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: 'Meeting request declined',
@@ -803,7 +973,8 @@ export async function sendMeetingRescheduledEmail(
   meetingPurpose?: string
 ) {
   if (!await isPrefEnabled(toEmail, 'email_meeting_updates')) return
-  await resend.emails.send({
+  await sendManaged({
+    unsubscribeCategory: 'email_meeting_updates',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: `${reschedulerName} proposed a new meeting time`,
@@ -857,7 +1028,11 @@ export async function sendCalendarInviteEmail(args: {
   // suppressing the invite for a confirmed participant would deny them their calendar entry.
   const cancelled = args.method === 'CANCEL'
   const { dateLabel, localLabel, utcLabel } = formatMeetingTimes(args.scheduledAt, args.scheduledTimezone || undefined)
-  await resend.emails.send({
+  await sendManaged({
+    // TRANSACTIONAL: this carries the .ics for a meeting the member booked, with
+    // method=REQUEST/CANCEL. Calendar payload is the direct result of their own action, and an
+    // unsubscribe footer has no business inside a calendar invitation.
+    unsubscribeCategory: 'transactional',
     from: 'Andrel <hello@andrel.app>',
     to: args.to,
     subject: cancelled ? `Cancelled: ${args.summary}` : `Invitation: ${args.summary}`,
@@ -907,7 +1082,8 @@ export async function sendDigestEmail(
   }
 
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await sendManaged({
+      unsubscribeCategory: 'email_daily_digest',
       from: 'Andrel <hello@andrel.app>',
       to: toEmail,
       subject: 'Things waiting for you on Andrel',
@@ -947,7 +1123,10 @@ export async function sendWaitlistConfirmationEmail(
 ): Promise<{ success: boolean; error?: string }> {
   const firstName = toName.split(' ')[0]
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await sendManaged({
+      // TRANSACTIONAL: the receipt for a form this person submitted seconds ago. They are not on
+      // a list yet, so there is nothing to unsubscribe from.
+      unsubscribeCategory: 'transactional',
       from: 'Andrel <hello@andrel.app>',
       to: toEmail,
       subject: "You're on the Andrel waitlist",
@@ -999,9 +1178,14 @@ export async function sendLaunchAnnouncementEmail(
   toEmail: string,
   toName: string,
 ): Promise<{ success: boolean; error?: string }> {
+  // Honors a one-click unsubscribe. This send is NOT gated by isPrefEnabled (no
+  // notification_preferences row is guaranteed to exist for this recipient), so without this
+  // check the suppression row written by /api/email/unsubscribe would never be read.
+  if (await isSuppressed(toEmail, 'email_product_updates')) return { success: true }
   const firstName = (toName?.split(' ')[0] || 'there')
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await sendManaged({
+      unsubscribeCategory: 'email_product_updates',
       from: 'Andrel <hello@andrel.app>',
       to: toEmail,
       subject: 'Andrel Is Officially Open',
@@ -1079,19 +1263,17 @@ export async function sendReferralRequestEmail(
   toEmail: string,
   toName: string,
 ): Promise<{ success: boolean; error?: string }> {
+  // Honors a one-click unsubscribe. This send is NOT gated by isPrefEnabled (no
+  // notification_preferences row is guaranteed to exist for this recipient), so without this
+  // check the suppression row written by /api/email/unsubscribe would never be read.
+  if (await isSuppressed(toEmail, 'email_product_updates')) return { success: true }
   const firstName = (toName?.split(' ')[0] || 'there')
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await sendManaged({
+      unsubscribeCategory: 'email_product_updates',
       from: 'Daniel Abramoff <hello@andrel.app>',
       to: toEmail,
       subject: 'Who should be in this room?',
-      // Reuse the existing preference system as the unsubscribe mechanism: the
-      // List-Unsubscribe header + the footer link both point at /dashboard/settings,
-      // where a member toggles email_product_updates (honored by the campaign's
-      // eligibility filter). No custom unsubscribe system is introduced.
-      headers: {
-        'List-Unsubscribe': '<mailto:hello@andrel.app?subject=unsubscribe>, <https://www.andrel.app/dashboard/settings>',
-      },
       html: `
         <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
           <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
@@ -1120,11 +1302,6 @@ export async function sendReferralRequestEmail(
           </p>
           <p style="color: #334155; font-size: 16px; line-height: 1.6;">
             Daniel
-          </p>
-          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 32px 0 16px;" />
-          <p style="color: #94a3b8; font-size: 12px; line-height: 1.5;">
-            You're receiving this as an Andrel member.
-            <a href="https://www.andrel.app/dashboard/settings" style="color: #94a3b8; text-decoration: underline;">Manage your email preferences</a>.
           </p>
         </div>
       `,
@@ -1158,12 +1335,17 @@ export async function sendFirstMatchingRoundReminderEmail(
   toEmail: string,
   firstName: string,
 ): Promise<{ success: boolean; error?: string }> {
+  // Honors a one-click unsubscribe. This send is NOT gated by isPrefEnabled (no
+  // notification_preferences row is guaranteed to exist for this recipient), so without this
+  // check the suppression row written by /api/email/unsubscribe would never be read.
+  if (await isSuppressed(toEmail, 'email_product_updates')) return { success: true }
   const name = (firstName || '').trim() || 'there'
   const url = FIRST_MATCHING_REMINDER_CTA_URL
   const preview = 'Complete your Andrel profile to be considered for the first round of matching.'
   const p = 'color: #334155; font-size: 16px; line-height: 1.6; margin: 0 0 16px 0;'
   try {
-    const { data, error } = await resend.emails.send({
+    const { data, error } = await sendManaged({
+      unsubscribeCategory: 'email_product_updates',
       from: 'Andrel <hello@andrel.app>',
       to: toEmail,
       subject: 'Your first introductions go out Tuesday',
@@ -1266,7 +1448,8 @@ export async function sendWednesdayIntroReminderEmail(
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return { sent: false, providerMessageId: null }
   const { buildWednesdayReminderEmail } = await import('@/lib/email/wednesdayReminder')
   const built = buildWednesdayReminderEmail(firstName, openCount)
-  const res = await resend.emails.send({
+  const res = await sendManaged({
+    unsubscribeCategory: 'email_new_introductions',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: built.subject,
@@ -1289,7 +1472,8 @@ export async function sendNewIntroductionsEmail(
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return { sent: false, providerMessageId: null }
   const { buildNewIntroductionsEmail } = await import('@/lib/email/newIntroductions')
   const built = buildNewIntroductionsEmail(firstName)
-  const res = await resend.emails.send({
+  const res = await sendManaged({
+    unsubscribeCategory: 'email_new_introductions',
     from: 'Andrel <hello@andrel.app>',
     to: toEmail,
     subject: built.subject,

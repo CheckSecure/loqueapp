@@ -136,7 +136,10 @@ export async function POST(req: Request) {
       return { hashedToken, userId: (data as any)?.user?.id ?? null }
     },
     // Anonymous secure-link copy (no referrer naming for an admin-initiated email change).
-    sendEmail: (a) => sendSecureInviteEmail({ to: a.to, toName: a.toName, link: a.link, referrerName: null, idempotencyKey: a.idempotencyKey }),
+    // ACCOUNT RECOVERY, not an invitation: this link is generateLink({type:'recovery'}) for a
+    // member whose address an admin just corrected. Marked so it carries no unsubscribe headers
+    // and is never blocked by a suppression — losing access to your account is not opt-out mail.
+    sendEmail: (a) => sendSecureInviteEmail({ to: a.to, toName: a.toName, link: a.link, referrerName: null, purpose: 'account_recovery', idempotencyKey: a.idempotencyKey }),
     markAccepted: (id, msgId, authUserId) => markDeliveryAccepted(admin, id, msgId, authUserId),
     markFailed: (id, errClass) => markDeliveryFailed(admin, id, errClass),
     // Privacy-safe: event + coarse fields ONLY (never an email/id/token/link/raw provider error).
