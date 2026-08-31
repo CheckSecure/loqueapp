@@ -22,6 +22,7 @@ import { enqueueOnboardingRetry } from '@/lib/onboarding/retryQueue'
 import { promoteIfResolved } from '@/lib/introductions/queue'
 import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
+import { awardReferralCreditOnCompletion } from '@/lib/referrals/awardReferralCredit'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { validateSelection, validateSelectionWithCaps } from '@/lib/role-taxonomy'
@@ -476,6 +477,15 @@ export async function completeOnboarding(formData: FormData) {
   } catch (err) {
     console.error('[completeOnboarding] Error in credits assignment:', err)
   }
+
+  // Referral credit — THE BUG THIS FIXES. This path sets profile_complete just like
+  // POST /api/profile/complete, but the referral hook only ever existed in that route, so every
+  // member who finished through OnboardingForm left their referrer uncredited and the referral
+  // stranded at 'invited'. Nine nominees activated that way before it was noticed. Placed beside
+  // sendAdminWelcome because both are post-completion side effects with identical contracts:
+  // idempotent, fire-and-forget, never throwing.
+  const referralOutcome = await awardReferralCreditOnCompletion(user.id, user.email)
+  console.log('[completeOnboarding] referral credit outcome:', referralOutcome)
 
   // Fire admin welcome introduction (idempotent, non-blocking on failure)
   try {

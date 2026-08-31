@@ -284,7 +284,8 @@ describe('status pipeline stages exist across the flow', () => {
     expect(readFileSync('app/api/admin/send-invite/route.ts', 'utf8')).toMatch(/status:\s*'invited'/)
   })
   it('profile complete sets activated', () => {
-    expect(readFileSync('app/api/profile/complete/route.ts', 'utf8')).toMatch(/status:\s*'activated'/)
+    // Moved to the shared helper so both completion paths mark the referral activated.
+    expect(readFileSync('lib/referrals/awardReferralCredit.ts', 'utf8')).toMatch(/status:\s*'activated'/)
   })
   it('admin UI exposes a Contacted tab between Approved and Invited', () => {
     const ui = readFileSync('components/AdminWaitlistClient.tsx', 'utf8')

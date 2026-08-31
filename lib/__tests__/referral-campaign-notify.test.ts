@@ -115,7 +115,8 @@ describe('internal-account override is confined to explicitly named ids', () => 
 })
 
 describe('referral_credit_awarded notification', () => {
-  const COMPLETE = readFileSync('app/api/profile/complete/route.ts', 'utf8')
+  // The award logic lives in the shared helper now — both completion paths call it.
+  const COMPLETE = readFileSync('lib/referrals/awardReferralCredit.ts', 'utf8')
 
   it('exists as a type, with fallback copy and a link', () => {
     expect(NOTIF).toContain("| 'referral_credit_awarded'")
@@ -126,7 +127,7 @@ describe('referral_credit_awarded notification', () => {
   it('fires ONLY inside the confirmed-award branch', () => {
     // A notification saying "your credit has been added" must never outlive the credit. It has to
     // sit after the success log, not beside the write.
-    const award = COMPLETE.indexOf("console.log('[profile/complete] referral credit awarded'")
+    const award = COMPLETE.indexOf("console.log('[referralCredit] awarded'")
     const notify = COMPLETE.indexOf("type: 'referral_credit_awarded'")
     const failBranch = COMPLETE.indexOf('REFERRAL_CREDIT_WRITE_FAILED')
     expect(award).toBeGreaterThan(-1)

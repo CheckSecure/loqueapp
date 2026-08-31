@@ -478,7 +478,10 @@ describe('Jesse attribution — fail-closed nominator gate', () => {
 
   it('applies the SAME active-account rule the referral system already enforces', () => {
     // /api/profile/complete awards the referral credit only for an active referrer…
-    expect(readFileSync('app/api/profile/complete/route.ts', 'utf8'))
+    // The referral hook moved to lib/referrals/awardReferralCredit.ts so BOTH completion paths
+    // run it — it previously existed only in this route, stranding referrals for anyone who
+    // finished through OnboardingForm. The assertion follows the logic to its new home.
+    expect(readFileSync('lib/referrals/awardReferralCredit.ts', 'utf8'))
       .toContain("referrerProfile?.account_status !== 'active'")
     // …and referral-campaign eligibility uses the same rule.
     expect(readFileSync('lib/referralCampaign/eligibility.ts', 'utf8'))
