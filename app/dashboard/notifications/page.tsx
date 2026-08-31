@@ -8,7 +8,12 @@ interface Notification {
   id: string
   type: string
   title: string
-  message: string | null
+  // `body`, not `message`. The column is body (see lib/notifications createNotificationSafe and
+  // migration 083's insert) and /api/notifications/list returns the raw row via select('*'). This
+  // interface declared `message`, so the value was always undefined and the render guard below was
+  // always false — every notification body has been invisible on this page since it was written.
+  // The bell (components/NotificationBell.tsx) reads `body` and has always shown it correctly.
+  body: string | null
   data: any
   read: boolean
   created_at: string
@@ -182,9 +187,9 @@ export default function NotificationsPage() {
                       <span className="w-2 h-2 bg-blue-600 rounded-full" />
                     )}
                   </div>
-                  {notification.message && (
+                  {notification.body && (
                     <p className="text-sm text-gray-600 mt-1">
-                      {notification.message}
+                      {notification.body}
                     </p>
                   )}
                   <p className="text-xs text-gray-500 mt-2">
