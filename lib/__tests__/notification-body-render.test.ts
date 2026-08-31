@@ -7,7 +7,10 @@ const LIB = readFileSync('lib/notifications/index.ts', 'utf8')
 
 describe('notification body renders on BOTH surfaces', () => {
   it('the column really is `body` — the writer says so', () => {
-    expect(LIB).toContain('body: copy.message')
+    // The insert writes `body`. The value now comes via resolvedBody so a caller can override the
+    // static copy (e.g. to name a nominee), but it still falls back to the copy map's `message`.
+    expect(LIB).toContain('body: resolvedBody')
+    expect(LIB).toContain('const resolvedBody = body ?? copy.message')
   })
 
   it('the notifications page reads body, not the non-existent message', () => {

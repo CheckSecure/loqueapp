@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createNotificationSafe } from '@/lib/notifications'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { assertSameOrigin } from '@/lib/http/sameOrigin'
@@ -179,7 +180,7 @@ export async function POST(req: Request) {
     // Step 1: find waitlist row by email
     const { data: waitlistRow } = await referralClient
       .from('waitlist')
-      .select('id')
+      .select('id, full_name')
       .ilike('email', userEmail)
       .maybeSingle()
 
@@ -313,6 +314,31 @@ export async function POST(req: Request) {
                   referralId: referralRow.id,
                   userId: user.id,
                   bucket: 'premium_credits',
+                })
+
+                // Tell the referrer. Until now the credit appeared in their balance with nothing
+                // explaining where it came from — the one moment in the referral loop that is
+                // purely good news went unannounced.
+                //
+                // Fired ONLY on a confirmed award, inside the success branch: a notification saying
+                // "your credit has been added" must never outlive the credit itself.
+                //
+                // dedupeKey is the referral id, so it is exact-once per nomination rather than
+                // per member — someone who recommends five people who all join hears five times.
+                const nomineeFirst = ((waitlistRow.full_name || '').trim().split(/\s+/)[0]) || ''
+                await createNotificationSafe({
+                  userId: referrerId,
+                  type: 'referral_credit_awarded',
+                  dedupeKey: referralRow.id,
+                  data: { referralId: referralRow.id, joinedUserId: user.id },
+                  // Falls back to the static copy when the name is missing, so the member still
+                  // learns they were credited rather than getting nothing.
+                  ...(nomineeFirst
+                    ? {
+                        title: `${nomineeFirst} just joined — you earned a credit`,
+                        body: `Thanks for recommending ${nomineeFirst}. Your credit has been added, and we'll introduce you if it's a fit.`,
+                      }
+                    : {}),
                 })
               }
             }

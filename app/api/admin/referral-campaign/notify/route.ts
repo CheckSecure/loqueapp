@@ -118,10 +118,15 @@ export async function POST(req: Request) {
     for (const m of batch) {
       // createNotificationSafe NEVER throws and returns null on a unique-violation, which is the
       // intended idempotent outcome rather than an error.
+      // dedupeKey is a TOP-LEVEL param, not a data field. Passing it only inside `data` populated
+      // the column but left the duplicate CHECK on its legacy "one per type per 24h" path, so
+      // exact-once was being enforced by the unique index catching a 23505 rather than by the
+      // intended query. Same outcome, wrong mechanism, and the dedupe log line never fired.
+      // createNotificationSafe persists it into data itself.
       const row = await createNotificationSafe({
         userId: m.id,
         type: 'referral_campaign',
-        data: { dedupeKey: CAMPAIGN_KEY },
+        dedupeKey: CAMPAIGN_KEY,
       })
       if (row) created++
       else deduped++

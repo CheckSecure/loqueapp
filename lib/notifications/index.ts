@@ -28,6 +28,7 @@ export type NotificationType =
   | 'waiting_response'
   | 'andrel_connector_awarded'
   | 'referral_campaign'
+  | 'referral_credit_awarded'
 
 export interface NotificationData {
   matchId?: string
@@ -64,6 +65,13 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
   referral_campaign: {
     title: 'Who else belongs here?',
     message: "Recommend 3-5 people who'd fit — in-house counsel, law firm attorneys, government affairs, or executives. Each one is personally reviewed, and you earn 1 credit for every nominee who joins, up to 5 a month."
+  },
+  // FALLBACK ONLY. The award path passes a title/body naming the nominee; this static pair is
+  // what sends if the name could not be resolved, so the member still learns they were credited
+  // rather than getting nothing.
+  referral_credit_awarded: {
+    title: 'Someone you recommended just joined',
+    message: "Your credit has been added, and we'll introduce you if it's a fit."
   },
   new_batch: {
     title: 'New curated introductions',
@@ -166,6 +174,7 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
 
 const LINK_BY_TYPE: Partial<Record<string, string>> = {
   referral_campaign: '/dashboard/referrals',
+  referral_credit_awarded: '/dashboard/network',
   admin_intro: '/dashboard/introductions',
   admin_intro_nudge: '/dashboard/introductions',
   interest_received: '/dashboard/introductions',
@@ -194,7 +203,7 @@ const LINK_BY_TYPE: Partial<Record<string, string>> = {
 export async function createNotificationSafe({
   userId,
   type,
-  data, link, dedupeKey}: {
+  data, link, dedupeKey, title, body}: {
   userId: string
   type: NotificationType
   data?: NotificationData; link?: string
@@ -206,7 +215,15 @@ export async function createNotificationSafe({
    * "one per (user_id, type) per 24h" digest behavior is preserved so existing
    * notification types are unaffected.
    */
-  dedupeKey?: string}) {
+  dedupeKey?: string
+  /**
+   * Override the static NOTIFICATION_COPY for this one notification. Needed wherever the copy
+   * names something — a nominee, a member — that only the caller knows. When either is omitted the
+   * static entry supplies it, so a caller that cannot resolve a name still sends a sensible
+   * notification instead of nothing.
+   */
+  title?: string
+  body?: string}) {
   const adminClient = createAdminClient()
 
   console.log('[Notifications] createNotificationSafe called:', { userId, type, dedupeKey })
@@ -243,6 +260,8 @@ export async function createNotificationSafe({
       console.error(`[Notifications] Unknown type: ${type}`)
       return null
     }
+    const resolvedTitle = title ?? copy.title
+    const resolvedBody = body ?? copy.message
 
     console.log('[Notifications] Inserting:', { type, userId, copy })
     const { data: notification, error } = await adminClient
@@ -251,8 +270,8 @@ export async function createNotificationSafe({
         link: (link ?? LINK_BY_TYPE[type]) || null,
         user_id: userId,
         type,
-        title: copy.title,
-        body: copy.message,
+        title: resolvedTitle,
+        body: resolvedBody,
         data,
         created_at: new Date().toISOString()
       })

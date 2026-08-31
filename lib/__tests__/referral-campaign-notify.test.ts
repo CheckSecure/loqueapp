@@ -40,7 +40,10 @@ describe('broadcast route', () => {
   })
 
   it('every notification carries the campaign dedupeKey', () => {
-    expect(ROUTE).toContain("data: { dedupeKey: CAMPAIGN_KEY }")
+    // TOP-LEVEL param, not a data field: only that selects the exact-once duplicate check.
+    // Passing it inside `data` populates the column but leaves the check on its legacy 24h path.
+    expect(ROUTE).toContain('dedupeKey: CAMPAIGN_KEY,')
+    expect(ROUTE).not.toContain('data: { dedupeKey')
     expect(ROUTE).toMatch(/const CAMPAIGN_KEY = '[a-z0-9_]+'/)
   })
 
@@ -108,5 +111,42 @@ describe('internal-account override is confined to explicitly named ids', () => 
 
   it('defaults to no override when the option is omitted', () => {
     expect(ELIG).toContain('const alwaysInclude = new Set(opts.alwaysInclude ?? [])')
+  })
+})
+
+describe('referral_credit_awarded notification', () => {
+  const COMPLETE = readFileSync('app/api/profile/complete/route.ts', 'utf8')
+
+  it('exists as a type, with fallback copy and a link', () => {
+    expect(NOTIF).toContain("| 'referral_credit_awarded'")
+    expect(NOTIF).toContain("referral_credit_awarded: '/dashboard/network'")
+    expect(NOTIF).toContain("title: 'Someone you recommended just joined'")
+  })
+
+  it('fires ONLY inside the confirmed-award branch', () => {
+    // A notification saying "your credit has been added" must never outlive the credit. It has to
+    // sit after the success log, not beside the write.
+    const award = COMPLETE.indexOf("console.log('[profile/complete] referral credit awarded'")
+    const notify = COMPLETE.indexOf("type: 'referral_credit_awarded'")
+    const failBranch = COMPLETE.indexOf('REFERRAL_CREDIT_WRITE_FAILED')
+    expect(award).toBeGreaterThan(-1)
+    expect(notify).toBeGreaterThan(award)
+    expect(notify).toBeGreaterThan(failBranch)
+  })
+
+  it('is exact-once per NOMINATION, not per member', () => {
+    // Someone who recommends five people who all join should hear five times.
+    expect(COMPLETE).toContain('dedupeKey: referralRow.id')
+  })
+
+  it('names the nominee, and degrades to the static copy without a name', () => {
+    expect(COMPLETE).toContain('just joined — you earned a credit')
+    expect(COMPLETE).toContain('Thanks for recommending')
+    expect(COMPLETE).toContain('nomineeFirst')
+    expect(COMPLETE).toContain('...(nomineeFirst')
+  })
+
+  it('reads the nominee name from the row it already queried', () => {
+    expect(COMPLETE).toContain(".select('id, full_name')")
   })
 })
