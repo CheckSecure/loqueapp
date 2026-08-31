@@ -65,9 +65,16 @@ export async function POST(req: Request) {
   // respectEmailOptOut: true — a member who switched off product updates has said they do not
   // want to be marketed to. That preference is named for email, but the intent covers a
   // promotional in-app nudge too, and over-honouring it costs less than under-honouring it.
+  //
+  // alwaysInclude is derived from `only` and NOTHING ELSE. A broadcast — any run that does not name
+  // its recipients — leaves `only` null and therefore passes an empty list, so internal accounts
+  // can never reach a real campaign. Naming ids is the operator explicitly taking responsibility
+  // for who receives it, which is exactly the case where the internal filter is unhelpful: every
+  // internal marker sits on the operator's own account, so a self-test is otherwise unsendable.
   const { eligible, breakdown } = await computeReferralCampaignEligibility({
     respectEmailSentStamp: false,
     respectEmailOptOut: true,
+    alwaysInclude: only ? Array.from(only) : [],
   })
 
   const targets = eligible.filter((m) => !only || only.has(m.id)).slice(0, limit)
@@ -80,6 +87,10 @@ export async function POST(req: Request) {
       breakdown,
       wouldNotify: targets.length,
       eligibleTotal: eligible.length,
+      // Non-zero only when ids were named. Says plainly that an account normally filtered out is
+      // in this run, so a self-test never looks like an accidental leak into a broadcast.
+      internalOverridden: breakdown.internalOverridden,
+      targetedByExplicitIds: only ? only.size : 0,
       // The exact copy, so it is reviewable without reading the source.
       preview: {
         title: 'Who else belongs here?',
@@ -127,6 +138,7 @@ export async function POST(req: Request) {
     campaignKey: CAMPAIGN_KEY,
     attempted: targets.length,
     created,
+    internalOverridden: breakdown.internalOverridden,
     // Already notified in an earlier run, or a concurrent duplicate — not a failure.
     deduped,
     eligibleTotal: eligible.length,

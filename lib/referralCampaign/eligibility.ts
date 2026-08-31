@@ -80,6 +80,7 @@ export type ReferralCampaignEligibility = {
     excludedInvalidEmail: number
     excludedOptedOut: number
     alreadySent: number
+    internalOverridden: number
   }
   dedupeColumnPresent: boolean
 }
@@ -114,6 +115,20 @@ export interface EligibilityOptions {
   respectEmailSentStamp?: boolean
   /** Skip members who turned OFF email_product_updates in settings. */
   respectEmailOptOut?: boolean
+  /**
+   * Member ids that bypass the INTERNAL exclusions (is_test_account, is_admin, operator email).
+   *
+   * Exists so an operator can send a campaign to themselves and actually see it. Every internal
+   * marker is on the operator's own account, so a self-test otherwise returns attempted: 0 with no
+   * indication why.
+   *
+   * MUST ONLY EVER BE POPULATED FROM AN EXPLICIT LIST OF IDS. A broadcast — any run that does not
+   * name its recipients — has to pass this empty, or the campaign reaches internal accounts. The
+   * override is deliberately narrow: it waives the internal markers ONLY. Deactivated, incomplete
+   * profile, invalid email and the opt-out still exclude a named account, because none of those
+   * are about being internal and all of them would make the send wrong or impossible.
+   */
+  alwaysInclude?: string[]
 }
 
 export async function computeReferralCampaignEligibility(
@@ -121,6 +136,7 @@ export async function computeReferralCampaignEligibility(
 ): Promise<ReferralCampaignEligibility> {
   const respectEmailSentStamp = opts.respectEmailSentStamp !== false
   const respectEmailOptOut = opts.respectEmailOptOut !== false
+  const alwaysInclude = new Set(opts.alwaysInclude ?? [])
   const admin = createAdminClient()
 
   // Try to read the dedupe column; fail open to "column absent → all un-sent" if
@@ -158,6 +174,8 @@ export async function computeReferralCampaignEligibility(
     excludedInvalidEmail: 0,
     excludedOptedOut: 0,
     alreadySent: 0,
+    /** Internal accounts admitted because they were explicitly named. Always 0 on a broadcast. */
+    internalOverridden: 0,
   }
   const eligible: Array<{ id: string; email: string; full_name: string | null }> = []
 
@@ -168,8 +186,18 @@ export async function computeReferralCampaignEligibility(
     if (m.account_status !== 'active') { breakdown.excludedDeactivated++; continue }
     breakdown.activeMembers++
 
-    if (m.is_test_account === true) { breakdown.excludedTestDemo++; continue }
-    if (m.is_admin === true || (m.email ?? '').toLowerCase() === OPERATOR_EMAIL_LOWER) { breakdown.excludedAdminOperator++; continue }
+    // Explicitly named → the internal markers are waived, and the override is COUNTED so a dry
+    // run shows it happened rather than silently including an account that is normally excluded.
+    const internalOverride = alwaysInclude.has(m.id)
+    const isInternal = m.is_test_account === true
+      || m.is_admin === true
+      || (m.email ?? '').toLowerCase() === OPERATOR_EMAIL_LOWER
+    if (isInternal && internalOverride) {
+      breakdown.internalOverridden++
+    } else {
+      if (m.is_test_account === true) { breakdown.excludedTestDemo++; continue }
+      if (m.is_admin === true || (m.email ?? '').toLowerCase() === OPERATOR_EMAIL_LOWER) { breakdown.excludedAdminOperator++; continue }
+    }
     if (m.profile_complete !== true) { breakdown.excludedOnboarding++; continue }
     const email = (m.email ?? '').trim()
     if (!email || !EMAIL_REGEX.test(email)) { breakdown.excludedInvalidEmail++; continue }

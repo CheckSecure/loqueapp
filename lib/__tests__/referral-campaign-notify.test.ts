@@ -78,3 +78,35 @@ describe('eligibility options do not change the email campaign', () => {
     expect(send).toContain('computeReferralCampaignEligibility()')
   })
 })
+
+describe('internal-account override is confined to explicitly named ids', () => {
+  it('a broadcast passes an EMPTY override — internal accounts can never leak in', () => {
+    // This is the whole safety property. `only` is null unless userIds were supplied, so a
+    // broadcast run resolves alwaysInclude to [].
+    expect(ROUTE).toContain('alwaysInclude: only ? Array.from(only) : []')
+  })
+
+  it('the override waives ONLY the internal markers', () => {
+    // Deactivated, incomplete profile, invalid email and the opt-out must still exclude a named
+    // account — none of those are about being internal, and each would make the send wrong.
+    expect(ELIG).toContain('const internalOverride = alwaysInclude.has(m.id)')
+    expect(ELIG).toContain('if (isInternal && internalOverride) {')
+    for (const stillApplies of [
+      "if (m.profile_complete !== true) { breakdown.excludedOnboarding++; continue }",
+      "if (!email || !EMAIL_REGEX.test(email)) { breakdown.excludedInvalidEmail++; continue }",
+      "if (m.account_status !== 'active') { breakdown.excludedDeactivated++; continue }",
+    ]) {
+      expect(ELIG).toContain(stillApplies)
+    }
+  })
+
+  it('the override is counted and reported, not silent', () => {
+    expect(ELIG).toContain('breakdown.internalOverridden++')
+    expect(ROUTE).toContain('internalOverridden: breakdown.internalOverridden')
+    expect(ROUTE).toContain('targetedByExplicitIds')
+  })
+
+  it('defaults to no override when the option is omitted', () => {
+    expect(ELIG).toContain('const alwaysInclude = new Set(opts.alwaysInclude ?? [])')
+  })
+})
