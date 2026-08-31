@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createNotificationSafe } from '@/lib/notifications'
+import { runPostBatchReferralNudge } from '@/lib/referralCampaign/postBatchNudge'
 import { countUnresolvedRecommendations, EXPRESSED_INTEREST_STATUSES } from '@/lib/introductions/queue'
 import {
   isWednesdayInNewYork,
@@ -194,7 +195,22 @@ export async function GET(req: Request) {
     }
   }
 
-  console.log(`[engagement-reminders] done — waiting sent:${waitingSent} skipped:${waitingSkipped}; reminder sent:${reminderSent} skipped:${reminderSkipped}`)
+  // ── Referral ask, gated on having SEEN the product work ────────────────────────────────────────
+  // Lives here rather than in its own cron for two reasons: this is already the member-nudge job,
+  // and the project is at ten scheduled functions, so an eleventh is a plan question rather than a
+  // technical one. It is also the right neighbour — the loop above reminds members about cards they
+  // have not answered, and this one deliberately skips exactly those members.
+  //
+  // Safe to run daily: the dedupeKey caps a member at one notification ever, so this converges.
+  let referralNudge = { notified: 0, deduped: 0, held: 0, considered: 0 }
+  try {
+    referralNudge = await runPostBatchReferralNudge(admin)
+  } catch (e: any) {
+    // Never let a campaign nudge break the reminders this cron exists for.
+    console.error('[engagement-reminders] referral nudge failed (non-blocking):', e?.message)
+  }
+
+  console.log(`[engagement-reminders] done — waiting sent:${waitingSent} skipped:${waitingSkipped}; reminder sent:${reminderSent} skipped:${reminderSkipped}; referral notified:${referralNudge.notified} deduped:${referralNudge.deduped} held:${referralNudge.held}`)
   // ── PART 5: WEDNESDAY consolidated unanswered-introduction reminder ─────────
   //
   // WHY THIS EXISTS ALONGSIDE PART 3. Part 3 keys on an ACTIVE recommendation_batches envelope and

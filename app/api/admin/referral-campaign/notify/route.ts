@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createNotificationSafe } from '@/lib/notifications'
 import {
   computeReferralCampaignEligibility,
   checkRequiredCampaignMigrations,
 } from '@/lib/referralCampaign/eligibility'
+import { selectPostBatchNudgeTargets } from '@/lib/referralCampaign/postBatchNudge'
 
 /**
  * IN-APP referral campaign — the notification channel, alongside the existing email at
@@ -42,7 +44,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: { action?: unknown; limit?: unknown; userIds?: unknown } = {}
+  let body: { action?: unknown; limit?: unknown; userIds?: unknown; mode?: unknown; skipUnactioned?: unknown } = {}
   try { body = await req.json() } catch { /* empty body → dry run */ }
 
   const execute = body.action === 'execute'
@@ -57,6 +59,22 @@ export async function POST(req: Request) {
   // Same migration guard the email campaign uses; a missing dedupe index would turn the
   // exact-once guarantee into "notify again on every run".
   const migrations = await checkRequiredCampaignMigrations()
+
+  // ?mode=post_batch inspects the AUTOMATIC cohort — who the daily cron would notify, and who it
+  // holds back for sitting on unactioned cards. Read-only regardless of `action`: the automatic
+  // version is driven by the cron, not by this route.
+  if (body.mode === 'post_batch') {
+    const sel = await selectPostBatchNudgeTargets(createAdminClient(), {
+      skipUnactioned: body.skipUnactioned !== false,
+    })
+    return NextResponse.json({
+      mode: 'dry_run',
+      cohort: 'post_batch (fires automatically from the daily engagement-reminders cron)',
+      campaignKey: CAMPAIGN_KEY,
+      migrations,
+      ...sel,
+    })
+  }
 
   // respectEmailSentStamp: false — profiles.referral_campaign_sent_at belongs to the EMAIL
   // channel. Honouring it here would exclude exactly the members already engaged with the
