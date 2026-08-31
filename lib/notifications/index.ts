@@ -27,6 +27,7 @@ export type NotificationType =
   | 'introductions_waiting'
   | 'waiting_response'
   | 'andrel_connector_awarded'
+  | 'referral_campaign'
 
 export interface NotificationData {
   matchId?: string
@@ -51,6 +52,19 @@ export interface CreateNotificationParams {
 }
 
 const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; message: string }>> = {
+  // Campaign ask, not a per-event notice. Broadcast deliberately by an operator rather than
+  // triggered by anything a member did, which is why it carries no data-driven detail.
+  //
+  // BOTH CAVEATS ARE LORE-ACCURATE, not hedging. "Personally reviewed" is literal: a nomination
+  // only earns a credit once the nominee is INVITED, and referrals.status='invited' is written
+  // exclusively by admin invite paths — so the reward depends on an operator working the waitlist
+  // queue, and the copy must not imply it lands the moment they hit submit. "Up to 5 a month" is
+  // the cap enforced in /api/profile/complete; without it the sentence is simply false for anyone
+  // whose sixth nominee joins in the same calendar month.
+  referral_campaign: {
+    title: 'Who else belongs here?',
+    message: "Recommend 3-5 people who'd fit — in-house counsel, law firm attorneys, government affairs, or executives. Each one is personally reviewed, and you earn 1 credit for every nominee who joins, up to 5 a month."
+  },
   new_batch: {
     title: 'New curated introductions',
     message: 'Your latest set of curated connections is ready to review.'
@@ -151,6 +165,7 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
 }
 
 const LINK_BY_TYPE: Partial<Record<string, string>> = {
+  referral_campaign: '/dashboard/referrals',
   admin_intro: '/dashboard/introductions',
   admin_intro_nudge: '/dashboard/introductions',
   interest_received: '/dashboard/introductions',

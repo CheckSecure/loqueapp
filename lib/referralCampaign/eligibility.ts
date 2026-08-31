@@ -99,7 +99,28 @@ function isEligible(m: MemberRow): boolean {
   return true
 }
 
-export async function computeReferralCampaignEligibility(): Promise<ReferralCampaignEligibility> {
+/**
+ * Which exclusions apply. Both default TRUE, preserving the email campaign's behaviour exactly —
+ * a caller that passes nothing gets what /api/admin/referral-campaign/send has always got.
+ *
+ * The notification broadcast overrides `respectEmailSentStamp`, because
+ * profiles.referral_campaign_sent_at is the EMAIL channel's bookkeeping. Letting it suppress an
+ * in-app notification would mean the members most engaged with the campaign — the ones already
+ * emailed — are the only ones who never see it in the product. The notification has its own
+ * exact-once guarantee via the dedupeKey unique index, so it does not need this stamp at all.
+ */
+export interface EligibilityOptions {
+  /** Skip members already stamped referral_campaign_sent_at (the EMAIL channel's marker). */
+  respectEmailSentStamp?: boolean
+  /** Skip members who turned OFF email_product_updates in settings. */
+  respectEmailOptOut?: boolean
+}
+
+export async function computeReferralCampaignEligibility(
+  opts: EligibilityOptions = {},
+): Promise<ReferralCampaignEligibility> {
+  const respectEmailSentStamp = opts.respectEmailSentStamp !== false
+  const respectEmailOptOut = opts.respectEmailOptOut !== false
   const admin = createAdminClient()
 
   // Try to read the dedupe column; fail open to "column absent → all un-sent" if
@@ -152,8 +173,8 @@ export async function computeReferralCampaignEligibility(): Promise<ReferralCamp
     if (m.profile_complete !== true) { breakdown.excludedOnboarding++; continue }
     const email = (m.email ?? '').trim()
     if (!email || !EMAIL_REGEX.test(email)) { breakdown.excludedInvalidEmail++; continue }
-    if (optedOut.has(m.id)) { breakdown.excludedOptedOut++; continue }
-    if (m.referral_campaign_sent_at != null) { breakdown.alreadySent++; continue }
+    if (respectEmailOptOut && optedOut.has(m.id)) { breakdown.excludedOptedOut++; continue }
+    if (respectEmailSentStamp && m.referral_campaign_sent_at != null) { breakdown.alreadySent++; continue }
 
     eligible.push({ id: m.id, email, full_name: m.full_name })
   }
