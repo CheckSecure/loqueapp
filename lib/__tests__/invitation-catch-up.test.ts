@@ -96,3 +96,38 @@ describe('purpose-aware invite copy', () => {
     expect(code).not.toContain('referrer_consent_to_share')
   })
 })
+
+describe('scope: referred nominees vs the whole invited waitlist', () => {
+  it('supports targeting only people a member nominated', () => {
+    expect(ROUTE).toContain('const onlyReferred = body.onlyReferred === true')
+    expect(ROUTE).toContain('!onlyReferred || referralByWaitlist.has(w.id)')
+  })
+
+  it('reports WHO was considered, not just how many', () => {
+    // A bare count of 257 reads the same whether it is the intended audience or the entire
+    // waitlist. The response has to say which.
+    expect(ROUTE).toContain('scope:')
+    expect(ROUTE).toContain('ALL invited waitlist rows (referred + direct)')
+    expect(ROUTE).toContain('referredAmongThem')
+  })
+
+  it('loads referrals in ONE query and reads the error', () => {
+    expect(ROUTE).toContain('const { data: referralRows, error: referralError }')
+    expect(ROUTE).toContain("referralError ? 'lookup_failed'")
+  })
+
+  it('distinguishes the three reasons a referrer is unnamed', () => {
+    for (const v of ["'named'", "'no_consent'", "'not_a_referral'", "'lookup_failed'"]) {
+      expect(ROUTE).toContain(v)
+    }
+  })
+
+  it('screens mistyped addresses before sending, and never rewrites them', () => {
+    expect(ROUTE).toContain('checkEmailSanity(email)')
+    expect(ROUTE).toContain("verdict: 'blocked_suspect_address'")
+    expect(ROUTE).toContain('addressSuggestion')
+    const screen = ROUTE.indexOf('checkEmailSanity(email)')
+    const send = ROUTE.indexOf('await sendSecureInviteForWaitlist(')
+    expect(screen).toBeLessThan(send) // screened before any send
+  })
+})

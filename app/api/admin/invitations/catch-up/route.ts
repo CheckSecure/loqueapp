@@ -6,6 +6,7 @@ import { sendSecureInviteForWaitlist } from '@/lib/invitations/sendForWaitlist'
 import { inviteStatusModel } from '@/lib/waitlist/inviteStatus'
 import { canSendInvitation, invitationsEnabled, INVITATIONS_PAUSED_MESSAGE } from '@/lib/invitations/featureGate'
 import { getSiteUrl } from '@/lib/config/siteUrl'
+import { checkEmailSanity } from '@/lib/waitlist/emailSanity'
 
 /**
  * INVITATION CATCH-UP — re-send to people whose first invitation expired unused.
@@ -38,6 +39,7 @@ type Verdict =
   | 'blocked_bad_address'        // bounced/blocked/complained — fix the address first
   | 'skipped_already_activated'  // they got in; nothing to do
   | 'skipped_ambiguous_account'  // duplicate auth users for one address — manual review
+  | 'blocked_suspect_address'    // looks mistyped — one send, one permanent bounce
   | 'skipped_not_invited'
   | 'skipped_paused'
 
@@ -49,8 +51,16 @@ interface Row {
   deliveryStatus: string | null
   deliveryLabel: string
   referrerName: string | null
+  /**
+   * WHY referrerName is what it is. Without this, "null" conflates three different situations —
+   * not a referral, referrer withheld consent, and the lookup failed — and only one of them is a
+   * bug. That ambiguity is exactly what made the first dry run unreadable.
+   */
+  referrerLookup: 'named' | 'no_consent' | 'not_a_referral' | 'lookup_failed'
   verdict: Verdict
   detail?: string
+  /** Set when the address looks mistyped. Never applied automatically. */
+  addressSuggestion?: string
 }
 
 export async function POST(req: Request) {
@@ -60,7 +70,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let body: { action?: unknown; limit?: unknown; waitlistIds?: unknown } = {}
+  let body: { action?: unknown; limit?: unknown; waitlistIds?: unknown; onlyReferred?: unknown } = {}
   try { body = await req.json() } catch { /* empty body → dry run */ }
 
   // Anything other than the exact string 'execute' is a dry run. A typo sends nothing.
@@ -72,6 +82,10 @@ export async function POST(req: Request) {
   const only = Array.isArray(body.waitlistIds)
     ? new Set(body.waitlistIds.filter((v): v is string => typeof v === 'string'))
     : null
+  // Restrict to people a member actually nominated. The invited waitlist also contains everyone
+  // invited directly by an operator, who are a different audience entirely and must be decided on
+  // separately — the first version of this route did not make that distinction and swept up 257.
+  const onlyReferred = body.onlyReferred === true
 
   const admin = createAdminClient()
   const siteUrl = getSiteUrl()
@@ -90,7 +104,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Could not load the invitation list' }, { status: 503 })
   }
 
-  const candidates = (waitlistRows ?? []).filter((w: any) => !only || only.has(w.id))
+  // ONE referral query for the whole set, not one per row. Besides the obvious N+1, the per-row
+  // version destructured only `data` — so a failed query was indistinguishable from "no consent"
+  // and every row silently reported no referrer. The error is now read and reported per row.
+  const { data: referralRows, error: referralError } = await admin
+    .from('referrals')
+    .select('waitlist_id, referrer_consent_to_share, referrer:profiles!referrer_user_id(full_name)')
+  if (referralError) {
+    console.error('[invitations/catch-up] referral read failed:', referralError)
+  }
+  const referralByWaitlist = new Map<string, { consent: boolean; name: string | null }>()
+  for (const r of (referralRows ?? []) as any[]) {
+    referralByWaitlist.set(r.waitlist_id, {
+      consent: r.referrer_consent_to_share === true,
+      name: (r.referrer?.full_name as string | null) ?? null,
+    })
+  }
+
+  const candidates = (waitlistRows ?? [])
+    .filter((w: any) => !only || only.has(w.id))
+    .filter((w: any) => !onlyReferred || referralByWaitlist.has(w.id))
   const rows: Row[] = []
   let sent = 0
 
@@ -98,11 +131,27 @@ export async function POST(req: Request) {
     if (rows.filter((r) => r.verdict === 'would_send' || r.verdict === 'sent').length >= limit) break
 
     const email: string = w.email
+
+    // Resolved FIRST so every exit path below can report it. Named ONLY where the referrer
+    // explicitly ticked the box: referrer_consent_to_share is NOT NULL DEFAULT false and the
+    // form's checkbox is unchecked by default, so an absent name is usually a real choice rather
+    // than a fault — and the campaign email promised that choice would be honored.
+    const referral = referralByWaitlist.get(w.id)
+    const referrerName = referral?.consent ? referral.name : null
+    const referrerLookup: Row['referrerLookup'] =
+      referralError ? 'lookup_failed'
+      : !referral ? 'not_a_referral'
+      : !referral.consent ? 'no_consent'
+      : referrerName ? 'named'
+      : 'no_consent' // consented, but the referrer profile has no name to show
+
     const base = {
       waitlistId: w.id as string,
       email,
       fullName: (w.full_name ?? null) as string | null,
       invitedAt: (w.invited_at ?? null) as string | null,
+      referrerName,
+      referrerLookup,
     }
 
     // ── Already in? ────────────────────────────────────────────────────────────
@@ -110,12 +159,12 @@ export async function POST(req: Request) {
     try {
       auth = await lookupAuthUsersByEmail(admin, email)
     } catch {
-      rows.push({ ...base, deliveryStatus: null, deliveryLabel: '—', referrerName: null,
+      rows.push({ ...base, deliveryStatus: null, deliveryLabel: '—',
         verdict: 'skipped_ambiguous_account', detail: 'auth lookup failed' })
       continue
     }
     if (auth.count > 1) {
-      rows.push({ ...base, deliveryStatus: null, deliveryLabel: '—', referrerName: null,
+      rows.push({ ...base, deliveryStatus: null, deliveryLabel: '—',
         verdict: 'skipped_ambiguous_account', detail: 'more than one account for this address' })
       continue
     }
@@ -125,7 +174,7 @@ export async function POST(req: Request) {
         .from('profiles').select('profile_complete').eq('id', auth.user.id).maybeSingle()
       profileComplete = !!prof?.profile_complete
       if (profileComplete || auth.user.last_sign_in_at) {
-        rows.push({ ...base, deliveryStatus: null, deliveryLabel: '—', referrerName: null,
+        rows.push({ ...base, deliveryStatus: null, deliveryLabel: '—',
           verdict: 'skipped_already_activated',
           detail: profileComplete ? 'profile complete' : 'has signed in at least once' })
         continue
@@ -153,26 +202,10 @@ export async function POST(req: Request) {
     })
     const resendable = model.canResend || model.canRetry || model.needsConfirmResend
 
-    // ── Referrer name, CONSENT-GATED (migration 037) ───────────────────────────
-    // Named only where the referrer explicitly agreed to be named. A query failure (e.g. 037 not
-    // applied) is treated as NO consent, so the copy degrades to anonymous rather than leaking.
-    let referrerName: string | null = null
-    try {
-      const { data: referralRow } = await admin
-        .from('referrals')
-        .select('referrer_consent_to_share, referrer:profiles!referrer_user_id(full_name)')
-        .eq('waitlist_id', w.id)
-        .maybeSingle()
-      if ((referralRow as any)?.referrer_consent_to_share === true) {
-        referrerName = ((referralRow as any)?.referrer?.full_name as string | null) ?? null
-      }
-    } catch { /* no consent */ }
-
     const common = {
       ...base,
       deliveryStatus: delivery?.status ?? null,
       deliveryLabel: model.label,
-      referrerName,
     }
 
     if (!resendable) {
@@ -184,6 +217,17 @@ export async function POST(req: Request) {
     }
     if (!invitationsEnabled() || !canSendInvitation(email)) {
       rows.push({ ...common, verdict: 'skipped_paused', detail: INVITATIONS_PAUSED_MESSAGE })
+      continue
+    }
+
+    // ── Does the address look real? ────────────────────────────────────────────
+    // A nominator typed this on someone else's behalf, and an invitation is sent once. A mistyped
+    // domain produces a permanent bounce that reads exactly like "they ignored us", while the
+    // person who was recommended never learns of it. Flagged for review, never auto-corrected.
+    const sanity = checkEmailSanity(email)
+    if (sanity.suspect) {
+      rows.push({ ...common, verdict: 'blocked_suspect_address', detail: sanity.reason,
+        ...(sanity.suggestion ? { addressSuggestion: sanity.suggestion } : {}) })
       continue
     }
 
@@ -221,6 +265,12 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     mode: execute ? 'execute' : 'dry_run',
+    // Say plainly WHO was considered. The response previously reported only a count, and a count
+    // of 257 looks the same whether it is the intended audience or the entire waitlist.
+    scope: onlyReferred ? 'referred nominees only' : 'ALL invited waitlist rows (referred + direct)',
+    onlyReferred,
+    invitedWaitlistTotal: (waitlistRows ?? []).length,
+    referredAmongThem: (waitlistRows ?? []).filter((w: any) => referralByWaitlist.has(w.id)).length,
     considered: candidates.length,
     limit,
     sent,
