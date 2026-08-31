@@ -159,29 +159,38 @@ describe('retained protections still apply', () => {
   })
 })
 
-describe('referral note is REQUIRED (referrals CHECK: length(trim(referral_note)) > 0)', () => {
-  it('rejects a BLANK note — before creating any waitlist row (no orphan)', async () => {
+describe('referral note is OPTIONAL (migration 092 dropped the non-empty CHECK)', () => {
+  // The nomination form asks for name, title, company and email. The note was a fifth REQUIRED
+  // field on a form whose whole purpose is volume. These cases previously 400'd; they now succeed
+  // and store NULL — "no reason given" is a different fact from "reason given as blank".
+  it('ACCEPTS a blank note and stores NULL', async () => {
     const res = await post({ ...validBody(), referral_note: '' })
-    const data = await res.json()
-    expect(res.status).toBe(400)
-    expect(data.code).toBe('MISSING_FIELDS')
-    // Validation 1 runs BEFORE the waitlist insert — nothing is written.
-    expect(state.lastWaitlistInsert).toBeNull()
-    expect(state.lastReferralInsert).toBeNull()
+    expect(res.status).toBe(200)
+    expect(state.lastReferralInsert?.referral_note).toBeNull()
   })
 
-  it('rejects a WHITESPACE-only note (would violate the non-empty CHECK)', async () => {
+  it('ACCEPTS a whitespace-only note and stores NULL, not an empty string', async () => {
     const res = await post({ ...validBody(), referral_note: '   ' })
-    expect(res.status).toBe(400)
-    expect((await res.json()).code).toBe('MISSING_FIELDS')
-    expect(state.lastWaitlistInsert).toBeNull() // no orphaned waitlist row
+    expect(res.status).toBe(200)
+    expect(state.lastReferralInsert?.referral_note).toBeNull()
   })
 
-  it('rejects an OMITTED note', async () => {
+  it('ACCEPTS an omitted note', async () => {
     const res = await post({ full_name: 'Jane Smith', email: 'jane@example.com' })
-    expect(res.status).toBe(400)
-    expect((await res.json()).code).toBe('MISSING_FIELDS')
-    expect(state.lastWaitlistInsert).toBeNull()
+    expect(res.status).toBe(200)
+    expect(state.lastReferralInsert?.referral_note).toBeNull()
+  })
+
+  it('still requires a name and an email, before any waitlist row is created', async () => {
+    // The orphan guarantee is unchanged: Validation 1 runs BEFORE the waitlist insert, so a
+    // rejected submission never leaves a waitlist row with no referral pointing at it.
+    for (const body of [{ email: 'a@b.com' }, { full_name: 'Jane Smith' }, {}]) {
+      const res = await post(body as any)
+      expect(res.status).toBe(400)
+      expect((await res.json()).code).toBe('MISSING_FIELDS')
+      expect(state.lastWaitlistInsert).toBeNull()
+      expect(state.lastReferralInsert).toBeNull()
+    }
   })
 
   it('ACCEPTS a non-empty note and stores it trimmed', async () => {

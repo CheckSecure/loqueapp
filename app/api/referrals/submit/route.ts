@@ -97,14 +97,18 @@ export async function POST(req: Request) {
     const { full_name, email, title, company, linkedin_url, relationship, referral_note, consent } = body
 
     // ── Validation 1: required fields ─────────────────────────────────────────
-    // referral_note ("why") is REQUIRED and must contain at least one non-whitespace
-    // character — public.referrals enforces CHECK(length(trim(referral_note)) > 0), so
-    // a blank/whitespace-only note would violate it. We reject here, BEFORE the waitlist
-    // row is created, so a bad note never leaves an orphaned waitlist entry. relationship
-    // stays optional.
-    if (!full_name?.trim() || !email?.trim() || !referral_note?.trim()) {
+    // referral_note ("why") is OPTIONAL as of migration 092, which dropped the
+    // CHECK(length(trim(referral_note)) > 0) that previously made it mandatory. The nomination
+    // form asks for name, title, company and email; every additional required field on a form
+    // whose purpose is volume costs submissions.
+    //
+    // REQUIRES 092 TO BE APPLIED. Until it is, the database still rejects an empty note and this
+    // route would create the waitlist row and then fail on the referrals insert, orphaning it.
+    // The note is normalized to NULL rather than '' so the column reads as "not given" rather
+    // than "given as blank".
+    if (!full_name?.trim() || !email?.trim()) {
       return NextResponse.json(
-        { ok: false, error: 'full_name, email, and a non-empty referral_note are required', code: 'MISSING_FIELDS' },
+        { ok: false, error: 'A name and email address are required', code: 'MISSING_FIELDS' },
         { status: 400 }
       )
     }
@@ -140,8 +144,8 @@ export async function POST(req: Request) {
       )
     }
 
-    // ── Validation 4: referral_note length ────────────────────────────────────
-    if (referral_note.trim().length > 2000) {
+    // ── Validation 4: referral_note length (only when one was given) ──────────
+    if (referral_note?.trim() && referral_note.trim().length > 2000) {
       return NextResponse.json(
         { ok: false, error: 'Referral note is too long (max 2000 characters)', code: 'NOTE_TOO_LONG' },
         { status: 400 }
@@ -251,12 +255,13 @@ export async function POST(req: Request) {
     // Cleanup query for orphaned waitlist rows:
     //   SELECT * FROM waitlist WHERE referral_source = 'referral'
     //   AND id NOT IN (SELECT waitlist_id FROM referrals);
-    // referral_note is required and validated non-empty above (Validation 1), so the
-    // trimmed value always satisfies referrals' CHECK(length(trim(referral_note)) > 0).
+    // referral_note is optional (migration 092 dropped the non-empty CHECK); absent → NULL.
     const baseReferral = {
       referrer_user_id: referrerProfile.id,
       waitlist_id:      newWaitlistRow.id,
-      referral_note:    referral_note.trim(),
+      // NULL, not '': "no reason given" is a different fact from "reason given as empty", and the
+      // admin waitlist renders the note directly.
+      referral_note:    referral_note?.trim() || null,
     }
 
     // Optional, migration-gated columns:
