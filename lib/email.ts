@@ -5,6 +5,8 @@ import { introReminderCopy } from '@/lib/notifications/engagement'
 import { formatMeetingTimes } from '@/lib/meetings/formatMeetingTime'
 import { buildNominationInviteEmail } from '@/lib/email/nominationInvite'
 import { unsubscribeHeaders, unsubscribeFooterHtml, unsubscribeFooterText, normalizeEmail } from '@/lib/email/unsubscribe'
+import { buildSecureInviteEmail } from '@/lib/email/secureInvite'
+import { escapeHtml } from '@/lib/email/escapeHtml'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -165,15 +167,11 @@ async function sendManaged(
   )
 }
 
-export function escapeHtml(s: string | null | undefined): string {
-  if (!s) return '—'
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
+// Re-exported from its own module so the pure builders can import it without pulling in the Resend
+// client above. Same function, same behaviour; every existing call site is unaffected.
+// Imported as well as re-exported: a bare `export ... from` does NOT bind the name locally, and
+// this file calls escapeHtml in a couple of dozen templates.
+export { escapeHtml }
 
 export function truncate(s: string, max: number): string {
   if (s.length <= max) return s
@@ -524,79 +522,25 @@ export async function sendSecureInviteEmail(args: {
   // notification_preferences row is guaranteed to exist for this recipient), so without this
   // check the suppression row written by /api/email/unsubscribe would never be read.
   if (args.purpose !== 'account_recovery' && await isSuppressed(args.to, 'invitations')) return { success: true, skipped: true } as any
-  const firstName = ((args.toName || '').trim().split(/\s+/)[0]) || 'there'
-  const resume = (args.resumeLink || '').trim()
-  const recommendedBy = (args.referrerName || '').trim()
-  // CATCH-UP COPY. A person whose first invitation expired before they used it must not be sent
-  // something that reads as a first contact — to them it looks either like a duplicate they already
-  // ignored, or like the original never arrived. It names the gap and takes responsibility for the
-  // silence, which is also the honest answer to "why am I hearing from you now".
-  //
-  // NO DATE. The affected cohort was invited across several months, and a hardcoded month would be
-  // wrong for most of them. invited_at is deliberately not interpolated either: "we sent you an
-  // invitation" is true regardless of when, and a six-week-old date in the body invites the reader
-  // to wonder why it took six weeks rather than to click the link.
-  const isResend = args.purpose === 'access_resend'
-  const headline = isResend ? 'Your Andrel invitation' : "You're invited to Andrel"
-  const subject = isResend
-    ? 'Your Andrel invitation — a working link'
-    : 'Welcome to Andrel — set up your account'
-  const introLine = isResend
-    ? (recommendedBy
-        ? `${escapeHtml(recommendedBy)} recommended you for Andrel, and we sent you an invitation that expired before you had a chance to use it. We didn't follow up — that's on us.`
-        : `You were recommended for Andrel, and we sent you an invitation that expired before you had a chance to use it. We didn't follow up — that's on us.`)
-    : (recommendedBy
-        ? `${escapeHtml(recommendedBy)} recommended you for Andrel. Use the secure link below to set your password and finish setting up your account.`
-        : `You've been invited to join Andrel. Use the secure link below to set your password and finish setting up your account.`)
-  // Only the resend variant gets the second line; a first invite reads fine without it.
-  const secondLine = isResend
-    ? `<p style="font-size:16px; line-height:1.6;">Here's a fresh link, and this time a backup if it lapses again.</p>`
-    : ''
+  // Subject, HTML and text all come from the shared builder, so the admin preview at
+  // /api/admin/invitations/catch-up/preview renders EXACTLY what is sent. A separately assembled
+  // preview drifts the first time either side is edited, and then it certifies copy nobody gets.
+  const built = buildSecureInviteEmail({
+    toName: args.toName,
+    referrerName: args.referrerName ?? null,
+    link: args.link,
+    resumeLink: args.resumeLink ?? null,
+    purpose: args.purpose,
+  })
   try {
     const { data, error } = await sendManaged({
       // 'transactional' for the recovery path: see the `purpose` doc above.
       unsubscribeCategory: args.purpose === 'account_recovery' ? 'transactional' : 'invitations',
       from: 'Andrel <hello@andrel.app>',
       to: args.to,
-      subject,
-      html: `
-        <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto; color:#334155;">
-          <h2 style="color:#1B2850; margin-bottom:16px;">${headline}</h2>
-          <p style="font-size:16px; line-height:1.6;">Hi ${escapeHtml(firstName)},</p>
-          <p style="font-size:16px; line-height:1.6;">${introLine}</p>
-          ${secondLine}
-          <p style="margin:28px 0;">
-            <a href="${args.link}" style="display:inline-block; background:#1B2850; color:#ffffff; text-decoration:none; font-size:16px; font-weight:600; padding:14px 32px; border-radius:10px;">Set up my account</a>
-          </p>
-          <p style="font-size:13px; color:#64748b; line-height:1.6;">
-            This link is personal to you — please don't forward it. This secure link expires for your protection.
-          </p>
-          ${resume ? `<p style="font-size:13px; color:#64748b; line-height:1.6;">
-            If this sign-in link expires, <a href="${resume}" style="color:#1B2850;">request a fresh secure link</a>
-            and we'll email a new one to this address.
-          </p>` : `<p style="font-size:13px; color:#64748b; line-height:1.6;">
-            If it no longer works, request a new link from the Andrel sign-in page.
-          </p>`}
-          <p style="font-size:13px; color:#64748b; line-height:1.6;">
-            Don't see it? Check your spam/junk folder. Need help? Reply to this email or contact
-            <a href="mailto:hello@andrel.app" style="color:#1B2850;">hello@andrel.app</a>.
-          </p>
-          <p style="font-size:13px; color:#94a3b8; margin-top:28px;">— The Andrel Team</p>
-        </div>`,
-      // The text part branches identically — a recipient reading text/plain must not see first-invite
-      // wording on a resend just because their client prefers plain text.
-      text:
-        `${headline}.\n\nHi ${firstName},\n\n` +
-        (isResend
-          ? `${recommendedBy ? `${recommendedBy} recommended you for Andrel, and we` : `You were recommended for Andrel, and we`} sent you an invitation that expired before you had a chance to use it. We didn't follow up — that's on us.\n\n` +
-            `Here's a fresh link, and this time a backup if it lapses again:\n\n`
-          : `${recommendedBy ? `${recommendedBy} recommended you for Andrel.` : `You've been invited to join Andrel.`} Use the secure link below to set your password and finish setting up your account:\n\n`) +
-        `${args.link}\n\n` +
-        `This link is personal to you — please don't forward it. This secure link expires for your protection.\n\n` +
-        (resume
-          ? `If this sign-in link expires, request a fresh secure link and we'll email a new one to this address:\n${resume}\n\n`
-          : `If it no longer works, request a new link from the Andrel sign-in page.\n\n`) +
-        `Don't see it? Check your spam/junk folder. Need help? Contact hello@andrel.app.\n\n— The Andrel Team`,
+      subject: built.subject,
+      html: built.html,
+      text: built.text,
     }, args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : undefined)
     if (error) {
       // Definite provider rejection → NOT retryable as-is (safe failure).

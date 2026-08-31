@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 const ROUTE = readFileSync('app/api/admin/invitations/catch-up/route.ts', 'utf8')
-const EMAIL = readFileSync('lib/email.ts', 'utf8')
+// The invite template moved to lib/email/secureInvite.ts (a pure builder, so the admin preview
+// renders the same code that sends). These structural assertions follow it: read BOTH files so
+// they keep protecting the template wherever it lives.
+const EMAIL = readFileSync('lib/email.ts', 'utf8') + readFileSync('lib/email/secureInvite.ts', 'utf8')
 const FORWAITLIST = readFileSync('lib/invitations/sendForWaitlist.ts', 'utf8')
 const SECURE = readFileSync('lib/invitations/secureInvite.ts', 'utf8')
 
@@ -77,8 +80,9 @@ describe('purpose-aware invite copy', () => {
   })
 
   it('the plain-text part branches too, so a text client never sees the wrong wording', () => {
-    const textPart = EMAIL.slice(EMAIL.indexOf('      text:\n'))
-    expect(textPart.slice(0, 900)).toContain('isResend')
+    const tpl = readFileSync('lib/email/secureInvite.ts', 'utf8')
+    const textPart = tpl.slice(tpl.indexOf('const text ='))
+    expect(textPart).toContain('isResend')
   })
 
   it('the anonymous resend variant exists for nominees with no consent', () => {

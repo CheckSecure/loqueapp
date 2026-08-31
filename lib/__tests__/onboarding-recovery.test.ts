@@ -342,7 +342,7 @@ describe('the resume page causes no side effects on load', () => {
 })
 
 describe('email copy', () => {
-  const email = readFileSync('lib/email.ts', 'utf8')
+  const email = readFileSync('lib/email.ts', 'utf8') + readFileSync('lib/email/secureInvite.ts', 'utf8')
 
   it('uses the approved subjects', () => {
     expect(email).toMatch(/onboarding_reminder_1: 'Finish setting up your Andrel profile'/)
@@ -396,7 +396,7 @@ describe('canonical origin', () => {
 
 describe('the five root-cause fixes', () => {
   it('1. no reminder links to /auth/forgot-password', () => {
-    const email = readFileSync('lib/email.ts', 'utf8')
+    const email = readFileSync('lib/email.ts', 'utf8') + readFileSync('lib/email/secureInvite.ts', 'utf8')
     const code = email.split('\n').filter(l => !l.trimStart().startsWith('*') && !l.trimStart().startsWith('//')).join('\n')
     expect(code).not.toMatch(/auth\/forgot-password/)
   })
@@ -682,7 +682,7 @@ describe('profile initialization preserves progress safely', () => {
 describe('the FIRST invitation carries a durable fallback', () => {
   const orch = readFileSync('lib/invitations/secureInvite.ts', 'utf8')
   const route = readFileSync('app/api/admin/send-invite/route.ts', 'utf8')
-  const email = readFileSync('lib/email.ts', 'utf8')
+  const email = readFileSync('lib/email.ts', 'utf8') + readFileSync('lib/email/secureInvite.ts', 'utf8')
   const store = readFileSync('lib/invitations/resumeTokenStore.ts', 'utf8')
 
   it('mints a resume token inside the invitation ceremony, bound to the resolved identity', () => {

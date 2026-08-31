@@ -253,6 +253,9 @@ describe('Resend webhook — OFFICIAL SDK verification + event/state model', () 
 describe('NO plaintext-password invitation code anywhere (repo-wide structural)', () => {
   const files = {
     email: readFileSync('lib/email.ts', 'utf8'),
+    // The invite COPY moved to a pure builder so the admin preview renders the same code that
+    // sends. The sender keeps the wiring; the builder keeps the words. Assert each where it is.
+    inviteTemplate: readFileSync('lib/email/secureInvite.ts', 'utf8'),
     sendInvite: readFileSync('app/api/admin/send-invite/route.ts', 'utf8'),
     bulk: readFileSync('app/api/admin/bulk-invite/route.ts', 'utf8'),
     secure: readFileSync('lib/invitations/secureInvite.ts', 'utf8'),
@@ -275,12 +278,14 @@ describe('NO plaintext-password invitation code anywhere (repo-wide structural)'
   })
   it('the secure email carries a link + set-up copy, generic expiry copy, and consent-gated referrer', () => {
     const fn = files.email.slice(files.email.indexOf('export async function sendSecureInviteEmail'), files.email.indexOf('export async function sendRecommendationIntroductionEmail'))
-    expect(fn).toContain('set up your account')
-    expect(fn).toContain('args.link')
-    expect(fn).toMatch(/This secure link expires for your protection/)
-    expect(fn).not.toMatch(/expires in about an hour/)          // exact-lifetime copy removed
+    const tpl = files.inviteTemplate
+    expect(tpl).toContain('set up your account')
+    expect(tpl).toContain('input.link')                          // the button targets the secure link
+    expect(tpl).toMatch(/This secure link expires for your protection/)
+    expect(tpl).not.toMatch(/expires in about an hour/)          // exact-lifetime copy removed
     expect(fn).toContain('idempotencyKey')                       // passed to Resend
     expect(fn).toContain('referrerName')                         // consent-gated naming preserved
+    expect(tpl).toContain('referrerName')
   })
   it('the delivery table is service-role only (RLS, no policies) + webhook event log + active-claim index', () => {
     expect(files.migration).toContain('ENABLE ROW LEVEL SECURITY')
