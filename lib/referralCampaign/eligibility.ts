@@ -85,6 +85,15 @@ export type ReferralCampaignEligibility = {
   dedupeColumnPresent: boolean
 }
 
+// matching_paused is DELIBERATELY ABSENT, and this is a decision rather than an oversight.
+//
+// A paused member is removed from batches, from other members' candidate pools, and from every
+// introduction email and reminder — but they are still a member, and the referral ask is the one
+// message that should still reach them. The operator's actual reason for benching someone is
+// usually that they promised introductions and have not delivered, which makes the nomination
+// prompt more relevant to a paused member, not less.
+//
+// Do not "fix" this by adding matching_paused to the column list without checking that intent.
 const BASE_COLS = 'id, email, full_name, account_status, is_test_account, is_admin, profile_complete'
 const ABSENT_RE = /does not exist|schema cache|could not find|42703|42P01|PGRST20[45]/i
 

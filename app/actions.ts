@@ -1546,6 +1546,12 @@ export async function adminUpdateUser(userId: string, updates: {
   account_status?: string
   current_status?: string
   launch_cohort?: string | null
+  /**
+   * Bench a member from matching without deactivating them. Reversible by design — the intended
+   * use is "not a fit for batches right now, include them again later", which is a different thing
+   * from account_status and must never be conflated with it.
+   */
+  matching_paused?: boolean
 }) {
   const { user } = await getSupabaseAndUser()
   if (!user || user.email !== 'bizdev91@gmail.com') return { error: 'Not authorized' }
@@ -1562,6 +1568,7 @@ export async function adminUpdateUser(userId: string, updates: {
   if (updates.is_priority !== undefined) profileUpdates.is_priority = updates.is_priority
   if (updates.boost_score !== undefined) profileUpdates.boost_score = updates.boost_score
   if (updates.account_status !== undefined) profileUpdates.account_status = updates.account_status
+  if (updates.matching_paused !== undefined) profileUpdates.matching_paused = updates.matching_paused
   if (updates.current_status !== undefined) profileUpdates.current_status = updates.current_status
 
   // The same rule applies to an admin edit. Changing a member's status to consulting/between-roles

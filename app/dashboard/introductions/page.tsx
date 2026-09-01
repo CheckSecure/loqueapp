@@ -886,6 +886,10 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
     isAdmin: (profileRow as any)?.is_admin,
   }
   const isAdminViewer = (profileRow as any)?.is_admin === true
+  // Shown to a paused MEMBER only. An admin is excluded because canViewThursdayBanner already
+  // grants them the schedule view, so they would otherwise see both the countdown and a notice
+  // saying they are out of the rounds.
+  const matchingPausedView = (profileRow as any)?.matching_paused === true && !isAdminViewer
   let thursdayBanner: ThursdayBannerView | null = null
   if (canViewThursdayBanner(bannerFacts)) {
     // DURABLE RELEASE EVIDENCE (migration 074), read once, server-side, for every viewer including
@@ -940,6 +944,26 @@ export default async function IntroductionsPage({ searchParams }: { searchParams
           <h1 className="text-2xl sm:text-3xl font-bold text-brand-navy tracking-tight leading-[1.1]">Your next valuable relationship</h1>
           <p className="text-slate-600 text-sm sm:text-[15px] mt-2 leading-snug max-w-2xl">High-signal introductions across the Andrel network. We facilitate when interest is mutual.</p>
         </div>
+
+        {/* MATCHING PAUSED — a neutral, honest state instead of nothing.
+            canViewThursdayBanner() returns false for a paused member (it delegates to
+            isEligibleForMatching), and a paused member receives no new cards, so the page rendered
+            a header over empty space with nothing explaining why. That reads as the product being
+            broken rather than deliberately quiet.
+            Deliberately does NOT say "you were removed" or give a reason: the pause is an operator
+            judgement about batch fit, not something the member did, and inviting them to read
+            fault into it would be worse than the silence it replaces. Existing cards, messages and
+            connections are untouched, so the copy points at what still works. */}
+        {matchingPausedView && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 mb-4">
+            <p className="text-sm font-semibold text-slate-900">Introductions are paused</p>
+            <p className="text-sm text-slate-600 mt-1 leading-snug">
+              You&apos;re not in the current introduction rounds. Your account, messages and existing
+              connections are unaffected, and anything already in your queue still works.
+              Questions? Reply to any Andrel email and we&apos;ll pick it up.
+            </p>
+          </div>
+        )}
 
         {thursdayBanner && (
           <ThursdayCountdownBanner

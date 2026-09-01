@@ -36,6 +36,7 @@ interface Profile {
   location: string | null
   boost_score: number
   is_priority: boolean
+  matching_paused?: boolean | null
   account_status: string
   verification_status: string
   current_status: string
@@ -555,6 +556,13 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                         {user.is_priority && (
                           <Zap className="w-4 h-4 text-amber-500" />
                         )}
+                        {/* Benched from matching. Distinct from deactivated: the account works
+                            normally, they are simply out of batches until this is switched off. */}
+                        {user.matching_paused === true && (
+                          <span className="px-2 py-0.5 bg-slate-200 text-slate-700 text-xs font-semibold rounded">
+                            PAUSED
+                          </span>
+                        )}
                         {(user.matches === 0 && user.pending_intros === 0 && user.active_intros === 0) && (
                           <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded">
                             STUCK
@@ -999,6 +1007,29 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                     className="rounded border-slate-300"
                   />
                   <label className="text-sm text-slate-700">Priority User</label>
+                </div>
+
+                {/* MATCHING PAUSE — reversible bench, NOT deactivation. The account keeps working:
+                    they can sign in, message existing connections, and answer cards they already
+                    hold. They are only removed from batch generation and from being anyone else's
+                    candidate. Switching it off restores them with no backfill. */}
+                <div className="flex items-start gap-2">
+                  <input
+                    id="matching-paused-toggle"
+                    type="checkbox"
+                    checked={selectedUser.matching_paused === true}
+                    onChange={e => handleQuickEdit(selectedUser.id, 'matching_paused', e.target.checked)}
+                    className="mt-0.5 rounded border-slate-300"
+                  />
+                  <div>
+                    <label htmlFor="matching-paused-toggle" className="text-sm text-slate-700">
+                      Pause matching
+                    </label>
+                    <p className="text-xs text-slate-500 mt-0.5 max-w-sm">
+                      Removes them from batches and from other members&apos; candidate pools. Their
+                      account, messages and existing introductions are unaffected. Reversible.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-1 pt-2 border-t border-slate-100">
