@@ -87,6 +87,25 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
   const [connectorConfirmed, setConnectorConfirmed] =
     useState<{ id: string; enabled: boolean; awardedAt: string | null } | null>(null)
 
+  // THE SAME PROBLEM, for every other control in this panel.
+  //
+  // The comment above was written for the connector toggle, but the window it describes is not
+  // specific to that field: every handleQuickEdit control awaits the server, calls router.refresh()
+  // and then re-renders from props that have not arrived yet. A controlled <input type="checkbox">
+  // makes it obvious — it snaps straight back to the stale value and looks like the click did
+  // nothing — while a <select> merely appears sluggish, which is why this went unnoticed until a
+  // checkbox was added.
+  //
+  // Not optimism: only ever set from a write the database already confirmed, keyed by member id,
+  // and dropped the moment the refreshed row agrees.
+  const [confirmedEdits, setConfirmedEdits] =
+    useState<{ id: string; fields: Record<string, any> } | null>(null)
+
+  // Visible confirmation. handleQuickEdit previously reported success by saying nothing at all, so
+  // a write that worked was indistinguishable from a click that missed.
+  const [quickEditMsg, setQuickEditMsg] =
+    useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
   const liveSelected = selectedUserId ? profiles.find((p) => p.id === selectedUserId) ?? null : null
   // Merge the confirmed result over the live row ONLY while the server has not caught up. Once the
   // refreshed row reports the same value the override is redundant, so it is dropped and the server
@@ -95,11 +114,25 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
     !!connectorConfirmed && !!liveSelected &&
     connectorConfirmed.id === liveSelected.id &&
     liveSelected.is_andrel_connector !== connectorConfirmed.enabled
-  const selectedUser: Profile | null = liveSelected && overrideApplies
-    ? { ...liveSelected,
-        is_andrel_connector: connectorConfirmed!.enabled,
-        andrel_connector_awarded_at: connectorConfirmed!.awardedAt }
-    : liveSelected
+  // Only fields the server row has NOT caught up on. Once it agrees the entry is redundant, so it
+  // stops being applied and the server is the sole authority again.
+  const pendingFields: Record<string, any> =
+    confirmedEdits && liveSelected && confirmedEdits.id === liveSelected.id
+      ? Object.fromEntries(
+          Object.entries(confirmedEdits.fields)
+            .filter(([k, v]) => (liveSelected as any)[k] !== v))
+      : {}
+
+  const selectedUser: Profile | null = liveSelected
+    ? {
+        ...liveSelected,
+        ...(overrideApplies
+          ? { is_andrel_connector: connectorConfirmed!.enabled,
+              andrel_connector_awarded_at: connectorConfirmed!.awardedAt }
+          : {}),
+        ...pendingFields,
+      }
+    : null
   const setSelectedUser = (u: Profile | null) => {
     setSelectedUserId(u?.id ?? null)
     // Opening or closing the panel discards any override and any transient message, so reopening
@@ -107,6 +140,8 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
     setConnectorConfirmed(null)
     setConnectorMsg(null)
     setConnectorReason('')
+    setConfirmedEdits(null)
+    setQuickEditMsg(null)
   }
   const [showForceMatch, setShowForceMatch] = useState(false)
   const [matchUserA, setMatchUserA] = useState<string>('')
@@ -214,11 +249,20 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
 
   const handleQuickEdit = async (userId: string, field: string, value: any) => {
     const updates: any = { [field]: value }
+    setQuickEditMsg(null)
     const result = await adminUpdateUser(userId, updates)
     if (result.success) {
+      // Hold the CONFIRMED value until the refreshed props catch up, so the control reflects the
+      // write immediately instead of snapping back to the stale row.
+      setConfirmedEdits((prev) =>
+        prev && prev.id === userId
+          ? { id: userId, fields: { ...prev.fields, [field]: value } }
+          : { id: userId, fields: { [field]: value } })
+      setQuickEditMsg({ kind: 'ok', text: 'Saved.' })
       router.refresh()
     } else {
-      alert(result.error)
+      // Was alert(result.error) — a modal for a routine failure, and nothing at all on success.
+      setQuickEditMsg({ kind: 'err', text: result.error || 'Could not save. Please try again.' })
     }
   }
 
@@ -923,6 +967,14 @@ export default function AdminMembersClient({ profiles, currentUserId }: { profil
                   <p className="text-sm font-semibold text-slate-900">{selectedUser.full_name}</p>
                   <p className="text-xs text-slate-500">{selectedUser.email}</p>
                 </div>
+
+                {/* Outcome of the last quick edit. Cleared when the panel is opened or closed, so
+                    it never describes a previous member's change. */}
+                {quickEditMsg && (
+                  <p className={`text-xs ${quickEditMsg.kind === 'ok' ? 'text-emerald-700' : 'text-red-700'}`}>
+                    {quickEditMsg.text}
+                  </p>
+                )}
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Tier</label>
