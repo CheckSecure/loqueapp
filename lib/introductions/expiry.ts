@@ -17,7 +17,19 @@ export const EXPIRY_AGE_DAYS = 14
 
 export type PairExpiryOutcome = 'expired' | 'protected' | 'skipped' | 'invalid' | 'error'
 
-export interface PairExpiryResult { outcome: PairExpiryOutcome; detail?: string | null }
+/** Which shape the pair was in when it closed. Only present when outcome === 'expired'. */
+export type PairExpiryCase = 'both_unanswered' | 'one_sided_interest'
+
+export interface PairExpiryResult {
+  outcome: PairExpiryOutcome
+  detail?: string | null
+  /**
+   * SURFACED because the caller cannot recover it afterwards: expire_intro_pair moves every live
+   * row of the pair to 'expired' in one statement, so once it returns there is no way to tell which
+   * side had expressed interest. Without this the worker cannot know whom to notify.
+   */
+  pairCase?: PairExpiryCase | null
+}
 
 export async function expireIntroPair(
   admin: any, pairId: string, maxAgeDays: number = EXPIRY_AGE_DAYS,
@@ -31,7 +43,11 @@ export async function expireIntroPair(
     return { outcome: 'error' }
   }
   const r = (data ?? {}) as Record<string, any>
-  return { outcome: (r.outcome as PairExpiryOutcome) ?? 'error', detail: r.detail ?? null }
+  return {
+    outcome: (r.outcome as PairExpiryOutcome) ?? 'error',
+    detail: r.detail ?? null,
+    pairCase: (r.case as PairExpiryCase) ?? null,
+  }
 }
 
 /** Outcomes that mean the pair is settled for this run and must not be retried immediately. */

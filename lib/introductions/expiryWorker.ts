@@ -43,6 +43,51 @@ export interface ExpiryStageResult {
   unavailable: { processed: number; released: number; skipped: number; failed: number; truncated: boolean } | null
 }
 
+/**
+ * Notify the member whose one-sided interest was closed by a PAIR expiry.
+ *
+ * Reuses the existing 'interest_expired' type and its copy, overriding both only to name the
+ * counterpart. Naming them leaks nothing: this member SAW that card and chose to express interest
+ * in that specific person, so the name is already theirs. It is read from base `profiles` rather
+ * than `public_profiles` because this runs in a cron with no session — the discovery view is
+ * security_invoker and returns nothing to a service-role caller.
+ *
+ * THE COPY ASSIGNS NO FAULT. "No response within 14 days" alongside a name would point at the
+ * counterpart for a decision that was never theirs to make visibly — under the two-sided model they
+ * were never told anyone was interested. The wording says what happened and, usefully, that the
+ * interest stayed private, which is the thing a member in this position actually wonders about.
+ *
+ * dedupeKey is the expresser's row id, so a re-run of the stage cannot notify twice for the same
+ * card, and two cards closing on the same day each notify once rather than being collapsed by the
+ * default 24h digest window.
+ */
+async function notifyExpiredExpresser(
+  admin: any,
+  expresserRow: { id: string; requester_id: string; target_user_id: string },
+): Promise<void> {
+  let counterpartFirst = ''
+  const { data: other } = await admin
+    .from('profiles')
+    .select('full_name')
+    .eq('id', expresserRow.target_user_id)
+    .maybeSingle()
+  counterpartFirst = ((other?.full_name ?? '').trim().split(/\s+/)[0]) || ''
+
+  await createNotificationSafe({
+    userId: expresserRow.requester_id,
+    type: 'interest_expired',
+    data: { dedupeKey: expresserRow.id, introRequestId: expresserRow.id },
+    dedupeKey: expresserRow.id,
+    // No name resolved → the static copy stands, so the member still learns the card closed.
+    ...(counterpartFirst
+      ? {
+          title: `Your introduction to ${counterpartFirst} has closed`,
+          body: `Introductions close after 14 days without a mutual response. Your interest stayed private and was never shared.`,
+        }
+      : {}),
+  })
+}
+
 export async function runExpiryStage(
   admin: any,
   opts: { maxPairs?: number; maxLegacy?: number; maxUnavailable?: number; budgetMs: number },
@@ -75,9 +120,44 @@ export async function runExpiryStage(
       if (!r?.pair_id || seen.has(r.pair_id)) continue
       if (seen.size >= maxPairs || outOfTime()) { truncated = true; break }
       seen.add(r.pair_id)
+
+      // READ BEFORE EXPIRING, because afterwards it is unrecoverable. expire_intro_pair moves every
+      // live row of the pair to 'expired' in a single statement, so once it returns nothing
+      // distinguishes the side that expressed interest from the side that never answered. The
+      // notification below needs exactly that distinction.
+      //
+      // Cheap and bounded: one small read per pair, inside a stage that is already budget-limited
+      // and capped at maxPairs.
+      const { data: preRows } = await admin
+        .from('intro_requests')
+        .select('id, requester_id, target_user_id, status')
+        .eq('pair_id', r.pair_id)
+      const expresserRow = (preRows ?? []).find((row: any) =>
+        ['approved', 'accepted', 'pending'].includes(row?.status))
+
       const res = await expireIntroPair(admin, r.pair_id, EXPIRY_AGE_DAYS)
       outcomes[res.outcome] = (outcomes[res.outcome] ?? 0) + 1
       pairsProcessed++
+
+      // TELL THE EXPRESSER — the gap this closes.
+      //
+      // The legacy/orphan stage below already notifies a member whose one-sided interest is closed,
+      // for a reason that applies identically here: their card vanishes from "Interest expressed"
+      // the moment the row leaves 'approved', and there is no expired surface. But that stage
+      // filters `.is('pair_id', null)`, so a PAIR-based expresser reached neither it nor any other
+      // notification. Their interest was closed in silence.
+      //
+      // Gated on the RPC's own verdict, not on the pre-read: only 'expired' + 'one_sided_interest'
+      // means exactly one side had expressed and the pair actually closed. If the counterpart acted
+      // in between, the RPC returns 'protected'/'mutual_pending' and nothing is sent.
+      if (res.outcome === 'expired' && res.pairCase === 'one_sided_interest' && expresserRow) {
+        await notifyExpiredExpresser(admin, expresserRow).catch((e) => {
+          // Non-fatal, exactly as in the orphan stage: the pair IS closed, and a missed
+          // notification must never re-open it or halt the run.
+          console.error('[intro-expiry] pair notify failed (non-fatal):', (e as any)?.message ?? 'unknown')
+          outcomes['pair_notify_failed'] = (outcomes['pair_notify_failed'] ?? 0) + 1
+        })
+      }
     }
   }
 
