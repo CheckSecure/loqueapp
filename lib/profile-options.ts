@@ -89,4 +89,16 @@ export const EXPERTISE_OPTIONS: string[] = [
   'Business Development',
   'Legal Technology',
   'Networking',
+  // ─── Phase F — environmental practice ───
+  // THREE TAGS, NOT ONE COMBINED LABEL. The matcher intersects expertise as exact strings
+  // (lib/matching/batch-scoring: rExp.filter(e => cExp.includes(e))), so a single
+  // "Environmental Law, EHS, and Sustainability" would match only an exact twin — someone
+  // tagging just "Sustainability" would score zero overlap against it. Split, a member with
+  // this practice selects all three and matches anyone holding any one of them.
+  //
+  // Each is also a distinct audience: Environmental sits beside Energy/Policy/Regulatory, EHS is
+  // the operational term of art, and Sustainability increasingly sits outside legal entirely.
+  'Environmental',
+  'EHS',
+  'Sustainability',
 ]

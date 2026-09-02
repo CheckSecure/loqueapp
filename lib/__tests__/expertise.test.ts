@@ -100,3 +100,41 @@ describe('saving the final expertise array', () => {
     expect(selected.join(',')).toBe('Legal,Business Development')
   })
 })
+
+describe('Phase F — environmental practice', () => {
+  it('all three tags are canonical', () => {
+    for (const tag of ['Environmental', 'EHS', 'Sustainability']) {
+      expect(EXPERTISE_OPTIONS).toContain(tag)
+    }
+  })
+
+  it('each is independently searchable', () => {
+    expect(filterExpertiseOptions('environ', [])).toContain('Environmental')
+    expect(filterExpertiseOptions('ehs', [])).toContain('EHS')
+    expect(filterExpertiseOptions('sustain', [])).toContain('Sustainability')
+  })
+
+  it('is NOT a single combined label', () => {
+    // The matcher intersects expertise as exact strings, so a combined
+    // "Environmental Law, EHS, and Sustainability" would match only an exact twin — someone
+    // tagging just "Sustainability" would score zero overlap. Splitting is the whole point.
+    for (const combined of EXPERTISE_OPTIONS.filter((o) => o.includes(','))) {
+      throw new Error(`comma-joined expertise tag defeats exact-string matching: ${combined}`)
+    }
+    expect(EXPERTISE_OPTIONS.every((o) => !/\band\b/i.test(o))).toBe(true)
+  })
+
+  it('a member holding one tag overlaps a member holding all three', () => {
+    // The property that motivated splitting, asserted the way the matcher computes it.
+    const held = ['Environmental', 'EHS', 'Sustainability'].map((s) => s.toLowerCase())
+    const other = ['Sustainability'].map((s) => s.toLowerCase())
+    expect(held.filter((e) => other.includes(e)).length).toBe(1)
+  })
+
+  it('canonicalises a member who already typed one as free text', () => {
+    // normalizeExpertise maps case-insensitively, so an existing free-text value is adopted on
+    // that member's next profile save — no backfill needed.
+    expect(normalizeExpertise('sustainability')).toEqual(['Sustainability'])
+    expect(normalizeExpertise('ehs')).toEqual(['EHS'])
+  })
+})
