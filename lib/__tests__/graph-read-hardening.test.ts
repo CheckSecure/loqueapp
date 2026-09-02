@@ -89,9 +89,11 @@ describe('no cookie-session reader of matches / blocked_users remains', () => {
     // ZERO cookie-session, ZERO browser, ZERO unresolved readers anywhere in the tree.
     expect(offenders.sort()).toEqual(KNOWN_OUT_OF_SCOPE)
     // Parameter-injected readers are legitimate; the next test traces every caller.
-    // 12 since the ORPHANED ONE-SIDED INTEREST stage added a matches read to expiryWorker.ts.
-    // It is parameter-injected and both callers are traced in the MODULES table below.
-    expect(paramSites.length).toBe(12)
+    // 13 since the credit-blocked sweep added a matches read to creditBlockedSweep.ts (it checks
+    // whether a pair already connected before attempting to finalize). Parameter-injected, and its
+    // single caller is traced in the MODULES table below — which is the point of this count: a new
+    // graph reader cannot land without being accounted for here.
+    expect(paramSites.length).toBe(13)
     expect(paramSites).toContain("lib/introductions/finalizeMutualMatch.ts: PARAMETER graphClient.from('matches')")
   })
 
@@ -101,6 +103,7 @@ describe('no cookie-session reader of matches / blocked_users remains', () => {
       ['lib/admin/dashboardData.ts',                'admin',       ['app/dashboard/admin/operations/page.tsx', 'app/dashboard/admin/page.tsx']],
       ['lib/introductions/finalizeMutualMatch.ts',  'graphClient', ['app/api/intro-requests/express-interest/route.ts', 'app/api/intro-requests/accept-incoming/route.ts']],
       ['lib/introductions/expiryWorker.ts',         'admin',       ['app/api/cron/engagement-reminders/route.ts', 'app/api/cron/expire-pending-intros/route.ts']],
+      ['lib/introductions/creditBlockedSweep.ts',   'admin',       ['app/api/cron/engagement-reminders/route.ts']],
       ['lib/introductions/incomingInterest.ts',     'db',          ['app/api/cron/engagement-reminders/route.ts', 'app/api/intro-requests/accept-incoming/route.ts', 'app/dashboard/introductions/page.tsx']],
       ['lib/introductions/poolHealth.ts',           'admin',       ['app/api/admin/pool-health/route.ts']],
       ['lib/introductions/queue-metrics.ts',        'adminClient', ['app/api/admin/queue-metrics/route.ts']],

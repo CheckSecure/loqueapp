@@ -29,6 +29,7 @@ export type NotificationType =
   | 'andrel_connector_awarded'
   | 'referral_campaign'
   | 'referral_credit_awarded'
+  | 'match_pending_credits'
 
 export interface NotificationData {
   matchId?: string
@@ -65,6 +66,12 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
   referral_campaign: {
     title: 'Who else belongs here?',
     message: "Recommend 3-5 people who'd fit — in-house counsel, law firm attorneys, government affairs, or executives. Each one is personally reviewed, and you earn 1 credit for every nominee who joins, up to 5 a month."
+  },
+  // FALLBACK ONLY. Both sides of a credit-blocked match get copy naming the counterpart; this
+  // static pair sends if a name could not be resolved.
+  match_pending_credits: {
+    title: 'Introduction waiting to complete',
+    message: "You both said yes. It will complete automatically once a credit is available."
   },
   // FALLBACK ONLY. The award path passes a title/body naming the nominee; this static pair is
   // what sends if the name could not be resolved, so the member still learns they were credited
@@ -175,6 +182,8 @@ const NOTIFICATION_COPY: Partial<Record<NotificationType, { title: string; messa
 const LINK_BY_TYPE: Partial<Record<string, string>> = {
   referral_campaign: '/dashboard/referrals',
   referral_credit_awarded: '/dashboard/network',
+  // Overridden per-notification: the member who is short is sent to billing instead.
+  match_pending_credits: '/dashboard/introductions',
   admin_intro: '/dashboard/introductions',
   admin_intro_nudge: '/dashboard/introductions',
   interest_received: '/dashboard/introductions',

@@ -11,6 +11,7 @@
 
 import { sendMatchCreatedEmail } from '@/lib/email'
 import { createNotificationSafe } from '@/lib/notifications'
+import { notifyCreditBlockedMatch } from '@/lib/introductions/creditBlockedMatch'
 import { generateIcebreakers, generateSystemIntroMessage } from '@/lib/messaging/icebreakers'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
 import { isSameCompany } from '@/lib/matching/same-company'
@@ -189,7 +190,15 @@ export async function finalizeMutualMatch(params: {
     ? { error_code: guard.error_code }
     : { error_code: null, match_id: guard.match_id, conversation_id: guard.conversation_id }
 
+  // BOTH SIDES ARE TOLD, and the sweep will retry. Until now the acting member saw a promise
+  // ("We'll let you know when it can") that nothing kept, and the other member — whose introduction
+  // had just been accepted — heard nothing at all. Both rows stay 'approved', so expire_intro_pair
+  // returns protected/mutual_pending and the pair would otherwise sit invisible forever.
   if (rpcResult.error_code === 'insufficient_credits_a') {
+    // The ACTING member is the one short.
+    await notifyCreditBlockedMatch(adminClient, {
+      shortUserId: actingUserId, otherUserId,
+    })
     return {
       status: 403,
       body: { error: 'Insufficient credits', message: 'You need 1 free credit to connect.' },
@@ -197,6 +206,10 @@ export async function finalizeMutualMatch(params: {
   }
 
   if (rpcResult.error_code === 'insufficient_credits_b') {
+    // The OTHER member is the one short.
+    await notifyCreditBlockedMatch(adminClient, {
+      shortUserId: otherUserId, otherUserId: actingUserId,
+    })
     return {
       status: 403,
       body: {

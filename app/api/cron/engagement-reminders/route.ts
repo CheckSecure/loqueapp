@@ -10,6 +10,7 @@ import {
 } from '@/lib/reminders/wednesdayIntroReminder'
 import { claimReminder, markAccepted, markFailed } from '@/lib/reminders/deliveryLedger'
 import { runExpiryStage } from '@/lib/introductions/expiryWorker'
+import { runCreditBlockedSweep } from '@/lib/introductions/creditBlockedSweep'
 import { drainIntroductionOutbox } from '@/lib/introductions/newIntroductionOutbox'
 import { purgeExpiredDeletionEvents } from '@/lib/account/retentionPurge'
 import { runOnboardingReminderStage, REMINDER_STAGE_BUDGET_MS } from '@/lib/onboarding/reminderWorker'
@@ -30,6 +31,7 @@ const PROFILE_FETCH_CHUNK = 200
 /** Members whose claim+send+mark run concurrently. Matches the referral campaign's batch size. */
 const REMINDER_SEND_CONCURRENCY = 25
 const EXPIRY_BUDGET_MS = 15_000       // daily expiry stage, strictly after the reminder
+const CREDIT_RETRY_BUDGET_MS = 8_000  // mutual matches blocked on credits
 const OUTBOX_STAGE_BUDGET_MS = 12_000 // daily new-introduction outbox drain, strictly last
 import { sendIntroductionReminderEmail, sendWaitingResponseEmail } from '@/lib/email'
 import {
@@ -370,6 +372,20 @@ export async function GET(req: Request) {
     }
   }
 
+  // ── PART 5b: retry mutual matches blocked on credits ────────────────────────
+  //
+  // Runs BEFORE expiry deliberately. A pair that completes here becomes a match, and expiry's
+  // match_exists guard then protects it — whereas the reverse order would have expiry look at a
+  // pair that was about to succeed. It is also strictly ahead of the expiry budget, so a backlog
+  // there can never starve a match that is one credit away from completing.
+  let creditRetry: Awaited<ReturnType<typeof runCreditBlockedSweep>> | { error: string }
+  try {
+    creditRetry = await runCreditBlockedSweep(admin, { budgetMs: CREDIT_RETRY_BUDGET_MS })
+  } catch {
+    console.error('[engagement-reminders] credit-blocked sweep failed (class): unhandled')
+    creditRetry = { error: 'unhandled' }
+  }
+
   // ── PART 6: bounded DAILY suggested-card expiry ─────────────────────────────
   //
   // This route is the one we can SEE running in production; /api/cron/expire-pending-intros is
@@ -477,5 +493,6 @@ export async function GET(req: Request) {
       considered: wedConsidered, claimed: wedClaimed, sent: wedSent, failed: wedFailed,
       truncated: wedTruncated, skipped: wedSkip,
     },
+    creditRetry,
     suggestedExpiry: expiry, waitingSent, waitingSkipped, reminderSent, reminderSkipped })
 }
