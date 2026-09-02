@@ -25,6 +25,10 @@ import { sendWednesdayIntroReminderEmail } from '@/lib/email'
 const REMINDER_PAGE = 1000
 const REMINDER_MAX_PER_RUN = 300
 const REMINDER_DEADLINE_MS = 25_000   // Wednesday reminder stage
+/** Ids per profiles read. Keeps the URL well inside PostgREST's limit on a large `.in()`. */
+const PROFILE_FETCH_CHUNK = 200
+/** Members whose claim+send+mark run concurrently. Matches the referral campaign's batch size. */
+const REMINDER_SEND_CONCURRENCY = 25
 const EXPIRY_BUDGET_MS = 15_000       // daily expiry stage, strictly after the reminder
 const OUTBOX_STAGE_BUDGET_MS = 12_000 // daily new-introduction outbox drain, strictly last
 import { sendIntroductionReminderEmail, sendWaitingResponseEmail } from '@/lib/email'
@@ -253,25 +257,68 @@ export async function GET(req: Request) {
     }
 
     if (!readFailed) {
+      // ONE profiles read for everyone referenced by any card — requesters AND targets. Previously
+      // this was a round trip PER MEMBER inside the send loop, which is what actually consumed the
+      // 25s budget: at a few hundred milliseconds each, the deadline fired around 60-100 members and
+      // everyone after it was cut. Targets are included because openCardsFor now needs to know which
+      // of them are active.
+      const referenced = new Set<string>()
+      for (const r of openRows) { referenced.add(r.requesterId); referenced.add(r.targetUserId) }
+      const profById = new Map<string, any>()
+      const refIds = Array.from(referenced)
+      for (let i = 0; i < refIds.length; i += PROFILE_FETCH_CHUNK) {
+        const { data, error } = await admin
+          .from('profiles')
+          .select('id, email, full_name, account_status, profile_complete, is_test_account, is_admin, matching_paused')
+          .in('id', refIds.slice(i, i + PROFILE_FETCH_CHUNK))
+        // FAIL CLOSED, same rule as the card read: a partial profile set would mis-classify targets
+        // as inactive and silently suppress real reminders.
+        if (error) { readFailed = true; break }
+        for (const row of data ?? []) profById.set(row.id, row)
+      }
+
+      const activeTargetIds = new Set<string>()
+      for (const [id, row] of Array.from(profById.entries())) {
+        if (row?.account_status === 'active') activeTargetIds.add(id)
+      }
+
       const byMember = new Map<string, number>()
       const memberIds = new Set(openRows.map((r) => r.requesterId))
       for (const id of Array.from(memberIds)) {
-        const open = openCardsFor(id, openRows)
+        const open = openCardsFor(id, openRows, activeTargetIds)
         if (open.length > 0) byMember.set(id, open.length)
       }
-      // Deterministic, oldest-member-id-first, and BOUNDED. Anything beyond the cap is reported and
-      // picked up by the next invocation rather than silently dropped.
-      const candidates = Array.from(byMember.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+
+      // LEAST-RECENTLY-REMINDED FIRST, never-reminded ahead of everyone.
+      //
+      // The old order was member UUID ascending. Deterministic, but the deadline then cut the same
+      // tail of that sort every week — and because this stage only runs on Wednesdays, "picked up by
+      // the next invocation" meant seven days later, with the identical ordering and the identical
+      // cut. The same members were starved indefinitely rather than occasionally. Ordering by last
+      // reminder makes any future cut ROTATE: whoever is dropped this week sorts first next week.
+      const lastRemindedAt = new Map<string, string>()
+      const { data: priorDeliveries } = await admin
+        .from('reminder_deliveries')
+        .select('member_id, claimed_at')
+        .eq('purpose', REMINDER_PURPOSE)
+        .order('claimed_at', { ascending: false })
+      for (const d of (priorDeliveries ?? []) as any[]) {
+        if (!lastRemindedAt.has(d.member_id)) lastRemindedAt.set(d.member_id, d.claimed_at)
+      }
+      const candidates = Array.from(byMember.entries()).sort((a, b) => {
+        const la = lastRemindedAt.get(a[0]) ?? ''   // '' sorts first — never reminded goes to the front
+        const lb = lastRemindedAt.get(b[0]) ?? ''
+        if (la !== lb) return la < lb ? -1 : 1
+        return a[0].localeCompare(b[0])             // stable tie-break, so a run is still reproducible
+      })
       if (candidates.length > REMINDER_MAX_PER_RUN) wedTruncated = true
 
+      // Eligibility is now PURE — the profiles are already in memory — so it is settled for the
+      // whole cohort up front, before any I/O. Only genuine recipients reach the send phase.
+      const recipients: Array<{ p: ReminderProfile; openCount: number }> = []
       for (const [memberId, openCount] of candidates.slice(0, REMINDER_MAX_PER_RUN)) {
-        if (Date.now() - wedStartedAt > REMINDER_DEADLINE_MS) { wedTruncated = true; break }
         wedConsidered++
-        const { data: prof } = await admin
-          .from('profiles')
-          .select('id, email, full_name, account_status, profile_complete, is_test_account, is_admin, matching_paused')
-          .eq('id', memberId)
-          .maybeSingle()
+        const prof = profById.get(memberId)
         const p: ReminderProfile = {
           id: memberId,
           email: prof?.email ?? null,
@@ -284,24 +331,39 @@ export async function GET(req: Request) {
         }
         const reason = reminderIneligibility(p, openCount)
         if (reason) { wedSkip[reason] = (wedSkip[reason] ?? 0) + 1; continue }
+        recipients.push({ p, openCount })
+      }
 
-        const claim = await claimReminder(admin, {
-          memberId, purpose: REMINDER_PURPOSE, cycleKey, openCardCount: openCount,
-        })
-        if (!claim.claimed || !claim.deliveryId) {
-          wedSkip[claim.errorClass ?? 'already_claimed'] = (wedSkip[claim.errorClass ?? 'already_claimed'] ?? 0) + 1
-          continue
-        }
-        wedClaimed++
-        try {
-          const res = await sendWednesdayIntroReminderEmail(p.email as string, p.firstName, openCount)
-          if (res.sent) { await markAccepted(admin, claim.deliveryId, res.providerMessageId); wedSent++ }
-          else { wedSkip['pref_disabled'] = (wedSkip['pref_disabled'] ?? 0) + 1 }
-        } catch {
-          // Retryable: 'failed' sits outside the active-claim index, so the next run may re-claim.
-          await markFailed(admin, claim.deliveryId, 'provider_error')
-          wedFailed++
-        }
+      // Claim + send + mark, REMINDER_SEND_CONCURRENCY at a time. Each member's three round trips
+      // stay sequential relative to each other — the claim must land before the send, and the send
+      // before the mark — but different members no longer wait on one another. That is what removes
+      // the truncation: the stage's cost becomes roughly total/concurrency instead of total.
+      //
+      // Concurrent claims are safe: reminder_deliveries' active-claim index is per
+      // (member_id, purpose, cycle_key), so distinct members never contend.
+      for (let i = 0; i < recipients.length; i += REMINDER_SEND_CONCURRENCY) {
+        if (Date.now() - wedStartedAt > REMINDER_DEADLINE_MS) { wedTruncated = true; break }
+        const chunk = recipients.slice(i, i + REMINDER_SEND_CONCURRENCY)
+        await Promise.all(chunk.map(async ({ p, openCount }) => {
+          const claim = await claimReminder(admin, {
+            memberId: p.id, purpose: REMINDER_PURPOSE, cycleKey, openCardCount: openCount,
+          })
+          if (!claim.claimed || !claim.deliveryId) {
+            const key = claim.errorClass ?? 'already_claimed'
+            wedSkip[key] = (wedSkip[key] ?? 0) + 1
+            return
+          }
+          wedClaimed++
+          try {
+            const res = await sendWednesdayIntroReminderEmail(p.email as string, p.firstName, openCount)
+            if (res.sent) { await markAccepted(admin, claim.deliveryId, res.providerMessageId); wedSent++ }
+            else { wedSkip['pref_disabled'] = (wedSkip['pref_disabled'] ?? 0) + 1 }
+          } catch {
+            // Retryable: 'failed' sits outside the active-claim index, so the next run may re-claim.
+            await markFailed(admin, claim.deliveryId, 'provider_error')
+            wedFailed++
+          }
+        }))
       }
     } else {
       wedSkip['read_failed_no_sends'] = 1

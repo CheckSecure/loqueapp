@@ -89,39 +89,54 @@ describe('one consolidated reminder per member per week', () => {
   })
 })
 
+// Every pre-existing case here is about STATUS, not target liveness, so they run with all targets
+// active. The dedicated target-gate cases below are what exercise the new argument.
+const ALL_ACTIVE: ReadonlySet<string> = new Proxy(new Set<string>(), {
+  get: (t, k) => (k === 'has' ? () => true : Reflect.get(t, k)),
+}) as ReadonlySet<string>
+
 describe('eligibility', () => {
   it('an unanswered suggested card qualifies', () => {
     const rows = [card('m1', 't1')]
-    expect(openCardsFor('m1', rows)).toHaveLength(1)
+    expect(openCardsFor('m1', rows, ALL_ACTIVE)).toHaveLength(1)
     expect(reminderIneligibility(prof(), 1)).toBeNull()
   })
 
   it('RECIPROCAL cards qualify with no envelope and no batch id', () => {
     const rows = [card('m1', 't1', 'suggested', 'pair-1')]
-    expect(openCardsFor('m1', rows)).toHaveLength(1)
+    expect(openCardsFor('m1', rows, ALL_ACTIVE)).toHaveLength(1)
     // and the worker never consults a batch table
     expect(CRON).not.toMatch(/from\('recommendation_batches'\)[\s\S]{0,400}wednesdayReminder/)
   })
 
   it('LEGACY/admin one-sided cards qualify', () => {
-    expect(openCardsFor('m1', [card('m1', 't1', 'suggested', null)])).toHaveLength(1)
+    expect(openCardsFor('m1', [card('m1', 't1', 'suggested', null)], ALL_ACTIVE)).toHaveLength(1)
   })
 
   it('a member whose only state is their own pending interest is NOT reminded', () => {
     const rows = [card('m1', 't1', 'suggested'), card('m1', 't1', 'pending')]
-    expect(openCardsFor('m1', rows)).toHaveLength(0)
+    expect(openCardsFor('m1', rows, ALL_ACTIVE)).toHaveLength(0)
     expect(reminderIneligibility(prof(), 0)).toBe('no_open_cards')
   })
 
   it('every responded status closes the card', () => {
     for (const st of Array.from(RESPONDED_STATUSES)) {
       const rows = [card('m1', 't1', 'suggested'), card('m1', 't1', st)]
-      expect(openCardsFor('m1', rows), `${st} should close the card`).toHaveLength(0)
+      expect(openCardsFor('m1', rows, ALL_ACTIVE), `${st} should close the card`).toHaveLength(0)
     }
   })
 
+  it('a card toward a DEACTIVATED target does not count', () => {
+    // count_unresolved_introductions (081) has `AND t.account_status = 'active'`. This function
+    // claimed to mirror it while omitting that, so the reminder chased members about cards the
+    // product itself no longer counts.
+    const rows = [card('m1', 't1'), card('m1', 't2')]
+    expect(openCardsFor('m1', rows, new Set(['t1']))).toHaveLength(1)
+    expect(openCardsFor('m1', rows, new Set<string>())).toHaveLength(0)
+  })
+
   it('counts only the member\'s OWN cards', () => {
-    expect(openCardsFor('m1', [card('m2', 'm1', 'suggested')])).toHaveLength(0)
+    expect(openCardsFor('m1', [card('m2', 'm1', 'suggested')], ALL_ACTIVE)).toHaveLength(0)
   })
 
   it('rejects inactive / incomplete / test / admin / paused / emailless members', () => {
@@ -359,9 +374,24 @@ describe('bounded processing and privacy of the worker', () => {
     expect(WORKER).toMatch(/maxPairs = opts\.maxPairs \?\? \d+/)
     expect(WORKER).toMatch(/opts\.budgetMs/)
   })
-  it('processes deterministically, oldest first', () => {
+  it('processes deterministically, LEAST-RECENTLY-REMINDED first', () => {
     expect(WORKER).toMatch(/\.order\('created_at', \{ ascending: true \}\)/)
-    expect(CRON).toMatch(/sort\(\(a, b\) => a\[0\]\.localeCompare\(b\[0\]\)\)/)
+    // Was member-UUID ascending. Deterministic, but the deadline then cut the same tail of that
+    // sort every week — and this stage only runs on Wednesdays, so "next invocation" meant seven
+    // days later with the identical order and the identical cut. Ordering by last reminder makes a
+    // cut ROTATE instead of starving the same people indefinitely.
+    expect(CRON).toContain("const la = lastRemindedAt.get(a[0]) ?? ''")
+    expect(CRON).toContain('.eq(\'purpose\', REMINDER_PURPOSE)')
+    // Never-reminded sorts ahead of everyone, and ties still break stably so a run is reproducible.
+    expect(CRON).toContain('return a[0].localeCompare(b[0])')
+  })
+
+  it('no longer queries profiles once per member inside the send loop', () => {
+    // That round trip is what consumed the 25s budget and produced the truncation.
+    const stage = CRON.slice(CRON.indexOf('PART 4'), CRON.indexOf('PART 6'))
+    expect(stage).not.toMatch(/\.eq\('id', memberId\)\s*\n\s*\.maybeSingle\(\)/)
+    expect(stage).toContain('profById.get(memberId)')
+    expect(stage).toContain('REMINDER_SEND_CONCURRENCY')
   })
   it('reports aggregate counts only, no identities', () => {
     expect(CRON).toMatch(/considered: wedConsidered, claimed: wedClaimed, sent: wedSent, failed: wedFailed/)

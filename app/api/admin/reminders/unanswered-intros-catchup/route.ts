@@ -58,6 +58,7 @@ export async function POST(req: Request) {
   if (!parsed.ok) return json({ error: 'Unsupported request shape', reason: parsed.reason }, 400)
   const mode = parsed.mode
 
+  const PROFILE_CHUNK = 200
   const startedAt = Date.now()
   const admin = createAdminClient()
 
@@ -80,12 +81,31 @@ export async function POST(req: Request) {
     if (!data || data.length < PAGE) break
   }
 
-  // 5. Members holding at least one OPEN card. Status is the only gate, so reciprocal and
-  //    legacy/admin cards qualify identically, and a member whose only state is a private interest
-  //    or a closed card is excluded by openCardsFor.
+  // 4b. Which TARGETS are active. openCardsFor requires this: count_unresolved_introductions
+  //     (migration 081) excludes cards pointing at a deactivated member, and this campaign must
+  //     use the same definition as the weekly cron or the two disagree about who has an open card.
+  //     FAIL CLOSED for the same reason as the read above — a partial profile set would mark live
+  //     targets inactive and silently shrink the recipient list.
+  const activeTargetIds = new Set<string>()
+  const targetIds = Array.from(new Set(openRows.map((r) => r.targetUserId)))
+  for (let i = 0; i < targetIds.length; i += PROFILE_CHUNK) {
+    const { data, error } = await admin
+      .from('profiles')
+      .select('id, account_status')
+      .in('id', targetIds.slice(i, i + PROFILE_CHUNK))
+    if (error) {
+      console.error('[catchup] target read failed (class):', (error as any).code ?? 'unknown')
+      return json({ error: 'Read failed; nothing was sent', sent: 0, failClosed: true }, 503)
+    }
+    for (const row of data ?? []) if (row?.account_status === 'active') activeTargetIds.add(row.id)
+  }
+
+  // 5. Members holding at least one OPEN card. Status and target-liveness are the gates, so
+  //    reciprocal and legacy/admin cards qualify identically, and a member whose only state is a
+  //    private interest or a closed card is excluded by openCardsFor.
   const byMember = new Map<string, number>()
   for (const id of Array.from(new Set(openRows.map((r) => r.requesterId)))) {
-    const open = openCardsFor(id, openRows)
+    const open = openCardsFor(id, openRows, activeTargetIds)
     if (open.length > 0) byMember.set(id, open.length)
   }
   const candidates = Array.from(byMember.entries()).sort((a, b) => a[0].localeCompare(b[0]))

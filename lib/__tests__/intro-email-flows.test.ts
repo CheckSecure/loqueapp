@@ -144,6 +144,16 @@ const member = (id: string, over: any = {}) => ({
   account_status: 'active', profile_complete: true, is_test_account: false,
   is_admin: false, matching_paused: false, ...over,
 })
+/**
+ * Targets referenced by the card fixtures, as ACTIVE profiles.
+ *
+ * openCardsFor now requires the target to be active (mirroring count_unresolved_introductions in
+ * migration 081). In production every target has a profile row — intro_requests.target_user_id is
+ * a foreign key — but these fixtures only ever defined profiles for the members under test, so
+ * without this every card is correctly filtered out and the suites see zero candidates.
+ */
+const activeTargets = () => ['x', 'y', 't', 'z', 'target'].map((id) => member(id))
+
 const card = (requester: string, target: string, status = 'suggested', createdAt = '2026-08-20T10:00:00Z') =>
   ({ id: `${requester}-${target}`, requester_id: requester, target_user_id: target, status, created_at: createdAt })
 
@@ -261,7 +271,7 @@ describe('PART 1 — catch-up: authorization precedes everything', () => {
 
 describe('PART 1 — catch-up: who qualifies', () => {
   beforeEach(() => {
-    h.profiles.push(member('m1'), member('m2'), member('m3'), member('m4'), member('m5'))
+    h.profiles.push(member('m1'), member('m2'), member('m3'), member('m4'), member('m5'), ...activeTargets())
   })
 
   it('includes reciprocal AND legacy/admin suggested cards, one consolidated email each', async () => {
@@ -295,6 +305,7 @@ describe('PART 1 — catch-up: who qualifies', () => {
       member('a', { account_status: 'paused' }), member('b', { profile_complete: false }),
       member('c', { is_test_account: true }), member('d', { is_admin: true }),
       member('e', { matching_paused: true }), member('f', { email: null }),
+      ...activeTargets(),
     )
     for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) h.introRows.push(card(id, 'target'))
     const { json } = await postCatchup({ dryRun: false, confirmFullCampaign: true })
@@ -305,7 +316,7 @@ describe('PART 1 — catch-up: who qualifies', () => {
 
   it('pages the read to exhaustion (more than one page of rows)', async () => {
     for (let i = 0; i < 1200; i++) h.introRows.push(card(`p${String(i).padStart(4, '0')}`, 't'))
-    h.profiles.push(...h.introRows.map((r) => member(r.requester_id)))
+    h.profiles.push(...h.introRows.map((r) => member(r.requester_id)), ...activeTargets())
     const { json } = await postCatchup({ dryRun: true })
     expect(json.eligibleTotal).toBe(1200)   // would be 1000 if paging stopped at one page
   })
@@ -322,7 +333,7 @@ describe('PART 1 — catch-up: who qualifies', () => {
 
 describe('PART 1 — catch-up: modes, dedupe and retry', () => {
   beforeEach(() => {
-    h.profiles.push(member('m1'), member('m2'))
+    h.profiles.push(member('m1'), member('m2'), ...activeTargets())
     h.introRows.push(card('m1', 'x'), card('m2', 'y'))
   })
 
@@ -441,7 +452,7 @@ describe('PART 2 — the outbox is written by the database, not by the sender', 
 })
 
 describe('PART 2 — worker: consolidation, recovery and re-reading', () => {
-  beforeEach(() => { h.profiles.push(member('m1'), member('m2')) })
+  beforeEach(() => { h.profiles.push(member('m1'), member('m2'), ...activeTargets()) })
 
   it('sends one consolidated email for two cards committed in one operation', async () => {
     h.introRows.push(card('m1', 'x'), card('m1', 'y'))

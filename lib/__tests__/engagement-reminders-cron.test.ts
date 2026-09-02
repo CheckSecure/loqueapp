@@ -19,6 +19,14 @@ vi.mock('@/lib/supabase/admin', () => {
       in: (c: string, v: any[]) => { filters.push({ t: 'in', c, v }); return b },
       lte: (c: string, v: any) => { filters.push({ t: 'lte', c, v }); return b },
       or: () => b,
+      // The builder was missing these. The Wednesday stage pages with .in().range() and reads
+      // reminder_deliveries with .eq().order(), so on a Wednesday this mock threw
+      // "…in(...).range is not a function" and these PART 3 tests failed — one day in seven,
+      // independent of anything PART 3 does. Nothing pinned the clock, so the suite's result
+      // depended on the day it ran.
+      order: () => b,
+      range: (from: number, to: number) =>
+        Promise.resolve({ data: rows().slice(from, to + 1), error: null }),
       limit: () => Promise.resolve({ data: rows(), error: null }),
       maybeSingle: () => Promise.resolve({ data: rows()[0] ?? null, error: null }),
       then: (res: any, rej: any) => Promise.resolve({ data: rows(), error: null }).then(res, rej),

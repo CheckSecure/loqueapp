@@ -54,6 +54,21 @@ export const RESPONDED_STATUSES: ReadonlySet<string> = new Set([
  * RESPONSE. Both the weekly cron and the one-time catch-up campaign use this one list, so they can
  * never drift into disagreeing about who has an open card.
  */
+/**
+ * KNOWN REMAINING DIVERGENCES from count_unresolved_introductions (migration 081), recorded rather
+ * than silently tolerated. Both make this reminder LOOSER than the product's own definition, so the
+ * effect is an occasional reminder about a card the product no longer counts — never a missed one:
+ *
+ *   1. 081 excludes a card when the TARGET has an outstanding request back toward the member
+ *      (pending/approved/accepted/accepted_pending_payment/admin_pending). This function only looks
+ *      at the member's OWN outgoing rows.
+ *   2. 081 excludes a card when a match already exists between the two. This function does not read
+ *      public.matches at all.
+ *
+ * Closing them means either reading matches here or moving this predicate into SQL. Left open
+ * deliberately: both need a decision about whether the reminder should own a second copy of that
+ * logic at all, rather than calling the RPC per member.
+ */
 export const REMINDER_RELEVANT_STATUSES = [
   'suggested', 'pending', 'accepted', 'accepted_pending_payment', 'admin_pending', 'approved',
   'passed', 'declined', 'rejected', 'hidden', 'hidden_permanent', 'expired', 'archived',
@@ -65,18 +80,33 @@ export function isOpenCard(row: { status: string }): boolean {
 }
 
 /**
- * A member's OPEN cards: 'suggested' rows for which they have no responding row toward the same
- * target. Mirrors countUnresolvedRecommendations in lib/introductions/queue.ts, so the reminder and
- * the product agree on what "unanswered" means.
+ * A member's OPEN cards: 'suggested' rows toward an ACTIVE target for which they have no responding
+ * row toward that same target.
+ *
+ * THE TARGET GATE IS NOT OPTIONAL, and that is deliberate. This function's comment used to claim it
+ * mirrored count_unresolved_introductions (migration 081) while omitting that RPC's
+ * `AND t.account_status = 'active'` — so the reminder counted, and chased members about, cards
+ * pointing at deactivated people that the product itself does not count. Making the set a required
+ * argument means a caller cannot reintroduce the drift by forgetting to pass it; it has to be
+ * supplied or the code does not compile.
+ *
+ * STILL NOT A FULL MIRROR — see the two remaining divergences documented at REMINDER_RELEVANT_STATUSES.
  */
-export function openCardsFor(memberId: string, rows: readonly OpenCard[]): OpenCard[] {
+export function openCardsFor(
+  memberId: string,
+  rows: readonly OpenCard[],
+  activeTargetIds: ReadonlySet<string>,
+): OpenCard[] {
   const responded = new Set<string>()
   for (const r of rows) {
     if (r.requesterId !== memberId) continue
     if (RESPONDED_STATUSES.has(r.status)) responded.add(r.targetUserId)
   }
   return rows.filter((r) =>
-    r.requesterId === memberId && isOpenCard(r) && !responded.has(r.targetUserId))
+    r.requesterId === memberId
+    && isOpenCard(r)
+    && !responded.has(r.targetUserId)
+    && activeTargetIds.has(r.targetUserId))
 }
 
 export type IneligibleReason =
