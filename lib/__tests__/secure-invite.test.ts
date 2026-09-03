@@ -281,8 +281,17 @@ describe('NO plaintext-password invitation code anywhere (repo-wide structural)'
     const tpl = files.inviteTemplate
     expect(tpl).toContain('set up your account')
     expect(tpl).toContain('input.link')                          // the button targets the secure link
-    expect(tpl).toMatch(/This secure link expires for your protection/)
-    expect(tpl).not.toMatch(/expires in about an hour/)          // exact-lifetime copy removed
+    // STATES THE LIFETIME, FROM ONE CONSTANT. This assertion previously banned exact-lifetime copy
+    // outright. That ban was prophylactic — the phrase it forbade never existed in this repo — and
+    // it contradicted the two places a reader actually lands when a link is dead
+    // (app/auth/reset-password and lib/auth/recovery), both of which have always said "one hour".
+    // "Expires for your protection" told a batch reader nothing they could act on, which is how a
+    // resend lapses unused. The real risk the ban gestured at is DRIFT: prose that outlives the
+    // Supabase dashboard setting it describes. So the requirement is now that the duration comes
+    // from AUTH_LINK_LIFETIME_PROSE and is never spelled out inline in a template.
+    expect(tpl).toContain('AUTH_LINK_LIFETIME_PROSE')
+    expect(tpl).toMatch(/expires \$\{AUTH_LINK_LIFETIME_PROSE\} after this email was sent/)
+    expect(tpl).not.toMatch(/expires in about an hour/)          // never inline; only via the constant
     expect(fn).toContain('idempotencyKey')                       // passed to Resend
     expect(fn).toContain('referrerName')                         // consent-gated naming preserved
     expect(tpl).toContain('referrerName')

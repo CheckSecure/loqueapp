@@ -11,6 +11,21 @@ import { escapeHtml } from '@/lib/email/escapeHtml'
  * PURE: no network, no database, no token minting. `link` and `resumeLink` are supplied by the
  * caller, which is what lets the preview pass inert placeholders while the sender passes real ones.
  */
+/**
+ * How long the Supabase authentication link lives, in prose, for the recipient.
+ *
+ * ONE STRING, because the number itself is NOT ours to set: the link is verified by
+ * supabase.auth.verifyOtp({token_hash}), so its lifetime is the project's Email OTP expiry
+ * (MAILER_OTP_EXP) in the Supabase dashboard — not a value in this repo, and not an option
+ * generateLink accepts. If that dashboard setting is raised, change this sentence to match; it is
+ * the only place the email commits to a duration.
+ *
+ * SAYING IT AT ALL IS THE POINT. The previous copy said only "expires for your protection", which
+ * tells a reader nothing actionable — someone who reads email in batches has no way to know the
+ * window is this short until they have already missed it.
+ */
+export const AUTH_LINK_LIFETIME_PROSE = 'about an hour'
+
 export interface SecureInviteEmailInput {
   toName: string
   /** Consent-gated by the caller (migration 037). Null → anonymous copy. */
@@ -67,18 +82,20 @@ export function buildSecureInviteEmail(input: SecureInviteEmailInput): BuiltSecu
           <p style="font-size:16px; line-height:1.6;">Hi ${escapeHtml(firstName)},</p>
           <p style="font-size:16px; line-height:1.6;">${introLine}</p>
           ${secondLine}
-          <p style="margin:28px 0;">
+          <p style="margin:28px 0 20px;">
             <a href="${input.link}" style="display:inline-block; background:#1B2850; color:#ffffff; text-decoration:none; font-size:16px; font-weight:600; padding:14px 32px; border-radius:10px;">Set up my account</a>
           </p>
-          <p style="font-size:13px; color:#64748b; line-height:1.6;">
-            This link is personal to you — please don't forward it. This secure link expires for your protection.
-          </p>
-          ${resume ? `<p style="font-size:13px; color:#64748b; line-height:1.6;">
-            If this sign-in link expires, <a href="${resume}" style="color:#1B2850;">request a fresh secure link</a>
-            and we'll email a new one to this address.
-          </p>` : `<p style="font-size:13px; color:#64748b; line-height:1.6;">
-            If it no longer works, request a new link from the Andrel sign-in page.
+          ${resume ? `<p style="font-size:15px; line-height:1.6; color:#334155; background:#f8fafc; border-left:3px solid #1B2850; padding:12px 16px; margin:0 0 20px;">
+            That button expires ${AUTH_LINK_LIFETIME_PROSE} after this email was sent. If it has,
+            <a href="${resume}" style="color:#1B2850; font-weight:600;">send me a working link</a> —
+            that one doesn't expire, and it emails a fresh sign-in link straight back to this address.
+          </p>` : `<p style="font-size:15px; line-height:1.6; color:#334155; background:#f8fafc; border-left:3px solid #1B2850; padding:12px 16px; margin:0 0 20px;">
+            That button expires ${AUTH_LINK_LIFETIME_PROSE} after this email was sent. If it has,
+            request a new link from the Andrel sign-in page.
           </p>`}
+          <p style="font-size:13px; color:#64748b; line-height:1.6;">
+            This link is personal to you — please don't forward it.
+          </p>
           <p style="font-size:13px; color:#64748b; line-height:1.6;">
             Don't see it? Check your spam/junk folder. Need help? Reply to this email or contact
             <a href="mailto:hello@andrel.app" style="color:#1B2850;">hello@andrel.app</a>.
@@ -95,10 +112,12 @@ export function buildSecureInviteEmail(input: SecureInviteEmailInput): BuiltSecu
         `Here's a fresh link, and this time a backup if it lapses again:\n\n`
       : `${recommendedBy ? `${recommendedBy} recommended you for Andrel.` : `You've been invited to join Andrel.`} Use the secure link below to set your password and finish setting up your account:\n\n`) +
     `${input.link}\n\n` +
-    `This link is personal to you — please don't forward it. This secure link expires for your protection.\n\n` +
     (resume
-      ? `If this sign-in link expires, request a fresh secure link and we'll email a new one to this address:\n${resume}\n\n`
-      : `If it no longer works, request a new link from the Andrel sign-in page.\n\n`) +
+      ? `That link expires ${AUTH_LINK_LIFETIME_PROSE} after this email was sent. If it has, use this one instead — ` +
+        `it doesn't expire, and it emails a fresh sign-in link straight back to this address:\n${resume}\n\n`
+      : `That link expires ${AUTH_LINK_LIFETIME_PROSE} after this email was sent. If it has, request a new link ` +
+        `from the Andrel sign-in page.\n\n`) +
+    `This link is personal to you — please don't forward it.\n\n` +
     `Don't see it? Check your spam/junk folder. Need help? Contact hello@andrel.app.\n\n— The Andrel Team`
 
   return { subject, html, text, variant: isResend ? 'access_resend' : 'first_invite' }

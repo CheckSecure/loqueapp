@@ -44,6 +44,10 @@ const state = vi.hoisted(() => ({
   sendResult: { success: true, messageId: 'msg-1' } as any,
   emails: [] as any[],
   updates: [] as any[],
+  mintedTokens: [] as any[],
+  supersedeCalls: [] as any[],
+  revoked: [] as any[],
+  mintFails: false,
 }))
 
 vi.mock('@/lib/email', () => ({
@@ -58,11 +62,15 @@ import { sendResumeAccessEmail } from '@/lib/invitations/sendResumeAccess'
 
 /** Minimal Supabase-shaped fake. Only what the sender touches. */
 const admin = {
-  rpc: async (fn: string) => {
+  rpc: async function (fn: string, _args?: any) {
     if (fn === 'lookup_auth_identity') return { data: [state.identity], error: null }
     if (fn === 'begin_resume_dispatch') {
       if (state.markerError) return { data: null, error: { code: 'XX000' } }
       return { data: state.markerOk, error: null }
+    }
+    if (fn === 'supersede_other_resume_tokens') {
+      state.supersedeCalls.push(_args)
+      return { data: 1, error: null }
     }
     if (fn === 'claim_resume_access_attempt') {
       // Mirrors the real function's contract: a coarse state plus an id only when created.
@@ -81,17 +89,32 @@ const admin = {
       select() { return q }, eq(k: string, v: any) { q._filters[k] = v; return q },
       in() { return q }, gte() { return q }, limit() { return q.__resolve() },
       maybeSingle() { return q.__resolve(true) },
-      insert(row: any) { state.claims.push({ table, row }); q._inserted = row; return q },
+      insert(row: any) {
+        if (table === 'invitation_resume_tokens') state.mintedTokens.push(row)
+        else state.claims.push({ table, row })
+        q._inserted = row; return q
+      },
       update(row: any) {
         state.updates.push({ table, row })
         const inject =
           (state.updateErrorOn === 'accepted' && row.status === 'accepted') ||
           (state.updateErrorOn === 'failed' && row.status === 'failed' && row.dispatch_state === 'dispatched') ||
           (state.updateErrorOn === 'uncertain' && row.dispatch_state === 'uncertain')
-        return { eq: async () => ({ error: inject ? { code: 'XX000' } : null }) }
+        const result = { error: inject ? { code: 'XX000' } : null }
+        // revokeResumeToken finishes .update().eq().is(); the delivery updates stop at .eq().
+        const eqNode: any = Promise.resolve(result)
+        eqNode.is = async () => { state.revoked.push(row); return result }
+        return { eq: () => eqNode }
       },
       __resolve(single = false) {
-        if (q._inserted) return Promise.resolve({ data: { id: `claim-${state.claims.length}` }, error: null })
+        if (q._inserted) {
+          if (table === 'invitation_resume_tokens') {
+            return Promise.resolve(state.mintFails
+              ? { data: null, error: { code: 'XX000' } }
+              : { data: { id: `tok-${state.mintedTokens.length}` }, error: null })
+          }
+          return Promise.resolve({ data: { id: `claim-${state.claims.length}` }, error: null })
+        }
         if (table === 'waitlist') return Promise.resolve({ data: state.waitlist, error: null })
         if (table === 'profiles') return Promise.resolve({ data: state.profile, error: null })
         if (table === 'invitation_deliveries') return Promise.resolve({ data: state.suppressions, error: null })
@@ -110,6 +133,7 @@ beforeEach(() => {
   state.suppressions = []; state.claims = []; state.updates = []; state.claimState = 'created'
   state.markerOk = true; state.markerError = false; state.updateErrorOn = null; state.providerCalls = 0
   state.generateLinkFails = false
+  state.mintedTokens = []; state.supersedeCalls = []; state.revoked = []; state.mintFails = false
   state.sendResult = { success: true, messageId: 'msg-1' }
   state.emails = []
 })
@@ -446,5 +470,58 @@ describe('the provider-dispatch crash window', () => {
     expect(m078).toMatch(/d\.dispatch_state IN \('dispatching', 'uncertain'\)/)
     // only 'pending' is ever retired by the lease
     expect(m078).toMatch(/coalesce\(d\.dispatch_state, 'pending'\) = 'pending'\s*\n\s*AND d\.attempted_at <=/)
+  })
+})
+
+describe('the resume-access email carries its own fallback (migration 094)', () => {
+  it('mints a replacement, sends it, and retires the older tokens ONLY after acceptance', async () => {
+    await expect(send()).resolves.toEqual({ state: 'sent' })
+    expect(state.mintedTokens).toHaveLength(1)
+    expect(state.mintedTokens[0].waitlist_id).toBe('wl-1')
+    expect(state.mintedTokens[0].auth_user_id).toBe('auth-1')   // bound, so completion can kill it
+    // The email that exists BECAUSE a link died no longer ships without a way back in.
+    expect(state.emails[0].resumeLink).toMatch(/^https:\/\/www\.andrel\.app\/resume#token=/)
+    // Retirement keeps exactly the token we just emailed.
+    expect(state.supersedeCalls).toHaveLength(1)
+    expect(state.supersedeCalls[0]).toEqual({ p_waitlist_id: 'wl-1', p_keep_token_id: 'tok-1' })
+  })
+
+  it('MINTS BEFORE SENDING, so every existing link is live while the provider is called', async () => {
+    await send()
+    const code = readFileSync('lib/invitations/sendResumeAccess.ts', 'utf8')
+    expect(code.indexOf('mintBoundResumeLink')).toBeLessThan(code.indexOf('sendSecureInviteEmail('))
+    expect(code.indexOf('sendSecureInviteEmail(')).toBeLessThan(code.indexOf('supersede_other_resume_tokens'))
+  })
+
+  it('an UNCERTAIN send retires nothing and revokes nothing — more live links, never fewer', async () => {
+    state.sendResult = { success: false, uncertain: true }
+    await expect(send()).resolves.toEqual({ state: 'uncertain', errorClass: 'provider_timeout' })
+    expect(state.supersedeCalls).toHaveLength(0)
+    expect(state.revoked).toHaveLength(0)
+  })
+
+  it('a DEFINITE refusal revokes only the replacement and retires nothing older', async () => {
+    state.sendResult = { success: false, errorClass: 'provider_error' }
+    await expect(send()).resolves.toEqual({ state: 'failed', errorClass: 'provider_error' })
+    expect(state.supersedeCalls).toHaveLength(0)          // older links untouched
+    expect(state.revoked).toHaveLength(1)                 // the unsent one is not left as a capability
+  })
+
+  it('a mint failure DEGRADES to the old behaviour rather than blocking the sign-in link', async () => {
+    state.mintFails = true
+    await expect(send()).resolves.toEqual({ state: 'sent' })
+    expect(state.emails[0].resumeLink).toBeNull()
+    expect(state.supersedeCalls).toHaveLength(0)          // nothing to keep, so nothing is retired
+  })
+
+  it('a failed retirement never changes the reported outcome — the email did go out', async () => {
+    const realRpc = admin.rpc
+    admin.rpc = async function (fn: string, args?: any) {
+      if (fn === 'supersede_other_resume_tokens') return { data: null, error: { code: 'XX000' } }
+      return realRpc.call(this, fn, args)
+    }
+    try {
+      await expect(send()).resolves.toEqual({ state: 'sent' })
+    } finally { admin.rpc = realRpc }
   })
 })

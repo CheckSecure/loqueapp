@@ -1,5 +1,6 @@
 import { getRecoveryRedirectUrl, getSiteUrl } from '@/lib/config/siteUrl'
 import { buildRecoverLink } from '@/lib/invitations/secureInvite'
+import { mintBoundResumeLink, revokeResumeToken } from '@/lib/invitations/resumeTokenStore'
 import { sendSecureInviteEmail } from '@/lib/email'
 
 /**
@@ -125,6 +126,25 @@ export async function sendResumeAccessEmail(
     return { state: 'failed', errorClass: 'link_generation_failed' }
   }
 
+  // ══ THE REPLACEMENT FALLBACK (migration 094) ═════════════════════════════════════════════════
+  // This email used to ship with `resumeLink: null`, which made it the one message in the system
+  // with no durable way back in — and it is precisely the message someone receives BECAUSE their
+  // previous link died. When this email's own authentication link lapsed, they were back at the
+  // dead end migration 078 exists to abolish, one layer down.
+  //
+  // The old link cannot be re-sent: only its SHA-256 is stored, so the plaintext is unrecoverable
+  // by construction. A replacement is minted instead, and the older ones are retired AFTER the
+  // provider accepts (see the success path below) so one invitation never accumulates live tokens.
+  //
+  // MINTED BEFORE THE SEND, RETIRED AFTER IT. Prepare -> send -> finalize, the same ordering the
+  // admin rotation finalizer is built on: until the provider definitely accepts, every existing
+  // link keeps working. (Named indirectly on purpose — the guard in onboarding-recovery.test.ts
+  // asserts this file never reaches for the rotation-operation machinery, and it stays that way.)
+  //
+  // BEST-EFFORT BY DESIGN. A mint that fails degrades to the old behaviour — an email with a
+  // working authentication link and no fallback — which is strictly better than not sending at all.
+  const minted = await mintBoundResumeLink(admin, { waitlistId, authUserId, siteUrl: getSiteUrl() })
+
   // ══ THE PRE-PROVIDER MARKER ══════════════════════════════════════════════════════════════════
   // The row is moved to 'dispatching' BEFORE the provider is contacted, and the provider is contacted
   // ONLY if exactly one still-pre-dispatch row transitioned.
@@ -144,7 +164,7 @@ export async function sendResumeAccessEmail(
 
   const send = await sendSecureInviteEmail({
     to: email, toName: wl.full_name || 'there',
-    link: authLink, resumeLink: null, referrerName: null,
+    link: authLink, resumeLink: minted?.link ?? null, referrerName: null,
     idempotencyKey: `resume:${claim.id}`,   // one key ⇄ one payload; a retry takes a fresh claim
   })
 
@@ -154,6 +174,16 @@ export async function sendResumeAccessEmail(
   // taken it and we could not record what happened", and the safe direction is always
   // "possibly sent; do not resend".
   if (send.success) {
+    // FINALIZE. The provider definitely took it, so the replacement is the link the recipient now
+    // holds and every older one for this invitation is retired. Fail-safe and best-effort: if this
+    // does not land, the invitation simply keeps more live tokens than intended — the direction
+    // that leaves people able to get in — so it never changes the state reported to the caller.
+    if (minted?.tokenId) {
+      const { error: supErr } = await admin.rpc('supersede_other_resume_tokens', {
+        p_waitlist_id: waitlistId, p_keep_token_id: minted.tokenId,
+      })
+      if (supErr) console.warn('[resume-access]', JSON.stringify({ event: 'supersede_failed' }))
+    }
     const { error: accErr } = await admin.from('invitation_deliveries')
       .update({ status: 'accepted', dispatch_state: 'dispatched', provider_message_id: send.messageId ?? null })
       .eq('id', claim.id)
@@ -165,6 +195,10 @@ export async function sendResumeAccessEmail(
   }
 
   if (send.uncertain) {
+    // The replacement token STAYS LIVE and nothing is retired. The mail may have arrived carrying
+    // that link, and it may not have, so the only safe reading is that every link for this
+    // invitation still works.
+    //
     // Narrow 'dispatching' to 'uncertain'. Both are non-retryable, so a failure to make this
     // transition changes nothing about safety — it only costs some diagnostic precision.
     const { error: uncErr } = await admin.from('invitation_deliveries')
@@ -176,6 +210,10 @@ export async function sendResumeAccessEmail(
   // DEFINITE refusal: the provider explicitly declined it, so no message exists and this may become
   // retryable. This is the ONLY post-provider path that relaxes the state, and it is applied only on
   // an unambiguous refusal.
+  //
+  // The replacement's plaintext therefore reached NOBODY, so it is revoked rather than left as an
+  // orphan capability. Nothing older is retired — those links are untouched and still work.
+  if (minted?.tokenId) await revokeResumeToken(admin, minted.tokenId)
   const { error: failErr } = await admin.from('invitation_deliveries')
     .update({ status: 'failed', dispatch_state: 'dispatched', error_class: send.errorClass ?? 'provider_error' })
     .eq('id', claim.id)

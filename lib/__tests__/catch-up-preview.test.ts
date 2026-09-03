@@ -65,8 +65,13 @@ describe('builder output', () => {
   it('renders the button and the resume fallback', () => {
     expect(named.html).toContain('>Set up my account</a>')
     expect(named.html).toContain('https://x.test/a')
-    expect(named.html).toContain('request a fresh secure link')
+    expect(named.html).toContain('send me a working link')
     expect(named.html).toContain('https://x.test/r')
+    // The fallback is out of the fine print: body-sized, body-coloured, above the "don't forward"
+    // line — not 13px grey beneath it. Prominence is the whole point of the change.
+    expect(named.html).toMatch(/font-size:15px[^>]*>\s*That button expires/)
+    expect(named.html.indexOf('send me a working link'))
+      .toBeLessThan(named.html.indexOf("please don't forward it"))
   })
 
   it('falls back to the anonymous variant with no consent', () => {
@@ -92,7 +97,8 @@ describe('builder output', () => {
       toName: 'A B', purpose: 'access_resend', link: 'https://x.test/a', resumeLink: null,
     })
     expect(noResume.html).toContain('request a new link from the Andrel sign-in page')
-    expect(noResume.html).not.toContain('request a fresh secure link')
+    expect(noResume.html).not.toContain('send me a working link')
+    expect(noResume.html).toContain('That button expires')   // the lifetime is stated either way
   })
 
   it('first invite copy is unchanged', () => {

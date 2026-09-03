@@ -706,8 +706,8 @@ describe('the FIRST invitation carries a durable fallback', () => {
   })
 
   it('the email carries a secondary recovery link on the canonical origin', () => {
-    expect(email).toMatch(/If this sign-in link expires, <a href="\$\{resume\}"/)
-    expect(email).toMatch(/request a fresh secure link/)
+    expect(email).toMatch(/<a href="\$\{resume\}"[^>]*>\s*send me a working link/)
+    expect(email).toMatch(/that one doesn't expire/)
     // and degrades to the previous copy when no token could be minted
     expect(email).toMatch(/\$\{resume \? `/)
   })
@@ -876,10 +876,21 @@ describe('admin rotation is implemented, narrow, resumable and never implicit', 
   })
 
   it('rotation is reachable ONLY here', () => {
+    // The ROTATION-OPERATION machinery stays exclusive to the admin route, sendResumeAccess
+    // included: routing member-triggered requests through begin_resume_rotation would converge them
+    // onto an admin's in-flight operation whose replacement plaintext they never held. Migration 094
+    // gives the resume path its own retirement function instead, so this guard keeps full strength.
     for (const f of ['lib/onboarding/reminderWorker.ts', 'app/api/admin/onboarding-catchup/route.ts',
                      'app/api/onboarding/resume/route.ts', 'lib/invitations/sendForWaitlist.ts',
                      'lib/invitations/sendResumeAccess.ts']) {
       expect(readFileSync(f, 'utf8')).not.toMatch(/finalize_resume_rotation|begin_resume_rotation|superseded_at/)
+    }
+    // TOKEN RETIREMENT of any kind remains forbidden on the paths that only ADD tokens — reminders,
+    // the catch-up route and first invites still accumulate nothing to retire (migration 078). Only
+    // the resume-access resend, which replaces the fallback it just invalidated, may retire.
+    for (const f of ['lib/onboarding/reminderWorker.ts', 'app/api/admin/onboarding-catchup/route.ts',
+                     'app/api/onboarding/resume/route.ts', 'lib/invitations/sendForWaitlist.ts']) {
+      expect(readFileSync(f, 'utf8')).not.toMatch(/supersede_other_resume_tokens/)
     }
     const vercel = JSON.parse(readFileSync('vercel.json', 'utf8'))
     expect((vercel.crons as { path: string }[]).some(c => c.path.includes('rotate'))).toBe(false)
