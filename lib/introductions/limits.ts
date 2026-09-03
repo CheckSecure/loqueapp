@@ -11,15 +11,33 @@ import { MAX_VISIBLE_INTRO_CARDS, MAX_RESERVED_INTRO_CARDS } from '@/lib/introdu
  * of visible slots it is trying to fill. Describing suggested+queued as a single cap of
  * 2 is what allowed members to end up holding three visible cards.
  *
- * A member experiences a single curated recommendation cycle: onboarding delivers
- * the first batch of this size, and each weekly release delivers another batch of
- * this size (only once the previous batch is complete). There is no separate
- * "onboarding" vs "recurring" limit. Every path — onboarding, the weekly release,
+ * This is the RECURRING release size: each weekly release delivers a batch of this
+ * size (only once the previous batch is complete). The FIRST release is different —
+ * see ONBOARDING_RECOMMENDATIONS below. Every recurring path — the weekly release,
  * replenishment, the admin reciprocal batch, UI counts, and batch-completion logic
  * — references this single constant, so it can be raised to 3 later without
  * redesigning the workflow.
  */
 export const RECOMMENDATIONS_PER_BATCH = MAX_VISIBLE_INTRO_CARDS
+
+/**
+ * ONBOARDING_RECOMMENDATIONS — how many recommendations a member receives in their
+ * FIRST release, at signup.
+ *
+ * IT IS NOT A CAP EITHER. It is deliberately SMALLER than RECOMMENDATIONS_PER_BATCH so a
+ * brand-new member meets one person rather than two at once; the visible ceiling stays
+ * MAX_VISIBLE_INTRO_CARDS, so the Thursday admin batch — which fills
+ * visibleDeficit(visible, MAX_VISIBLE_INTRO_CARDS) — tops the member up to two.
+ *
+ * This is why it is a SEPARATE constant and not a smaller RECOMMENDATIONS_PER_BATCH:
+ * RECOMMENDATIONS_PER_BATCH is derived from the visible cap, so lowering it to 1 would
+ * silently lower the ceiling to 1 and there would be nothing to top up TO.
+ *
+ * The onboarding RETRY worker delivers the same first release, so it targets this
+ * constant too — a member whose first generation failed must not end up with more cards
+ * than a member whose first generation succeeded.
+ */
+export const ONBOARDING_RECOMMENDATIONS = 1
 
 /**
  * @deprecated Use MAX_VISIBLE_INTRO_CARDS from lib/introductions/capacity for a capacity

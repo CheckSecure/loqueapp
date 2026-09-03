@@ -10,7 +10,7 @@ import { readScoringSignals } from '@/lib/matching/profileScoring'
 import { selectFairCounterparts } from '@/lib/matching/reciprocalPair'
 import { createReciprocalSuggestion, type ReciprocalOutcome } from '@/lib/matching/createReciprocalSuggestion'
 import { legalSameSidePenalty, crossMarketFirstForLawFirm } from '@/lib/matching/legalSameSidePenalty'
-import { getActiveIntroCap, RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
+import { getActiveIntroCap, RECOMMENDATIONS_PER_BATCH, ONBOARDING_RECOMMENDATIONS } from '@/lib/introductions/limits'
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { applyMemberEligibility, filterEligible, assertAllEligible, isEligibleMember, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
@@ -1117,12 +1117,13 @@ const EXISTS_ACTIVE_COOLDOWN_STATUSES = new Set<string>(['passed', 'expired'])
  * HARD limits on a single interactive generation — bound candidate count, RPC calls, and wall time
  * so onboarding can never burst the DB or hang. `maxCandidateAttempts=2` (initial + one retry).
  *
- * `maxRpcCalls=8` — rationale: the onboarding target is RECOMMENDATIONS_PER_BATCH (2) cards, so 8 is
- * 4× the target. The candidate list is FAIR-ORDERED (exposure-weighted), which is what prevents the
- * global-top concentration bug — NOT the cap size — so a smaller cap does not reconcentrate. 8 lets
- * a brand-new member absorb up to ~6 capacity/ineligible skips while still creating 2 pairs, and
- * bounds worst-case interactive latency (≤8 sequential RPCs + one transient retry) well under the
- * time budget. No measurement justified the previous 12; lowered to the safer 8.
+ * `maxRpcCalls=8` — rationale: the largest target on this path is RECOMMENDATIONS_PER_BATCH (2)
+ * cards (onboarding now targets ONBOARDING_RECOMMENDATIONS = 1), so 8 is at least 4× the target. The
+ * candidate list is FAIR-ORDERED (exposure-weighted), which is what prevents the global-top
+ * concentration bug — NOT the cap size — so a smaller cap does not reconcentrate. 8 lets a brand-new
+ * member absorb up to ~6 capacity/ineligible skips while still creating its pairs, and bounds
+ * worst-case interactive latency (≤8 sequential RPCs + one transient retry) well under the time
+ * budget. No measurement justified the previous 12; lowered to the safer 8.
  */
 export const GEN_TIME_BUDGET_MS = 4000
 export const WALK_LIMITS = { maxRpcCalls: 8, maxCandidateAttempts: 2, timeBudgetMs: GEN_TIME_BUDGET_MS, backoffMs: 100 } as const
@@ -1351,7 +1352,13 @@ export async function generateReciprocalBatchForMember(
 ): Promise<GenerationResult> {
   const cid = nextCorrelationId()
   logReciprocalGeneration('invoked', source, { cid })
-  const target = maxCount ?? RECOMMENDATIONS_PER_BATCH
+  // FIRST release vs RECURRING release. Onboarding (and its retry, which delivers that same first
+  // release) hands a new member ONE card; the weekly release hands out RECOMMENDATIONS_PER_BATCH.
+  // Neither is a cap — the visible ceiling is MAX_VISIBLE_INTRO_CARDS and is enforced below and,
+  // authoritatively, inside the RPC. `remaining` is min(target, free visible slots), so the smaller
+  // onboarding target narrows this release only; the Thursday admin batch still fills the member up
+  // to the ceiling because it sizes on visibleDeficit, not on this constant.
+  const target = maxCount ?? (source === 'weekly' ? RECOMMENDATIONS_PER_BATCH : ONBOARDING_RECOMMENDATIONS)
   // member_pairs.source only permits a fixed set (migration 050 CHECK); an onboarding retry is still
   // an 'onboarding' pair. Map for the RPC while logging the true generation source above.
   const pairSource = source === 'weekly' ? 'weekly' : 'onboarding'
