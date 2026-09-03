@@ -1,4 +1,5 @@
 import { escapeHtml } from '@/lib/email/escapeHtml'
+import { AUTH_LINK_LIFETIME_PROSE } from '@/lib/auth/linkLifetime'
 
 /**
  * Pure builder for the secure invitation email — subject, HTML and text.
@@ -12,19 +13,14 @@ import { escapeHtml } from '@/lib/email/escapeHtml'
  * caller, which is what lets the preview pass inert placeholders while the sender passes real ones.
  */
 /**
- * How long the Supabase authentication link lives, in prose, for the recipient.
+ * SAYING THE LIFETIME AT ALL IS THE POINT. The previous copy said only "expires for your
+ * protection", which tells a reader nothing actionable — someone who reads email in batches has no
+ * way to know the window is short until they have already missed it.
  *
- * ONE STRING, because the number itself is NOT ours to set: the link is verified by
- * supabase.auth.verifyOtp({token_hash}), so its lifetime is the project's Email OTP expiry
- * (MAILER_OTP_EXP) in the Supabase dashboard — not a value in this repo, and not an option
- * generateLink accepts. If that dashboard setting is raised, change this sentence to match; it is
- * the only place the email commits to a duration.
- *
- * SAYING IT AT ALL IS THE POINT. The previous copy said only "expires for your protection", which
- * tells a reader nothing actionable — someone who reads email in batches has no way to know the
- * window is this short until they have already missed it.
+ * The duration itself comes from lib/auth/linkLifetime, which is the ONE place in the app that
+ * commits to a number; see that file for why it must not be restated here.
  */
-export const AUTH_LINK_LIFETIME_PROSE = 'about an hour'
+export { AUTH_LINK_LIFETIME_PROSE }
 
 export interface SecureInviteEmailInput {
   toName: string

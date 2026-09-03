@@ -19,6 +19,8 @@
  *  - the token is never logged, embedded in a redirect, or returned to callers.
  */
 
+import { AUTH_LINK_EXPIRY_NOTE } from '@/lib/auth/linkLifetime'
+
 export const ALLOWED_OTP_TYPES = ['recovery', 'magiclink', 'email', 'invite', 'signup'] as const
 export type OtpType = (typeof ALLOWED_OTP_TYPES)[number]
 
@@ -54,7 +56,7 @@ export function classifyVerifyError(message: string | undefined | null): VerifyE
 }
 
 export const RECOVERY_MESSAGES: Record<VerifyErrorKind, string> = {
-  expired: 'This reset link has expired. Links are single-use and expire after one hour — please request a new one.',
+  expired: `This reset link has expired. ${AUTH_LINK_EXPIRY_NOTE} Please request a new one.`,
   used: 'This reset link has already been used. Please request a new one.',
   invalid: 'This reset link is invalid. Please request a new one.',
   other: 'We couldn’t verify this reset link. Please request a new one.',

@@ -284,7 +284,8 @@ describe('NO plaintext-password invitation code anywhere (repo-wide structural)'
     // STATES THE LIFETIME, FROM ONE CONSTANT. This assertion previously banned exact-lifetime copy
     // outright. That ban was prophylactic — the phrase it forbade never existed in this repo — and
     // it contradicted the two places a reader actually lands when a link is dead
-    // (app/auth/reset-password and lib/auth/recovery), both of which have always said "one hour".
+    // (app/auth/reset-password and lib/auth/recovery), which had always stated a duration outright.
+    // All three now read it from lib/auth/linkLifetime, so they cannot disagree again.
     // "Expires for your protection" told a batch reader nothing they could act on, which is how a
     // resend lapses unused. The real risk the ban gestured at is DRIFT: prose that outlives the
     // Supabase dashboard setting it describes. So the requirement is now that the duration comes

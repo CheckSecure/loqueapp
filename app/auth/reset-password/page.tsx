@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { AUTH_LINK_EXPIRY_NOTE } from '@/lib/auth/linkLifetime'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { emitMetric } from '@/lib/metrics'
@@ -172,7 +173,7 @@ export default function ResetPasswordPage() {
           {phase === 'invalid' && (
             <div className="space-y-4">
               <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-4 rounded-lg leading-relaxed">
-                This link is invalid or has expired. Links are single-use and expire after one hour.
+                This link is invalid or has expired. {AUTH_LINK_EXPIRY_NOTE}
               </div>
               <Link
                 href="/auth/forgot-password"
