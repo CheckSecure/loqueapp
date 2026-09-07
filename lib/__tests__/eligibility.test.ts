@@ -117,7 +117,6 @@ describe('every recommendation path shares the canonical filter + fail-fast', ()
     ['app/api/admin/generate-batch/route.ts', 'generate-batch'],
     ['app/api/admin/batch/[batchId]/generate-replacements/route.ts', 'generate-replacements'],
     ['lib/generate-recommendations.ts', 'generate-recommendations'],
-    ['app/api/admin/simulate-matches/route.ts', 'simulate-matches'],
     ['lib/opportunities/matching.ts', ''],
   ]
   it('every path applies the canonical DB filter', () => {

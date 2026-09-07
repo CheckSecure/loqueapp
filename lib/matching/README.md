@@ -17,8 +17,10 @@ scoring, eligibility, or batch-generation code.
 
 Consumers: `app/api/admin/generate-batch` (main batch), `.../generate-replacements`
 (fills dropped slots), `lib/generate-recommendations.ts` (onboarding → `intro_requests`,
-also concierge ranking), `app/api/admin/simulate-matches` (admin tooling),
-`lib/opportunities/matching.ts` (opportunity responders).
+also concierge ranking), `lib/opportunities/matching.ts` (opportunity responders).
+(`app/api/admin/simulate-matches` was also a consumer until it was removed — it
+manufactured real matches, conversations and member-attributed messages against
+production and had no legitimate production use.)
 
 ## 1. Eligibility pipeline (`eligibility.ts`)
 

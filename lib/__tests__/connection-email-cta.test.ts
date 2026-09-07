@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 
 /**
  * CONNECTION EMAIL — ACTIONABLE CTA (Tier 2).
@@ -131,7 +131,12 @@ describe('paths that must NOT send a peer-connection email', () => {
 
   it('admin welcome flow does not send one', () => noEmail('lib/onboarding/welcomeFromAdmin.ts'))
   it('admin issue/support replies do not send one', () => noEmail('app/api/admin/issues/[id]/reply/route.ts'))
-  it('simulation tooling cannot email real members', () => noEmail('app/api/admin/simulate-matches/route.ts'))
+  // The simulator that this assertion used to guard has been REMOVED entirely
+  // (chore/remove-simulate-matches). Its inability to email real members is now a
+  // property of it not existing, which lib/__tests__/simulate-matches-removed.test.ts pins.
+  it('the simulator that could have emailed real members no longer exists', () => {
+    expect(existsSync('app/api/admin/simulate-matches/route.ts')).toBe(false)
+  })
 })
 
 describe('no duplicate asynchronous connection-email path', () => {

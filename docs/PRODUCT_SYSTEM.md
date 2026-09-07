@@ -553,7 +553,6 @@ Replacement-only `MIN_RELEVANCE_SCORE = 25` (vs main generator's 40). The replac
 
 #### Other Admin Endpoints
 
-- `/api/admin/simulate-matches` — pre-flight testing a single user's recommendations
 - `/api/admin/force-generate-recommendations` — force-regenerate for one user
 - `/api/admin/generate-recommendations-for-user` — same
 - `/api/admin/set-priority` — toggle `is_priority` flag on a profile
