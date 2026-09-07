@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import MeetingsClient from '@/components/MeetingsClient'
 import { assembleMeetings, meetingParticipantIds } from '@/lib/meetings/assemble'
+import { discoverableMemberIds } from '@/lib/privacy/canViewerDiscoverMember'
 
 export const metadata = { title: 'Meetings | Andrel' }
 
@@ -26,7 +27,7 @@ export default async function MeetingsPage() {
   const [{ data: matchRows }, { data: meetingRows }] = await Promise.all([
     graphClient
       .from('matches')
-      .select('id, user_a_id, user_b_id')
+      .select('id, user_a_id, user_b_id, status')
       .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`),
     supabase
       .from('meetings')
@@ -35,7 +36,12 @@ export default async function MeetingsPage() {
       .order('scheduled_at', { ascending: true }),
   ])
 
+  // The "schedule with" picker. Filtered to LIVE matches so the picker and the server agree about
+  // who may be scheduled with: scheduleMeeting now refuses a removed/closed match, and offering one
+  // here would produce an option that always errors. (This query previously selected no status at
+  // all, so a removed connection stayed in the picker indefinitely.)
   const matchedUserIds = (matchRows || [])
+    .filter((r: any) => r.status !== 'removed' && r.status !== 'closed')
     .map((r: any) => (r.user_a_id === user.id ? r.user_b_id : r.user_a_id))
     .filter(Boolean)
 
@@ -46,14 +52,29 @@ export default async function MeetingsPage() {
     ...meetingParticipantIds(meetingRows as any, user.id),
   ]))
 
+  // ── DISCOVERABILITY GATE ON PROFILE HYDRATION ──────────────────────────────────────────────
+  // The hydration below runs as service_role, which bypasses can_discover_profile entirely. That
+  // was safe only while a meeting row could not name a stranger — which is exactly the assumption
+  // scheduleMeeting failed to enforce. Any meeting row that predates the authorization fix can
+  // still name someone the viewer was never introduced to, so the row must not be allowed to act
+  // as a profile-lookup oracle for that member.
+  //
+  // Ids the viewer may genuinely discover are hydrated in full; everyone else collapses to an
+  // id-only placeholder, so the meeting still renders (time, purpose, status, accept/decline) but
+  // carries no name, title, company or avatar. This mirrors app/api/messages/list, which resolves
+  // a non-discoverable sender to `{ id }` for the same reason.
+  const discoverableIds = await discoverableMemberIds(graphClient, user.id, profileIds)
+  const hydratableIds = profileIds.filter((id) => discoverableIds.has(id))
+
   // ── Phase 2: one batched profiles read + mark meeting notifs read (parallel) ──
   const [{ data: profiles }] = await Promise.all([
-    profileIds.length > 0
+    hydratableIds.length > 0
       // A3: participant identities for the viewer's OWN meetings, read server-side via service_role
-      // (authorized by the meeting relationship; base-table SELECT is revoked for the browser role).
-      // Preserves past-meeting display even when a match was later removed (public_profiles' discovery
-      // filter would drop those). Email intentionally dropped — the meetings UI does not use it.
-      ? createAdminClient().from('profiles').select('id, full_name, title, company, avatar_url').in('id', profileIds)
+      // (base-table SELECT is revoked for the browser role). Authorized by DISCOVERABILITY, not by
+      // the meeting row itself — see the gate above. Past-meeting display still survives a removed
+      // match, because discoverableMemberIds also grants on the pair's intro_requests history, which
+      // a real past meeting always has. Email intentionally dropped — the meetings UI does not use it.
+      ? createAdminClient().from('profiles').select('id, full_name, title, company, avatar_url').in('id', hydratableIds)
       : Promise.resolve({ data: [] as any[] }),
     // Clears the Meetings unread badge. Independent of the read above; runs in
     // parallel so it is not an extra sequential round-trip on the render path.
@@ -66,6 +87,11 @@ export default async function MeetingsPage() {
   ])
 
   const profileById = new Map((profiles || []).map((p: any) => [p.id, p]))
+  // Non-discoverable counterparts get an id-only placeholder rather than being dropped: the meeting
+  // must still render and stay actionable. MeetingsClient reads `other?.full_name` and falls back to
+  // a neutral avatar, so an id-only row degrades cleanly with no name shown.
+  for (const id of profileIds) if (!profileById.has(id)) profileById.set(id, { id })
+
   const matchedIdSet = new Set(matchedUserIds)
   const matchedUsers = (profiles || []).filter((p: any) => matchedIdSet.has(p.id))
 

@@ -91,7 +91,13 @@ describe('meetings page: no redundant/dead/N+1 queries (structural)', () => {
   it('uses the shared assembler + a single batched profiles query', () => {
     expect(page).toContain('assembleMeetings')
     expect(page).toContain('meetingParticipantIds')
-    expect(page).toContain(".in('id', profileIds)")
+    // Phase 1: still ONE batched profiles read (no N+1), but keyed on `hydratableIds` — the subset
+    // of profileIds the viewer is actually authorized to discover — rather than every counterpart
+    // any meeting row happens to name. See meetings-page-profile-hydration.test.ts.
+    expect(page).toContain(".in('id', hydratableIds)")
+    expect(page).toContain('discoverableMemberIds')
+    // Exactly one profiles read on the page: the batched, discoverability-scoped one.
+    expect(page.match(/from\('profiles'\)/g) ?? []).toHaveLength(1)
   })
   it('dropped the redundant join-meetings query and the dead unread-notif SELECT', () => {
     expect(page).not.toContain('profiles!requester_id')   // no second meetings query just for joins
