@@ -402,6 +402,33 @@ function applyThresholdAndFallback(
 // ------------------------------------------------------------
 // Selection (hiring / business / recruiter)
 // ------------------------------------------------------------
+//
+// ─── THE THREE CANDIDATE POOLS — AND WHERE COMMUNITY SCOPING WILL GO ─────────────────────────
+// Audited in Phase 1. Recorded here because the three pools are NOT built the same way, and that
+// difference decides how much work later segmentation actually is:
+//
+//   selectCandidates (hiring)   — applyMemberEligibility over EVERY member with open_to_roles.
+//                                 NOT restricted to the creator's network.
+//   selectProviders (business)  — applyMemberEligibility over EVERY member with
+//                                 open_to_business_solutions. NOT restricted to the network.
+//   selectRecruiters            — restricted to the creator's matched network (`networkIds`), and
+//                                 hand-rolls its base filters instead of using
+//                                 applyMemberEligibility, so it does NOT exclude admin accounts or
+//                                 matching_paused members the way the other two do. Left exactly as
+//                                 found: tightening it would change who receives recruiter
+//                                 opportunities today, which is out of scope for a security phase.
+//
+// REACHING OUTSIDE THE NETWORK IS THE FEATURE, NOT A BUG. excludedUserIdsFor() deliberately removes
+// members the creator is ALREADY matched with. Opportunities exists to create new relationships, so
+// a "matched members only" rule would empty the hiring and business pools completely. Any future
+// scoping must narrow WHICH members are reachable, never require a pre-existing match.
+//
+// PHASE 3 CONTRACT. Community scoping lands at exactly these three `.from('profiles')` pool queries
+// (marked `[POOL]` below) plus the For-you read in app/dashboard/opportunities/page.tsx, which is
+// what actually discloses the creator's name and company to a recipient. It is deliberately NOT
+// implemented here: the predicate depends on profiles.member_type, which does not exist yet, and a
+// stand-in restriction written before it does would either be dead code or would change
+// Professional <-> Professional delivery. See the Phase 1 report.
 
 const PROFILE_SELECT =
   'id, seniority, role_type, expertise, trust_score, company, ' +
@@ -417,6 +444,7 @@ export async function selectCandidates(opportunity: OpportunityRow, creatorCompa
     rateLimitedUserIds(opportunity.creator_id),
   ]);
 
+  // [POOL] hiring — every eligible member open to roles; not network-scoped. See the block above.
   const { data: pool } = await applyMemberEligibility(admin
     .from('profiles')
     .select(PROFILE_SELECT)
@@ -473,6 +501,7 @@ export async function selectProviders(opportunity: OpportunityRow, creatorCompan
 
   const acceptedRoles = acceptedRoleTypesForNeed(opportunity.criteria.need);
 
+  // [POOL] business — every eligible member open to business solutions; not network-scoped.
   const { data: pool } = await applyMemberEligibility(admin
     .from('profiles')
     .select(PROFILE_SELECT)
@@ -565,6 +594,7 @@ export async function selectRecruiters(opportunity: OpportunityRow, creatorCompa
     .gte('responses_sent', RECRUITER_WEEKLY_CAP);
   const overCap = new Set((weekly ?? []).map((r) => r.user_id));
 
+  // [POOL] recruiter — already restricted to the creator's matched network via networkIds below.
   const { data: pool } = await admin
     .from('profiles')
     .select('id, seniority, role_type, expertise, trust_score, subscription_tier, company, ' +

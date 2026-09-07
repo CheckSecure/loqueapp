@@ -10,6 +10,13 @@ import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions';
 
 const OPPORTUNITY_INTRO_REASON = 'Shared opportunity';
 
+/**
+ * The ONLY profile columns the icebreaker/system-message generator reads: title/company/bio for the
+ * prompts, industry/practice_areas for generateSystemIntroMessage's shared-background lines.
+ * Exported so a test can assert no sensitive column creeps back into this read.
+ */
+export const ICEBREAKER_PROFILE_COLUMNS = 'id, title, company, bio, industry, practice_areas';
+
 export type ConnectResult =
   | { ok: true; match_id: string; conversation_id: string }
   | { ok: false; code: ConnectFailureCode; message: string };
@@ -176,9 +183,27 @@ export async function connectOpportunityResponder(args: {
   }
 
   try {
+    // LEAST PRIVILEGE. This was `select('*')`, which pulled every profile column — email,
+    // stripe_customer_id, subscription_tier, internal scores, verification/moderation flags — into a
+    // code path whose entire job is to generate two strings. The narrow list below is exactly what
+    // lib/messaging/icebreakers.ts consumes: title/company/bio for the prompts, plus
+    // industry/practice_areas for the shared-background lines in generateSystemIntroMessage.
+    //
+    // WHY THE FALLBACK. Those last two are read through `as any` casts and appear nowhere else in
+    // the schema — `practice_areas` in particular has no migration, no other query, and no type. If
+    // a named column does not exist, PostgREST fails the whole SELECT, which here would null the
+    // profile and silently degrade the icebreakers to the empty-context form. Rather than guess at
+    // the live schema, ask for the narrow list and fall back to the previous behaviour verbatim on
+    // any error. Strictly never worse than before, and better whenever the columns are all present.
+    // (Same deploy-safe shape as the scheduled_timezone and batch version-column fallbacks.)
+    const readForIcebreakers = async (id: string) => {
+      const narrow = await admin.from('profiles').select(ICEBREAKER_PROFILE_COLUMNS).eq('id', id).single();
+      if (!narrow.error) return narrow;
+      return admin.from('profiles').select('*').eq('id', id).single();
+    };
     const [{ data: creatorProfile }, { data: responderProfile }] = await Promise.all([
-      admin.from('profiles').select('*').eq('id', creatorId).single(),
-      admin.from('profiles').select('*').eq('id', responderId).single(),
+      readForIcebreakers(creatorId),
+      readForIcebreakers(responderId),
     ]);
 
     const context = {
