@@ -34,6 +34,8 @@ import { validateFullName } from '@/lib/validation/fullName'
 import { validateLocation, resolveLocationUpdate } from '@/lib/validation/location'
 import { persistFocusAreas } from '@/lib/profile/focusAreas'
 import { sendMessageCore } from '@/lib/messages/sendMessageCore'
+import { canRequestMeetingWith, MEETING_NOT_AVAILABLE, MEETING_REQUESTS_PER_DAY } from '@/lib/meetings/authorization'
+import { checkRateLimit } from '@/lib/rateLimit'
 import { isDismissChoice, statusForDismissal, type DismissChoice } from '@/lib/introRequests/dismissal'
 
 async function getSupabaseAndUser() {
@@ -873,6 +875,39 @@ export async function scheduleMeeting(formData: FormData) {
   if (!recipientId) return { error: 'Please select who you are meeting with.' }
   if (!scheduled_at) return { error: 'Please provide a valid date and time.' }
 
+  // ── AUTHORIZATION ───────────────────────────────────────────────────────────────────────────
+  // `recipient_id` arrives from the submitted form and is attacker-controlled. Everything below —
+  // the meetings row, the notification, and an email carrying this member's real name — runs as
+  // service_role, so nothing downstream re-checks it. The Schedule modal only offers matched
+  // members, but a UI picker is not an authorization boundary; this is.
+  //
+  // Ordered so a rejected request is CHEAP and leaves NO trace: rate limit first (a forged loop
+  // burns the attacker's own quota before touching the graph), then the relationship gate, and
+  // only then the first write. See lib/meetings/authorization.ts for the rule and why it is the
+  // same one sendMessageCore applies.
+  const authClient = createAdminClient()
+
+  const rl = await checkRateLimit(authClient, {
+    key: `meeting_request:${user.id}`,
+    limit: MEETING_REQUESTS_PER_DAY,
+    windowSeconds: 24 * 60 * 60,
+  })
+  // FAILS CLOSED: only an authoritative 'allowed' proceeds. A limiter error is a refusal, not a
+  // waiver — the same posture as /api/issues/report.
+  if (rl.status === 'error') {
+    return { error: 'Scheduling is temporarily unavailable. Please try again shortly.' }
+  }
+  if (rl.status === 'over_limit') {
+    return { error: 'You have sent the maximum number of meeting requests today. Please try again tomorrow.' }
+  }
+
+  // ONE opaque refusal for every failure mode (unknown UUID, never matched, removed match, block,
+  // deactivated account, database error) so this action cannot be used to probe whether a given
+  // member exists.
+  if (!(await canRequestMeetingWith(authClient, user.id, recipientId))) {
+    return { error: MEETING_NOT_AVAILABLE }
+  }
+
   // DEBUG: Log what we're receiving
   console.log('[scheduleMeeting] format from formData:', formData.get('format'))
   console.log('[scheduleMeeting] location from formData:', formData.get('location'))
@@ -1052,6 +1087,14 @@ export async function acceptMeeting(meetingId: string) {
     .single()
 
   if (!meeting) return { error: 'Meeting not found' }
+  // EXPLICIT participant check. The read above uses the user-scoped client, so this was previously
+  // left entirely to whatever RLS policy `meetings` carries — a policy with no migration in this
+  // repository and therefore no verifiable state. Its siblings deleteMeeting and rescheduleMeeting
+  // already check in code; accept/decline did not, while their comments claimed they did. The write
+  // below runs as service_role and re-checks nothing, so the claim has to be made true here.
+  if (meeting.requester_id !== user.id && meeting.recipient_id !== user.id) {
+    return { error: 'Not authorized' }
+  }
 
   // Build update object
   const updates: any = { status: 'confirmed' }
@@ -1205,6 +1248,10 @@ export async function declineMeeting(meetingId: string) {
     .single()
 
   if (!meeting) return { error: 'Meeting not found' }
+  // EXPLICIT participant check — see acceptMeeting above for why this cannot be left to RLS.
+  if (meeting.requester_id !== user.id && meeting.recipient_id !== user.id) {
+    return { error: 'Not authorized' }
+  }
 
   // If there's a proposed reschedule, decline it but keep meeting confirmed
   const isRescheduleDecline = meeting.proposed_scheduled_at !== null

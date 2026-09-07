@@ -7,6 +7,7 @@ import { buildNominationInviteEmail } from '@/lib/email/nominationInvite'
 import { unsubscribeHeaders, unsubscribeFooterHtml, unsubscribeFooterText, normalizeEmail } from '@/lib/email/unsubscribe'
 import { buildSecureInviteEmail } from '@/lib/email/secureInvite'
 import { escapeHtml } from '@/lib/email/escapeHtml'
+import { getSiteUrl } from '@/lib/config/siteUrl'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -179,16 +180,39 @@ export function truncate(s: string, max: number): string {
   return (cut > 0 ? s.slice(0, cut) : s.slice(0, max)) + '…'
 }
 
+/**
+ * The connection email, sent to EACH member of a new connection with the OTHER member's details.
+ *
+ * `conversationId` is optional and backward-compatible on purpose. When supplied — the mutual-
+ * interest and opportunity paths, which both create a conversation — the call to action becomes
+ * "Start the conversation" pointing at that exact thread, because the useful next step is the
+ * message, not a directory page. When omitted, the email is byte-for-byte what it was: the two
+ * admin callers (adminForceMatch, /api/admin/facilitate-intro) pass nothing and keep their existing
+ * "View in Network" destination, including its existing apex-host spelling, so this change cannot
+ * move behaviour they already rely on.
+ */
 export async function sendMatchCreatedEmail(
   toEmail: string,
   toName: string,
   matchName: string,
   matchRole?: string,
-  matchCompany?: string
+  matchCompany?: string,
+  opts?: { conversationId?: string | null }
 ) {
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return
   const roleCompany = [matchRole, matchCompany].filter(Boolean).join(' at ')
-  
+
+  // The canonical conversation route is /dashboard/messages/<id> — see app/dashboard/messages/
+  // [conversationId]/page.tsx, which is also what the Network detail modal and the opportunity
+  // notification already produce. Built on getSiteUrl() rather than a hardcoded host, per
+  // lib/config/siteUrl.ts ("NEVER hardcode an origin anywhere else"). The URL is not a capability:
+  // /api/messages/conversations/[conversationId] authorizes on match participation, so a link that
+  // reaches the wrong inbox opens nothing.
+  const conversationId = opts?.conversationId
+  const cta = conversationId
+    ? { href: `${getSiteUrl()}/dashboard/messages/${conversationId}`, label: 'Start the conversation' }
+    : { href: 'https://andrel.app/dashboard/network', label: 'View in Network' }
+
   await sendManaged({
     unsubscribeCategory: 'email_new_introductions',
     from: 'Andrel <hello@andrel.app>',
@@ -206,9 +230,9 @@ export async function sendMatchCreatedEmail(
         <p style="color: #334155; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
           You can now message each other and schedule a meeting.
         </p>
-        <a href="https://andrel.app/dashboard/network" 
+        <a href="${cta.href}"
            style="display: inline-block; background: #1B2850; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
-          View in Network
+          ${cta.label}
         </a>
         <p style="color: #64748b; font-size: 14px; margin-top: 32px;">
           — The Andrel Team

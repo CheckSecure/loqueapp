@@ -89,11 +89,13 @@ describe('no cookie-session reader of matches / blocked_users remains', () => {
     // ZERO cookie-session, ZERO browser, ZERO unresolved readers anywhere in the tree.
     expect(offenders.sort()).toEqual(KNOWN_OUT_OF_SCOPE)
     // Parameter-injected readers are legitimate; the next test traces every caller.
-    // 13 since the credit-blocked sweep added a matches read to creditBlockedSweep.ts (it checks
-    // whether a pair already connected before attempting to finalize). Parameter-injected, and its
-    // single caller is traced in the MODULES table below — which is the point of this count: a new
-    // graph reader cannot land without being accounted for here.
-    expect(paramSites.length).toBe(13)
+    // 15 since the Phase 1 meeting-request authorization added TWO reads to
+    // lib/meetings/authorization.ts — a matches read and a blocked_users read, both on the injected
+    // service-role client, answering "may this member request a meeting with that one?". Its single
+    // caller is traced in the MODULES table below — which is the point of this count: a new graph
+    // reader cannot land without being accounted for here.
+    // (Was 13 when creditBlockedSweep.ts added its matches read.)
+    expect(paramSites.length).toBe(15)
     expect(paramSites).toContain("lib/introductions/finalizeMutualMatch.ts: PARAMETER graphClient.from('matches')")
   })
 
@@ -108,7 +110,8 @@ describe('no cookie-session reader of matches / blocked_users remains', () => {
       ['lib/introductions/poolHealth.ts',           'admin',       ['app/api/admin/pool-health/route.ts']],
       ['lib/introductions/queue-metrics.ts',        'adminClient', ['app/api/admin/queue-metrics/route.ts']],
       ['lib/messages/sendMessageCore.ts',           'admin',       ['app/actions.ts', 'app/api/messages/send/route.ts']],
-      ['lib/privacy/canViewerDiscoverMember.ts',    'db',          ['app/company/[slug]/page.tsx', 'app/dashboard/profile/[id]/page.tsx']],
+      ['lib/meetings/authorization.ts',             'admin',       ['app/actions.ts']],
+      ['lib/privacy/canViewerDiscoverMember.ts',    'db',          ['app/company/[slug]/page.tsx', 'app/dashboard/profile/[id]/page.tsx', 'app/dashboard/meetings/page.tsx']],
     ]
     for (const [, , callers] of MODULES) {
       for (const c of callers) {
@@ -217,7 +220,9 @@ describe('no query was broadened', () => {
       'app/dashboard/profile/[id]/page.tsx':  ["'matched_at, status'"],
       'app/dashboard/introductions/page.tsx': ["'user_a_id, user_b_id'"],
       'app/dashboard/layout.tsx':             ["'id'"],
-      'app/dashboard/meetings/page.tsx':      ["'id, user_a_id, user_b_id'"],
+      // + status (Phase 1): the "schedule with" picker must offer only LIVE matches, so it agrees
+      // with the server-side gate in scheduleMeeting, which refuses a removed/closed match.
+      'app/dashboard/meetings/page.tsx':      ["'id, user_a_id, user_b_id, status'"],
       'app/dashboard/admin/members/page.tsx': ["'user_a_id, user_b_id, status'"],
       'app/actions.ts':                       ["'id'"],
     }
@@ -305,13 +310,29 @@ describe('finalizeMutualMatch keeps three separate clients', () => {
     expect(SRC).not.toMatch(/graphClient\s*\n?\s*\.from\('(?!matches')/)
   })
 
-  it('the session client keeps EXACTLY its previous non-graph operations', () => {
-    // it no longer touches matches …
-    expect(SRC).not.toMatch(/\bsupabase\s*\n?\s*\.from\('matches'\)/)
-    // … and still performs both member-authority profile reads
+  it('the session client performs NO reads at all', () => {
+    // WHAT THIS USED TO ASSERT, AND WHY IT WAS WRONG.
+    //
+    // This test previously required `sessionFroms` to equal ['profiles', 'profiles'] — i.e. it
+    // pinned the two participant-profile reads ONTO the caller's session client, and treated
+    // keeping them there as the correct outcome of the Release A migration.
+    //
+    // Those reads had already been dead for ten days when that was written. Migration 058
+    // (2026-08-16) revoked `SELECT ON public.profiles` from `authenticated`, so both returned
+    // 42501; only `data` was destructured, so both profiles silently became null, and every
+    // downstream behaviour gated on them — BOTH connection emails, and the counterpart's name in
+    // BOTH notifications — stopped happening with no error anywhere.
+    //
+    // Release A only ever reasoned about matches / blocked_users, so this assertion was scoped to
+    // the wrong migration and locked in the defect. Participants now resolve through
+    // readProfilesByIds (service role, which 058 explicitly preserved), so the correct invariant is
+    // the stronger one: the session client is read by this function not at all.
+    expect(SRC).not.toMatch(/\bsupabase\s*\n?\s*\.from\(/)
     const sessionFroms = execAll(SRC, /\bsupabase\s*\n?\s*\.from\('(\w+)'\)/g).map(m => m[1])
-    expect(sessionFroms).toEqual(['profiles', 'profiles'])
-    expect(SRC).toMatch(/\.select\('full_name, email, title, company'\)/)
+    expect(sessionFroms).toEqual([])
+    // The participant read moved to the approved server-side abstraction, batched into one call.
+    expect(SRC).toMatch(/readProfilesByIds<ConnectionParticipant>/)
+    expect(SRC).toMatch(/CONNECTION_PARTICIPANT_COLUMNS/)
   })
 
   it('adminClient keeps the write, RPC, credit and notification path unchanged', () => {

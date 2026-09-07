@@ -7,8 +7,22 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { generateIcebreakers, generateSystemIntroMessage } from '@/lib/messaging/icebreakers';
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions';
+import { readProfilesByIds } from '@/lib/profiles/serverProfile';
+import {
+  connectionDirections,
+  counterpartDisplayName,
+  CONNECTION_PARTICIPANT_COLUMNS,
+  type ConnectionParticipant,
+} from '@/lib/introductions/connectionParticipants';
 
 const OPPORTUNITY_INTRO_REASON = 'Shared opportunity';
+
+/**
+ * The ONLY profile columns the icebreaker/system-message generator reads: title/company/bio for the
+ * prompts, industry/practice_areas for generateSystemIntroMessage's shared-background lines.
+ * Exported so a test can assert no sensitive column creeps back into this read.
+ */
+export const ICEBREAKER_PROFILE_COLUMNS = 'id, title, company, bio, industry, practice_areas';
 
 export type ConnectResult =
   | { ok: true; match_id: string; conversation_id: string }
@@ -176,9 +190,27 @@ export async function connectOpportunityResponder(args: {
   }
 
   try {
+    // LEAST PRIVILEGE. This was `select('*')`, which pulled every profile column — email,
+    // stripe_customer_id, subscription_tier, internal scores, verification/moderation flags — into a
+    // code path whose entire job is to generate two strings. The narrow list below is exactly what
+    // lib/messaging/icebreakers.ts consumes: title/company/bio for the prompts, plus
+    // industry/practice_areas for the shared-background lines in generateSystemIntroMessage.
+    //
+    // WHY THE FALLBACK. Those last two are read through `as any` casts and appear nowhere else in
+    // the schema — `practice_areas` in particular has no migration, no other query, and no type. If
+    // a named column does not exist, PostgREST fails the whole SELECT, which here would null the
+    // profile and silently degrade the icebreakers to the empty-context form. Rather than guess at
+    // the live schema, ask for the narrow list and fall back to the previous behaviour verbatim on
+    // any error. Strictly never worse than before, and better whenever the columns are all present.
+    // (Same deploy-safe shape as the scheduled_timezone and batch version-column fallbacks.)
+    const readForIcebreakers = async (id: string) => {
+      const narrow = await admin.from('profiles').select(ICEBREAKER_PROFILE_COLUMNS).eq('id', id).single();
+      if (!narrow.error) return narrow;
+      return admin.from('profiles').select('*').eq('id', id).single();
+    };
     const [{ data: creatorProfile }, { data: responderProfile }] = await Promise.all([
-      admin.from('profiles').select('*').eq('id', creatorId).single(),
-      admin.from('profiles').select('*').eq('id', responderId).single(),
+      readForIcebreakers(creatorId),
+      readForIcebreakers(responderId),
     ]);
 
     const context = {
@@ -227,15 +259,74 @@ export async function connectOpportunityResponder(args: {
       userId: creatorId,
       type: 'mutual_match',
       link: conversationLink,
+      // Keyed on the match for the same reason as the mutual-interest path: `mutual_match` is a
+      // SHARED notification type, so without a key this notification and an introduction-flow one
+      // suppress each other under the legacy one-per-type-per-24h digest rule. A retry of this same
+      // connection stays idempotent. The type, link, copy and data payload are unchanged.
+      dedupeKey: match.id,
       data: { match_id: match.id, source: 'opportunity', opportunity_id: opportunityId, conversation_id: conversation.id },
     }),
     createNotificationSafe({
       userId: responderId,
       type: 'mutual_match',
       link: conversationLink,
+      dedupeKey: match.id,
       data: { match_id: match.id, source: 'opportunity', opportunity_id: opportunityId, conversation_id: conversation.id },
     }),
   ]);
+
+  // ── CONNECTION EMAIL ────────────────────────────────────────────────────────────────────────
+  // An opportunity connection is a real peer connection — same matches row, same conversation, same
+  // icebreakers — but it was the only such path that sent no email at all. It now uses the SAME
+  // helper as every other connection rather than a parallel template.
+  //
+  // Recipients are resolved through connectionDirections, so the creator is emailed about the
+  // responder and the responder about the creator. Neither is derived from matches.user_a_id /
+  // user_b_id, which are interchangeable positions — here creatorId happens to be user_a_id, and
+  // depending on that would be exactly the bug this helper exists to prevent.
+  //
+  // Best-effort and terminal: the match, conversation, system message and notifications above are
+  // already committed and are the authoritative state. allSettled inside a try means no email
+  // outcome can throw into this function or change its return value.
+  try {
+    // Lazily imported, exactly as createNotificationSafe is above. lib/email.ts constructs its Resend
+    // client at MODULE LOAD and throws when RESEND_API_KEY is unset, so a static import here would
+    // make opportunity connections fail at import time in any context without that variable — a
+    // dependency this path never had. The email is best-effort; loading its module must be too.
+    const { sendMatchCreatedEmail } = await import('@/lib/email');
+    const participantRead = await readProfilesByIds<ConnectionParticipant>(
+      [creatorId, responderId],
+      CONNECTION_PARTICIPANT_COLUMNS,
+      'opportunity-connection-participants',
+    );
+    const directions = connectionDirections(
+      creatorId,
+      responderId,
+      participantRead.ok ? participantRead.profiles : [],
+    );
+    if (directions.length === 0) {
+      console.error('[opportunities/connect] participant profiles unresolved; connection emails skipped');
+    }
+    const results = await Promise.allSettled(
+      directions
+        .filter(({ recipient }) => !!recipient.email)
+        .map(({ recipient, counterpart }) =>
+          sendMatchCreatedEmail(
+            recipient.email as string,
+            recipient.full_name || 'User',
+            counterpartDisplayName(counterpart),
+            counterpart.title ?? undefined,
+            counterpart.company ?? undefined,
+            { conversationId: conversation.id },
+          ),
+        ),
+    );
+    for (const r of results) {
+      if (r.status === 'rejected') console.error('[opportunities/connect] connection email failed (non-fatal)');
+    }
+  } catch (e) {
+    console.error('[opportunities/connect] connection email step failed (non-fatal)');
+  }
 
   return { ok: true, match_id: match.id, conversation_id: conversation.id };
 }
