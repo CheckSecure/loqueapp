@@ -234,6 +234,14 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Multi-recipient (CC/BCC) delivery fail-safe',
     impact: 'REQUIRED before EXECUTING any invitation that CC/BCCs an additional mailbox (the James Kahrs nomination CCs the nominator). Marks that a send shared one provider message with additional recipients so the Resend webhook FREEZES that delivery at provider-accepted (Resend cannot attribute a bounce/complaint/delivery to a specific mailbox on a multi-recipient message). Until applied, the nomination route FAILS CLOSED on execute (503, nothing sent); single-recipient invites and the delivery read path fail open (unaffected). NO CC/BCC address is stored — only the boolean fact.',
   },
+  {
+    migration: '095_member_community_foundation.sql',
+    kind: 'column',
+    table: 'profiles',
+    column: 'member_type',
+    feature: 'Andrel Next community identity (Professional / Next) + community_pair_allowed predicate',
+    impact: 'REQUIRED BEFORE any Phase 3 community-segmentation code is deployed. Until applied, profiles.member_type does not exist, so every candidate-pool scope and every relationship-creation gate that Phase 3 adds would read undefined and — depending on the call site — either fail closed (no matches for anyone) or fail open (no segmentation at all). Phase 2 itself reads nothing from this column, so an unapplied 095 does NOT degrade any current behaviour; it only blocks Phase 3.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {
