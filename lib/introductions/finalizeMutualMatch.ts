@@ -10,6 +10,13 @@
 // it. It creates the match idempotently (existing-match + RPC duplicate backstops).
 
 import { sendMatchCreatedEmail } from '@/lib/email'
+import { readProfilesByIds } from '@/lib/profiles/serverProfile'
+import {
+  connectionDirections,
+  counterpartDisplayName,
+  CONNECTION_PARTICIPANT_COLUMNS,
+  type ConnectionParticipant,
+} from '@/lib/introductions/connectionParticipants'
 import { createNotificationSafe } from '@/lib/notifications'
 import { notifyCreditBlockedMatch } from '@/lib/introductions/creditBlockedMatch'
 import { generateIcebreakers, generateSystemIntroMessage } from '@/lib/messaging/icebreakers'
@@ -53,9 +60,15 @@ export async function retireWaitingResponseForPair(
 
 export async function finalizeMutualMatch(params: {
   /**
-   * The CALLER'S SESSION CLIENT. Still carries member/RLS authority and is deliberately kept for
-   * every operation that had it before — see the two profiles reads near the end of this function.
-   * It is NO LONGER used for the connection-graph read (see graphClient).
+   * The CALLER'S SESSION CLIENT. NO LONGER READ BY THIS FUNCTION.
+   *
+   * It used to perform the two participant-profile reads near the end, which is exactly why those
+   * reads were denied after migration 058 revoked `SELECT ON public.profiles` from `authenticated`.
+   * They now go through readProfilesByIds (service role), so nothing here needs session authority.
+   *
+   * The parameter is retained rather than removed so the two call sites and their test doubles keep
+   * their existing shape — dropping it is a signature change with no behavioural benefit, and is
+   * left as a follow-up.
    */
   supabase: any
   /** Service-role client for the existing write/RPC/notification path. Unchanged. */
@@ -281,48 +294,98 @@ export async function finalizeMutualMatch(params: {
     })
   }
 
-  // DELIBERATELY the session client: these two reads carry member authority today and are not
-  // part of the connection-graph migration. Release B revokes SELECT on matches/blocked_users
-  // only, so they are unaffected by it.
-  const { data: actingProfile } = await supabase
-    .from('profiles')
-    .select('full_name, email, title, company')
-    .eq('id', actingUserId)
-    .single()
-  const { data: otherProfile } = await supabase
-    .from('profiles')
-    .select('full_name, email, title, company')
-    .eq('id', otherUserId)
-    .single()
+  // ── PARTICIPANT PROFILES ────────────────────────────────────────────────────────────────────
+  //
+  // THESE TWO READS USED THE CALLER'S SESSION CLIENT AND HAVE BEEN DENIED SINCE MIGRATION 058.
+  //
+  // 058 (`REVOKE SELECT ON TABLE public.profiles FROM PUBLIC, anon, authenticated`) removed the
+  // privilege the `authenticated` role needs for exactly this read. Both routes that call this
+  // function pass their session client as `supabase`, so both reads returned 42501 and — because
+  // only `data` was destructured — both profiles silently became null. Everything gated on them
+  // stopped happening: NEITHER connection email was sent, and both notifications lost the
+  // counterpart's name. No error surfaced anywhere, because a null profile is indistinguishable
+  // from "no such member" when the error is discarded.
+  //
+  // The comment previously here reasoned only about Release B (086), which revokes SELECT on
+  // matches / blocked_users and never touches profiles — so it was true and irrelevant, and the
+  // read it was defending had already been broken for ten days when 086 landed.
+  //
+  // Fixed the way the repository already fixes this class (lib/profiles/serverProfile.ts): ONE
+  // batched service-role read, which 058 explicitly preserved. No grant is restored, no RLS is
+  // weakened, and nothing new is exposed to a browser client.
+  const participantRead = await readProfilesByIds<ConnectionParticipant>(
+    [actingUserId, otherUserId],
+    CONNECTION_PARTICIPANT_COLUMNS,
+    'mutual-match-participants',
+  )
+  const participants = participantRead.ok ? participantRead.profiles : []
 
-  await createNotificationSafe({
-    userId: actingUserId,
-    type: 'mutual_match',
-    data: { conversationId, matchId, otherUserId, otherUserName: otherProfile?.full_name },
-  })
-  await createNotificationSafe({
-    userId: otherUserId,
-    type: 'mutual_match',
-    data: { conversationId, matchId, otherUserId: actingUserId, otherUserName: actingProfile?.full_name },
-  })
-
-  if (actingProfile?.email && otherProfile) {
-    sendMatchCreatedEmail(
-      actingProfile.email,
-      actingProfile.full_name || 'User',
-      otherProfile.full_name || 'Your connection',
-      otherProfile.title,
-      otherProfile.company,
-    ).catch((e) => console.error('Email error:', e))
+  // ── RECIPIENT-RELATIVE FAN-OUT ──────────────────────────────────────────────────────────────
+  // Both directions are built from the two member ids, never from matches.user_a_id/user_b_id —
+  // those are interchangeable storage positions, so treating either as "the counterpart" is
+  // correct for one recipient and wrong for the other. connectionDirections() also refuses to
+  // pair a member with themselves, so "you're connected with <your own name>" is unrepresentable.
+  const directions = connectionDirections(actingUserId, otherUserId, participants)
+  if (directions.length === 0) {
+    // Class-only: a failed or partial profile read must not block a match that is already
+    // committed, but it must be visible rather than silently degrading to no name / no email —
+    // which is precisely the failure mode this section exists to end.
+    console.error('[finalizeMutualMatch] participant profiles unresolved; notifications/emails skipped', {
+      reason: participantRead.ok ? 'incomplete' : participantRead.reason,
+    })
   }
-  if (otherProfile?.email && actingProfile) {
-    sendMatchCreatedEmail(
-      otherProfile.email,
-      otherProfile.full_name || 'User',
-      actingProfile.full_name || 'Your connection',
-      actingProfile.title,
-      actingProfile.company,
-    ).catch((e) => console.error('Email error:', e))
+
+  for (const { recipient, counterpart } of directions) {
+    const counterpartName = counterpartDisplayName(counterpart)
+    await createNotificationSafe({
+      userId: recipient.id,
+      type: 'mutual_match',
+      // Deep link to THE conversation. `/dashboard/messages/<id>` is the canonical route
+      // (app/dashboard/messages/[conversationId]) and is already what the opportunity path and the
+      // Network detail modal produce. Falls back to LINK_BY_TYPE's conversation LIST when the RPC
+      // returned no conversation id, so the notification is never left without a destination.
+      link: conversationId ? `/dashboard/messages/${conversationId}` : undefined,
+      // Per-match idempotency. Without a key, createNotificationSafe applies its legacy
+      // "one per (user_id, type) per 24h" digest rule, which silently swallowed a member's SECOND
+      // connection of the day. Keyed on the match, a retry of the SAME match stays a no-op while
+      // two DIFFERENT matches each notify.
+      dedupeKey: matchId,
+      // Name-bearing copy. The static entry ("You're now connected.") named nobody, which is what
+      // a member saw even before the profile reads broke.
+      body: `You're connected with ${counterpartName}.`,
+      data: {
+        conversationId,
+        matchId,
+        otherUserId: counterpart.id,
+        otherUserName: counterpart.full_name,
+      },
+    })
+  }
+
+  // Email is DOWNSTREAM of the connection, never a precondition for it. The match, conversation,
+  // credits and system message are already committed and authoritative; allSettled means a Resend
+  // outage, a bounce, or a suppressed recipient can neither throw into this function nor change
+  // what it returns. Awaited (rather than fire-and-forget) only so the send is actually issued
+  // before a serverless invocation can freeze — the failure semantics are unchanged.
+  const emailResults = await Promise.allSettled(
+    directions
+      .filter(({ recipient }) => !!recipient.email)
+      .map(({ recipient, counterpart }) =>
+        sendMatchCreatedEmail(
+          recipient.email as string,
+          recipient.full_name || 'User',
+          counterpartDisplayName(counterpart),
+          // The helper's optional params are `string | undefined`; these columns are nullable. The
+          // previous code passed them straight through, but through an `any` profile, so the
+          // mismatch was invisible. `?? undefined` keeps the rendered email identical (both null
+          // and undefined fall out of the `[role, company].filter(Boolean)` join) while typing it.
+          counterpart.title ?? undefined,
+          counterpart.company ?? undefined,
+        ),
+      ),
+  )
+  for (const r of emailResults) {
+    if (r.status === 'rejected') console.error('[finalizeMutualMatch] connection email failed (non-fatal)')
   }
 
   // A connection resolves any "waiting on your response" reminders for the pair.

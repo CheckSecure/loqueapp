@@ -310,13 +310,29 @@ describe('finalizeMutualMatch keeps three separate clients', () => {
     expect(SRC).not.toMatch(/graphClient\s*\n?\s*\.from\('(?!matches')/)
   })
 
-  it('the session client keeps EXACTLY its previous non-graph operations', () => {
-    // it no longer touches matches …
-    expect(SRC).not.toMatch(/\bsupabase\s*\n?\s*\.from\('matches'\)/)
-    // … and still performs both member-authority profile reads
+  it('the session client performs NO reads at all', () => {
+    // WHAT THIS USED TO ASSERT, AND WHY IT WAS WRONG.
+    //
+    // This test previously required `sessionFroms` to equal ['profiles', 'profiles'] — i.e. it
+    // pinned the two participant-profile reads ONTO the caller's session client, and treated
+    // keeping them there as the correct outcome of the Release A migration.
+    //
+    // Those reads had already been dead for ten days when that was written. Migration 058
+    // (2026-08-16) revoked `SELECT ON public.profiles` from `authenticated`, so both returned
+    // 42501; only `data` was destructured, so both profiles silently became null, and every
+    // downstream behaviour gated on them — BOTH connection emails, and the counterpart's name in
+    // BOTH notifications — stopped happening with no error anywhere.
+    //
+    // Release A only ever reasoned about matches / blocked_users, so this assertion was scoped to
+    // the wrong migration and locked in the defect. Participants now resolve through
+    // readProfilesByIds (service role, which 058 explicitly preserved), so the correct invariant is
+    // the stronger one: the session client is read by this function not at all.
+    expect(SRC).not.toMatch(/\bsupabase\s*\n?\s*\.from\(/)
     const sessionFroms = execAll(SRC, /\bsupabase\s*\n?\s*\.from\('(\w+)'\)/g).map(m => m[1])
-    expect(sessionFroms).toEqual(['profiles', 'profiles'])
-    expect(SRC).toMatch(/\.select\('full_name, email, title, company'\)/)
+    expect(sessionFroms).toEqual([])
+    // The participant read moved to the approved server-side abstraction, batched into one call.
+    expect(SRC).toMatch(/readProfilesByIds<ConnectionParticipant>/)
+    expect(SRC).toMatch(/CONNECTION_PARTICIPANT_COLUMNS/)
   })
 
   it('adminClient keeps the write, RPC, credit and notification path unchanged', () => {
