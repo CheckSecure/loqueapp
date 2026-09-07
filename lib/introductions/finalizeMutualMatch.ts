@@ -381,6 +381,9 @@ export async function finalizeMutualMatch(params: {
           // and undefined fall out of the `[role, company].filter(Boolean)` join) while typing it.
           counterpart.title ?? undefined,
           counterpart.company ?? undefined,
+          // Sends the member to the thread rather than to the Network directory. Omitted when the
+          // RPC returned no conversation, in which case the email keeps its previous destination.
+          { conversationId },
         ),
       ),
   )
