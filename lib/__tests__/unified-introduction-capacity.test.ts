@@ -769,8 +769,15 @@ describe('8. the limits of this suite, stated rather than implied', () => {
   })
 
   it('063 is registered nowhere in migration-health, deliberately and documented', () => {
-    // The function-probe machinery in lib/db/migrationHealth.ts belongs to unrelated company-admin
-    // work that is NOT part of this change, so a 063 entry could not be staged independently of it.
+    // ORIGINAL REASON: the function-probe machinery did not exist, so a 063 entry could not be
+    // staged independently of the unrelated company-admin work that would have introduced it.
+    //
+    // RATIONALE UPDATED: kind:'function' support now exists in lib/db/migrationHealth.ts, added
+    // for the Phase 3 Stage 1 prerequisites. 063 remains unregistered by choice, not by
+    // limitation — and registering it would additionally require exempting place_batch_rows from
+    // the all-NULL writer-probe rule, since its documented probeArgs include p_source:'weekly' and
+    // p_rows:[]. See docs/MIGRATION_063_HEALTH_VISIBILITY.md.
+    //
     // The gap is real and must not be glossed: with 063 unapplied the dashboard stays GREEN.
     expect(readFileSync('lib/db/migrationHealth.ts', 'utf8')).not.toContain('063_unified')
     // What actually protects ordering: placement THROWS, so the failure is "no recommendations",
