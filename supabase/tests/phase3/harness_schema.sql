@@ -76,8 +76,45 @@ CREATE TABLE public.intro_requests (
   match_reason text, match_score integer,
   pair_id uuid, batch_id uuid, release_id uuid, responds_to_id uuid,
   capacity_released_at timestamptz,
+  -- admin_notes has NO migration in this repo but IS written by createAdminIntroPair, so migration
+  -- 098 asserts its existence as a precondition. Modelled here for the same reason every other
+  -- column is: the harness bends to the function, never the reverse.
+  admin_notes text,
   created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
 );
+
+-- Migration 070's outbox, plus its trigger, so a test can prove what an admin_pending INSERT does
+-- and does NOT announce. The trigger keys on status = 'suggested', so admin_pending must produce
+-- zero outbox rows — that is existing behaviour, and 098 must not change it.
+CREATE TABLE public.introduction_email_outbox (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  intro_request_id uuid UNIQUE NOT NULL,
+  member_id uuid NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION public.tg_intro_request_visible_outbox() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $tg$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status = 'suggested' THEN
+      INSERT INTO public.introduction_email_outbox (intro_request_id, member_id)
+      VALUES (NEW.id, NEW.requester_id) ON CONFLICT (intro_request_id) DO NOTHING;
+    END IF;
+    RETURN NULL;
+  END IF;
+  IF NEW.status = 'suggested' AND OLD.status IS DISTINCT FROM 'suggested' THEN
+    INSERT INTO public.introduction_email_outbox (intro_request_id, member_id)
+    VALUES (NEW.id, NEW.requester_id) ON CONFLICT (intro_request_id) DO NOTHING;
+  END IF;
+  RETURN NULL;
+END;
+$tg$;
+
+DROP TRIGGER IF EXISTS intro_requests_visible_outbox_aiu ON public.intro_requests;
+CREATE TRIGGER intro_requests_visible_outbox_aiu
+  AFTER INSERT OR UPDATE OF status ON public.intro_requests
+  FOR EACH ROW EXECUTE FUNCTION public.tg_intro_request_visible_outbox();
 
 CREATE TABLE public.blocked_users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

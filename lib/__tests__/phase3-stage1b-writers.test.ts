@@ -457,6 +457,7 @@ describe('the intro pre-checks fail closed', () => {
     // 'admin_pending' is INSIDE can_discover_profile's grant set, so a row here would already make
     // the two members mutually discoverable. Nothing may be written.
     expect(h.state.writes.filter((w) => w.table === 'intro_requests')).toEqual([])
+    expect(h.state.rpc).toEqual([])
     expect(h.state.notifications).toEqual([])
   })
 
@@ -576,6 +577,214 @@ describe('the dead helpers are gone and cannot come back quietly', () => {
       const src = readFileSync(f, 'utf8')
       expect(src, `${f} must not query or create conversation_participants`)
         .not.toMatch(/from\(['"]conversation_participants['"]\)|CREATE TABLE[^\n]*conversation_participants/)
+    }
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe('create_admin_intro_pair — the admin intro write is authoritative in SQL', () => {
+  const arrangeAdminIntro = () => {
+    communityRows([{ id: CREATOR, member_type: 'professional' }, { id: RESPONDER, member_type: 'professional' }])
+    h.state.tableReplies.set('profiles', { data: [
+      { id: CREATOR, full_name: 'A', account_status: 'active', company: 'Acme' },
+      { id: RESPONDER, full_name: 'B', account_status: 'active', company: 'Globex' },
+    ], error: null })
+    h.state.tableReplies.set('blocked_users', { data: [], error: null })
+    h.state.tableReplies.set('matches', { data: [], error: null })
+    h.state.tableReplies.set('intro_requests', { data: [], error: null })
+  }
+
+  it('THE POINT OF THIS MIGRATION: no direct intro_requests INSERT remains in the caller', () => {
+    const src = readFileSync('lib/introRequests/createAdminIntroPair.ts', 'utf8')
+    expect(src).not.toMatch(/from\(['"]intro_requests['"]\)[\s\S]{0,400}?\.insert\(/)
+    expect(src).toContain('createAdminIntroPairRpc(')
+  })
+
+  it('a Professional pair is written through the RPC with the exact old row content', async () => {
+    arrangeAdminIntro()
+    h.state.rpcReply.set('create_admin_intro_pair', {
+      data: { outcome: 'created', rows: [
+        { id: 'i1', requester_id: CREATOR, target_user_id: RESPONDER, status: 'admin_pending', is_admin_initiated: true },
+        { id: 'i2', requester_id: RESPONDER, target_user_id: CREATOR, status: 'admin_pending', is_admin_initiated: true },
+      ] }, error: null,
+    })
+    const { createAdminIntroPair } = await import('@/lib/introRequests/createAdminIntroPair')
+    const res: any = await createAdminIntroPair(CREATOR, RESPONDER, { adminNotes: 'manual_create' })
+
+    expect(res).toMatchObject({ ok: true, mode: 'intro_proposed' })
+    // The routes log `introRequests.map(i => i.id)` and return the array; the projection must be
+    // exactly what `.select('id, requester_id, target_user_id')` used to give them.
+    expect(res.introRequests).toEqual([
+      { id: 'i1', requester_id: CREATOR, target_user_id: RESPONDER },
+      { id: 'i2', requester_id: RESPONDER, target_user_id: CREATOR },
+    ])
+
+    const call = h.state.rpc.find((r) => r.name === 'create_admin_intro_pair')
+    expect(call).toBeDefined()
+    expect(call!.args).toMatchObject({ p_user_a: CREATOR, p_user_b: RESPONDER, p_admin_notes: 'manual_create' })
+    // The reason is computed in TypeScript from profile signals and passed in as content.
+    expect(call!.args).toHaveProperty('p_match_reason')
+    // No direct write of any kind.
+    expect(h.state.writes.filter((w) => w.table === 'intro_requests')).toEqual([])
+    // Notifications still go out on success.
+    expect(h.state.notifications).toHaveLength(2)
+    expect(h.state.notifications.every((n) => n.type === 'admin_intro')).toBe(true)
+  })
+
+  it('an SQL-level cross-community refusal is reported, and notifies nobody', async () => {
+    arrangeAdminIntro()   // the TypeScript pre-check passes; the DATABASE is the one that refuses
+    h.state.rpcReply.set('create_admin_intro_pair', {
+      data: { outcome: 'ineligible', detail: 'cross_community' }, error: null,
+    })
+    const { createAdminIntroPair } = await import('@/lib/introRequests/createAdminIntroPair')
+    const res: any = await createAdminIntroPair(CREATOR, RESPONDER)
+
+    expect(res).toMatchObject({ ok: false, code: 'cross_community' })
+    expect(h.state.notifications).toEqual([])
+  })
+
+  it('a missing profile at write time is refused, not treated as a transient failure', async () => {
+    arrangeAdminIntro()
+    h.state.rpcReply.set('create_admin_intro_pair', {
+      data: { outcome: 'ineligible', detail: 'profile_missing' }, error: null,
+    })
+    const { createAdminIntroPair } = await import('@/lib/introRequests/createAdminIntroPair')
+    expect(await createAdminIntroPair(CREATOR, RESPONDER)).toMatchObject({ ok: false, code: 'cross_community' })
+    expect(h.state.notifications).toEqual([])
+  })
+
+  it('a concurrent duplicate caught inside the pair locks reports intro_already_proposed', async () => {
+    arrangeAdminIntro()
+    h.state.rpcReply.set('create_admin_intro_pair', {
+      data: { outcome: 'already_proposed', rows: [
+        { id: 'x1', requester_id: CREATOR, target_user_id: RESPONDER, status: 'admin_pending', is_admin_initiated: true },
+      ] }, error: null,
+    })
+    const { createAdminIntroPair } = await import('@/lib/introRequests/createAdminIntroPair')
+    const res: any = await createAdminIntroPair(CREATOR, RESPONDER)
+
+    expect(res).toMatchObject({ ok: true, mode: 'intro_already_proposed' })
+    // Projected to the shape the TypeScript duplicate guard returns, so the Concierge route's
+    // `mode === 'intro_already_proposed'` branch behaves identically whichever layer caught it.
+    expect(res.introRequests).toEqual([{ id: 'x1', status: 'admin_pending', is_admin_initiated: true }])
+    expect(h.state.notifications).toEqual([])
+  })
+
+  it('every unknown outcome fails closed as insert_failed', async () => {
+    for (const data of [
+      { outcome: 'something_new' },
+      { outcome: 'invalid', detail: 'self_pair' },
+      { outcome: 'created', rows: [{ id: 'only-one' }] },   // created without its two rows
+      null,
+    ]) {
+      h.reset(); vi.resetModules(); arrangeAdminIntro()
+      h.state.rpcReply.set('create_admin_intro_pair', { data, error: null })
+      const { createAdminIntroPair } = await import('@/lib/introRequests/createAdminIntroPair')
+      const res: any = await createAdminIntroPair(CREATOR, RESPONDER)
+      expect(res, JSON.stringify(data)).toMatchObject({ ok: false, code: 'insert_failed' })
+      expect(h.state.notifications).toEqual([])
+    }
+  })
+
+  it('a transport failure fails closed too', async () => {
+    arrangeAdminIntro()
+    h.state.rpcReply.set('create_admin_intro_pair', { data: null, error: { code: '57014' } })
+    const { createAdminIntroPair } = await import('@/lib/introRequests/createAdminIntroPair')
+    expect(await createAdminIntroPair(CREATOR, RESPONDER)).toMatchObject({ ok: false, code: 'insert_failed' })
+    expect(h.state.notifications).toEqual([])
+  })
+
+  it('the RPC client rejects a self-pair before reaching the database', async () => {
+    const { createAdminIntroPairRpc } = await import('@/lib/relationships/adminIntroPair')
+    const r = await createAdminIntroPairRpc(h.makeClient(), CREATOR, CREATOR, null, 'manual_create')
+    expect(r.outcome).toBe('invalid')
+    expect(h.state.rpc).toHaveLength(0)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe('migration 098 — the SQL contract', () => {
+  const M098 = 'supabase/migrations/098_admin_intro_pair_writer.sql'
+  const SQL = readFileSync(M098, 'utf8')
+  const from = SQL.indexOf('CREATE OR REPLACE FUNCTION public.create_admin_intro_pair')
+  const BODY = SQL.slice(from, SQL.indexOf('$$;', from))
+  const CODE = BODY.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n')
+
+  it('exists and is SECURITY DEFINER with a pinned empty search_path', () => {
+    expect(existsSync(M098)).toBe(true)
+    expect(BODY).toMatch(/SECURITY DEFINER/)
+    expect(BODY).toMatch(/SET search_path = ''/)
+  })
+
+  it('EXECUTE is revoked from every browser role and granted only to service_role', () => {
+    expect(SQL).toMatch(/REVOKE ALL ON FUNCTION public\.create_admin_intro_pair\(uuid, uuid, text, text\) FROM PUBLIC;/)
+    expect(SQL).toMatch(/REVOKE ALL ON FUNCTION public\.create_admin_intro_pair\(uuid, uuid, text, text\) FROM anon;/)
+    expect(SQL).toMatch(/REVOKE ALL ON FUNCTION public\.create_admin_intro_pair\(uuid, uuid, text, text\) FROM authenticated;/)
+    const grants = SQL.split('\n').filter((l) => /^\s*GRANT\b/i.test(l))
+    expect(grants).toHaveLength(1)
+    expect(grants[0]).toMatch(/TO service_role;$/)
+  })
+
+  it('the community guard is EXECUTED, under both advisory locks, before the INSERT', () => {
+    expect(CODE).toContain('community_pair_allowed')
+    expect(CODE.indexOf('pg_advisory_xact_lock')).toBeLessThan(CODE.indexOf('community_pair_allowed'))
+    expect(CODE.indexOf('community_pair_allowed')).toBeLessThan(CODE.indexOf('INSERT INTO public.intro_requests'))
+    // Canonical LEAST/GREATEST order, so it cannot deadlock against the other writers.
+    expect(CODE).toMatch(/lo := LEAST\(p_user_a, p_user_b\)/)
+    expect(CODE).toMatch(/hi := GREATEST\(p_user_a, p_user_b\)/)
+  })
+
+  it('it writes admin_pending and never a capacity-occupying tier status', () => {
+    expect(CODE).toContain("'admin_pending'")
+    expect(CODE).not.toContain("'suggested'")
+    expect(CODE).not.toContain("'queued'")
+    // pair_id and batch_id must stay out of the INSERT entirely.
+    expect(CODE).not.toContain('pair_id')
+    expect(CODE).not.toContain('batch_id')
+  })
+
+  it('both directions are written by ONE statement, so no one-sided pair is possible', () => {
+    const ins = CODE.slice(CODE.indexOf('INSERT INTO public.intro_requests'))
+    expect(ins).toMatch(/\(p_user_a, p_user_b, 'admin_pending', true/)
+    expect(ins).toMatch(/\(p_user_b, p_user_a, 'admin_pending', true/)
+    expect(CODE.match(/INSERT INTO public\.intro_requests/g)).toHaveLength(1)
+  })
+
+  it('updated_at is deliberately NOT written, so the column default still applies', () => {
+    const ins = CODE.slice(CODE.indexOf('INSERT INTO public.intro_requests'), CODE.indexOf('RETURNING'))
+    expect(ins).not.toContain('updated_at')
+  })
+
+  it('it does not modify 096 or 097, community_pair_allowed, or any grant on profiles', () => {
+    expect(SQL).not.toMatch(/CREATE OR REPLACE FUNCTION public\.community_pair_allowed/)
+    expect(SQL).not.toMatch(/DROP FUNCTION/)
+    expect(SQL).not.toMatch(/GRANT[^\n]*(anon|authenticated)/)
+    expect(SQL).not.toMatch(/ALTER TABLE|CREATE TABLE/)
+  })
+
+  it('preconditions prove every written column exists before the function is created', () => {
+    const pre = SQL.slice(0, from)
+    for (const col of ['requester_id', 'target_user_id', 'status', 'is_admin_initiated',
+                       'match_reason', 'admin_notes', 'created_at']) {
+      expect(pre, col).toContain(`('${col}')`)
+    }
+    expect(pre).toMatch(/098 REFUSED: public\.intro_requests is missing column\(s\)/)
+  })
+
+  it('postapply re-proves the security properties rather than trusting the statements ran', () => {
+    const post = SQL.slice(SQL.indexOf('SECTION 3'))
+    for (const claim of [
+      'is not SECURITY DEFINER',
+      'has a mutable search_path',
+      'a browser role can EXECUTE create_admin_intro_pair',
+      'service_role cannot EXECUTE create_admin_intro_pair',
+      'does not EXECUTE the community guard',
+      'does not take the participant advisory locks',
+      'writes a tier status',
+      'consume_credits_and_create_match is no longer sealed',
+      'a browser role holds SELECT on public.profiles',
+    ]) {
+      expect(post, claim).toContain(claim)
     }
   })
 })

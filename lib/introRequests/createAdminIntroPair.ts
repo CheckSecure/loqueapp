@@ -8,6 +8,7 @@ import {
 import { isSameCompany } from '@/lib/matching/same-company'
 import { buildIntroReasons } from '@/lib/match-signals'
 import { checkPairCommunity, isRetryableDenial } from '@/lib/community/pairGate'
+import { createAdminIntroPairRpc } from '@/lib/relationships/adminIntroPair'
 
 export type CreateAdminIntroFailure =
   | 'invalid_pair'
@@ -59,17 +60,16 @@ export async function createAdminIntroPair(
   // can_discover_profile's grant set (migration 079). A cross-community pair reaching the insert
   // below would become mutually discoverable immediately — before any match, credit or consent.
   //
-  // ── READ THIS BEFORE TRUSTING IT ──────────────────────────────────────────────────────────────
-  // Unlike every other relationship writer in Phase 3, this path has NO downstream SQL gate. It
-  // does not call materialize_admin_pair (that RPC belongs to the weekly batch-approval flow in
-  // app/api/admin/approve-batch), and it does not call create_reciprocal_suggestion or
-  // place_batch_rows. It INSERTs into intro_requests directly as service_role, which bypasses RLS,
-  // and the only trigger on that table (migration 070) is the email outbox, not a gate.
+  // DEFENCE IN DEPTH AND EARLY REFUSAL — NOT the authority. The authority is
+  // public.create_admin_intro_pair (migration 098), which re-evaluates community_pair_allowed under
+  // both participant advisory locks, in the same transaction as the INSERT. This check runs first
+  // only so an admin gets a clear message before the five product gates below do their reads, and
+  // so a cross-community pair never reaches the write at all.
   //
-  // So this check is CURRENTLY THE ONLY COMMUNITY LAYER ON THIS PATH — a role it is not strong
-  // enough for on its own, since it reads a snapshot in a different process from the write. It is
-  // recorded as such rather than described as defence in depth, and closing it properly (a gated
-  // SQL writer for admin-proposed pairs) is tracked as follow-up work, not silently assumed.
+  // (Until migration 098 this path INSERTed intro_requests directly as service_role, which bypasses
+  // RLS, with the only trigger on that table being the 070 email outbox rather than a gate — so
+  // this check briefly WAS the only layer. It is not any more, and it must never be relied on as
+  // one again: it reads a snapshot in a different process from the write.)
   //
   // Fails closed on every uncertainty: missing id, missing profile, unreadable member_type, or a
   // read that did not answer at all.
@@ -152,36 +152,56 @@ export async function createAdminIntroPair(
       ? `${matchReason.replace(/\.\s*$/, '')}. ${mutualSignal}.`
       : matchReason || (mutualSignal ? `${mutualSignal}.` : null)
 
-  // Create TWO intro_requests in admin_pending state, both directions
-  const now = new Date().toISOString()
-  const { data: newIntros, error: insErr } = await admin
-    .from('intro_requests')
-    .insert([
-      {
-        requester_id: userAId,
-        target_user_id: userBId,
-        status: 'admin_pending',
-        is_admin_initiated: true,
-        match_reason: finalReason,
-        admin_notes: adminNotes,
-        created_at: now,
-      },
-      {
-        requester_id: userBId,
-        target_user_id: userAId,
-        status: 'admin_pending',
-        is_admin_initiated: true,
-        match_reason: finalReason,
-        admin_notes: adminNotes,
-        created_at: now,
-      },
-    ])
-    .select('id, requester_id, target_user_id')
+  // ── THE WRITE, THROUGH THE AUTHORITATIVE SQL PRIMITIVE (migration 098) ───────────────────────
+  // This was a direct service-role INSERT of two 'admin_pending' rows. Because 'admin_pending' is
+  // inside can_discover_profile's grant set (migration 079), that INSERT is itself the moment two
+  // members become mutually discoverable — and service_role bypasses RLS, so nothing outside the
+  // writing function could gate it. public.create_admin_intro_pair now performs exactly the same
+  // INSERT under both participant advisory locks, with community_pair_allowed evaluated in the same
+  // transaction.
+  //
+  // EVERYTHING THE ROWS CONTAIN IS UNCHANGED: status 'admin_pending', is_admin_initiated true, the
+  // same finalReason on both rows, the same adminNotes, one shared created_at, and pair_id /
+  // batch_id left NULL. The RPC is deliberately NOT materialize_admin_pair, which is the batch
+  // review path and would write a tier status, a pair_id and a batch envelope instead.
+  const written = await createAdminIntroPairRpc(admin, userAId, userBId, finalReason, adminNotes)
 
-  if (insErr || !newIntros) {
-    console.error('[createAdminIntroPair] intro_requests insert failed:', insErr)
+  if (written.outcome === 'ineligible') {
+    // The database refused. Reported with the same code and message the pre-check uses, so an admin
+    // sees one consistent answer regardless of which layer caught it. 'profile_missing' cannot
+    // normally reach here (the eligibility read above already refused), so it means the row
+    // disappeared mid-request — still a refusal, never a partial write.
+    return {
+      ok: false,
+      code: 'cross_community',
+      message: 'These members belong to different Andrel communities and cannot be introduced.',
+    }
+  }
+
+  if (written.outcome === 'already_proposed') {
+    // The duplicate-pair guard above missed a concurrent admin. The RPC caught it inside the pair
+    // locks and wrote nothing; report it exactly as that guard would have.
+    return {
+      ok: true,
+      mode: 'intro_already_proposed',
+      introRequests: written.rows.map((r) => ({
+        id: r.id, status: r.status, is_admin_initiated: r.is_admin_initiated,
+      })),
+    }
+  }
+
+  if (written.outcome !== 'created') {
+    // 'invalid' and 'error' — including any outcome this client does not recognise. FAIL CLOSED:
+    // no notifications, and no direct-INSERT fallback.
+    console.error('[createAdminIntroPair] intro_requests write refused:', written.outcome, written.detail)
     return { ok: false, code: 'insert_failed', message: 'Failed to propose introduction' }
   }
+
+  // Projected to exactly the shape the direct INSERT's `.select('id, requester_id, target_user_id')`
+  // returned, so both admin routes' JSON responses are byte-identical to before.
+  const newIntros = written.rows.map((r) => ({
+    id: r.id, requester_id: r.requester_id, target_user_id: r.target_user_id,
+  }))
 
   // Names for notification personalization
   const { data: profileA } = await admin.from('profiles').select('full_name').eq('id', userAId).maybeSingle()
