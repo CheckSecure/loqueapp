@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAdminUser } from '@/lib/admin/getAdminUser'
-import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
+import { createSupportMatch, isSupportConnected } from '@/lib/relationships/supportMatch'
 import { revalidatePath } from 'next/cache'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
@@ -47,64 +47,29 @@ export async function POST(
     return NextResponse.json({ error: 'Admin user not resolvable' }, { status: 500 })
   }
 
-  // Scenario (a): find existing match (welcome flow creates one for every onboarded user)
-  // Scenario (b): no match exists — create one (reporter predates welcome flow)
-  const { data: existingMatch } = await adminClient
-    .from('matches')
-    .select('id')
-    .or(buildBidirectionalMatchFilter(adminUser.id, report.user_id))
-    .maybeSingle()
+  // ── Match + conversation, via public.create_support_match ────────────────────────────────────
+  // PHASE 3 STAGE 1b. Replying to an issue report is the second of exactly two SANCTIONED
+  // cross-community relationships: support must reach every member regardless of community. The
+  // exemption is granted by the SQL function on profiles.is_admin = TRUE, read FOR SHARE in the
+  // same transaction as the write — not by this route, and not by ADMIN_EMAIL (which gates who may
+  // CALL this route, a separate and pre-existing question).
+  //
+  // BOTH ORIGINAL SCENARIOS ARE PRESERVED, and collapse into one call:
+  //   (a) the welcome flow already created a match  -> 'already_matched', existing ids returned;
+  //   (b) the reporter predates the welcome flow    -> 'created', both rows in one transaction.
+  // The old code answered each with its own SELECT-then-INSERT pair, which could interleave with a
+  // concurrent welcome and produce a match with no conversation. It cannot now.
+  const support = await createSupportMatch(adminClient, adminUser.id, report.user_id, 'issue_reply')
 
-  let matchId: string
-
-  if (existingMatch) {
-    // Scenario (a): reuse welcome match
-    matchId = existingMatch.id
-  } else {
-    // Scenario (b): no match exists — create one
-    const { data: newMatch, error: matchErr } = await adminClient
-      .from('matches')
-      .insert({
-        user_a_id: adminUser.id,
-        user_b_id: report.user_id,
-        status: 'active',
-        admin_facilitated: true,
-        created_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single()
-
-    if (matchErr || !newMatch) {
-      console.error('[issues/reply] match insert failed:', matchErr)
-      return NextResponse.json({ error: `Match creation failed: ${matchErr?.message}` }, { status: 500 })
-    }
-    matchId = newMatch.id
+  if (!isSupportConnected(support.outcome) || !support.matchId || !support.conversationId) {
+    // FAIL CLOSED: the issue report is not linked to a conversation and its status is not flipped,
+    // so the report stays visibly unanswered rather than being marked in-progress with nowhere for
+    // the member to read a reply.
+    console.error('[issues/reply] support match failed:', support.outcome, support.detail)
+    return NextResponse.json({ error: 'Could not open a support conversation' }, { status: 500 })
   }
 
-  // Find or create conversation for the match
-  const { data: existingConv } = await adminClient
-    .from('conversations')
-    .select('id')
-    .eq('match_id', matchId)
-    .maybeSingle()
-
-  let conversationId: string
-
-  if (existingConv) {
-    conversationId = existingConv.id
-  } else {
-    const { data: newConv, error: convErr } = await adminClient
-      .from('conversations')
-      .insert({ match_id: matchId })
-      .select('id')
-      .single()
-
-    if (convErr || !newConv) {
-      console.error('[issues/reply] conversation insert failed:', convErr)
-      return NextResponse.json({ error: `Conversation creation failed: ${convErr?.message}` }, { status: 500 })
-    }
-    conversationId = newConv.id
-  }
+  const conversationId = support.conversationId
 
   // Status auto-flip: 'new' → 'in_progress'; any other status left unchanged
   const updates: Record<string, string> = { conversation_id: conversationId }

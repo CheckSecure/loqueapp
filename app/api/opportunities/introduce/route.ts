@@ -31,8 +31,14 @@ export async function POST(request: Request) {
     });
 
     const guardCodes = new Set(['already_connected', 'intro_pending', 'cooldown', 'blocked']);
-    const publicMessage = guardCodes.has(result.code)
-      ? 'Connection already exists or is in progress.'
+    // 'cross_community' gets its own generic line rather than joining the bucket above, because
+    // "Connection already exists or is in progress" would be false, and rather than passing
+    // result.message through, because the caller does not need to be told WHICH community the other
+    // member belongs to. The precise code is still logged above and returned for support. Once
+    // Stage 2 scopes the candidate pools, a cross-community responder cannot reach this route at all.
+    const publicMessage =
+      result.code === 'cross_community' ? 'This member is not available to connect right now.'
+      : guardCodes.has(result.code) ? 'Connection already exists or is in progress.'
       : result.message;
 
     const status =

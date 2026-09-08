@@ -287,25 +287,57 @@ describe('sameCommunity — the in-memory mirror of the base rule', () => {
   })
 })
 
-// ── 7. Phase 2 changes no behaviour ───────────────────────────────────────────────────────────
-describe('Phase 2 is inert: nothing reads the new columns yet', () => {
-  it('no matching, eligibility or relationship code references member_type yet', () => {
+// ── 7. What Phase 2 left inert, and what Stage 1b deliberately switched on ───────────────────
+//
+// This block ORIGINALLY asserted that NOTHING read member_type — the correct invariant for Phase 2,
+// whose whole point was to add the column and change no behaviour. Phase 3 Stage 1b is the change
+// that ends it: the relationship writers now consult the boundary, which is the entire deliverable.
+//
+// It is rewritten rather than deleted, because the useful half of the original assertion survives
+// and is arguably more important now: the pool/scoring layer must STILL be inert, since candidate-
+// pool scoping is Stage 2 and has not been authorized. A test that quietly went away here would
+// stop noticing if Stage 2 work leaked into Stage 1b.
+describe('Stage 2 is still inert: pool and scoring code does not read the new columns', () => {
+  it('no matching, scoring or eligibility code references member_type yet', () => {
     for (const f of [
       'lib/generate-recommendations.ts',
       'lib/matching/eligibility.ts',
       'lib/matching/batch-scoring.ts',
-      'lib/introductions/finalizeMutualMatch.ts',
-      'lib/introRequests/createAdminIntroPair.ts',
-      'lib/opportunities/connect.ts',
       'lib/opportunities/matching.ts',
-      'app/api/intro-requests/accept-incoming/route.ts',
       'app/api/admin/generate-batch/route.ts',
     ]) {
       const src = readFileSync(f, 'utf8')
       const code = src.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
-      expect(code, `${f} must not consume member_type in Phase 2`).not.toMatch(/member_type/)
-      expect(code, `${f} must not consume the pair predicate in Phase 2`).not.toMatch(/community_pair_allowed/)
+      expect(code, `${f} must not scope candidate pools before Stage 2`).not.toMatch(/member_type/)
+      expect(code, `${f} must not consume the pair predicate before Stage 2`).not.toMatch(/community_pair_allowed/)
     }
+  })
+
+  it('the relationship writers DO consult the boundary now — that is Stage 1b', () => {
+    // The inverse of the assertion above, kept in the same file so the two cannot drift apart and
+    // leave the codebase in a state where neither layer checks anything.
+    const consults = (f: string) => {
+      const src = readFileSync(f, 'utf8')
+      return /checkPairCommunity|create_gated_match|createGatedMatch|createSupportMatch/.test(src)
+    }
+    for (const f of [
+      'lib/introRequests/createAdminIntroPair.ts',
+      'app/api/intro-requests/accept-incoming/route.ts',
+      'lib/opportunities/connect.ts',
+      'lib/onboarding/welcomeFromAdmin.ts',
+    ]) {
+      expect(consults(f), `${f} must consult the community boundary after Stage 1b`).toBe(true)
+    }
+  })
+
+  it('finalizeMutualMatch is UNCHANGED — its gate is the SQL layer, not a TypeScript check', () => {
+    // Stage 1a proved finalize_mutual_match_atomic returns outcome 'invalid' / detail
+    // 'cross_community', and this file already maps 'invalid' to a 409. Adding a TypeScript check
+    // here would duplicate the SQL predicate in a second place that could drift from it.
+    const src = readFileSync('lib/introductions/finalizeMutualMatch.ts', 'utf8')
+    const code = src.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
+    expect(code).not.toMatch(/member_type|community_pair_allowed|checkPairCommunity/)
+    expect(code).toMatch(/outcome === 'invalid'/)
   })
 
   it('the migration is registered so Phase 3 cannot deploy ahead of the schema', () => {

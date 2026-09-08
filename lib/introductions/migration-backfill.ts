@@ -32,6 +32,7 @@
 import { randomUUID } from 'node:crypto'
 import { MAX_VISIBLE_INTRO_CARDS, MAX_RESERVED_INTRO_CARDS } from '@/lib/introductions/capacity'
 import { calculateAlignmentScore, applyLawFirmCompositionPolicy } from '@/lib/generate-recommendations'
+import { checkPairCommunity } from '@/lib/community/pairGate'
 
 // Profile fields needed to deterministically re-rank a member's existing suggested
 // candidates (viewer + candidate) and to apply the law-firm composition policy.
@@ -250,6 +251,20 @@ export async function applyBackfill(adminClient: any): Promise<BackfillApplyResu
   // Re-enabling it is a deliberate act that requires deleting this guard in a reviewed change, and
   // whoever does so must first make it acquire pg_advisory_xact_lock(hashtextextended(member_id))
   // and respect both caps — otherwise it reintroduces exactly the defect migration 063 closes.
+  //
+  // ── PHASE 3 STAGE 1b: COMMUNITY, AND WHY THE CHECK BELOW IS WHERE IT IS ──────────────────────
+  // OPERATOR-ONLY TOOL. This function is never reachable from any member-facing route: nothing
+  // imports it (verified repo-wide), the only exposed entry point in this module is the READ-ONLY
+  // buildBackfillReport, and the one route that uses that entry point
+  // (app/api/admin/queue-backfill-report) is admin-gated and calls buildBackfillReport alone.
+  //
+  // Its writes go DIRECTLY to intro_requests as service_role, with no RPC and therefore no SQL
+  // community gate — which is exactly why re-enabling it must not be a one-line deletion of the
+  // throw. The per-pair check added to the write loop below IS this tool's only community layer,
+  // and it is only meaningful if the throw is removed; while the throw stands, it is unreachable
+  // like the rest of the body. Both facts are stated so neither is mistaken for the other:
+  // TODAY this tool cannot write at all; IF re-enabled, TypeScript is its sole community boundary,
+  // and whoever re-enables it owns that.
   throw new Error('applyBackfill is disabled: recommendation rows are written only by the capacity RPCs')
   // eslint-disable-next-line no-unreachable
 
@@ -282,8 +297,19 @@ export async function applyBackfill(adminClient: any): Promise<BackfillApplyResu
       .eq('member_id', memberId).in('state', ['queued', 'completed', 'discarded']))
 
     // Deterministic Active/Queued/Discard selection (same function planBackfill uses).
-    const { active: current, queued: next, discard } = rankMemberItems(profileMap.get(memberId) ?? {}, existing, admin, profileMap)
+    const { active: current0, queued: next0, discard } = rankMemberItems(profileMap.get(memberId) ?? {}, existing, admin, profileMap)
     res.recommendationsDiscarded += discard.length
+
+    // COMMUNITY BOUNDARY (Phase 3 Stage 1b). Filter, not refuse: dropping one cross-community
+    // target must not cost a member their whole backfill. Fails closed per pair — an unresolvable
+    // member_type or an unavailable read removes that target rather than admitting it. Applied to
+    // both tiers because 'suggested' AND the later 'queued' → 'suggested' promotion are both
+    // discovery transitions. See the note above: while the throw stands this never runs.
+    const allowedTarget = async (t: string) => (await checkPairCommunity(memberId, t)).allowed
+    const current: typeof current0 = []
+    for (const it of current0) if (await allowedTarget(it.target)) current.push(it)
+    const next: typeof next0 = []
+    for (const it of next0) if (await allowedTarget(it.target)) next.push(it)
 
     const batchIdA = randomUUID()
     const batchIdQ = next.length > 0 ? randomUUID() : null

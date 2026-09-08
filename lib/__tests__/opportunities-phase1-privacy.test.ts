@@ -38,6 +38,13 @@ const systemMessages = vi.hoisted(() => [] as any[])
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
+    // PHASE 3 STAGE 1b: connectOpportunityResponder now writes the match + conversation through
+    // public.create_gated_match instead of two direct INSERTs. This suite is about the ICEBREAKER
+    // PROFILE READ, which happens after the connection is created, so the RPC just has to succeed.
+    rpc: async (name: string) =>
+      name === 'create_gated_match'
+        ? { data: { outcome: 'created', match_id: 'match-1', conversation_id: 'conversations-1' }, error: null }
+        : { data: null, error: { code: 'NO_STUB' } },
     from: (table: string) => {
       const state: any = { table, statuses: null as string[] | null }
       const b: any = {

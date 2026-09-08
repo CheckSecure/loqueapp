@@ -646,8 +646,18 @@ describe('7c. only the capacity RPCs can create or reveal a card', () => {
     // The exhaustive list. A new name appearing here is a new writer and must be justified.
     expect(inserters).toEqual([
       'app/api/intro-requests/accept-incoming/route.ts',   // accept incoming      → 'approved'
-      'lib/introRequests/createAdminIntroPair.ts',         // admin concierge pair → 'admin_pending'
-      'lib/introRequests/index.ts',                        // express interest     → 'pending'
+      // TWO NAMES LEFT THIS LIST IN PHASE 3 STAGE 1b, both by getting stronger, never weaker:
+      //   'lib/introRequests/index.ts'                — createIntroRequest had zero callers and was
+      //                                                 DELETED outright.
+      //   'lib/introRequests/createAdminIntroPair.ts' — its direct INSERT of two 'admin_pending'
+      //                                                 rows moved into public.create_admin_intro_pair
+      //                                                 (migration 098), which evaluates
+      //                                                 community_pair_allowed under both participant
+      //                                                 advisory locks in the transaction that writes.
+      //                                                 'admin_pending' is discovery-conferring, so
+      //                                                 that write could not stay in TypeScript.
+      // A name APPEARING here is a new ungated writer and must be justified. A name leaving means
+      // one fewer place the database is not the authority.
       'lib/introductions/migration-backfill.ts',           // HARD-DISABLED; proven unreachable below
     ])
     for (const f of inserters) {

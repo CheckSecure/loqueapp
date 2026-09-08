@@ -33,6 +33,15 @@ const MATCH = '44444444-4444-4444-8444-444444444444'
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
+    // PHASE 3 STAGE 1b: the match + conversation write moved from two direct INSERTs into
+    // public.create_gated_match, so the fake client needs the RPC the code now calls. It is
+    // recorded in `writes` under a synthetic table name so the existing assertions about what the
+    // flow did can keep reading one ledger.
+    rpc: async (name: string, args: any) => {
+      writes.push({ table: `rpc:${name}`, op: 'rpc', payload: args })
+      if (name !== 'create_gated_match') return { data: null, error: { code: 'NO_STUB' } }
+      return { data: { outcome: 'created', match_id: MATCH, conversation_id: CONV }, error: null }
+    },
     from: (table: string) => {
       const b: any = {
         select: () => b, eq: () => b, or: () => b, in: () => b,
@@ -180,10 +189,33 @@ describe('email is downstream of the connection, never a precondition', () => {
 })
 
 describe('everything that already worked is unchanged', () => {
-  it('still inserts the match and the conversation', async () => {
+  it('still creates the match and the conversation — now atomically, in one gated call', async () => {
+    // UPDATED IN PHASE 3 STAGE 1b. This used to assert two separate INSERTs (matches, then
+    // conversations) because that is how the flow was written. Those two writes were exactly the
+    // problem: no RLS policy could gate them (service_role bypasses RLS), and a failure between
+    // them left a match with no conversation. They are now ONE call to public.create_gated_match,
+    // which takes both advisory locks and writes both rows in a single transaction.
+    //
+    // The assertion is rewritten rather than deleted because what it protects has not changed:
+    // this flow must still end with a match and a conversation, carrying the same columns. What
+    // moved is where that happens, and the new shape is checked in full.
     await run()
-    expect(writes.filter((w) => w.table === 'matches' && w.op === 'insert')).toHaveLength(1)
-    expect(writes.filter((w) => w.table === 'conversations' && w.op === 'insert')).toHaveLength(1)
+    expect(writes.filter((w) => w.table === 'matches' && w.op === 'insert')).toHaveLength(0)
+    expect(writes.filter((w) => w.table === 'conversations' && w.op === 'insert')).toHaveLength(0)
+
+    const rpc = writes.filter((w) => w.table === 'rpc:create_gated_match')
+    expect(rpc).toHaveLength(1)
+    expect(rpc[0].payload).toMatchObject({
+      p_user_a: CREATOR,
+      p_user_b: RESPONDER,
+      p_status: 'active',
+      p_admin_facilitated: false,
+      p_is_opportunity_initiated: true,
+      p_opportunity_id: 'opp1',
+      p_admin_notes: 'opportunity_opp1',
+      p_suggested_prompts: [],
+    })
+    expect(rpc[0].payload.p_matched_at).toEqual(expect.any(String))
   })
 
   it('still writes the system icebreaker message', async () => {

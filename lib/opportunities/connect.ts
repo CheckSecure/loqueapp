@@ -5,6 +5,7 @@
  */
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createGatedMatch } from '@/lib/relationships/gatedMatch';
 import { generateIcebreakers, generateSystemIntroMessage } from '@/lib/messaging/icebreakers';
 import { getReferralExclusionsForUser } from '@/lib/referrals/exclusions';
 import { readProfilesByIds } from '@/lib/profiles/serverProfile';
@@ -39,6 +40,8 @@ export type ConnectFailureCode =
   | 'user_inactive'
   | 'cooldown'
   | 'not_creator'
+  /** The two members belong to different Andrel communities (Phase 3). */
+  | 'cross_community'
   | 'internal';
 
 export async function connectOpportunityResponder(args: {
@@ -157,37 +160,58 @@ export async function connectOpportunityResponder(args: {
     return { ok: false, code: 'blocked', message: 'Cannot connect — referral relationship exists.' }
   }
 
-  const { data: match, error: matchErr } = await admin
-    .from('matches')
-    .insert({
-      user_a_id: creatorId,
-      user_b_id: responderId,
-      status: 'active',
-      matched_at: new Date().toISOString(),
-      admin_facilitated: false,
-      admin_notes: `opportunity_${opportunityId}`,
-      is_opportunity_initiated: true,
-      opportunity_id: opportunityId,
-    })
-    .select('id')
-    .single();
+  // ── PHASE 3 STAGE 1b: match + conversation through public.create_gated_match ──────────────────
+  // This was two service-role INSERTs — matches, then conversations. Because service_role bypasses
+  // RLS, no policy could gate them; the community rule can only bind inside the function that
+  // writes. The RPC takes both participant advisory locks, evaluates community_pair_allowed in the
+  // same transaction as the INSERT, and writes match + conversation together or neither. That also
+  // closes the window where the conversation INSERT failed and returned 'internal' AFTER the match
+  // row had already committed — an opportunity connection with no conversation to open.
+  //
+  // EVERY COLUMN THIS PATH DEPENDS ON IS PASSED THROUGH. matched_at, admin_notes,
+  // is_opportunity_initiated and opportunity_id are read by lib/opportunities/caps.ts and
+  // rateLimits.ts for delivery caps and re-delivery blocking; suggested_prompts starts as [] and is
+  // replaced by the icebreaker UPDATE below exactly as before. This is why the flow does NOT use
+  // finalize_mutual_match_atomic, whose delegate writes only three of those columns.
+  //
+  // Everything above this line — the pending-intro refusal, already_connected, the 180-day
+  // cooldown, block and account-active checks, and the referral exclusion — is unchanged and still
+  // runs first, so their user-facing codes and messages are exactly what they were.
+  const gated = await createGatedMatch(admin, creatorId, responderId, {
+    status: 'active',
+    matchedAt: new Date().toISOString(),
+    adminFacilitated: false,
+    adminNotes: `opportunity_${opportunityId}`,
+    isOpportunityInitiated: true,
+    opportunityId,
+    suggestedPrompts: [],
+  });
 
-  if (matchErr || !match) {
-    return { ok: false, code: 'internal', message: matchErr?.message ?? 'Match insert failed.' };
+  if (gated.outcome === 'ineligible') {
+    return {
+      ok: false,
+      code: 'cross_community',
+      message: 'This member is part of a different Andrel community.',
+    };
+  }
+  if (gated.outcome === 'already_matched') {
+    // The active-match check above already returns 'already_connected'; reaching here means another
+    // request won the race between that read and this write. Report the same thing it would have,
+    // rather than continuing on to introduce two people who are already introduced.
+    return {
+      ok: false,
+      code: 'already_connected',
+      message: 'You are already connected to this person.',
+    };
+  }
+  if (gated.outcome !== 'created' || !gated.matchId || !gated.conversationId) {
+    // 'invalid' and 'error'. FAIL CLOSED — no system message, no notifications, no emails, no
+    // response status change, and no direct-INSERT fallback.
+    return { ok: false, code: 'internal', message: 'Match creation failed.' };
   }
 
-  const { data: conversation, error: convErr } = await admin
-    .from('conversations')
-    .insert({
-      match_id: match.id,
-      suggested_prompts: [],
-    })
-    .select('id')
-    .single();
-
-  if (convErr || !conversation) {
-    return { ok: false, code: 'internal', message: convErr?.message ?? 'Conversation insert failed.' };
-  }
+  const match = { id: gated.matchId };
+  const conversation = { id: gated.conversationId };
 
   try {
     // LEAST PRIVILEGE. This was `select('*')`, which pulled every profile column — email,
