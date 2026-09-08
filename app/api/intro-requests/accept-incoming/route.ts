@@ -5,6 +5,7 @@ import { promoteIfResolved } from '@/lib/introductions/queue'
 import { notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 import { finalizeMutualMatch } from '@/lib/introductions/finalizeMutualMatch'
 import { fetchActionableIncomingInterest } from '@/lib/introductions/incomingInterest'
+import { checkPairCommunity, isRetryableDenial } from '@/lib/community/pairGate'
 
 /**
  * Accept incoming member-initiated interest (the "Interested in you" surface).
@@ -59,6 +60,37 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: 'This request is no longer available.', message: 'This introduction is no longer available. No credit was used.' },
       { status: 409 },
+    )
+  }
+
+  // ── COMMUNITY BOUNDARY (Phase 3 Stage 1b) ────────────────────────────────────────────────────
+  // Placed BEFORE the reciprocal write, not before the finalize call, because the write below is
+  // itself discovery-conferring: it sets status 'approved', which is inside can_discover_profile's
+  // grant set (migration 079). Checking only before finalization would let a cross-community pair
+  // become mutually discoverable and then be refused at the match, leaving both members visible to
+  // each other with no connection.
+  //
+  // This is DEFENCE IN DEPTH AND AN EARLY, HONEST REFUSAL — not the authority. The authority for
+  // the match remains public.finalize_mutual_match_atomic, which re-evaluates
+  // community_pair_allowed under both advisory locks in the transaction that writes (migration
+  // 096) and returns outcome 'invalid' / detail 'cross_community'; finalizeMutualMatch.ts already
+  // maps 'invalid' to a 409, so that lower layer needs no change and is not duplicated here.
+  //
+  // Reaching this point cross-community already implies an upstream breach — the expresser's
+  // 'approved' row had to exist for fetchActionableIncomingInterest to return this item — so the
+  // right behaviour is to refuse and spend nothing, which is what happens: no reciprocal row, no
+  // queue promotion, no credit.
+  const community = await checkPairCommunity(viewerId, expresserId)
+  if (!community.allowed) {
+    return NextResponse.json(
+      {
+        error: isRetryableDenial(community.reason)
+          ? 'Could not verify this introduction right now. Please try again.'
+          : 'This introduction is no longer available.',
+        message: 'No credit was used.',
+        code: 'CROSS_COMMUNITY',
+      },
+      { status: isRetryableDenial(community.reason) ? 503 : 409 },
     )
   }
 

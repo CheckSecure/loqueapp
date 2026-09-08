@@ -68,16 +68,28 @@ describe('Force Match — the legitimate path — is untouched', () => {
     expect(UI).toContain('showForceMatch')
   })
 
-  it('adminForceMatch itself is unchanged and still creates real matches', () => {
+  it('adminForceMatch still creates real matches — now through the gated RPC', () => {
     const actions = readFileSync('app/actions.ts', 'utf8')
     expect(actions).toContain('export async function adminForceMatch')
-    const fn = actions.slice(actions.indexOf('export async function adminForceMatch'))
-    // The properties that make it the LEGITIMATE path, unlike the simulator: it is admin-gated,
-    // it notifies both members, and it emails them.
-    expect(fn).toContain("from('matches')")
-    expect(fn).toContain("from('conversations')")
+    const from = actions.indexOf('export async function adminForceMatch')
+    const fn = actions.slice(from, actions.indexOf('\nexport async function', from + 1))
+
+    // UPDATED IN PHASE 3 STAGE 1b. This used to assert two direct INSERTs — from('matches') and
+    // from('conversations'). Those moved into public.create_gated_match, which writes both rows in
+    // one transaction under the community boundary. The PROPERTIES this test defends are unchanged
+    // and are what is asserted below: it is admin-gated BEFORE it writes, it really does create a
+    // match (unlike the deleted simulator, which fabricated member-attributed messages), and it
+    // notifies and emails both members.
+    expect(fn).toContain('createGatedMatch(')
     expect(fn).toContain('sendMatchCreatedEmail')
-    expect(fn.slice(0, fn.indexOf("from('matches')"))).toMatch(/Not authorized/)
+    expect(fn.slice(0, fn.indexOf('createGatedMatch('))).toMatch(/Not authorized/)
+
+    // No direct match INSERT survives anywhere in this function.
+    expect(fn).not.toMatch(/from\('matches'\)[\s\S]{0,200}?\.insert\(/)
+    expect(fn).not.toMatch(/from\('conversations'\)[\s\S]{0,200}?\.insert\(/)
+
+    // And it must still refuse rather than proceed when the write does not happen.
+    expect(fn).toMatch(/outcome !== 'created'/)
   })
 })
 

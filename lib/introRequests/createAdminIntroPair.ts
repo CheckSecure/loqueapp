@@ -7,6 +7,7 @@ import {
 } from '@/lib/db/filters'
 import { isSameCompany } from '@/lib/matching/same-company'
 import { buildIntroReasons } from '@/lib/match-signals'
+import { checkPairCommunity, isRetryableDenial } from '@/lib/community/pairGate'
 
 export type CreateAdminIntroFailure =
   | 'invalid_pair'
@@ -15,6 +16,8 @@ export type CreateAdminIntroFailure =
   | 'same_company'
   | 'blocked'
   | 'active_match_exists'
+  /** The two members belong to different Andrel communities, or one could not be resolved. */
+  | 'cross_community'
   | 'insert_failed'
 
 export type CreateAdminIntroResult =
@@ -49,6 +52,38 @@ export async function createAdminIntroPair(
   }
 
   const admin = createAdminClient()
+
+  // ── COMMUNITY BOUNDARY (Phase 3 Stage 1b) ────────────────────────────────────────────────────
+  // FIRST, before any other gate, because this function's write is the EARLIEST discovery-conferring
+  // row a pair can get: it inserts intro_requests with status 'admin_pending', which is inside
+  // can_discover_profile's grant set (migration 079). A cross-community pair reaching the insert
+  // below would become mutually discoverable immediately — before any match, credit or consent.
+  //
+  // ── READ THIS BEFORE TRUSTING IT ──────────────────────────────────────────────────────────────
+  // Unlike every other relationship writer in Phase 3, this path has NO downstream SQL gate. It
+  // does not call materialize_admin_pair (that RPC belongs to the weekly batch-approval flow in
+  // app/api/admin/approve-batch), and it does not call create_reciprocal_suggestion or
+  // place_batch_rows. It INSERTs into intro_requests directly as service_role, which bypasses RLS,
+  // and the only trigger on that table (migration 070) is the email outbox, not a gate.
+  //
+  // So this check is CURRENTLY THE ONLY COMMUNITY LAYER ON THIS PATH — a role it is not strong
+  // enough for on its own, since it reads a snapshot in a different process from the write. It is
+  // recorded as such rather than described as defence in depth, and closing it properly (a gated
+  // SQL writer for admin-proposed pairs) is tracked as follow-up work, not silently assumed.
+  //
+  // Fails closed on every uncertainty: missing id, missing profile, unreadable member_type, or a
+  // read that did not answer at all.
+  const community = await checkPairCommunity(userAId, userBId)
+  if (!community.allowed) {
+    return {
+      ok: false,
+      code: 'cross_community',
+      message: isRetryableDenial(community.reason)
+        // A transport fault is never reported as a fact about the members.
+        ? 'Could not verify these members right now. Please try again.'
+        : 'These members belong to different Andrel communities and cannot be introduced.',
+    }
+  }
 
   // Block if either user is deactivated. Also pulls the signal fields so we can
   // enrich the stored reason with a real, symmetric pair signal (see below).

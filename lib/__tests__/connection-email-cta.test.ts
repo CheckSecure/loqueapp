@@ -119,7 +119,13 @@ describe('admin callers are unaffected by the new optional argument', () => {
   it('/api/admin/facilitate-intro still calls the helper with no conversation argument', () => {
     const src = readFileSync('app/api/admin/facilitate-intro/route.ts', 'utf8')
     expect(src).toContain('sendMatchCreatedEmail(')
-    expect(src).not.toContain('conversationId')
+    // SCOPED TO THE CALL, as the adminForceMatch assertion above already is. The whole-file version
+    // of this check started failing in Phase 3 Stage 1b for a reason that has nothing to do with
+    // email: the route now reads `gated.conversationId` from create_gated_match. What the test
+    // actually protects is that the EMAIL is sent without a conversation deep link, so it now looks
+    // where that decision is made instead of anywhere the word appears.
+    const from = src.indexOf('sendMatchCreatedEmail(')
+    expect(src.slice(from, from + 600)).not.toContain('conversationId')
   })
 })
 

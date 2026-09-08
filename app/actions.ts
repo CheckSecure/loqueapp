@@ -25,6 +25,7 @@ import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { awardReferralCreditOnCompletion } from '@/lib/referrals/awardReferralCredit'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
+import { createGatedMatch } from '@/lib/relationships/gatedMatch'
 import { validateSelection, validateSelectionWithCaps } from '@/lib/role-taxonomy'
 import { companySlug, isLinkableCompany } from '@/lib/company/slug'
 import { resolveCanonicalCompanyLink } from '@/lib/company/canonicalLink'
@@ -672,29 +673,21 @@ export async function sendMessage(conversationId: string, content: string) {
   return { success: true }
 }
 
-export async function createConversation(otherUserId: string) {
-  const { user } = await getSupabaseAndUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  // Superseded by POST /api/conversations/create (which enforces the match/removed checks). Kept for
-  // compatibility; writes as service_role since browser DML on conversations is revoked (migration 055).
-  const admin = createAdminClient()
-  const { data: conv, error: convErr } = await admin
-    .from('conversations')
-    .insert({})
-    .select('id')
-    .single()
-
-  if (convErr || !conv) return { error: convErr?.message }
-
-  await admin.from('conversation_participants').insert([
-    { conversation_id: conv.id, user_id: user.id },
-    { conversation_id: conv.id, user_id: otherUserId },
-  ])
-
-  revalidatePath('/dashboard/messages')
-  return { conversationId: conv.id }
-}
+// ── createConversation WAS DELETED IN PHASE 3 STAGE 1b ────────────────────────────────────────
+// It had ZERO callers (reconfirmed repo-wide immediately before deletion) and was superseded by
+// POST /api/conversations/create, which enforces the match/removed checks it never had.
+//
+// It was also broken in two ways that only a caller would have revealed, which is the strongest
+// argument that it was never one:
+//   • it INSERTed a conversation with `{}` — no match_id — creating a conversation attached to no
+//     relationship at all, outside every discovery and authorization check in the product;
+//   • it then wrote to `conversation_participants`, a table that DOES NOT EXIST in this schema.
+//     That table is not part of the design and must not be created: participation is derived from
+//     conversations.match_id → matches.user_a_id / user_b_id, and a second, writable source of
+//     truth for "who is in this conversation" would be a way to add yourself to someone else's.
+//
+// Kept as a comment rather than silently removed so a future reader looking for it finds the
+// reason, not an absence.
 
 export async function saveOnboardingPreferences(prefs: {
   who_to_meet: string[]
@@ -1500,24 +1493,37 @@ export async function adminForceMatch(userAId: string, userBId: string, skipCred
 
   if (existing) return { error: 'Match already exists' }
 
-  const { data: match, error: matchError } = await adminClient
-    .from('matches')
-    .insert({
-      user_a_id: userAId,
-      user_b_id: userBId,
-      status: 'active',
-      admin_facilitated: true,
-      admin_notes: 'Admin force match'
-    })
-    .select()
-    .single()
-
-  if (matchError) return { error: matchError.message }
-
-  // Create conversation
-  await adminClient.from('conversations').insert({
-    match_id: match.id
+  // ── PHASE 3 STAGE 1b: the match + conversation write moved into public.create_gated_match ─────
+  // It used to be two service-role INSERTs from here — matches, then conversations — which no RLS
+  // policy could gate (service_role bypasses RLS) and which could leave a match with no
+  // conversation if the second call failed. The RPC takes both participant advisory locks,
+  // evaluates public.community_pair_allowed in the SAME transaction as the write, and writes both
+  // rows together or neither.
+  //
+  // SEMANTICS PRESERVED EXACTLY: no credit debit, no intro_requests row, no mutual-interest
+  // requirement, admin_facilitated = true, status 'active', admin_notes 'Admin force match'. The
+  // existence check above still runs first, so "Match already exists" stays the message an admin
+  // sees for a duplicate; the RPC's own 'already_matched' is the race backstop for two admins
+  // clicking at once, and it reports the same thing rather than creating a second row.
+  const gated = await createGatedMatch(adminClient, userAId, userBId, {
+    adminFacilitated: true,
+    status: 'active',
+    adminNotes: 'Admin force match',
   })
+
+  if (gated.outcome === 'already_matched') return { error: 'Match already exists' }
+  if (gated.outcome === 'ineligible') {
+    // Cross-community. Stated plainly rather than as a generic failure: an admin who tries this
+    // needs to know the pair is disallowed, not that something broke.
+    return { error: 'These members belong to different Andrel communities and cannot be connected.' }
+  }
+  if (gated.outcome !== 'created' || !gated.matchId) {
+    // 'invalid' (self-pair / missing id) and 'error' (transport, or an outcome this client does not
+    // recognise) both land here. FAIL CLOSED — never fall through to notify members about a match
+    // that may not exist, and never retry the write as a direct INSERT.
+    return { error: 'Could not create match' }
+  }
+  const match = { id: gated.matchId as string }
 
   // Get profiles for notifications
   const forceRead = await readProfilesByIds<{

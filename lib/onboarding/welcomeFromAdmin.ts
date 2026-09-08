@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createNotificationSafe } from '@/lib/notifications'
 import { getAdminUser } from '@/lib/admin/getAdminUser'
-import { buildBidirectionalMatchFilter } from '@/lib/db/filters'
+import { createSupportMatch, isSupportConnected } from '@/lib/relationships/supportMatch'
 
 const WELCOME_MESSAGE = `Welcome to Andrel — I'm really glad you're here.
 
@@ -64,57 +64,33 @@ export async function sendAdminWelcome(newUserId: string): Promise<WelcomeResult
       return { created: false, reason: 'welcome already sent (flag set)' }
     }
 
-    // Gate 2: existing match
-    const { data: existingMatch } = await client
-      .from('matches')
-      .select('id')
-      .or(buildBidirectionalMatchFilter(admin.id, newUserId))
-      .maybeSingle()
+    // ── Gates 2 & 3: match + conversation, via public.create_support_match ──────────────────────
+    // PHASE 3 STAGE 1b. The welcome introduction is one of exactly two SANCTIONED cross-community
+    // relationships: the platform account must be able to talk to every member, Professional or
+    // Next. That exemption is granted by the SQL function on the strength of profiles.is_admin =
+    // TRUE, read FOR SHARE in the same transaction as the write — never by this file asserting it,
+    // and never by an email address. getAdminUser() above finds the platform account BY email; the
+    // RPC then verifies what it found. If that lookup ever resolved to an ordinary member, the RPC
+    // refuses with 'not_platform_account' and no cross-community match is created.
+    //
+    // IDEMPOTENCY IS UNCHANGED, and is now stronger. The previous code did its own existing-match
+    // and existing-conversation lookups and inserted when either was absent — two round trips that
+    // could leave a match with no conversation. The RPC returns 'already_matched' with the existing
+    // ids for a member who already has the welcome match, which is exactly what gates 2 and 3 did,
+    // and creates both rows in one transaction otherwise. Gates 1 (welcome_sent_at) and 4 (an
+    // existing admin-authored message) are untouched and still decide whether the MESSAGE is sent.
+    const support = await createSupportMatch(client, admin.id, newUserId, 'welcome')
 
-    let matchId = existingMatch?.id as string | undefined
-
-    if (!matchId) {
-      const { data: newMatch, error: matchErr } = await client
-        .from('matches')
-        .insert({
-          user_a_id: admin.id,
-          user_b_id: newUserId,
-          status: 'active',
-          admin_facilitated: true,
-          created_at: new Date().toISOString()
-        })
-        .select('id')
-        .single()
-
-      if (matchErr || !newMatch) {
-        console.error('[sendAdminWelcome] match insert failed:', matchErr)
-        return { created: false, reason: `match insert failed: ${matchErr?.message}` }
-      }
-      matchId = newMatch.id
+    if (!isSupportConnected(support.outcome) || !support.matchId || !support.conversationId) {
+      // FAIL CLOSED. No message, no notification, and welcome_sent_at is deliberately NOT set, so a
+      // transient failure retries on the next onboarding touch instead of silently skipping the
+      // member's welcome forever.
+      console.error('[sendAdminWelcome] support match failed:', support.outcome, support.detail)
+      return { created: false, reason: `support match failed: ${support.outcome}` }
     }
 
-    // Gate 3: existing conversation
-    const { data: existingConv } = await client
-      .from('conversations')
-      .select('id')
-      .eq('match_id', matchId)
-      .maybeSingle()
-
-    let conversationId = existingConv?.id as string | undefined
-
-    if (!conversationId) {
-      const { data: newConv, error: convErr } = await client
-        .from('conversations')
-        .insert({ match_id: matchId })
-        .select('id')
-        .single()
-
-      if (convErr || !newConv) {
-        console.error('[sendAdminWelcome] conversation insert failed:', convErr)
-        return { created: false, reason: `conversation insert failed: ${convErr?.message}` }
-      }
-      conversationId = newConv.id
-    }
+    const matchId = support.matchId
+    const conversationId = support.conversationId
 
     // Gate 4: existing admin-authored message in the conversation
     const { data: existingMsg } = await client

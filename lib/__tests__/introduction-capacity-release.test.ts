@@ -398,10 +398,16 @@ describe('correlation is mandatory — there is no fallback', () => {
     expect(EXPRESS).toMatch(/if \(!suggestedRowId\) return/)
   })
 
-  it('createIntroRequest can no longer be handed a card id', () => {
+  it('createIntroRequest is GONE — the strongest form of "cannot be handed a card id"', () => {
+    // UPDATED IN PHASE 3 STAGE 1b. This used to assert that the non-card writer had no card-id
+    // parameter and no express_intro_interest call. The function was deleted outright (zero callers,
+    // reconfirmed immediately before removal), so the property it was defending now holds by
+    // construction: there is no second writer for the card path to degrade into.
+    expect(WRITER).not.toMatch(/export async function createIntroRequest/)
     expect(WRITER).not.toMatch(/respondsToSuggestedId/)
     expect(WRITER).not.toMatch(/express_intro_interest/)
-    expect(WRITER).toMatch(/NOT the Express-Interest-on-a-card path/)
+    // The removal is recorded in place, so this cannot be "fixed" by quietly re-adding the function.
+    expect(WRITER).toMatch(/createIntroRequest WAS DELETED IN PHASE 3 STAGE 1b/)
   })
 
   it('and nothing member-facing reaches it any more', () => {

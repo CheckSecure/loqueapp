@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { sendMatchCreatedEmail } from '@/lib/email'
 import { deductCredits, hasEnoughCredits } from '@/lib/credits'
 import { requireAdmin } from '@/lib/admin/requireAdmin'
+import { createGatedMatch, isConnected } from '@/lib/relationships/gatedMatch'
 
 export async function POST(request: Request) {
   const { error: authError } = await requireAdmin()
@@ -41,9 +42,14 @@ export async function POST(request: Request) {
   //
   // While disabled this writes NOTHING: no match, no conversation, no debit, no ledger row.
   //
-  // TO RE-ENABLE: decide the policy, then route the write through
-  // public.finalize_mutual_match_atomic, which reaches the migration-072 authority and inherits its
-  // atomicity, ledger, idempotency and admin-participant exemption. Never a second balance update.
+  // TO RE-ENABLE: decide the policy, then implement the debit deliberately. The MATCH write itself
+  // now goes through public.create_gated_match (Phase 3 Stage 1b) — see below — which is atomic and
+  // community-gated but charges nothing, so re-enabling this route does NOT silently reinstate any
+  // credit behaviour. Never a second balance update.
+  //
+  // NOT finalize_mutual_match_atomic, which the earlier note here recommended: it requires an
+  // 'approved'/'accepted' intro_requests row in EACH direction and charges BOTH members, so it
+  // would both refuse this flow's actual inputs and answer the credit question by itself.
   //
   // The legacy body below is intentionally retained (and still type-checked) so the reviewed
   // behaviour is visible when the policy decision is made.
@@ -101,31 +107,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Insufficient credits' }, { status: 400 })
   }
 
-  // Create the match
-  const { data: match, error: matchError } = await adminSupabase
-    .from('matches')
-    .insert({
-      user_a_id: introRequest.requester_id,
-      user_b_id: introRequest.target_user_id,
-    })
-    .select()
-    .single()
+  // ── PHASE 3 STAGE 1b: match + conversation through public.create_gated_match ─────────────────
+  // Previously two separate service-role INSERTs (matches, then conversations) that no RLS policy
+  // could gate. The RPC takes both participant advisory locks, evaluates community_pair_allowed in
+  // the same transaction as the write, and writes both rows together or neither — which also ends
+  // the case where the conversation INSERT failed and left a match nobody could message through.
+  //
+  // SEMANTICS PRESERVED: still no credit debit (the debit was DELETED, see the note below, and
+  // create_gated_match charges nothing); still no admin_facilitated flag and no admin_notes on this
+  // path, exactly as the previous INSERT wrote them; column order (requester as user_a) unchanged.
+  const gated = await createGatedMatch(adminSupabase, introRequest.requester_id, introRequest.target_user_id, {
+    adminFacilitated: false,
+  })
 
-  if (matchError) {
+  if (gated.outcome === 'ineligible') {
     return NextResponse.json({
-      error: 'Failed to create match',
-      debug: { matchError: matchError.message }
-    }, { status: 500 })
+      error: 'These members belong to different Andrel communities and cannot be connected.',
+      code: 'CROSS_COMMUNITY',
+    }, { status: 409 })
   }
-
-  // Create conversation
-  const { error: convError } = await adminSupabase
-    .from('conversations')
-    .insert({ match_id: match.id })
-
-  if (convError) {
-    return NextResponse.json({ error: 'Failed to create conversation' }, { status: 500 })
+  if (!isConnected(gated.outcome) || !gated.matchId || !gated.conversationId) {
+    // 'invalid' and 'error' both land here. FAIL CLOSED: no intro_requests update, no notification,
+    // no email, and no direct-INSERT fallback.
+    return NextResponse.json({ error: 'Failed to create match' }, { status: 500 })
   }
+  const match = { id: gated.matchId }
 
   // ── THE CREDIT MUTATION WAS REMOVED, NOT JUST DISABLED ──────────────────────────────────────
   // It read:
@@ -137,9 +143,8 @@ export async function POST(request: Request) {
   //
   // Leaving it here behind a flag would mean re-enabling this route is one boolean away from
   // reinstating a balance-only decrement. It is deleted so that whoever makes the product decision
-  // has to write the correct implementation — routed through
-  // public.finalize_mutual_match_atomic, which reaches the migration-072 authority and inherits its
-  // atomic balance handling, immutable ledger, idempotency and admin-participant exemption.
+  // has to write the correct implementation. create_gated_match below deliberately does NOT charge,
+  // so the debit cannot come back by accident — only by someone writing it on purpose.
 
   // Update both intro_requests to approved
   await adminSupabase

@@ -647,7 +647,9 @@ describe('7c. only the capacity RPCs can create or reveal a card', () => {
     expect(inserters).toEqual([
       'app/api/intro-requests/accept-incoming/route.ts',   // accept incoming      → 'approved'
       'lib/introRequests/createAdminIntroPair.ts',         // admin concierge pair → 'admin_pending'
-      'lib/introRequests/index.ts',                        // express interest     → 'pending'
+      // 'lib/introRequests/index.ts' was on this list until Phase 3 Stage 1b. Its writer,
+      // createIntroRequest, had zero callers and was DELETED — so the list gets shorter, which is
+      // the only direction it is ever allowed to move without justification.
       'lib/introductions/migration-backfill.ts',           // HARD-DISABLED; proven unreachable below
     ])
     for (const f of inserters) {
