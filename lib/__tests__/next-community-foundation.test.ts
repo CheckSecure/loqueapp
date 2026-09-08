@@ -281,9 +281,21 @@ describe('sameCommunity — the in-memory mirror of the base rule', () => {
   })
 
   it('has no mentorship exception, matching the SQL predicate', () => {
+    // Bounded to sameCommunity's OWN body, and to executable lines. The whole-file-tail version of
+    // this check started failing in Phase 3 Stage 2A for a reason that is the opposite of a
+    // regression: filterSameCommunity was added below it, and its doc comment says in so many words
+    // that the ordinary pool rule has no mentorship exception. Asserting over prose meant the
+    // documentation of the rule broke the test for the rule.
     const src = readFileSync('lib/community/memberType.ts', 'utf8')
-    const fn = src.slice(src.indexOf('export function sameCommunity'))
-    expect(fn).not.toContain('mentorship')
+    const from = src.indexOf('export function sameCommunity')
+    const body = src.slice(from, src.indexOf('\n}', from))
+    const code = body.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')
+    expect(code).not.toContain('mentorship')
+    // And the same guarantee for the Stage 2A pool filter, which is the other place a bridge could
+    // be smuggled into the ordinary rule.
+    const f2 = src.indexOf('export function filterSameCommunity')
+    const code2 = src.slice(f2, src.indexOf('\n}', f2)).split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')
+    expect(code2).not.toContain('mentorship')
   })
 })
 

@@ -14,6 +14,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { applyMemberEligibility } from '@/lib/matching/eligibility'
+import { filterSameCommunity, MEMBER_TYPE_COLUMNS, type HasMemberType } from '@/lib/community/memberType'
 import {
   DELIVERY_CEILING,
   TRANCHE_CEILING,
@@ -423,19 +424,40 @@ function applyThresholdAndFallback(
 // a "matched members only" rule would empty the hiring and business pools completely. Any future
 // scoping must narrow WHICH members are reachable, never require a pre-existing match.
 //
-// PHASE 3 CONTRACT. Community scoping lands at exactly these three `.from('profiles')` pool queries
-// (marked `[POOL]` below) plus the For-you read in app/dashboard/opportunities/page.tsx, which is
-// what actually discloses the creator's name and company to a recipient. It is deliberately NOT
-// implemented here: the predicate depends on profiles.member_type, which does not exist yet, and a
-// stand-in restriction written before it does would either be dead code or would change
-// Professional <-> Professional delivery. See the Phase 1 report.
+// PHASE 3 STAGE 2A — COMMUNITY SCOPING IS NOW IMPLEMENTED, at exactly the three `[POOL]` queries
+// this comment predicted. (Its earlier claim that profiles.member_type "does not exist yet" is
+// obsolete: migration 095 added the column and it is applied in production.)
+//
+// Each selector takes the CREATOR'S profile and drops every candidate from another community
+// before scoring. Placement is the whole point: it sits above the score map, the sort, the
+// threshold test, the near-threshold fallback and the deliveryCeiling slice, so a cross-community
+// member can neither consume a delivery slot nor be the single candidate the fallback picks.
+//
+// It lives HERE and not in app/api/opportunities/create, because
+// app/api/cron/opportunities-maintain re-enters deliverOpportunity for a second tranche; a rule at
+// the creation route would simply be skipped on that path.
+//
+// Stage 1 remains the security authority for the eventual relationship write
+// (create_gated_match, migration 096). This is candidate-pool isolation: it stops a
+// cross-community profile from entering the pipeline, being ranked in it, or having the creator's
+// name and company disclosed to it through the For-you surface — all of which happen before any
+// write is attempted.
 
+// member_type is loaded for community scoping ONLY. It is never written to
+// opportunity_candidates (deliverOpportunity inserts ids, roles and scores) and never reaches a
+// client: these are service-role reads, and PUBLIC_PROFILE_SELECT is untouched.
 const PROFILE_SELECT =
   'id, seniority, role_type, expertise, trust_score, company, ' +
   '"networkValueScore", "responsivenessScore", ' +
-  'opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate, subscription_tier';
+  `opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate, subscription_tier, ${MEMBER_TYPE_COLUMNS}`;
 
-export async function selectCandidates(opportunity: OpportunityRow, creatorCompany: string | null): Promise<SelectResult> {
+export async function selectCandidates(
+  opportunity: OpportunityRow,
+  creatorCompany: string | null,
+  // REQUIRED, deliberately: a caller that forgets it fails to compile rather than silently
+  // delivering across communities. null/unknown member_type yields an EMPTY pool (fail closed).
+  creator: HasMemberType | null,
+): Promise<SelectResult> {
   const admin = createAdminClient();
 
   const [excluded, alreadyDelivered, rateLimited] = await Promise.all([
@@ -454,7 +476,9 @@ export async function selectCandidates(opportunity: OpportunityRow, creatorCompa
 
   const requestedRoleTypes = opportunity.criteria.role_types ?? [];
 
-  const filtered = (pool ?? [])
+  // COMMUNITY SCOPING FIRST — see the contract block above. Above the score map, the sort, the
+  // threshold, the near-threshold fallback and the deliveryCeiling slice.
+  const filtered = filterSameCommunity(creator, pool ?? [])
     .filter((p) => !excluded.has(p.id))
     .filter((p) => !alreadyDelivered.has(p.id))
     .filter((p) => !rateLimited.has(p.id))
@@ -490,7 +514,13 @@ export async function selectCandidates(opportunity: OpportunityRow, creatorCompa
   };
 }
 
-export async function selectProviders(opportunity: OpportunityRow, creatorCompany: string | null): Promise<SelectResult> {
+export async function selectProviders(
+  opportunity: OpportunityRow,
+  creatorCompany: string | null,
+  // REQUIRED, deliberately: a caller that forgets it fails to compile rather than silently
+  // delivering across communities. null/unknown member_type yields an EMPTY pool (fail closed).
+  creator: HasMemberType | null,
+): Promise<SelectResult> {
   const admin = createAdminClient();
 
   const [excluded, alreadyDelivered, rateLimited] = await Promise.all([
@@ -509,7 +539,9 @@ export async function selectProviders(opportunity: OpportunityRow, creatorCompan
     .eq('account_status', 'active')
     .eq('profile_complete', true));
 
-  const filtered = (pool ?? [])
+  // COMMUNITY SCOPING FIRST — see the contract block above. Above the score map, the sort, the
+  // threshold, the near-threshold fallback and the deliveryCeiling slice.
+  const filtered = filterSameCommunity(creator, pool ?? [])
     .filter((p) => !excluded.has(p.id))
     .filter((p) => !alreadyDelivered.has(p.id))
     .filter((p) => !rateLimited.has(p.id))
@@ -544,7 +576,13 @@ export async function selectProviders(opportunity: OpportunityRow, creatorCompan
   };
 }
 
-export async function selectRecruiters(opportunity: OpportunityRow, creatorCompany: string | null): Promise<SelectResult> {
+export async function selectRecruiters(
+  opportunity: OpportunityRow,
+  creatorCompany: string | null,
+  // REQUIRED, deliberately: a caller that forgets it fails to compile rather than silently
+  // delivering across communities. null/unknown member_type yields an EMPTY pool (fail closed).
+  creator: HasMemberType | null,
+): Promise<SelectResult> {
   const admin = createAdminClient();
 
   if (!opportunity.include_recruiters || opportunity.type !== 'hiring') {
@@ -599,7 +637,7 @@ export async function selectRecruiters(opportunity: OpportunityRow, creatorCompa
     .from('profiles')
     .select('id, seniority, role_type, expertise, trust_score, subscription_tier, company, ' +
         '"networkValueScore", "responsivenessScore", ' +
-        'opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate'
+        `opp_delivered_count, opp_response_rate, opp_conversation_continuation_rate, ${MEMBER_TYPE_COLUMNS}`
     )
     .eq('recruiter', true)
     .eq('account_status', 'active')
@@ -607,7 +645,11 @@ export async function selectRecruiters(opportunity: OpportunityRow, creatorCompa
     .not('is_test_account', 'is', true)
     .in('id', Array.from(networkIds));
 
-  const filtered = (pool ?? [])
+  // COMMUNITY SCOPING FIRST — see the contract block above. The recruiter pool is already
+  // network-scoped, so Stage 1 constrains it indirectly; this makes the rule explicit and
+  // independent of how networkIds is derived. The pre-existing is_admin / matching_paused
+  // asymmetry of this pool is deliberately NOT touched.
+  const filtered = filterSameCommunity(creator, pool ?? [])
     .filter((p) => !excluded.has(p.id))
     .filter((p) => !alreadyDelivered.has(p.id))
     .filter((p) => !rateLimited.has(p.id))
@@ -666,20 +708,24 @@ export async function deliverOpportunity(
   const tranche = options.tranche ?? 1;
   const admin = createAdminClient();
 
-  // Fetch creator's company once for same-company filtering across all selection functions
+  // Fetch the creator's company (same-company filtering) and member_type (community scoping,
+  // Phase 3 Stage 2A) once for all three selectors. A creator row that cannot be read leaves
+  // creatorProfile null, which filterSameCommunity treats as an unknown community and answers with
+  // an EMPTY pool — the opportunity is delivered to nobody rather than to everybody.
   const { data: creatorProfile } = await admin
     .from('profiles')
-    .select('company')
+    .select(`company, ${MEMBER_TYPE_COLUMNS}`)
     .eq('id', opportunity.creator_id)
     .maybeSingle();
   const creatorCompany = creatorProfile?.company ?? null;
+  const creator = (creatorProfile ?? null) as HasMemberType | null;
 
   const candidateResult =
     opportunity.type === 'hiring'
-      ? await selectCandidates(opportunity, creatorCompany)
-      : await selectProviders(opportunity, creatorCompany);
+      ? await selectCandidates(opportunity, creatorCompany, creator)
+      : await selectProviders(opportunity, creatorCompany, creator);
 
-  const recruiterResult = await selectRecruiters(opportunity, creatorCompany);
+  const recruiterResult = await selectRecruiters(opportunity, creatorCompany, creator);
 
   const candidateRole = opportunity.type === 'hiring' ? 'candidate' : 'provider';
 

@@ -14,6 +14,7 @@ import { getActiveIntroCap, RECOMMENDATIONS_PER_BATCH, ONBOARDING_RECOMMENDATION
 import { introReasonText } from '@/lib/match-signals'
 import { parseExpertise } from '@/lib/parseExpertise'
 import { applyMemberEligibility, filterEligible, assertAllEligible, isEligibleMember, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
+import { filterSameCommunity } from '@/lib/community/memberType'
 import { classifyIntroHistory, exhaustionThreshold, ACTIVE_STATUSES } from '@/lib/introRequests/history'
 import { shouldNotifyVisibleBatch, notifyNewVisibleBatch } from '@/lib/notifications/engagement'
 import { randomUUID } from 'crypto'
@@ -817,7 +818,26 @@ export async function rankCandidatesForUser(userId: string, maxCount?: number, a
     .from('profiles')
     .select('*')
     .neq('id', userId))
-  const allUsers = filterEligible(rawUsers.data as any[]) // in-memory defense
+  const eligibleUsers = filterEligible(rawUsers.data as any[]) // in-memory defense
+  // ── COMMUNITY SCOPING (Phase 3 Stage 2A) ─────────────────────────────────────────────────────
+  // THE CANDIDATE UNIVERSE ITSELF, not a later stage. Everything below derives from allUsers: the
+  // hard/soft exclusion sets, `base`, `afterSoft`, the EXHAUSTION VALVE that re-admits soft-
+  // excluded members when the fresh pool is thin, scoring, applyThrottling,
+  // applyJuniorDistributionControl, the slice to maxCount, and finally walkCandidates with its
+  // 8-RPC budget. Filtering any lower would leave at least one of those able to re-admit a
+  // cross-community member — the valve most obviously, since it draws from this same array.
+  //
+  // This is defence in depth, not the boundary. create_reciprocal_suggestion (migration 096) still
+  // refuses a cross-community pair inside the writing transaction. What the filter prevents is a
+  // cross-community candidate reaching the pool at all: consuming a top-N slot, burning one of the
+  // eight RPC calls a generation run gets, or being shown by name on the Concierge surface, all of
+  // which happen BEFORE the database ever sees the pair.
+  //
+  // `select('*')` above already returns member_type, so no query change is needed here.
+  // Fails closed both ways: an unreadable member_type on the viewer yields an EMPTY pool, and an
+  // unreadable one on a candidate drops that candidate. Order is preserved exactly, so on an
+  // all-Professional network this is a no-op and every downstream stage sees an identical array.
+  const allUsers = filterSameCommunity(newUserProfile, eligibleUsers)
   assertAllEligible(allUsers, 'generate-recommendations') // fail-fast before scoring
   const usersError = rawUsers.error
 
