@@ -35,11 +35,25 @@ automatically — no per-feature wiring:
 ```ts
 {
   migration: '025_new_feature.sql',
-  kind: 'column',            // or 'table'
+  kind: 'column',            // or 'table' or 'function'
   table: 'some_table',
   column: 'new_column',      // required for kind 'column'
   feature: 'Human-readable capability name',
   impact: 'What degrades while this migration is unapplied.',
+}
+```
+
+For an **RPC** the migration adds, use `kind: 'function'` with `fn` and `probeArgs`:
+
+```ts
+{
+  migration: '096_community_boundary_enforcement.sql',
+  kind: 'function',
+  table: 'matches',                                    // context only — not probed
+  fn: 'create_gated_match',
+  probeArgs: { p_user_a: null, p_user_b: null },       // MUST be all-NULL for a writer
+  feature: '…',
+  impact: '…',
 }
 ```
 
@@ -49,10 +63,32 @@ Guidelines:
   column validation and would falsely report "applied." The probe uses
   `.select(col).limit(1)`, which parses the column list and errors on a missing
   column or table.
-- **Detectable kinds only.** Columns and tables are probeable read-only. CHECK
-  constraint changes (e.g. widening an enum) aren't reliably detectable via
-  PostgREST and are intentionally omitted — handle those with in-code graceful
-  degradation (see `run.ts` `finalize`).
+- **A function probe CALLS the function — pass only NULLs.** Every writer
+  registered here returns from its NULL/self-pair guard before any advisory
+  lock, read or write, so the call proves the RPC resolves and touches nothing.
+  A structural test in `lib/__tests__/migration-health.test.ts` fails on any
+  non-NULL argument unless the function is added to its reviewed
+  `READ_ONLY_PROBE_FUNCTIONS` list. Name **every** argument that has no SQL
+  default: PostgREST resolves an overload by the names it is given, so omitting
+  one looks like "function not found" and false-alarms.
+- **Missing functions have their own classifier.** PostgREST reports a missing
+  RPC as `PGRST202`, which the column/table `ABSENT_RE` does *not* match;
+  reusing it would report a missing RPC as applied. `FN_ABSENT_RE` handles
+  `PGRST202`, `42883`/`undefined_function`, and the schema-cache phrasing, and
+  deliberately does **not** match a bare "does not exist" (a function that
+  exists but hits a missing relation raises `42P01` and must not be reported as
+  absent).
+- **Existence is not enforcement.** A function probe answers "does this RPC
+  resolve", nothing more. It cannot tell a guarded function body from an
+  unguarded one, and it cannot see grants or policies at all — PostgREST does
+  not expose `pg_catalog`. See
+  [`../../docs/MIGRATION_097_HEALTH_VISIBILITY.md`](../../docs/MIGRATION_097_HEALTH_VISIBILITY.md)
+  for what is deliberately not covered and what protects it instead.
+- **Detectable kinds only.** Columns, tables and functions are probeable
+  read-only. CHECK constraint changes (e.g. widening an enum), grants and
+  policies aren't reliably detectable via PostgREST and are intentionally
+  omitted — handle those with in-code graceful degradation (see `run.ts`
+  `finalize`) or apply-time assertions in the migration itself.
 - **Fail safe.** A probe that errors for a non-schema reason (network/auth) is
   treated as *present* so the dashboard never shows a false migration warning.
 

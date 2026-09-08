@@ -14,7 +14,14 @@ import {
 // specific column ("companies.enrichment_version"); the column key wins, so a test
 // can fail ONE expectation on a table without tripping other expectations that
 // probe different columns of the same table.
-function stubAdmin(errorsByTable: Record<string, { message: string; code?: string } | null>) {
+function stubAdmin(
+  errorsByTable: Record<string, { message: string; code?: string } | null>,
+  // kind:'function' expectations call admin.rpc(). Keyed by function name; a key that is absent
+  // resolves with no error (function present). `rpcCalls` records every call so a test can prove
+  // WHAT the probe sent, which is how the read-only-in-effect guarantee is checked.
+  errorsByFn: Record<string, { message: string; code?: string } | null> = {},
+  rpcCalls: { fn: string; args: any }[] = [],
+) {
   return {
     from(table: string) {
       let col = '*'
@@ -23,6 +30,10 @@ function stubAdmin(errorsByTable: Record<string, { message: string; code?: strin
         limit: () => Promise.resolve({ error: errorsByTable[`${table}.${col}`] ?? errorsByTable[table] ?? null }),
       }
       return builder
+    },
+    rpc(fn: string, args: any) {
+      rpcCalls.push({ fn, args })
+      return Promise.resolve({ data: { outcome: 'invalid', detail: 'missing_argument' }, error: errorsByFn[fn] ?? null })
     },
   }
 }
@@ -180,5 +191,164 @@ describe('evaluateMigrationGate (deployment gate)', () => {
     )
     expect(d.pass).toBe(true)
     expect(d.blocking).toHaveLength(0)
+  })
+})
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// FUNCTION PROBES (Phase 3 Stage 1 prerequisites: migrations 096 / 098)
+//
+// The whole reason this block exists: PostgREST reports a missing FUNCTION as PGRST202, and the
+// pre-existing ABSENT_RE only matches PGRST20[45]. Reusing it would classify a missing RPC as
+// "present" — a green dashboard for an unapplied security migration. FN_ABSENT_RE is what prevents
+// that, so it is tested directly rather than assumed.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+const fnExpect: SchemaExpectation = {
+  migration: '096_community_boundary_enforcement.sql', kind: 'function', table: 'matches',
+  fn: 'create_gated_match', probeArgs: { p_user_a: null, p_user_b: null }, feature: 'x', impact: 'y',
+}
+
+describe('probeExpectation — kind: function', () => {
+  it('PGRST202 (PostgREST: function not in the schema cache) => ABSENT', async () => {
+    const admin = stubAdmin({}, {
+      create_gated_match: {
+        message: 'Could not find the function public.create_gated_match(p_user_a, p_user_b) in the schema cache',
+        code: 'PGRST202',
+      },
+    })
+    expect((await probeExpectation(admin, fnExpect)).present).toBe(false)
+  })
+
+  it('PGRST202 is caught even when only the CODE is present', async () => {
+    // The regression this guards: a classifier that matched only the message text would pass the
+    // test above and still miss a bare code. Both halves must independently classify.
+    const admin = stubAdmin({}, { create_gated_match: { message: '', code: 'PGRST202' } })
+    expect((await probeExpectation(admin, fnExpect)).present).toBe(false)
+  })
+
+  it('42883 / undefined_function (direct PostgreSQL) => ABSENT', async () => {
+    for (const err of [
+      { message: 'function public.create_gated_match(uuid, uuid) does not exist', code: '42883' },
+      { message: 'function public.create_gated_match(uuid, uuid) does not exist', code: '' },
+      { message: 'undefined_function', code: '' },
+    ]) {
+      const admin = stubAdmin({}, { create_gated_match: err })
+      expect((await probeExpectation(admin, fnExpect)).present, JSON.stringify(err)).toBe(false)
+    }
+  })
+
+  it('a successful RPC => PRESENT', async () => {
+    const admin = stubAdmin({}, { create_gated_match: null })
+    expect(await probeExpectation(admin, fnExpect)).toEqual({ present: true })
+  })
+
+  it('an unrelated error => PRESENT, exactly like the column/table path (never a false alarm)', async () => {
+    for (const err of [
+      { message: 'fetch failed', code: '' },
+      { message: 'JWT expired', code: 'PGRST301' },
+      { message: 'permission denied for function create_gated_match', code: '42501' },
+      { message: 'canceling statement due to statement timeout', code: '57014' },
+    ]) {
+      const admin = stubAdmin({}, { create_gated_match: err })
+      expect((await probeExpectation(admin, fnExpect)).present, JSON.stringify(err)).toBe(true)
+    }
+  })
+
+  it('a function that EXISTS but hits a missing relation is NOT reported as a missing function', async () => {
+    // 42P01 is "relation does not exist". Classifying that as "function absent" would be a lie in
+    // the other direction — which is why FN_ABSENT_RE is not a bare /does not exist/.
+    const admin = stubAdmin({}, {
+      create_gated_match: { message: 'relation "public.matches" does not exist', code: '42P01' },
+    })
+    expect((await probeExpectation(admin, fnExpect)).present).toBe(true)
+  })
+
+  it('the probe calls the RPC by name with EXACTLY the declared arguments', async () => {
+    const calls: { fn: string; args: any }[] = []
+    await probeExpectation(stubAdmin({}, {}, calls), fnExpect)
+    expect(calls).toEqual([{ fn: 'create_gated_match', args: { p_user_a: null, p_user_b: null } }])
+  })
+})
+
+describe('the Phase 3 Stage 1 function prerequisites are registered', () => {
+  const fns = SCHEMA_EXPECTATIONS.filter((e) => e.kind === 'function')
+
+  it('exactly the three Stage 1 RPCs the application calls by name', () => {
+    expect(fns.map((e) => e.fn).sort()).toEqual([
+      'create_admin_intro_pair', 'create_gated_match', 'create_support_match',
+    ])
+  })
+
+  it('each is tied to the migration that actually defines it', () => {
+    const byFn = new Map(fns.map((e) => [e.fn, e]))
+    expect(byFn.get('create_gated_match')!.migration).toBe('096_community_boundary_enforcement.sql')
+    expect(byFn.get('create_support_match')!.migration).toBe('096_community_boundary_enforcement.sql')
+    expect(byFn.get('create_admin_intro_pair')!.migration).toBe('098_admin_intro_pair_writer.sql')
+  })
+
+  it('probe args are the approved all-NULL sets, with every no-default argument named', () => {
+    const byFn = new Map(fns.map((e) => [e.fn, e]))
+    // Naming every argument without a SQL default is what makes PostgREST resolve the overload;
+    // omitting one would look like "function not found" and false-alarm.
+    expect(byFn.get('create_gated_match')!.probeArgs).toEqual({ p_user_a: null, p_user_b: null })
+    expect(byFn.get('create_support_match')!.probeArgs).toEqual({ p_platform_user: null, p_member: null })
+    expect(byFn.get('create_admin_intro_pair')!.probeArgs).toEqual({ p_user_a: null, p_user_b: null })
+  })
+})
+
+describe('STRUCTURAL SAFETY: a function probe can never write', () => {
+  // ── THE INVARIANT ────────────────────────────────────────────────────────────────────────────
+  // A function probe CALLS the function, on every admin dashboard load and in CI. Every function
+  // registered today is a WRITER. What makes the call harmless is that all-NULL arguments hit each
+  // function's first guard and return before any advisory lock, read or write.
+  //
+  // This is deliberately NOT three assertions about today's three literals — those live in the
+  // block above. This asserts the RULE, over whatever the array happens to contain, so registering
+  // a fourth writer with a real uuid fails here rather than quietly creating member relationships.
+  //
+  // A genuinely read-only function may take real arguments, but only by being added to this list
+  // in a reviewed change that says why. The list is empty on purpose.
+  const READ_ONLY_PROBE_FUNCTIONS: string[] = []
+
+  const fns = SCHEMA_EXPECTATIONS.filter((e) => e.kind === 'function')
+
+  it('every function expectation declares fn and probeArgs', () => {
+    for (const e of fns) {
+      expect(e.fn, `${e.migration} declares kind:'function' without fn`).toBeTruthy()
+      expect(e.probeArgs, `${e.fn} declares no probeArgs`).toBeTruthy()
+    }
+  })
+
+  it('EVERY writer probe passes only NULL arguments', () => {
+    const offenders: string[] = []
+    for (const e of fns) {
+      if (READ_ONLY_PROBE_FUNCTIONS.includes(e.fn as string)) continue
+      for (const [k, v] of Object.entries(e.probeArgs ?? {})) {
+        if (v !== null) offenders.push(`${e.fn}.${k} = ${JSON.stringify(v)}`)
+      }
+    }
+    expect(
+      offenders,
+      'A writer-function probe must pass only NULL arguments so it returns before any write. ' +
+      'If the function is genuinely read-only, add it to READ_ONLY_PROBE_FUNCTIONS with a reason.',
+    ).toEqual([])
+  })
+
+  it('a probe with a non-NULL argument is rejected by this rule (the rule actually bites)', () => {
+    // Proves the check above is not vacuous: it fails on the exact shape it is meant to catch.
+    const bad: SchemaExpectation = {
+      ...fnExpect, probeArgs: { p_user_a: '11111111-1111-4111-8111-111111111111', p_user_b: null },
+    }
+    const offenders = Object.entries(bad.probeArgs ?? {}).filter(([, v]) => v !== null)
+    expect(offenders).toHaveLength(1)
+  })
+
+  it('expectAbsent is never used on a function (it is a column-only inverted probe)', () => {
+    for (const e of fns) expect(e.expectAbsent, `${e.fn}`).toBeFalsy()
+  })
+
+  it('no function expectation targets a table probe path by mistake', () => {
+    for (const e of fns) expect(e.column, `${e.fn} must not declare a column`).toBeUndefined()
   })
 })

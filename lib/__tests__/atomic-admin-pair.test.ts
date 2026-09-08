@@ -630,12 +630,20 @@ describe('cross-market calibration is an explicit, measured choice', () => {
 
 describe('migration-health registration is deliberately absent, and why', () => {
   it('064 is not registered on the admin health surface', () => {
-    // NOT an oversight, and the gap must not be glossed. lib/db/migrationHealth.ts probes a
-    // migration by looking for a COLUMN it adds. Migration 064 adds no column — it adds a
-    // FUNCTION, public.materialize_admin_pair — so registering it needs the kind:'function'
-    // probe machinery. At HEAD that machinery does not exist: it is introduced by unrelated,
-    // uncommitted company-admin work, so a 064 entry could not be staged without dragging that
-    // work into this commit. Migration 063 was left unregistered for exactly the same reason.
+    // NOT an oversight, and the gap must not be glossed. Migration 064 adds no column — it adds a
+    // FUNCTION, public.materialize_admin_pair — and lib/db/migrationHealth.ts originally probed
+    // only columns and tables, so registering it was impossible without probe machinery that did
+    // not exist. Migration 063 was left unregistered for exactly the same reason.
+    //
+    // RATIONALE UPDATED: that machinery NOW EXISTS. kind:'function' with fn/probeArgs and the
+    // separate FN_ABSENT_RE classifier were added for the Phase 3 Stage 1 prerequisites
+    // (create_gated_match, create_support_match, create_admin_intro_pair). So 064's absence is no
+    // longer a limitation — it is an unmade decision, and this assertion now records that nobody
+    // has taken it rather than that nobody could.
+    //
+    // The assertion itself still holds and is still worth keeping: it makes registering 064 a
+    // deliberate edit here, not an accident. What actually protects the deployment ordering is
+    // unchanged and is asserted below.
     expect(readFileSync('lib/db/migrationHealth.ts', 'utf8')).not.toContain('064_materialize')
   })
 

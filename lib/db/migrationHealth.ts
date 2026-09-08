@@ -13,11 +13,44 @@
 export interface SchemaExpectation {
   /** Migration filename that provides the feature. */
   migration: string
-  kind: 'column' | 'table'
+  kind: 'column' | 'table' | 'function'
+  /**
+   * The table the feature belongs to. For kind 'function' this is NOT probed — it is the table the
+   * function writes or reads, recorded so the dashboard row reads sensibly.
+   */
   table: string
   /** Required for kind 'column'. */
   column?: string
+  /** Required for kind 'function': the RPC name, without the `public.` prefix. */
+  fn?: string
   /**
+   * Required for kind 'function': the arguments the probe calls `fn` with.
+   *
+   * ── THE ALL-NULL RULE, AND WHY IT IS NOT OPTIONAL ────────────────────────────────────────────
+   * A function probe CALLS the function. Most functions worth registering here are WRITERS —
+   * create_gated_match, create_support_match and create_admin_intro_pair all insert rows — and the
+   * migration-health check runs on every admin dashboard load and in CI. A probe that reached the
+   * body of one of those would create real member relationships as a side effect of a health check.
+   *
+   * Every writer function registered here has a NULL/self-pair guard as its FIRST executable
+   * statement, ahead of every advisory lock, read and write, returning
+   * {'outcome':'invalid','detail':'missing_argument'}. Passing all-NULL arguments therefore proves
+   * the function EXISTS and RESOLVES, and provably touches nothing.
+   *
+   * So: probeArgs must be all-NULL for any function that can write. A registration with a non-NULL
+   * argument is presumed unsafe and is rejected by a structural test in
+   * lib/__tests__/migration-health.test.ts, which carries the reviewed allowlist for genuinely
+   * read-only functions. Adding a non-NULL probe is a deliberate act that edits that list.
+   *
+   * Every argument WITHOUT a SQL default must still be supplied (as null): PostgREST resolves an
+   * overload by the argument names it is given, so omitting one looks like "function not found"
+   * and would false-alarm.
+   */
+  probeArgs?: Record<string, unknown>
+  /**
+   * COLUMN-ONLY. Not meaningful for kind 'table' or kind 'function' (a structural test asserts no
+   * function expectation sets it).
+   *
    * For a CLEANUP migration (kind 'column'): the feature is APPLIED when the column is
    * ABSENT (e.g. a legacy column has been dropped). Inverts the column probe so the banner
    * flags "cleanup still pending" while the column lingers, and clears once it's gone.
@@ -242,6 +275,44 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     feature: 'Andrel Next community identity (Professional / Next) + community_pair_allowed predicate',
     impact: 'REQUIRED BEFORE any Phase 3 community-segmentation code is deployed. Until applied, profiles.member_type does not exist, so every candidate-pool scope and every relationship-creation gate that Phase 3 adds would read undefined and — depending on the call site — either fail closed (no matches for anyone) or fail open (no segmentation at all). Phase 2 itself reads nothing from this column, so an unapplied 095 does NOT degrade any current behaviour; it only blocks Phase 3.',
   },
+
+  // ── Phase 3 Stage 1: the RPCs the deployed relationship code actually calls ──────────────────
+  // These three are the ONLY objects from 096/098 that the application invokes by name. Each is
+  // probed with all-NULL arguments, which every one of them rejects from its first executable
+  // statement — see the probeArgs contract on SchemaExpectation.
+  //
+  // WHAT THIS DOES NOT COVER, stated here so the dashboard is not mistaken for more than it is:
+  // the six community guards migration 096 splices into the pre-existing writers, and migration
+  // 097's revocation of the browser UPDATE on batch_suggestions. An existence probe cannot tell a
+  // guarded place_batch_rows from an unguarded one, and PostgREST cannot introspect a grant. See
+  // docs/MIGRATION_097_HEALTH_VISIBILITY.md.
+  {
+    migration: '096_community_boundary_enforcement.sql',
+    kind: 'function',
+    table: 'matches',
+    fn: 'create_gated_match',
+    probeArgs: { p_user_a: null, p_user_b: null },
+    feature: 'Community-gated match + conversation writer (Force Match, facilitate-intro, opportunity connect)',
+    impact: 'REQUIRED before deploying the Phase 3 Stage 1b relationship writers. adminForceMatch, /api/admin/facilitate-intro and lib/opportunities/connect.ts all route their matches+conversations write through this RPC. Until applied, every one of those paths returns outcome \'error\' and FAILS CLOSED: Force Match reports "Could not create match" and an opportunity connection returns \'internal\'. Nothing is half-written and no member is notified — the failure is a visible outage of those three flows, never a silently ungated match.',
+  },
+  {
+    migration: '096_community_boundary_enforcement.sql',
+    kind: 'function',
+    table: 'matches',
+    fn: 'create_support_match',
+    probeArgs: { p_platform_user: null, p_member: null },
+    feature: 'Platform-account support relationship (admin welcome, issue reply) — the only sanctioned cross-community pair',
+    impact: 'REQUIRED before deploying the Phase 3 Stage 1b support flows. lib/onboarding/welcomeFromAdmin.ts and /api/admin/issues/[id]/reply create the platform-account conversation through this RPC. Until applied, the onboarding welcome message is never sent (welcome_sent_at is deliberately left unset, so it retries rather than skipping the member permanently) and an admin reply to an issue report returns 500 with no conversation opened.',
+  },
+  {
+    migration: '098_admin_intro_pair_writer.sql',
+    kind: 'function',
+    table: 'intro_requests',
+    fn: 'create_admin_intro_pair',
+    probeArgs: { p_user_a: null, p_user_b: null },
+    feature: 'Authoritative admin-proposed introduction writer (two symmetric admin_pending rows)',
+    impact: 'REQUIRED before deploying the Phase 3 Stage 1b admin-intro conversion. /api/admin/admin-create-match and the Concierge introduce flow write their reciprocal admin_pending rows through this RPC, which evaluates community_pair_allowed under both participant advisory locks in the transaction that writes — admin_pending is discovery-conferring (migration 079), so that write cannot be gated in TypeScript. Until applied, both admin introduction paths return insert_failed and write nothing; no one-sided pair and no ungated discovery grant is possible.',
+  },
 ]
 
 export interface MigrationWarning extends SchemaExpectation {
@@ -264,9 +335,44 @@ export function migrationWarningMessage(e: SchemaExpectation): string {
 // "present" so we never cry wolf and show a false migration warning.
 const ABSENT_RE = /does not exist|schema cache|could not find|42703|42P01|PGRST20[45]/i
 
+/**
+ * A SEPARATE classifier for "this FUNCTION isn't in the schema".
+ *
+ * ── WHY NOT REUSE ABSENT_RE ───────────────────────────────────────────────────────────────────
+ * ABSENT_RE matches PGRST20[45] — 204 is a missing column, 205 a missing table. PostgREST returns
+ * **PGRST202** for a missing function, which 20[45] does NOT match. A function probe reusing
+ * ABSENT_RE would fall through to the "unknown error -> treat as present" branch and report a
+ * missing RPC as APPLIED: a false green on exactly the check that exists to prevent one. This
+ * regex is the reason the function branch is safe, so it is defined separately and tested
+ * separately.
+ *
+ * Covered: PostgREST's schema-cache miss (PGRST202, "Could not find the function ..."), and
+ * PostgreSQL's own undefined_function (SQLSTATE 42883, "function public.x(uuid) does not exist")
+ * for the direct-connection case. Deliberately NOT a bare /does not exist/: a function that EXISTS
+ * but references a missing relation raises 42P01 "relation ... does not exist", and reporting that
+ * as "function absent" would be a different lie in the other direction.
+ */
+const FN_ABSENT_RE =
+  /PGRST202|\b42883\b|undefined_function|could not find the function|function[^\n]*does not exist/i
+
 /** Probe one expectation read-only. Returns whether the schema feature is present. */
 export async function probeExpectation(admin: any, e: SchemaExpectation): Promise<{ present: boolean; error?: string }> {
   try {
+    if (e.kind === 'function') {
+      // READ-ONLY IN EFFECT, not by privilege. This CALLS the function — see the probeArgs doc on
+      // SchemaExpectation. Every registered writer takes all-NULL arguments and returns from its
+      // first guard before any advisory lock, read or write, so the call proves the function
+      // resolves and touches nothing. `?? {}` never silently drops arguments: an entry without
+      // probeArgs is caught by the structural test, not papered over here.
+      const r: any = await admin.rpc(e.fn as string, e.probeArgs ?? {})
+      if (!r?.error) return { present: true }
+      const sig = `${r.error.message || ''} ${r.error.code || ''} ${r.error.details || ''} ${r.error.hint || ''}`
+      if (FN_ABSENT_RE.test(sig)) return { present: false, error: r.error.message }
+      // Same fail-safe posture as the column/table path: an auth, network or unexpected database
+      // error is NOT evidence the migration is missing, so it must never raise a false alarm.
+      return { present: true, error: r.error.message }
+    }
+
     // NB: no { head: true } — a HEAD request skips column validation and would
     // mask a missing column. A real (limit 1) select parses the column list and
     // errors on an unknown column or table.

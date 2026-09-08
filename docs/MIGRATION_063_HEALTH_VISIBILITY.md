@@ -11,13 +11,22 @@ deploys the application code without first applying 063 will see a green migrati
 ## Why it was left out
 
 Registering an RPC requires `kind: 'function'`, `fn`, and `probeArgs` on `SchemaExpectation`, plus
-the matching branch in `probeExpectation`. **That machinery does not exist on `main`.** It is part of
-an unrelated, in-progress company-admin change (migrations 033/034, `merge_companies`) currently
-sitting uncommitted in the working tree. A 063 entry would therefore be inseparable from that work:
-staging it alone would not compile.
+the matching branch in `probeExpectation`. At the time this was written **that machinery did not
+exist on `main`**: it was part of an unrelated, in-progress company-admin change (migrations
+033/034, `merge_companies`) sitting uncommitted in the working tree, so a 063 entry would have been
+inseparable from that work and would not have compiled on its own.
 
-Mixing them was the worse option. The capacity change stays independently reviewable and
+Mixing them was the worse option. The capacity change stayed independently reviewable and
 independently revertible, at the cost of one missing dashboard row.
+
+> **UPDATE — the prerequisite has landed.** The company-admin change never merged, but the
+> `kind: 'function'` machinery this document specified was implemented directly for the Phase 3
+> Stage 1 prerequisites (`create_gated_match`, `create_support_match`, `create_admin_intro_pair`),
+> including the separate `FN_ABSENT_RE` classifier described below. **The blocker in this section
+> no longer applies.** 063 and 064 remain unregistered because nobody has decided to register
+> them — a choice, not an obstacle — and the "what protects the ordering" reasoning below is still
+> the accurate account of why the gap is tolerable. Registering them is now the one-array-element
+> change this document already describes.
 
 ## What protects the ordering in the meantime
 
@@ -35,11 +44,11 @@ So the risk of deploying out of order is a visible outage of generation, not sil
 That is an acceptable failure mode, but it is **not** monitoring, and nobody should treat the green
 banner as evidence that 063 is applied.
 
-## The smallest future registration, once the prerequisite lands
+## The smallest registration, now unblocked
 
-After the company-admin change (which brings `kind: 'function'` support) is merged, this is the
-entire follow-up — one array element in `lib/db/migrationHealth.ts`, no other file touched, no test
-changes required:
+`kind: 'function'` support exists. This is the entire follow-up — one array element in
+`lib/db/migrationHealth.ts`, no other file touched — plus deleting the assertion in
+`lib/__tests__/unified-introduction-capacity.test.ts` that currently pins its absence:
 
 ```ts
 {
@@ -64,6 +73,13 @@ changes required:
 
 Verified against the real database: with 063 applied, that probe returns
 `{"placed": false, "reason": "invalid"}` without reading or writing a row; with it unapplied,
-PostgREST returns `PGRST202`, which `probeExpectation`'s `FN_ABSENT_RE` already classifies as absent.
+PostgREST returns `PGRST202`, which `probeExpectation`'s `FN_ABSENT_RE` classifies as absent.
+
+Note that `p_source: 'weekly'` and `p_rows: []` are **not** NULL, so registering 063 would also
+require adding `place_batch_rows` to `READ_ONLY_PROBE_FUNCTIONS` in
+`lib/__tests__/migration-health.test.ts`, with the justification that `p_member_id: null` trips the
+first guard before either value is used. That is the all-NULL writer rule doing its job: it forces
+the exemption to be argued rather than assumed.
+
 A test asserting the entry's absence lives in `lib/__tests__/unified-introduction-capacity.test.ts`
 so that re-adding it is a deliberate act rather than an accident.
