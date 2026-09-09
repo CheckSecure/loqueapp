@@ -86,6 +86,12 @@ function member(id: string): any {
     trust_score: 90, current_status: null, purposes: ['raise capital', 'hire'],
     city: 'NYC', state: 'NY', geographic_scope: 'us-wide', meeting_format_preference: 'both',
     open_to_business_solutions: false, boost_score: 60, is_priority: true, profile_complete: true,
+    // Phase 3 Stage 2B: the generator partitions the cohort by community BEFORE scoring, and a row
+    // whose member_type cannot be read enters NEITHER partition. Without this the whole fixture
+    // cohort is skipped and the route answers 400 'Not enough profiles to match' — which is the
+    // fail-closed behaviour working, not a regression. Every fixture here is Professional, so all
+    // 21 assertions below continue to test exactly what they tested before.
+    member_type: 'professional',
     account_status: 'active', is_test_account: false, is_admin: false, matching_paused: false,
   }
 }

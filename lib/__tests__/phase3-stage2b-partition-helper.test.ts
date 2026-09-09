@@ -141,9 +141,9 @@ describe('COMMIT 2 — Pool 3 loads member_type, and only internally', () => {
   const ROUTE = readFileSync('app/api/admin/generate-batch/route.ts', 'utf8')
 
   it('the batch profile select names the shared column constant', () => {
-    const sel = ROUTE.slice(ROUTE.indexOf("from('profiles')"), ROUTE.indexOf('const profiles ='))
+    const sel = ROUTE.slice(ROUTE.indexOf("from('profiles')"), ROUTE.indexOf('filterEligible(rawProfiles'))
     expect(sel).toContain('${MEMBER_TYPE_COLUMNS}')
-    expect(ROUTE).toMatch(/import \{ MEMBER_TYPE_COLUMNS \} from '@\/lib\/community\/memberType'/)
+    expect(ROUTE).toMatch(/import \{[^}]*MEMBER_TYPE_COLUMNS[^}]*\} from '@\/lib\/community\/memberType'/)
   })
 
   it('it still selects an explicit column list, not select(*)', () => {

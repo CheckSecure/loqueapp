@@ -446,11 +446,15 @@ describe('member_type data flow: available internally, never widened outward', (
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 describe('Stage 2B (Pool 3) was NOT implemented', () => {
-  it('the admin batch generator is untouched by Stage 2A', () => {
+  it('the admin batch generator uses PARTITIONING, never the viewer-relative filter', () => {
+    // UPDATED IN STAGE 2B. This originally required the generator to contain no community code at
+    // all, because Stage 2A deliberately excluded Pool 3. Stage 2B is the approved change, so the
+    // guard is narrowed rather than deleted: what still must never appear is filterSameCommunity.
+    // Pool 3 has no viewer, so a viewer-relative filter there would be the "score everyone, then
+    // drop cross edges" shape this whole stage rejects.
     const src = readFileSync('app/api/admin/generate-batch/route.ts', 'utf8')
     expect(src).not.toContain('filterSameCommunity')
-    expect(src).not.toContain('partitionByCommunity')
-    expect(src).not.toContain('member_type')
+    expect(src).toContain('partitionByCommunity')
   })
 
   it('buildScoringContext still derives its IDF corpus from the whole cohort', () => {

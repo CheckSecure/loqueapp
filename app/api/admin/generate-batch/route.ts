@@ -8,7 +8,7 @@ import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
-import { MEMBER_TYPE_COLUMNS } from '@/lib/community/memberType'
+import { MEMBER_TYPE_COLUMNS, MEMBER_TYPES, partitionByCommunity, countUnknownCommunity } from '@/lib/community/memberType'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
 import { MAX_VISIBLE_INTRO_CARDS } from '@/lib/introductions/capacity'
 import { validateGeneration, visibleDeficit } from '@/lib/matching/generationInvariants'
@@ -139,10 +139,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not enough profiles to match' }, { status: 400 })
     }
 
-    // v2 scoring context (rarity/IDF factors) computed from this cohort — see
-    // lib/matching/batch-scoring.ts. buildScoringContext fails fast if any
-    // excluded account slipped through. Exposure counts balance candidate spread.
-    const scoringCtx: ScoringContext = buildScoringContext(profiles, undefined, 'generate-batch')
 
     const { data: lastBatch } = await adminClient
       .from('introduction_batches')
@@ -331,246 +327,353 @@ export async function POST(req: NextRequest) {
     // completed scan rather than assumed from an absent row.
     for (const p of profiles as any[]) if (!visibleCards.has(p.id)) visibleCards.set(p.id, 0)
 
-    const allPairs: PairScore[] = []
-    // SCORE-FLOOR INSTRUMENTATION. `pairsConsidered` in the response is the count AFTER the
-    // floor, so nothing reported how much of the graph the floor removes. Read-only
-    // bookkeeping — it changes no selection behaviour.
-    let pairsPassingHardGates = 0
-    let pairsCutByScoreFloor = 0
-    const scoreHistogram: Record<string, number> = {
-      '0-19': 0, '20-29': 0, '30-34': 0, '35-39': 0, '40-49': 0, '50-69': 0, '70+': 0,
-    }
-    const bucketOf = (v: number) =>
-      v < 20 ? '0-19' : v < 30 ? '20-29' : v < 35 ? '30-34' : v < 40 ? '35-39'
-      : v < 50 ? '40-49' : v < 70 ? '50-69' : '70+'
-    
-    for (let i = 0; i < profiles.length; i++) {
-      for (let j = i + 1; j < profiles.length; j++) {
-        const userA = profiles[i]
-        const userB = profiles[j]
-        
-        
-        const aHiddenB = hiddenMap[userA.id]?.has(userB.id)
-        const bHiddenA = hiddenMap[userB.id]?.has(userA.id)
-        const aPassedB = passMap[userA.id]?.has(userB.id)
-        const bPassedA = passMap[userB.id]?.has(userA.id)
-        const aMatchedB = matchedMap[userA.id]?.has(userB.id)
-        const bMatchedA = matchedMap[userB.id]?.has(userA.id)
-        const aShownB = recentlyShownMap[userA.id]?.has(userB.id)
-        const bShownA = recentlyShownMap[userB.id]?.has(userA.id)
-        // Queue history (intro_requests) — bidirectional, so either direction excludes.
-        const introHistory = introHistoryMap.get(userA.id)?.has(userB.id) || introHistoryMap.get(userB.id)?.has(userA.id)
-
-        // SAME-SIDE LEGAL IS AN ABSOLUTE EXCLUSION, NOT A TIEBREAK.
-        //
-        // Two members who both sit on the law-firm side of the market are never introduced to each
-        // other — partner<->partner, partner<->attorney AND attorney<->attorney alike. Enforced HERE,
-        // with the other hard gates, so no such edge is ever built into `allPairs`; the optimizer
-        // selects only from that set, so neither selection pass can emit one however thin the pool
-        // gets. Ranking cannot express "never": legalSameSidePenalty and crossMarketAdjustment only
-        // lower a score, and a low score still wins when nothing else is available.
-        //
-        // isSameSideLegalPair (BOTH endpoints law-firm) is the correct predicate. The narrower
-        // isSameSideLegalPartnerEdge requires one side to be a PARTNER, so it never fired on
-        // attorney<->attorney — the exact pair this gate exists to stop.
-        //
-        // DETECTION LIMIT, stated rather than implied: lawFirmRole tests role_type for the literal
-        // substring 'law firm'. Drift that removes the space ('Lawfirm attorney', 'Law-firm
-        // Attorney') or omits the employer entirely ('Attorney', 'Partner') classifies as null and
-        // is invisible to this gate. The gate is exactly as strong as role_type hygiene.
-        if (isSameSideLegalPair(userA, userB)) continue
-
-        // Exclude if: hidden, passed, matched, recently shown, queue-history, or same company
-        if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA || introHistory || isSameCompany(userA, userB)) continue
-
-        
-        const scoreAtoB = scoreMatchV2(userA, userB, scoringCtx)
-        const scoreBtoA = scoreMatchV2(userB, userA, scoringCtx)
-        const avgScore = (scoreAtoB + scoreBtoA) / 2
-        
-        pairsPassingHardGates++
-        scoreHistogram[bucketOf(avgScore)]++
-        if (avgScore < MIN_RELEVANCE_SCORE) { pairsCutByScoreFloor++; continue }
-        
-        allPairs.push({
-          userA,
-          userB,
-          scoreAtoB,
-          scoreBtoA,
-          mutualScore: scoreAtoB + scoreBtoA,
-          relevanceScore: avgScore,
-          reasonAtoB: generateReason(userA, userB),
-          reasonBtoA: generateReason(userB, userA),
-        })
-      }
-    }
-    
-    allPairs.sort((a, b) => {
-      if (Math.abs(a.relevanceScore - b.relevanceScore) > 10) {
-        return b.relevanceScore - a.relevanceScore
-      }
-      return b.mutualScore - a.mutualScore
-    })
-    
-    // RECIPROCAL GRAPH SELECTION
-    // The graph — not the individual member — is the unit of optimization. `allPairs`
-    // already holds every ELIGIBLE undirected edge (eligibility, same-company,
-    // prior-intro exclusions, and the minimum relevance threshold have all removed
-    // disqualified pairs above). We now choose a maximum-weight set of those edges such
-    // that no member exceeds their intro cap, via greedy b-matching. Because every
-    // selected edge is undirected it is mutual BY CONSTRUCTION — reciprocity and the
-    // two-directional cap are properties of the output, not a post-process. See
-    // lib/matching/reciprocal-graph.ts for the full rationale.
-    const capOf = (m: any) => perRecipientIntroLimit(m.subscription_tier || 'free')
-    const bsCapOf = (m: any, cap: number) => maxBusinessSolutionCount(m.open_to_business_solutions || false, m.subscription_tier || 'free', cap)
-    const profileById = new Map<string, any>(profiles.map((p: any) => [p.id, p]))
-    const M = (id: string) => profileById.get(id)
-
     // visible_deficit(member) = max(0, MAX_VISIBLE - visible_count(member)). Nothing else.
     const capacityByMember = new Map<string, number>()
     for (const [id, visible] of Array.from(visibleCards.entries())) {
       capacityByMember.set(id, visibleDeficit(visible, MAX_VISIBLE_INTRO_CARDS))
     }
 
-    // GLOBAL LEXICOGRAPHIC b-MATCHING over the complete eligible graph.
+    // ── PHASE 3 STAGE 2B: ONE COMMUNITY, COMPUTED IN COMPLETE ISOLATION ────────────────────────
     //
-    // Replaces greedy selection + two coverage fills + the exactly-one-intro repair pass. That
-    // chain was not a b-matching solver and provably stranded members: measured over 4,000 random
-    // graphs it left 282 cases where a strictly better assignment existed that dropped nobody, and
-    // in 65% of those the stranded member had ZERO cards — which the repair pass never even looked
-    // at, because it iterated only members sitting at exactly one.
+    // Everything from the scoring context to the finished suggestion rows now runs INSIDE this
+    // function, once per community. The body below is the pre-existing algorithm, moved rather
+    // than rewritten: the only edit is that `profiles` is now the `cohort` parameter. No
+    // threshold, score, comparator, solver setting, law-firm rule, fallback criterion or
+    // recipient limit was touched.
     //
-    // Every HARD gate has already been applied to `allPairs` above (eligibility, same-company,
-    // blocking, existing matches, hard history, cooldown, and the unadjusted relevance floor). The
-    // optimizer only ever selects from that set; it can never re-admit an excluded pair.
-    const baseSolverConfig = {
-      // VISIBLE DEFICIT ONLY. The previous version added the member's free RESERVED slots to their
-      // free VISIBLE slots, so a member holding 2 visible and 0 reserved cards scored a deficit of
-      // 2 and was proposed to as though empty. Migration 064 places pairs into the VISIBLE tier or
-      // not at all, so reserved room can never make a visible-full member selectable.
-      capacityByMember,
-      existingVisibleByMember: visibleCards,
-      // Cross-market legal preference, calibrated to the MEASURED score distribution (Option B:
-      // per-edge -32/-24/-16, crossover +33 mutual points on an observed 62..166 range). Reusing
-      // legalSameSidePenalty at full strength would put the crossover at +121, outside the range,
-      // making same-side unwinnable on quality. See lib/matching/globalBMatching.ts for both
-      // options and the measurements. The relevance floor above is applied to the UNADJUSTED
-      // score, so this only ranks — it never removes an edge from the pool.
-      qualityAdjustment: crossMarketAdjustment(lawFirmRole),
-      // Business-solution throttle, carried over as a HARD constraint. Peer edges (both providers,
-      // or legal<->legal) consume no quota, exactly as the previous path treated them.
-      providerCapOf: (id: string) => { const m = M(id); return m ? bsCapOf(m, capOf(m)) : 0 },
-      isProviderFor: (member: any, other: any) => {
-        if (isBusinessSolutionProvider(member) && isBusinessSolutionProvider(other)) return false
-        if (isLegalNetworkingPair(member, other)) return false
-        return isBusinessSolutionProvider(other)
-      },
-      // Role diversity, preserved as the PREFERENCE the previous code documented it to be.
-      roleOf: (m: any) => String(m?.role_type ?? 'unknown'),
-      roleCapOf: (id: string) => { const m = M(id); return m ? Math.max(1, Math.ceil(capOf(m) * MAX_SAME_ROLE_PERCENT)) : 1 },
-      roleRepeatPenalty: 25,
-    }
-
-    // PASS 1 — the whole eligible graph. Same-side legal edges were removed by the hard gate above,
-    // so this filter is defence in depth and selects everything: it re-states the invariant at the
-    // point of use rather than trusting a gate 60 lines away. The predicate is the FULL same-side
-    // test, not the partner-only one, so attorney<->attorney is covered here too.
-    const primaryPairs = allPairs.filter((e) => !isSameSideLegalPair(e.userA, e.userB))
-    const primary = solveGlobalBMatching(primaryPairs as any[], baseSolverConfig)
-
-    // PASS 2 — last-resort coverage on residual capacity only.
+    // WHY THE WHOLE PIPELINE AND NOT JUST THE EDGES. Removing cross-community pairs after scoring
+    // is not sufficient, through two independent channels:
+    //   1. buildScoringContext takes memberCount from the cohort, and idf is
+    //      log((N+1)/(df+1))/log(N+1) — so N, and therefore every Professional score, would depend
+    //      on how many Next members exist.
+    //   2. solveGlobalBMatching reduces each component by keeping top-k edges and HALVING k until
+    //      it fits MAX_COMPONENT_EDGES. A mixed cohort is one bigger component, so Professionals
+    //      would be reduced harder than they are today — worse matches, with no cross-community
+    //      pair anywhere in the output.
+    // Both disappear because neither community is ever in the same call.
     //
-    // Its input WAS the partner-involving same-side edges retired from Pass 1, which made it the
-    // path that reintroduced exactly the pairs the rule forbids. Under an absolute rule it must not,
-    // so its input is now provably EMPTY: the hard gate keeps same-side edges out of `allPairs`, and
-    // the filter below excludes any that could somehow reach it. Pass 2 therefore selects nothing
-    // today. It is retained, rather than deleted, as the staging point for any future last-resort
-    // category — but it can no longer serve legal, by construction.
-    const primaryDegree = primary.degree
-    const residualCapacity = new Map<string, number>()
-    const visibleAfterPrimary = new Map<string, number>()
-    for (const p of profiles as any[]) {
-      const used = primaryDegree.get(p.id) ?? 0
-      residualCapacity.set(p.id, Math.max(0, (capacityByMember.get(p.id) ?? 0) - used))
-      visibleAfterPrimary.set(p.id, (visibleCards.get(p.id) ?? 0) + used)
-    }
-    const fallbackPairs = allPairs.filter(
-      (e) => isPartnerPair(e.userA, e.userB) && !isSameSideLegalPair(e.userA, e.userB),
-    )
-    const fallback = solveGlobalBMatching(fallbackPairs as any[], {
-      ...baseSolverConfig,
-      capacityByMember: residualCapacity,
-      existingVisibleByMember: visibleAfterPrimary,
-      // Every fallback edge is already same-side. Its original quality still chooses the best last
-      // resort; applying the cross-market adjustment again would add no composition signal.
-      qualityAdjustment: () => 0,
-    })
-    const selectedEdgesRepaired = [...primary.selected, ...fallback.selected] as typeof allPairs
-    const bmatch = {
-      exact: primary.exact && fallback.exact,
-      reason: primary.reason ?? fallback.reason,
-      nodesExplored: primary.nodesExplored + fallback.nodesExplored,
-      selected: selectedEdgesRepaired,
-      degree: new Map<string, number>(),
-    }
-    for (const e of selectedEdgesRepaired) {
-      bmatch.degree.set(e.userA.id, (bmatch.degree.get(e.userA.id) ?? 0) + 1)
-      bmatch.degree.set(e.userB.id, (bmatch.degree.get(e.userB.id) ?? 0) + 1)
-    }
+    // SHARED, AND DELIBERATELY SO: hiddenMap / passMap / matchedMap / recentlyShownMap /
+    // introHistory / visibleCards / capacityByMember are per-MEMBER lookups, not cohort
+    // statistics. Their values cannot differ by who else is in the run, and rebuilding them per
+    // community would issue the same queries twice for the same answers.
+    const computeCohortSuggestions = (cohort: any[]) => {
+      // The cohort context. Built from THIS community only — the boundary the whole stage exists
+      // for. There is no variable in scope holding a combined cohort, so the rejected
+      // "score everyone, then drop cross-community pairs" shape cannot be written here.
+      const scoringCtx: ScoringContext = buildScoringContext(cohort, undefined, 'generate-batch')
 
-    // Aggregate, identity-free reporting. No member id, name, email or company is logged.
-    const isLawFirm = (x: any) => lawFirmRole(x) !== null
-    const legalPro = nullSafeRole(isLegalProfessional)
-    const pairComposition = pairTypeCounts(selectedEdgesRepaired as any[], isLawFirm, legalPro)
-    const underfillReasons = underfillReasonCounts(
-      profiles.map((p: any) => p.id), selectedEdgesRepaired as any[], allPairs as any[],
-      // Read the AUTHORITATIVE map rather than re-deriving the formula — a second copy is a
-      // second place for the two to drift apart, which is exactly how this defect happened.
-      (id: string) => capacityByMember.get(id) ?? 0,
-    )
-    console.log('[generate-batch] optimizer:', JSON.stringify({
-      exact: bmatch.exact, reason: bmatch.reason ?? null, nodes: bmatch.nodesExplored,
-      edgesConsidered: allPairs.length, pairsSelected: selectedEdgesRepaired.length,
-      pairComposition, underfillReasons,
-    }))
+      const allPairs: PairScore[] = []
+      // SCORE-FLOOR INSTRUMENTATION. `pairsConsidered` in the response is the count AFTER the
+      // floor, so nothing reported how much of the graph the floor removes. Read-only
+      // bookkeeping — it changes no selection behaviour.
+      let pairsPassingHardGates = 0
+      let pairsCutByScoreFloor = 0
+      const scoreHistogram: Record<string, number> = {
+        '0-19': 0, '20-29': 0, '30-34': 0, '35-39': 0, '40-49': 0, '50-69': 0, '70+': 0,
+      }
+      const bucketOf = (v: number) =>
+        v < 20 ? '0-19' : v < 30 ? '20-29' : v < 35 ? '30-34' : v < 40 ? '35-39'
+        : v < 50 ? '40-49' : v < 70 ? '50-69' : '70+'
+    
+      for (let i = 0; i < cohort.length; i++) {
+        for (let j = i + 1; j < cohort.length; j++) {
+          const userA = cohort[i]
+          const userB = cohort[j]
+        
+        
+          const aHiddenB = hiddenMap[userA.id]?.has(userB.id)
+          const bHiddenA = hiddenMap[userB.id]?.has(userA.id)
+          const aPassedB = passMap[userA.id]?.has(userB.id)
+          const bPassedA = passMap[userB.id]?.has(userA.id)
+          const aMatchedB = matchedMap[userA.id]?.has(userB.id)
+          const bMatchedA = matchedMap[userB.id]?.has(userA.id)
+          const aShownB = recentlyShownMap[userA.id]?.has(userB.id)
+          const bShownA = recentlyShownMap[userB.id]?.has(userA.id)
+          // Queue history (intro_requests) — bidirectional, so either direction excludes.
+          const introHistory = introHistoryMap.get(userA.id)?.has(userB.id) || introHistoryMap.get(userB.id)?.has(userA.id)
 
-    // Fan each selected edge out into BOTH directions. This is the only place rows are
-    // created, so a one-way recommendation is structurally impossible: an edge that
-    // isn't selected produces zero rows; one that is produces exactly two.
-    const userBatches: Record<string, any[]> = {}
-    for (const e of selectedEdgesRepaired) {
-      ;(userBatches[e.userA.id] ||= []).push({ suggested: e.userB, score: e.scoreAtoB, reason: e.reasonAtoB })
-      ;(userBatches[e.userB.id] ||= []).push({ suggested: e.userA, score: e.scoreBtoA, reason: e.reasonBtoA })
-    }
+          // SAME-SIDE LEGAL IS AN ABSOLUTE EXCLUSION, NOT A TIEBREAK.
+          //
+          // Two members who both sit on the law-firm side of the market are never introduced to each
+          // other — partner<->partner, partner<->attorney AND attorney<->attorney alike. Enforced HERE,
+          // with the other hard gates, so no such edge is ever built into `allPairs`; the optimizer
+          // selects only from that set, so neither selection pass can emit one however thin the pool
+          // gets. Ranking cannot express "never": legalSameSidePenalty and crossMarketAdjustment only
+          // lower a score, and a low score still wins when nothing else is available.
+          //
+          // isSameSideLegalPair (BOTH endpoints law-firm) is the correct predicate. The narrower
+          // isSameSideLegalPartnerEdge requires one side to be a PARTNER, so it never fired on
+          // attorney<->attorney — the exact pair this gate exists to stop.
+          //
+          // DETECTION LIMIT, stated rather than implied: lawFirmRole tests role_type for the literal
+          // substring 'law firm'. Drift that removes the space ('Lawfirm attorney', 'Law-firm
+          // Attorney') or omits the employer entirely ('Attorney', 'Partner') classifies as null and
+          // is invisible to this gate. The gate is exactly as strong as role_type hygiene.
+          if (isSameSideLegalPair(userA, userB)) continue
 
-    // Every edge is a mutual introduction by construction (selection + coverage fill).
-    const mutualMatchesCreated = selectedEdgesRepaired.length
-    const allSuggestions: any[] = []
+          // Exclude if: hidden, passed, matched, recently shown, queue-history, or same company
+          if (aHiddenB || bHiddenA || aPassedB || bPassedA || aMatchedB || bMatchedA || aShownB || bShownA || introHistory || isSameCompany(userA, userB)) continue
 
-    // ── PRE-WRITE INVARIANT VALIDATION ─────────────────────────────────────────────────────────
-    // The optimizer's result is checked against the SAME immutable snapshot it solved from, before
-    // a single row exists. Approval would reject a bad pair safely, but a review batch full of
-    // unapprovable proposals wastes the operator's review and hides real coverage — generation must
-    // not delegate its own correctness to approval.
-    for (const [recipientId, suggestions] of Object.entries(userBatches)) {
-      // Position by each recipient's OWN directional score, deterministic id tiebreak.
-      suggestions.sort((a, b) => b.score - a.score || String(a.suggested.id).localeCompare(String(b.suggested.id)))
-      for (let i = 0; i < suggestions.length; i++) {
-        const { suggested, score, reason } = suggestions[i]
-        const safeScore = sanitizeMatchScore(score)
-        assertStorableScore(safeScore, recipientId, suggested.id)
-        allSuggestions.push({
-          batch_id: null as any,                     // stamped once the parent row exists
-          recipient_id: recipientId,
-          suggested_id: suggested.id,
-          reason,
-          match_score: safeScore,
-          score_bucket: getScoreBucket(safeScore),
-          position: i + 1,
-          status: 'generated',
-        })
+        
+          const scoreAtoB = scoreMatchV2(userA, userB, scoringCtx)
+          const scoreBtoA = scoreMatchV2(userB, userA, scoringCtx)
+          const avgScore = (scoreAtoB + scoreBtoA) / 2
+        
+          pairsPassingHardGates++
+          scoreHistogram[bucketOf(avgScore)]++
+          if (avgScore < MIN_RELEVANCE_SCORE) { pairsCutByScoreFloor++; continue }
+        
+          allPairs.push({
+            userA,
+            userB,
+            scoreAtoB,
+            scoreBtoA,
+            mutualScore: scoreAtoB + scoreBtoA,
+            relevanceScore: avgScore,
+            reasonAtoB: generateReason(userA, userB),
+            reasonBtoA: generateReason(userB, userA),
+          })
+        }
+      }
+    
+      allPairs.sort((a, b) => {
+        if (Math.abs(a.relevanceScore - b.relevanceScore) > 10) {
+          return b.relevanceScore - a.relevanceScore
+        }
+        return b.mutualScore - a.mutualScore
+      })
+    
+      // RECIPROCAL GRAPH SELECTION
+      // The graph — not the individual member — is the unit of optimization. `allPairs`
+      // already holds every ELIGIBLE undirected edge (eligibility, same-company,
+      // prior-intro exclusions, and the minimum relevance threshold have all removed
+      // disqualified pairs above). We now choose a maximum-weight set of those edges such
+      // that no member exceeds their intro cap, via greedy b-matching. Because every
+      // selected edge is undirected it is mutual BY CONSTRUCTION — reciprocity and the
+      // two-directional cap are properties of the output, not a post-process. See
+      // lib/matching/reciprocal-graph.ts for the full rationale.
+      const capOf = (m: any) => perRecipientIntroLimit(m.subscription_tier || 'free')
+      const bsCapOf = (m: any, cap: number) => maxBusinessSolutionCount(m.open_to_business_solutions || false, m.subscription_tier || 'free', cap)
+      const profileById = new Map<string, any>(cohort.map((p: any) => [p.id, p]))
+      const M = (id: string) => profileById.get(id)
+
+
+      // GLOBAL LEXICOGRAPHIC b-MATCHING over the complete eligible graph.
+      //
+      // Replaces greedy selection + two coverage fills + the exactly-one-intro repair pass. That
+      // chain was not a b-matching solver and provably stranded members: measured over 4,000 random
+      // graphs it left 282 cases where a strictly better assignment existed that dropped nobody, and
+      // in 65% of those the stranded member had ZERO cards — which the repair pass never even looked
+      // at, because it iterated only members sitting at exactly one.
+      //
+      // Every HARD gate has already been applied to `allPairs` above (eligibility, same-company,
+      // blocking, existing matches, hard history, cooldown, and the unadjusted relevance floor). The
+      // optimizer only ever selects from that set; it can never re-admit an excluded pair.
+      const baseSolverConfig = {
+        // VISIBLE DEFICIT ONLY. The previous version added the member's free RESERVED slots to their
+        // free VISIBLE slots, so a member holding 2 visible and 0 reserved cards scored a deficit of
+        // 2 and was proposed to as though empty. Migration 064 places pairs into the VISIBLE tier or
+        // not at all, so reserved room can never make a visible-full member selectable.
+        capacityByMember,
+        existingVisibleByMember: visibleCards,
+        // Cross-market legal preference, calibrated to the MEASURED score distribution (Option B:
+        // per-edge -32/-24/-16, crossover +33 mutual points on an observed 62..166 range). Reusing
+        // legalSameSidePenalty at full strength would put the crossover at +121, outside the range,
+        // making same-side unwinnable on quality. See lib/matching/globalBMatching.ts for both
+        // options and the measurements. The relevance floor above is applied to the UNADJUSTED
+        // score, so this only ranks — it never removes an edge from the pool.
+        qualityAdjustment: crossMarketAdjustment(lawFirmRole),
+        // Business-solution throttle, carried over as a HARD constraint. Peer edges (both providers,
+        // or legal<->legal) consume no quota, exactly as the previous path treated them.
+        providerCapOf: (id: string) => { const m = M(id); return m ? bsCapOf(m, capOf(m)) : 0 },
+        isProviderFor: (member: any, other: any) => {
+          if (isBusinessSolutionProvider(member) && isBusinessSolutionProvider(other)) return false
+          if (isLegalNetworkingPair(member, other)) return false
+          return isBusinessSolutionProvider(other)
+        },
+        // Role diversity, preserved as the PREFERENCE the previous code documented it to be.
+        roleOf: (m: any) => String(m?.role_type ?? 'unknown'),
+        roleCapOf: (id: string) => { const m = M(id); return m ? Math.max(1, Math.ceil(capOf(m) * MAX_SAME_ROLE_PERCENT)) : 1 },
+        roleRepeatPenalty: 25,
+      }
+
+      // PASS 1 — the whole eligible graph. Same-side legal edges were removed by the hard gate above,
+      // so this filter is defence in depth and selects everything: it re-states the invariant at the
+      // point of use rather than trusting a gate 60 lines away. The predicate is the FULL same-side
+      // test, not the partner-only one, so attorney<->attorney is covered here too.
+      const primaryPairs = allPairs.filter((e) => !isSameSideLegalPair(e.userA, e.userB))
+      const primary = solveGlobalBMatching(primaryPairs as any[], baseSolverConfig)
+
+      // PASS 2 — last-resort coverage on residual capacity only.
+      //
+      // Its input WAS the partner-involving same-side edges retired from Pass 1, which made it the
+      // path that reintroduced exactly the pairs the rule forbids. Under an absolute rule it must not,
+      // so its input is now provably EMPTY: the hard gate keeps same-side edges out of `allPairs`, and
+      // the filter below excludes any that could somehow reach it. Pass 2 therefore selects nothing
+      // today. It is retained, rather than deleted, as the staging point for any future last-resort
+      // category — but it can no longer serve legal, by construction.
+      const primaryDegree = primary.degree
+      const residualCapacity = new Map<string, number>()
+      const visibleAfterPrimary = new Map<string, number>()
+      for (const p of cohort as any[]) {
+        const used = primaryDegree.get(p.id) ?? 0
+        residualCapacity.set(p.id, Math.max(0, (capacityByMember.get(p.id) ?? 0) - used))
+        visibleAfterPrimary.set(p.id, (visibleCards.get(p.id) ?? 0) + used)
+      }
+      const fallbackPairs = allPairs.filter(
+        (e) => isPartnerPair(e.userA, e.userB) && !isSameSideLegalPair(e.userA, e.userB),
+      )
+      const fallback = solveGlobalBMatching(fallbackPairs as any[], {
+        ...baseSolverConfig,
+        capacityByMember: residualCapacity,
+        existingVisibleByMember: visibleAfterPrimary,
+        // Every fallback edge is already same-side. Its original quality still chooses the best last
+        // resort; applying the cross-market adjustment again would add no composition signal.
+        qualityAdjustment: () => 0,
+      })
+      const selectedEdgesRepaired = [...primary.selected, ...fallback.selected] as typeof allPairs
+      const bmatch = {
+        exact: primary.exact && fallback.exact,
+        reason: primary.reason ?? fallback.reason,
+        nodesExplored: primary.nodesExplored + fallback.nodesExplored,
+        selected: selectedEdgesRepaired,
+        degree: new Map<string, number>(),
+      }
+      for (const e of selectedEdgesRepaired) {
+        bmatch.degree.set(e.userA.id, (bmatch.degree.get(e.userA.id) ?? 0) + 1)
+        bmatch.degree.set(e.userB.id, (bmatch.degree.get(e.userB.id) ?? 0) + 1)
+      }
+
+      // Aggregate, identity-free reporting. No member id, name, email or company is logged.
+      const isLawFirm = (x: any) => lawFirmRole(x) !== null
+      const legalPro = nullSafeRole(isLegalProfessional)
+      const pairComposition = pairTypeCounts(selectedEdgesRepaired as any[], isLawFirm, legalPro)
+      const underfillReasons = underfillReasonCounts(
+        cohort.map((p: any) => p.id), selectedEdgesRepaired as any[], allPairs as any[],
+        // Read the AUTHORITATIVE map rather than re-deriving the formula — a second copy is a
+        // second place for the two to drift apart, which is exactly how this defect happened.
+        (id: string) => capacityByMember.get(id) ?? 0,
+      )
+      console.log('[generate-batch] optimizer:', JSON.stringify({
+        exact: bmatch.exact, reason: bmatch.reason ?? null, nodes: bmatch.nodesExplored,
+        edgesConsidered: allPairs.length, pairsSelected: selectedEdgesRepaired.length,
+        pairComposition, underfillReasons,
+      }))
+
+      // Fan each selected edge out into BOTH directions. This is the only place rows are
+      // created, so a one-way recommendation is structurally impossible: an edge that
+      // isn't selected produces zero rows; one that is produces exactly two.
+      const userBatches: Record<string, any[]> = {}
+      for (const e of selectedEdgesRepaired) {
+        ;(userBatches[e.userA.id] ||= []).push({ suggested: e.userB, score: e.scoreAtoB, reason: e.reasonAtoB })
+        ;(userBatches[e.userB.id] ||= []).push({ suggested: e.userA, score: e.scoreBtoA, reason: e.reasonBtoA })
+      }
+
+      // Every edge is a mutual introduction by construction (selection + coverage fill).
+      const mutualMatchesCreated = selectedEdgesRepaired.length
+      const allSuggestions: any[] = []
+
+      // ── PRE-WRITE INVARIANT VALIDATION ─────────────────────────────────────────────────────────
+      // The optimizer's result is checked against the SAME immutable snapshot it solved from, before
+      // a single row exists. Approval would reject a bad pair safely, but a review batch full of
+      // unapprovable proposals wastes the operator's review and hides real coverage — generation must
+      // not delegate its own correctness to approval.
+      for (const [recipientId, suggestions] of Object.entries(userBatches)) {
+        // Position by each recipient's OWN directional score, deterministic id tiebreak.
+        suggestions.sort((a, b) => b.score - a.score || String(a.suggested.id).localeCompare(String(b.suggested.id)))
+        for (let i = 0; i < suggestions.length; i++) {
+          const { suggested, score, reason } = suggestions[i]
+          const safeScore = sanitizeMatchScore(score)
+          assertStorableScore(safeScore, recipientId, suggested.id)
+          allSuggestions.push({
+            batch_id: null as any,                     // stamped once the parent row exists
+            recipient_id: recipientId,
+            suggested_id: suggested.id,
+            reason,
+            match_score: safeScore,
+            score_bucket: getScoreBucket(safeScore),
+            position: i + 1,
+            status: 'generated',
+          })
+        }
+      }
+
+      // POST-SOLVE INVARIANT, executable rather than asserted in prose. Every selected edge must
+      // join two members of THIS cohort. It holds structurally today — primary and fallback both
+      // read `allPairs`, which is built from `cohort` alone — but a future refactor that hoisted
+      // one variable out of this function would break it silently, and silence is the failure
+      // mode this stage exists to remove.
+      const cohortIds = new Set(cohort.map((p: any) => p.id))
+      for (const e of selectedEdgesRepaired) {
+        if (!cohortIds.has(e.userA.id) || !cohortIds.has(e.userB.id)) {
+          throw new Error('generate-batch: selected edge crosses the cohort boundary')
+        }
+      }
+
+      return {
+        allPairs, selectedEdgesRepaired, allSuggestions, mutualMatchesCreated,
+        pairsPassingHardGates, pairsCutByScoreFloor, scoreHistogram,
+        pairComposition, underfillReasons, bmatch,
       }
     }
+
+    // ── RUN EACH COMMUNITY, PROFESSIONAL FIRST ─────────────────────────────────────────────────
+    // MEMBER_TYPES order is ["professional", "next"], so Professional suggestions are produced and
+    // concatenated first. That is not cosmetic: userBatches is keyed by recipient id and
+    // Object.entries preserves insertion order, so concatenation order decides row order. With no
+    // Next members the second cohort is empty and the result is byte-identical to today.
+    //
+    // A cohort with fewer than 2 members yields no pairs and is skipped silently — an empty or
+    // tiny Next community at launch is expected, not an error, and it must not affect the other.
+    const partitions = partitionByCommunity(profiles as any[])
+    const membersSkippedUnknownCommunity = countUnknownCommunity(profiles as any[])
+    const cohortResults = MEMBER_TYPES
+      .map((community) => partitions.get(community) ?? [])
+      .filter((cohort) => cohort.length >= 2)
+      .map((cohort) => computeCohortSuggestions(cohort))
+
+    // Members actually included across recognised partitions. Replaces profiles.length in the
+    // metrics below: a member whose community could not be read entered no cohort, so counting
+    // them would deflate the average. On an all-Professional database this is profiles.length.
+    const recognisedMembers = MEMBER_TYPES.reduce((n, c) => n + (partitions.get(c)?.length ?? 0), 0)
+
+    // The same refusal as the pre-partition guard above, now decided per community: a run is only
+    // "not enough profiles" when NO community has a pairable cohort. On an all-Professional
+    // database those are the same condition, so the message and status are unchanged. One community
+    // being too small never fails the other, and never fails the batch — an empty or tiny Next
+    // community at launch is expected.
+    if (cohortResults.length === 0) {
+      return NextResponse.json({ error: 'Not enough profiles to match' }, { status: 400 })
+    }
+
+    // Aggregate, identity-free partition diagnostics, alongside the per-cohort optimizer log above.
+    console.log('[generate-batch] partition:', JSON.stringify({
+      cohorts: cohortResults.length,
+      recognisedMembers,
+      membersSkippedUnknownCommunity,
+    }))
+
+    const allPairs = cohortResults.flatMap((r) => r.allPairs)
+    const selectedEdgesRepaired = cohortResults.flatMap((r) => r.selectedEdgesRepaired)
+    const allSuggestions = cohortResults.flatMap((r) => r.allSuggestions)
+    const mutualMatchesCreated = cohortResults.reduce((n, r) => n + r.mutualMatchesCreated, 0)
+    const pairsPassingHardGates = cohortResults.reduce((n, r) => n + r.pairsPassingHardGates, 0)
+    const pairsCutByScoreFloor = cohortResults.reduce((n, r) => n + r.pairsCutByScoreFloor, 0)
+    const scoreHistogram = cohortResults.reduce((acc, r) => {
+      for (const [k, v] of Object.entries(r.scoreHistogram)) acc[k] = (acc[k] ?? 0) + v
+      return acc
+    }, {} as Record<string, number>)
+    const pairComposition = cohortResults.map((r) => r.pairComposition)
+    const underfillReasons = cohortResults.map((r) => r.underfillReasons)
+    // Solver diagnostics, combined conservatively: the run is only "exact" if EVERY cohort's solve
+    // was, the first non-null reason is reported, and node counts sum. With one cohort these are
+    // that cohort's own values, exactly as before.
+    const bmatch = {
+      exact: cohortResults.every((r) => r.bmatch.exact),
+      reason: cohortResults.map((r) => r.bmatch.reason).find((x) => x != null) ?? null,
+      nodesExplored: cohortResults.reduce((n, r) => n + r.bmatch.nodesExplored, 0),
+    }
+
 
     const invariants = validateGeneration(
       selectedEdgesRepaired as any[],
@@ -598,7 +701,7 @@ export async function POST(req: NextRequest) {
       // FINAL INVARIANT: no recipient exceeds their remaining VISIBLE capacity. The real remaining
       // capacity is passed in now — the old call used the tier limit alone with existingLive = 0,
       // so it could not have caught an already-full member even in principle.
-      const tierByRecipient = new Map(profiles.map((p: any) => [p.id, p.subscription_tier || 'free']))
+      const tierByRecipient = new Map((profiles as any[]).map((p: any) => [p.id, p.subscription_tier || 'free']))
       const { kept, dropped } = enforceRecipientLimits(
         allSuggestions,
         (rid) => Math.min(perRecipientIntroLimit(tierByRecipient.get(rid)), capacityByMember.get(rid) ?? 0),
@@ -624,7 +727,7 @@ export async function POST(req: NextRequest) {
     }
 
     const oneWayMatches = allSuggestions.length - (mutualMatchesCreated * 2)
-    const avgBatchSize = allSuggestions.length / profiles.length
+    const avgBatchSize = recognisedMembers > 0 ? allSuggestions.length / recognisedMembers : 0
 
     return NextResponse.json({
       success: true,
@@ -634,7 +737,11 @@ export async function POST(req: NextRequest) {
       scoringModelVersion: SCORING_MODEL_VERSION,
       configHash: algorithmConfigHash(),
       totalSuggestions: allSuggestions.length,
-      usersMatched: profiles.length,
+      usersMatched: recognisedMembers,
+      // Aggregate only, no identity. Non-zero means rows whose member_type could not be read
+      // entered NO cohort. profiles.member_type is NOT NULL with a CHECK (migration 095), so a
+      // non-zero value means schema drift rather than a routine condition — reported, never thrown.
+      membersSkippedUnknownCommunity,
       mutualOpportunities: mutualMatchesCreated,
       oneWayMatches: allSuggestions.length - (mutualMatchesCreated * 2),
       avgBatchSize: Math.round(avgBatchSize * 10) / 10,
