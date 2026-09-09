@@ -274,9 +274,15 @@ describe('probeExpectation — kind: function', () => {
 describe('the Phase 3 Stage 1 function prerequisites are registered', () => {
   const fns = SCHEMA_EXPECTATIONS.filter((e) => e.kind === 'function')
 
-  it('exactly the three Stage 1 RPCs the application calls by name', () => {
+  it('exactly the RPCs whose absence would break a deployed or imminent stage', () => {
+    // UPDATED IN PHASE 4A-1. The three Stage 1 writers, plus the Phase 4A designation resolver.
+    // resolve_intended_member_type has no caller YET — 4A-2 is the first — and it is registered
+    // deliberately anyway: an unapplied 099 must be visible BEFORE the provisioner ships, because
+    // a provisioner without a fail-closed resolver falls back to the column default and silently
+    // creates a Professional profile for a student.
     expect(fns.map((e) => e.fn).sort()).toEqual([
       'create_admin_intro_pair', 'create_gated_match', 'create_support_match',
+      'resolve_intended_member_type',
     ])
   })
 
@@ -285,6 +291,8 @@ describe('the Phase 3 Stage 1 function prerequisites are registered', () => {
     expect(byFn.get('create_gated_match')!.migration).toBe('096_community_boundary_enforcement.sql')
     expect(byFn.get('create_support_match')!.migration).toBe('096_community_boundary_enforcement.sql')
     expect(byFn.get('create_admin_intro_pair')!.migration).toBe('098_admin_intro_pair_writer.sql')
+    expect(byFn.get('resolve_intended_member_type')!.migration)
+      .toBe('099_next_community_designation_foundation.sql')
   })
 
   it('probe args are the approved all-NULL sets, with every no-default argument named', () => {
@@ -294,6 +302,9 @@ describe('the Phase 3 Stage 1 function prerequisites are registered', () => {
     expect(byFn.get('create_gated_match')!.probeArgs).toEqual({ p_user_a: null, p_user_b: null })
     expect(byFn.get('create_support_match')!.probeArgs).toEqual({ p_platform_user: null, p_member: null })
     expect(byFn.get('create_admin_intro_pair')!.probeArgs).toEqual({ p_user_a: null, p_user_b: null })
+    // Read-only and STABLE, but the all-NULL rule applies to every registered function without
+    // exception — READ_ONLY_PROBE_FUNCTIONS stays empty precisely so no case argues its way out.
+    expect(byFn.get('resolve_intended_member_type')!.probeArgs).toEqual({ p_email: null })
   })
 })
 

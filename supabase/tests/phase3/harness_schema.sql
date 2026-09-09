@@ -14,6 +14,16 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
 END $$;
 
+-- SUPABASE-EQUIVALENT DEFAULT PRIVILEGES. Production runs this, so every function created in
+-- `public` is born holding EXECUTE for all three roles; a bare cluster grants none. Without this
+-- line an ACL measured here is only a FLOOR — it proves what a migration explicitly REVOKEs and can
+-- never prove the absence of a privilege the migration does not mention. Migration 099's trigger
+-- functions were the case that exposed it: service_role EXECUTE read false here and true in
+-- production. Placed after the roles exist and before any CREATE FUNCTION, because
+-- ALTER DEFAULT PRIVILEGES applies only to objects created after it.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
+
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
   LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
