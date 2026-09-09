@@ -167,10 +167,15 @@ describe('filterSameCommunity — the one rule, and it fails closed', () => {
                                [NEXT('a', { seeking_next_mentorship: true })])).toEqual([])
   })
 
-  it('partitionByCommunity is NOT added — it has no Stage 2A caller', async () => {
-    // Stage 2B (Pool 3) is what needs it. Shipping unused production code now would be a promise
-    // this task did not make, and an unused export is where drift starts.
-    expect(Object.keys(await load())).not.toContain('partitionByCommunity')
+  it('partitionByCommunity now exists AND has a caller — it did not ship unused', async () => {
+    // UPDATED IN STAGE 2B. This assertion originally required partitionByCommunity to be ABSENT,
+    // because Stage 2A had no caller for it and an unused export is where drift starts. Stage 2B is
+    // the approved caller, so the protection is inverted rather than deleted: the export must now
+    // exist, and it must be USED by the admin batch generator. Simply removing the check would drop
+    // the guarantee it encoded — that partition logic never sits in the tree without a consumer.
+    // The "has a caller" half of this guarantee is asserted in
+    // lib/__tests__/phase3-stage2b-batch-partition.test.ts, which is where the caller lands.
+    expect(Object.keys(await load())).toContain('partitionByCommunity')
   })
 })
 
@@ -441,11 +446,15 @@ describe('member_type data flow: available internally, never widened outward', (
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 describe('Stage 2B (Pool 3) was NOT implemented', () => {
-  it('the admin batch generator is untouched by Stage 2A', () => {
+  it('the admin batch generator uses PARTITIONING, never the viewer-relative filter', () => {
+    // UPDATED IN STAGE 2B. This originally required the generator to contain no community code at
+    // all, because Stage 2A deliberately excluded Pool 3. Stage 2B is the approved change, so the
+    // guard is narrowed rather than deleted: what still must never appear is filterSameCommunity.
+    // Pool 3 has no viewer, so a viewer-relative filter there would be the "score everyone, then
+    // drop cross edges" shape this whole stage rejects.
     const src = readFileSync('app/api/admin/generate-batch/route.ts', 'utf8')
     expect(src).not.toContain('filterSameCommunity')
-    expect(src).not.toContain('partitionByCommunity')
-    expect(src).not.toContain('member_type')
+    expect(src).toContain('partitionByCommunity')
   })
 
   it('buildScoringContext still derives its IDF corpus from the whole cohort', () => {
