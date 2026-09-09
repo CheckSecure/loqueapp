@@ -1,5 +1,6 @@
 import { classifyIntroHistory, exhaustionThreshold } from '@/lib/introRequests/history'
 import { isSameCompany } from '@/lib/matching/same-company'
+import { sameCommunity, MEMBER_TYPE_COLUMNS } from '@/lib/community/memberType'
 import { parseExpertise } from '@/lib/parseExpertise'
 
 // Lightweight, READ-ONLY monitoring for the tiered introduction-history model.
@@ -69,7 +70,7 @@ async function pageAll(admin: any, table: string, cols: string): Promise<any[]> 
  * omitted for cost — this is a gauge, so the true pool is at most a hair smaller.
  */
 export async function loadPoolHealth(admin: any): Promise<PoolHealthReport> {
-  const profiles = await pageAll(admin, 'profiles', 'id, full_name, role_type, expertise, company, account_status, profile_complete, is_test_account')
+  const profiles = await pageAll(admin, 'profiles', `id, full_name, role_type, expertise, company, account_status, profile_complete, is_test_account, ${MEMBER_TYPE_COLUMNS}`)
   const daniel = profiles.find((p: any) => (p.full_name || '').trim().toLowerCase() === 'daniel abramoff')
   const eligible = profiles.filter(
     (p: any) => p.account_status === 'active' && p.profile_complete && !p.is_test_account && p.full_name && p.role_type && parseExpertise(p.expertise).length > 0 && p.id !== daniel?.id,
@@ -114,6 +115,16 @@ export async function loadPoolHealth(admin: any): Promise<PoolHealthReport> {
     let poolAfterSoft = 0
     for (const o of eligible) {
       if (o.id === m.id) continue
+      // COMMUNITY (Phase 3 Stage 2B). Ordinary matching only ever offers same-community
+      // candidates — Stage 2A scopes the six viewer-relative pools and Stage 2B partitions the
+      // weekly batch — so counting the other community here would tell an operator a member has
+      // candidates they can never actually receive. This is DIAGNOSTIC CORRECTNESS, not the
+      // boundary: nothing downstream reads this number, and Stage 1's database gates remain the
+      // authority for what may be created.
+      //
+      // sameCommunity fails closed on both sides, so a member whose own member_type is unreadable
+      // reports a pool of zero, and a candidate whose member_type is unreadable counts for nobody.
+      if (!sameCommunity(m, o)) continue
       if (isSameCompany(m, o)) continue
       if (hardExcluded.has(o.id) || softExcluded.has(o.id)) continue
       poolAfterSoft++
