@@ -322,6 +322,15 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     impact: 'REQUIRED BEFORE Phase 4A-2. It is the ONLY sanctioned way a provisioner may learn which community to create a profile in, and it refuses rather than guesses when a live intent is missing or ambiguous. Until applied, a Next provisioner would have no fail-closed answer and would fall back to the profiles.member_type column default — silently creating a Professional profile for a student, which is the exact failure Phase 4A exists to prevent. READ-ONLY: the function is STABLE and this probe passes p_email NULL, which returns not_found without touching a row.',
   },
   {
+    migration: '100_provisioning_authorization_and_community_binding.sql',
+    kind: 'function',
+    table: 'profiles',
+    fn: 'may_provision_profile',
+    probeArgs: { p_email: null, p_auth_user_id: null },
+    feature: 'First-profile provisioning authorization (WHETHER, separate from WHICH community)',
+    impact: 'REQUIRED for the profiles provisioning boundary. Until applied, NOTHING authorizes the creation of a first profile: /api/profile/initialize carries the check in TypeScript but is unreachable from the application, and completeOnboarding — the writer the onboarding form actually calls — has no invitation check at all. So while this is unapplied, any authenticated session can create itself a member profile, and profiles.member_type still falls back to its column DEFAULT, which is what silently makes a Next invitee a Professional. Applied, a profile can only exist for an identity holding exactly one live invitation, and its community is derived from that invitation. READ-ONLY: the function is STABLE and this probe passes both arguments NULL, which returns refused/no_email without touching a row.',
+  },
+  {
     migration: '098_admin_intro_pair_writer.sql',
     kind: 'function',
     table: 'intro_requests',

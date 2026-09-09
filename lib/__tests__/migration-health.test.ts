@@ -275,14 +275,19 @@ describe('the Phase 3 Stage 1 function prerequisites are registered', () => {
   const fns = SCHEMA_EXPECTATIONS.filter((e) => e.kind === 'function')
 
   it('exactly the RPCs whose absence would break a deployed or imminent stage', () => {
-    // UPDATED IN PHASE 4A-1. The three Stage 1 writers, plus the Phase 4A designation resolver.
-    // resolve_intended_member_type has no caller YET — 4A-2 is the first — and it is registered
-    // deliberately anyway: an unapplied 099 must be visible BEFORE the provisioner ships, because
-    // a provisioner without a fail-closed resolver falls back to the column default and silently
-    // creates a Professional profile for a student.
+    // UPDATED IN PHASE 4A-2. The three Stage 1 writers, plus the Phase 4A designation resolver and
+    // the provisioning authorizer.
+    //
+    // resolve_intended_member_type had no caller when 4A-1 registered it, and was registered anyway
+    // so an unapplied 099 would be visible BEFORE a provisioner shipped. 4A-2 supplies that caller —
+    // migration 100's binding trigger — and adds may_provision_profile beside it, because the two
+    // answer different questions and an unapplied 100 is the more dangerous of the two gaps: with
+    // 100 missing, NOTHING authorizes first-profile creation at all (initialize is unreachable from
+    // the app, and completeOnboarding carries no invitation check), and member_type still falls back
+    // to the column default.
     expect(fns.map((e) => e.fn).sort()).toEqual([
       'create_admin_intro_pair', 'create_gated_match', 'create_support_match',
-      'resolve_intended_member_type',
+      'may_provision_profile', 'resolve_intended_member_type',
     ])
   })
 
@@ -293,6 +298,8 @@ describe('the Phase 3 Stage 1 function prerequisites are registered', () => {
     expect(byFn.get('create_admin_intro_pair')!.migration).toBe('098_admin_intro_pair_writer.sql')
     expect(byFn.get('resolve_intended_member_type')!.migration)
       .toBe('099_next_community_designation_foundation.sql')
+    expect(byFn.get('may_provision_profile')!.migration)
+      .toBe('100_provisioning_authorization_and_community_binding.sql')
   })
 
   it('probe args are the approved all-NULL sets, with every no-default argument named', () => {
@@ -305,6 +312,10 @@ describe('the Phase 3 Stage 1 function prerequisites are registered', () => {
     // Read-only and STABLE, but the all-NULL rule applies to every registered function without
     // exception — READ_ONLY_PROBE_FUNCTIONS stays empty precisely so no case argues its way out.
     expect(byFn.get('resolve_intended_member_type')!.probeArgs).toEqual({ p_email: null })
+    // Both arguments named: may_provision_profile(text, uuid) has no SQL defaults, so omitting
+    // either would fail overload resolution and read as "function not found".
+    expect(byFn.get('may_provision_profile')!.probeArgs)
+      .toEqual({ p_email: null, p_auth_user_id: null })
   })
 })
 
