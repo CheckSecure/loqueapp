@@ -130,9 +130,14 @@ export async function updateProfile(formData: FormData) {
   // omit company_id entirely; never blocks onboarding. Never touches `company`.
   const companyLink = await resolveCanonicalCompanyLink(adminClient, (formData.get('company') as string) || null)
 
+  // Canonical identity form. See completeOnboarding for why this is normalised and why the key is
+  // omitted rather than written as '' when absent. This upsert already conflicts on the PRIMARY KEY
+  // (no onConflict option ⇒ PostgREST targets id), so only the value written changes here.
+  const normalizedEmail = normalizeEmail(user.email)
+
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
-    email: user.email,
+    ...(normalizedEmail ? { email: normalizedEmail } : {}),
     email_verified: true,  // User received invite via email, so email is verified
     email_verified_at: new Date().toISOString(),
     full_name: nameCheck.value,
@@ -351,9 +356,51 @@ export async function completeOnboarding(formData: FormData) {
   // only). `preserve` (lookup failed) → omit company_id; never blocks onboarding.
   const companyLink = await resolveCanonicalCompanyLink(adminClient, company)
 
+  // ─── IDENTITY: normalised, and the conflict target is the PRIMARY KEY ────────────────────────
+  //
+  // WHY NORMALISED. profiles_email_key is a plain `UNIQUE (email)` btree — verified against the
+  // production catalog, and CASE-SENSITIVE, unlike waitlist_email_lower_uniq which is
+  // `UNIQUE (lower(email))` (migration 009). Writing user.email raw made one person two rows to that
+  // index and one row to every resolver, since migration 078's resolvers and lib/auth/normalizeEmail
+  // both key on lower(btrim(...)). normalizeEmail is that single canonical helper, re-exported
+  // through lib/invitations and already imported above — there is deliberately no second
+  // implementation of this rule anywhere.
+  //
+  // The key is OMITTED, never written as '', when the address is absent. supabase-js drops undefined
+  // values, so `email: user.email` already left the column untouched on update and defaulted on
+  // insert; the conditional spread preserves that exactly. '' is a real value to a UNIQUE index, so
+  // a second such row would collide.
+  //
+  // WHY THE PRIMARY KEY. This upsert previously carried `{ onConflict: 'email' }`, which was wrong in
+  // both directions:
+  //
+  //   * SAME PERSON, DIFFERENT CASE — /api/profile/initialize stores lower(trim(email)) while this
+  //     path sent user.email raw. A case-sensitive email target then MISSED, PostgreSQL fell through
+  //     to a plain INSERT, and that INSERT hit profiles_pkey (the id already exists). Onboarding
+  //     failed for the member with a 23505 they could do nothing about. Latent rather than live —
+  //     production currently holds 0 non-normalised addresses in profiles or auth.users — but latent
+  //     because GoTrue happens to lowercase, not because anything here enforced it.
+  //
+  //   * DIFFERENT PERSON, SAME ADDRESS — an email target resolves the conflict onto THAT row and
+  //     writes id = EXCLUDED.id, rewriting a live primary key and orphaning every FK pointing at the
+  //     old one. Silent, and unrecoverable. Keyed on id the same situation raises 23505 on
+  //     profiles_email_key instead: refused, visible, nothing mutated.
+  //
+  // The id is taken from the verified session, never from input, so it is the only field here that
+  // is authoritative about WHO is being written. Conflicting on it means this action can only ever
+  // update the caller's own row — it can no longer adopt somebody else's by address.
+  //
+  // Verified against production before the change: 0 duplicate emails (exact or normalised) and 0
+  // cases of an address held by a profile whose id is a different auth user. So for all 139 existing
+  // profiles both targets resolve to the same row and this is observationally identical.
+  //
+  // member_type is NOT written here and must not be: it is absent from this payload, the column
+  // keeps its DEFAULT, and migration 099's BEFORE UPDATE trigger forbids changing it.
+  const normalizedEmail = normalizeEmail(user.email)
+
   const { error } = await adminClient.from('profiles').upsert({
     id: user.id,
-    email: user.email,
+    ...(normalizedEmail ? { email: normalizedEmail } : {}),
     email_verified: true,  // User received invite via email, so email is verified
     email_verified_at: new Date().toISOString(),
     full_name: nameCheck.value,
@@ -398,7 +445,7 @@ export async function completeOnboarding(formData: FormData) {
     password_reset_required: false,
     updated_at: new Date().toISOString(),
     ...foundingFields,
-  }, { onConflict: 'email' })
+  }, { onConflict: 'id' })
 
   if (error) {
     console.error('[completeOnboarding] error:', error.message)
