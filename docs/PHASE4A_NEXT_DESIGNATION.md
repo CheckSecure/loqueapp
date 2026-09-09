@@ -76,6 +76,61 @@ Identity is `lower(btrim(...))` — byte-identical to 078's resolvers and to
   function. A legitimate future correction will be a separately designed administrative operation —
   deliberately absent here, because a correction mechanism that exists is one that can be called.
 
+### The `tg_*` functions carry `service_role` EXECUTE in production, and that is inert
+
+Production shows `service_role` with `EXECUTE` on **both** trigger functions, while migration 099
+contains only one explicit `GRANT`, to `resolve_intended_member_type`. Both facts are true, and the
+reconciliation is recorded here because it will recur on every future migration.
+
+**Why.** Supabase runs `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO
+anon, authenticated, service_role`, so every function created in `public` is born holding `EXECUTE`
+for all three roles. Migration 099 revokes explicitly from `PUBLIC`, `anon` and `authenticated` —
+and never mentions `service_role` — so that role keeps what it was created with. The single `GRANT`
+in the file gives the *resolver* its privilege deliberately; the trigger functions simply kept
+theirs.
+
+**Why it is safe — tested, not asserted.** Two independent reasons:
+
+1. **The grant is unreachable.** PostgreSQL refuses direct invocation of any function returning
+   `trigger` *before* it consults the ACL:
+   `SELECT public.tg_...()` → `ERROR: trigger functions can only be called as triggers`, likewise
+   for `PERFORM` inside a `DO` block and for a cast. There is no call path, so `EXECUTE` confers no
+   capability.
+2. **Enforcement does not depend on it.** Trigger firing does not consult the calling role's
+   `EXECUTE` privilege on the trigger function. Measured both ways on a disposable cluster:
+   `service_role` WITH `EXECUTE` → `ERROR: immutable`; with `EXECUTE` revoked → `ERROR: immutable`.
+   Identical. Revoking it would change nothing about the guarantee.
+
+The privilege that *would* matter — `anon` / `authenticated` — is explicitly revoked and verified
+`false` in production.
+
+**No correction is required.** Revoking `service_role` from the two trigger functions would be
+cosmetic, and it is not worth a migration against a verified production database.
+
+### Harness limitation: a locally measured ACL is a FLOOR, not the production state
+
+The disposable PostgreSQL harness (`supabase/tests/phase3/`) is a **bare** cluster. It does not
+reproduce Supabase's `ALTER DEFAULT PRIVILEGES`, so a function created there starts with no grants
+while the same function in production starts with three. Reproduced side by side:
+
+```
+bare cluster (harness)        f1  anon=false  auth=false  service=false
++ ALTER DEFAULT PRIVILEGES    f2  anon=false  auth=false  service=true
+```
+
+Same migration text, different result — and production is the second row.
+
+**So a local ACL measurement proves only what a migration explicitly REVOKES.** It cannot prove the
+absence of a privilege the migration never mentions. That is precisely how the earlier Phase 4A-1
+report came to say "only the resolver is granted to `service_role`": accurate about the migration
+text and about the harness, wrong as a claim about production. Where a privilege matters, assert it
+in the migration's own postapply block — which runs against the real database — rather than
+inferring it from a harness run.
+
+Same class of gap as the Stage 1a harness originally omitting migration 067's
+`REVOKE ... FROM PUBLIC, anon, authenticated`: a harness that is not wrong, but is not complete, and
+whose incompleteness is silent.
+
 ## Invitation replay and supersession
 
 `token identity ≠ community identity`. Resume tokens (078) and their supersession (094) govern *how

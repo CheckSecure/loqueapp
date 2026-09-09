@@ -33,3 +33,28 @@ anchored on the first mention silently produced `create_reciprocal_suggestion`'s
 `place_batch_rows`. `extract.py` therefore also asserts per-function must-contain / must-not-contain
 identity markers, and `roundtrip.py` asserts that a no-guard reconstruction of each function is
 byte-identical to its source before any guard is spliced in.
+
+## Known limitation: this harness does not model Supabase's default privileges
+
+The cluster these commands build is a **bare** PostgreSQL. Supabase production runs
+`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, authenticated,
+service_role`, so a function created there is born holding `EXECUTE` for all three roles. Here it is
+born holding none.
+
+```
+bare cluster (this harness)   f1  anon=false  auth=false  service=false
++ ALTER DEFAULT PRIVILEGES    f2  anon=false  auth=false  service=true
+```
+
+**Consequence: an ACL measured here is a FLOOR, not the production state.** It proves what a
+migration explicitly `REVOKE`s. It cannot prove the absence of a privilege the migration never
+mentions — that privilege may be present in production and absent here.
+
+Migration 099's two trigger functions are the worked example: `service_role EXECUTE` reads `false`
+here and `true` in production, because 099 revokes `PUBLIC`/`anon`/`authenticated` and says nothing
+about `service_role`. Harmless in that case — a trigger function cannot be invoked directly, and
+trigger firing does not consult the caller's `EXECUTE` privilege. See
+`docs/PHASE4A_NEXT_DESIGNATION.md`.
+
+Where a privilege matters, assert it in the migration's own postapply block, which runs against the
+real database, rather than inferring it from a run here.
