@@ -305,6 +305,23 @@ export const SCHEMA_EXPECTATIONS: SchemaExpectation[] = [
     impact: 'REQUIRED before deploying the Phase 3 Stage 1b support flows. lib/onboarding/welcomeFromAdmin.ts and /api/admin/issues/[id]/reply create the platform-account conversation through this RPC. Until applied, the onboarding welcome message is never sent (welcome_sent_at is deliberately left unset, so it retries rather than skipping the member permanently) and an admin reply to an issue report returns 500 with no conversation opened.',
   },
   {
+    migration: '099_next_community_designation_foundation.sql',
+    kind: 'column',
+    table: 'waitlist',
+    column: 'intended_member_type',
+    feature: 'Andrel Next designation foundation (intended community + member_type immutability)',
+    impact: 'REQUIRED BEFORE Phase 4A-2 deploys the first provisioner able to create a Next member. Until applied there is no server-controlled place to record which community an invitation is FOR, and profiles.member_type is still mutable by any service-role UPDATE. Nothing degrades while it is unapplied — no production code reads this column or writes member_type — so an unapplied 099 blocks 4A-2 rather than breaking anything today.',
+  },
+  {
+    migration: '099_next_community_designation_foundation.sql',
+    kind: 'function',
+    table: 'waitlist',
+    fn: 'resolve_intended_member_type',
+    probeArgs: { p_email: null },
+    feature: 'Provisioning-time community resolver (resolved / ambiguous / not_found)',
+    impact: 'REQUIRED BEFORE Phase 4A-2. It is the ONLY sanctioned way a provisioner may learn which community to create a profile in, and it refuses rather than guesses when a live intent is missing or ambiguous. Until applied, a Next provisioner would have no fail-closed answer and would fall back to the profiles.member_type column default — silently creating a Professional profile for a student, which is the exact failure Phase 4A exists to prevent. READ-ONLY: the function is STABLE and this probe passes p_email NULL, which returns not_found without touching a row.',
+  },
+  {
     migration: '098_admin_intro_pair_writer.sql',
     kind: 'function',
     table: 'intro_requests',
