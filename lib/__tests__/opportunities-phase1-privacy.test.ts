@@ -96,8 +96,15 @@ vi.mock('@/lib/referrals/exclusions', () => ({ getReferralExclusionsForUser: asy
 import { selectCandidates } from '@/lib/opportunities/matching'
 
 /** A candidate that clears the hiring threshold of 40 comfortably. */
+/** The creator these tests deliver on behalf of. Professional, matching the fixtures below. */
+const PROFESSIONAL_CREATOR = { member_type: 'professional' }
+
 const strongCandidate = (id: string) => ({
   id,
+  // Phase 3 Stage 2A: candidates now carry a community, and selectCandidates drops any that does
+  // not share the creator's. These fixtures are Professional, like the creator below, so every
+  // assertion in this file continues to test exactly what it tested before.
+  member_type: 'professional',
   seniority: 'Senior',
   role_type: 'In-house Counsel',
   expertise: '{Privacy,"Data Protection",Regulatory}',
@@ -139,7 +146,7 @@ describe('Opportunities reach beyond the creator’s matched network — this is
     cfg.pool = [strongCandidate('stranger')]
     cfg.activeMatches = []           // no relationship whatsoever with the creator
 
-    const res = await selectCandidates(opportunity, 'Creator Co')
+    const res = await selectCandidates(opportunity, 'Creator Co', PROFESSIONAL_CREATOR)
     expect(res.delivered.map((d) => d.userId)).toContain('stranger')
   })
 
@@ -147,7 +154,7 @@ describe('Opportunities reach beyond the creator’s matched network — this is
     cfg.pool = [strongCandidate('already-connected')]
     cfg.activeMatches = [{ user_a_id: 'creator', user_b_id: 'already-connected', status: 'active', removed_at: null }]
 
-    const res = await selectCandidates(opportunity, 'Creator Co')
+    const res = await selectCandidates(opportunity, 'Creator Co', PROFESSIONAL_CREATOR)
     expect(res.delivered.map((d) => d.userId)).not.toContain('already-connected')
   })
 
@@ -157,7 +164,7 @@ describe('Opportunities reach beyond the creator’s matched network — this is
     cfg.pool = [strongCandidate('stranger-a'), strongCandidate('stranger-b')]
     cfg.activeMatches = []
 
-    const res = await selectCandidates(opportunity, 'Creator Co')
+    const res = await selectCandidates(opportunity, 'Creator Co', PROFESSIONAL_CREATOR)
     expect(res.delivered.length).toBeGreaterThan(0)
     expect(res.mode).not.toBe('no_qualified_pool')
   })
@@ -166,14 +173,14 @@ describe('Opportunities reach beyond the creator’s matched network — this is
     cfg.pool = [strongCandidate('blocked-person')]
     cfg.blocks = [{ user_id: 'creator', blocked_user_id: 'blocked-person' }]
 
-    const res = await selectCandidates(opportunity, 'Creator Co')
+    const res = await selectCandidates(opportunity, 'Creator Co', PROFESSIONAL_CREATOR)
     expect(res.delivered.map((d) => d.userId)).not.toContain('blocked-person')
   })
 
   it('a same-company member is still excluded (existing protection intact)', async () => {
     cfg.pool = [{ ...strongCandidate('colleague'), company: 'Creator Co' }]
 
-    const res = await selectCandidates(opportunity, 'Creator Co')
+    const res = await selectCandidates(opportunity, 'Creator Co', PROFESSIONAL_CREATOR)
     expect(res.delivered.map((d) => d.userId)).not.toContain('colleague')
   })
 })

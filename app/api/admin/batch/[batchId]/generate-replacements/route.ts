@@ -6,6 +6,7 @@ import { isSameCompany } from '@/lib/matching/same-company'
 import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 import { applyMemberEligibility, filterEligible, assertAllEligible } from '@/lib/matching/eligibility'
+import { filterSameCommunity } from '@/lib/community/memberType'
 import { enforceRecipientLimits, perRecipientIntroLimit, suggestionCountsTowardLimit } from '@/lib/matching/batch-limits'
 
 export const dynamic = 'force-dynamic'
@@ -266,6 +267,21 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
       const recipient = recipientProfileMap.get(r.recipientId)
       if (!recipient) continue
 
+      // ── COMMUNITY SCOPING (Phase 3 Stage 2A) ───────────────────────────────────────────────
+      // Scoped PER RECIPIENT, not on candidatePool above, because that pool is shared across
+      // every recipient in this run and each one's community decides who is eligible for them.
+      // This is the recipient's candidate universe: the scoring loop, the score sort, the
+      // MIN_RELEVANCE_SCORE cut, the reciprocity/degree gates and the capacity fill below all
+      // read only from here, so no later stage — including an exhausted pool that fills fewer
+      // slots than requested — can reintroduce a cross-community candidate.
+      //
+      // Both profile reads use select('*'), so member_type is already present; no query changed.
+      // Fails closed: an unreadable member_type on the recipient yields an empty pool for that
+      // recipient (they simply receive no replacements), and an unreadable one on a candidate
+      // drops that candidate. Order is preserved, so on an all-Professional batch this removes
+      // nothing and the scored array is identical.
+      const recipientPool = filterSameCommunity(recipient, candidatePool)
+
       const recentDropped = await admin
         .from('batch_suggestions')
         .select('suggested_id')
@@ -301,7 +317,7 @@ export async function POST(req: NextRequest, { params }: { params: { batchId: st
       const referralExclude = await getReferralExclusionsForUser(r.recipientId)
 
       const scored: { candidate: any; score: number }[] = []
-      for (const candidate of candidatePool) {
+      for (const candidate of recipientPool) {
         if (candidate.id === r.recipientId) continue
         if (r.existingSuggestedIds.has(candidate.id)) continue
         if (droppedExclude.has(candidate.id)) continue

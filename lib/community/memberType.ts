@@ -95,3 +95,54 @@ export function sameCommunity(
  * silently produce rows for which `communityOf` returns null.
  */
 export const MEMBER_TYPE_COLUMNS = 'member_type'
+
+/**
+ * ─── CANDIDATE-POOL SCOPING (Phase 3 Stage 2A) ────────────────────────────────────────────────
+ *
+ * Keep every candidate in `candidates` that shares `viewer`'s community, in the SAME ORDER.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM THE STAGE 1 GATES. Stage 1 made the database refuse to WRITE a
+ * cross-community relationship, and that remains the authority. It does not stop a cross-community
+ * profile from entering a candidate pool first, and entering is not harmless:
+ *
+ *   • it consumes a top-N slot that an eligible same-community member should have had;
+ *   • it consumes one of the reciprocal walker's 8 RPC calls, only to come back 'ineligible';
+ *   • it can be the single candidate an opportunity's near-threshold fallback delivers;
+ *   • on the Concierge surface its NAME and COMPANY are shown to an admin before any write is
+ *     attempted at all.
+ *
+ * So this runs at pool construction, above ranking, truncation and every fallback — not as a
+ * second opinion about what the database will accept.
+ *
+ * ORDER IS PRESERVED EXACTLY. Callers rank, truncate and tie-break on the array that comes back,
+ * so a filter that reordered would change Professional↔Professional results even when it removed
+ * nothing. `Array.prototype.filter` is stable by definition; the tests pin it anyway.
+ *
+ * FAIL CLOSED, ON BOTH SIDES. An unknown, absent or misspelled member_type — on the viewer OR a
+ * candidate — excludes. A viewer whose own community cannot be determined gets an EMPTY pool
+ * rather than an unscoped one: no introductions is a visible, recoverable outcome; introductions
+ * drawn from the wrong community is not.
+ *
+ * NOT THE SECURITY AUTHORITY. See the module header. It delegates to sameCommunity() so there is
+ * exactly one definition of the rule in TypeScript, and it has no mentorship exception for the
+ * same reason the SQL predicate has none: the Andrel Next bridge will be its own explicit
+ * candidate source, unioned in ABOVE this filter, never a loosening of it.
+ */
+export function filterSameCommunity<T>(
+  viewer: HasMemberType | null | undefined,
+  candidates: readonly T[] | null | undefined,
+): T[] {
+  // T IS UNCONSTRAINED ON PURPOSE, and this is the same compromise applyMemberEligibility already
+  // makes ("the internal `any` avoids Supabase's deep-generic instantiation blowups"). Constraining
+  // it to HasMemberType collapses a PostgREST row type — which the generated types model as
+  // GenericStringError until it is cast — down to HasMemberType, and every downstream `.id` /
+  // `.expertise` access in the caller then fails to compile. The row shape is preserved instead, so
+  // callers keep the exact typing they had before this filter existed.
+  //
+  // What guarantees member_type is actually THERE is not this signature: it is the select list, and
+  // a structural test asserts every scoped pool names the column. If a caller ever forgets it,
+  // communityOf returns null for every row and the pool comes back EMPTY — visibly broken, which is
+  // the correct direction to fail.
+  if (communityOf(viewer) === null) return []
+  return (candidates ?? []).filter((c) => sameCommunity(viewer, c as HasMemberType))
+}
