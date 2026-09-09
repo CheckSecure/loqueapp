@@ -33,16 +33,22 @@ import { assertSameOrigin } from '@/lib/http/sameOrigin'
  * address.
  *
  * ─── WHY AN INCOMPLETE PROFILE ROW IS SAFE ────────────────────────────────────────────────────
- * It is the established pattern — lib/provisioning.ts already inserts profiles with
- * profile_complete:false. Migration 061's CHECK is `profile_complete IS NOT TRUE OR (location ...)`,
- * so a NULL location is permitted; matching filters `.eq('profile_complete', true)`; and migration
- * 079 makes completeness a DIRECT predicate in can_discover_profile(), so an incomplete profile is
- * undiscoverable even where historical match/intro rows already exist.
+ * The database, not this route, is what makes it safe. Migration 061's CHECK is
+ * `profile_complete IS NOT TRUE OR (location ...)`, so a NULL location is permitted; matching
+ * filters `.eq('profile_complete', true)`; and migration 079 makes completeness a DIRECT predicate
+ * in can_discover_profile(), so an incomplete profile is undiscoverable even where historical
+ * match/intro rows already exist.
  *
- * ─── WHY NOT provisionMemberRecords() ─────────────────────────────────────────────────────────
- * It also sets password_reset_required:true, which the dashboard gate reads as "must set a
- * password" and would bounce a member who already set one straight to the reset screen; and it
- * grants credits, a membership-level side effect that should not follow from opening a form.
+ * ─── WHAT THIS ROUTE DELIBERATELY DOES NOT DO, AND MUST NOT LATER ─────────────────────────────
+ * It does not set password_reset_required — the dashboard gate reads that as "must set a password"
+ * and would bounce a member who already set one straight to the reset screen. It does not grant
+ * credits: a membership-level side effect must not follow from opening a form. Credits are granted
+ * at /api/profile/complete, on completion.
+ *
+ * The retired invite-time provisioner (lib/provisioning.ts, removed with its admin reconciler) did
+ * both of those, which is why this route was written as a separate minimal insert rather than a
+ * call into it. That reasoning is recorded here because it still binds any future writer, not
+ * because the alternative still exists.
  */
 export async function POST(req: Request) {
   const crossOrigin = assertSameOrigin(req as any)
