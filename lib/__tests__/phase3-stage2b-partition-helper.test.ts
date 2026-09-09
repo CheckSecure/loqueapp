@@ -135,3 +135,34 @@ describe('partitionByCommunity — shape and exceptions', () => {
     expect(partitionByCommunity([flagged]).get('professional')!.map((r: any) => r.id)).toEqual(['p'])
   })
 })
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe('COMMIT 2 — Pool 3 loads member_type, and only internally', () => {
+  const ROUTE = readFileSync('app/api/admin/generate-batch/route.ts', 'utf8')
+
+  it('the batch profile select names the shared column constant', () => {
+    const sel = ROUTE.slice(ROUTE.indexOf("from('profiles')"), ROUTE.indexOf('const profiles ='))
+    expect(sel).toContain('${MEMBER_TYPE_COLUMNS}')
+    expect(ROUTE).toMatch(/import \{ MEMBER_TYPE_COLUMNS \} from '@\/lib\/community\/memberType'/)
+  })
+
+  it('it still selects an explicit column list, not select(*)', () => {
+    // A widened select would pull columns this route has no business reading.
+    const sel = ROUTE.slice(ROUTE.indexOf("from('profiles')"), ROUTE.indexOf('const profiles ='))
+    expect(sel).not.toMatch(/\.select\('\*'\)/)
+    expect(sel).toContain('${ELIGIBILITY_COLUMNS}')
+  })
+
+  it('member_type is never written to batch_suggestions', () => {
+    const rows = ROUTE.slice(ROUTE.indexOf('allSuggestions.push({'), ROUTE.indexOf('const invariants'))
+    expect(rows).not.toContain('member_type')
+    for (const col of ['batch_id', 'recipient_id', 'suggested_id', 'reason', 'match_score',
+                       'score_bucket', 'position', 'status']) {
+      expect(rows, col).toContain(col)
+    }
+  })
+
+  it('the public profile surface is untouched', () => {
+    expect(readFileSync('lib/profiles/publicProfile.ts', 'utf8')).not.toContain('member_type')
+  })
+})

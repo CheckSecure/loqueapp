@@ -8,6 +8,7 @@ import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
 import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
+import { MEMBER_TYPE_COLUMNS } from '@/lib/community/memberType'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
 import { MAX_VISIBLE_INTRO_CARDS } from '@/lib/introductions/capacity'
 import { validateGeneration, visibleDeficit } from '@/lib/matching/generationInvariants'
@@ -118,10 +119,16 @@ export async function POST(req: NextRequest) {
     // Canonical eligibility at the source (test/admin/suspended/incomplete never
     // fetched). ELIGIBILITY_COLUMNS are selected so the in-memory re-check below
     // can enforce the same rule as defense-in-depth.
+    //
+    // MEMBER_TYPE_COLUMNS is loaded for cohort partitioning (Phase 3 Stage 2B). It is a
+    // service-role read used only to split the cohort before scoring: it is never written to
+    // batch_suggestions, never returned to a client, and PUBLIC_PROFILE_SELECT is untouched.
+    // Selecting it changes no runtime behaviour on its own — nothing reads it until the partition
+    // lands.
     const { data: rawProfiles, error: profilesError } = await applyMemberEligibility(
       adminClient
         .from('profiles')
-        .select(`id, full_name, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score, current_status, purposes, city, state, geographic_scope, meeting_format_preference, open_to_business_solutions, company, boost_score, is_priority, ${ELIGIBILITY_COLUMNS}`)
+        .select(`id, full_name, role_type, seniority, mentorship_role, interests, intro_preferences, subscription_tier, looking_for, expertise, networkValueScore, responsivenessScore, verification_status, trust_score, current_status, purposes, city, state, geographic_scope, meeting_format_preference, open_to_business_solutions, company, boost_score, is_priority, ${ELIGIBILITY_COLUMNS}, ${MEMBER_TYPE_COLUMNS}`)
     )
 
     // Defense-in-depth: an excluded account can never reach scoring, rarity/IDF,
