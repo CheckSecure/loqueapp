@@ -167,10 +167,15 @@ describe('filterSameCommunity — the one rule, and it fails closed', () => {
                                [NEXT('a', { seeking_next_mentorship: true })])).toEqual([])
   })
 
-  it('partitionByCommunity is NOT added — it has no Stage 2A caller', async () => {
-    // Stage 2B (Pool 3) is what needs it. Shipping unused production code now would be a promise
-    // this task did not make, and an unused export is where drift starts.
-    expect(Object.keys(await load())).not.toContain('partitionByCommunity')
+  it('partitionByCommunity now exists AND has a caller — it did not ship unused', async () => {
+    // UPDATED IN STAGE 2B. This assertion originally required partitionByCommunity to be ABSENT,
+    // because Stage 2A had no caller for it and an unused export is where drift starts. Stage 2B is
+    // the approved caller, so the protection is inverted rather than deleted: the export must now
+    // exist, and it must be USED by the admin batch generator. Simply removing the check would drop
+    // the guarantee it encoded — that partition logic never sits in the tree without a consumer.
+    // The "has a caller" half of this guarantee is asserted in
+    // lib/__tests__/phase3-stage2b-batch-partition.test.ts, which is where the caller lands.
+    expect(Object.keys(await load())).toContain('partitionByCommunity')
   })
 })
 

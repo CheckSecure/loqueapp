@@ -146,3 +146,65 @@ export function filterSameCommunity<T>(
   if (communityOf(viewer) === null) return []
   return (candidates ?? []).filter((c) => sameCommunity(viewer, c as HasMemberType))
 }
+
+/**
+ * ─── COHORT PARTITIONING (Phase 3 Stage 2B) ───────────────────────────────────────────────────
+ *
+ * Split a cohort into one array per community, preserving input order exactly within each.
+ *
+ * WHY THIS IS NOT filterSameCommunity. The six Stage 2A pools are viewer-relative: one requester,
+ * many candidates, so scoping is a filter. The Admin/Thursday batch has NO viewer — it builds one
+ * cohort of every eligible member and runs a global b-matching over all pairs. There is nobody to
+ * filter "against".
+ *
+ * WHY IT MUST HAPPEN BEFORE SCORING, NOT AFTER. Removing cross-community EDGES after scoring is
+ * not sufficient, and the reason is arithmetic rather than stylistic. Two separate channels let one
+ * community change the other's results even when no cross-community pair survives:
+ *
+ *   1. buildScoringContext derives memberCount from the cohort, and idfWeight is
+ *      log((N+1)/(df+1)) / log(N+1). N is the cohort size, so every Professional↔Professional
+ *      score depends on how many Next members happen to exist.
+ *   2. solveGlobalBMatching's reduceComponent keeps each member's top-k edges and HALVES k until
+ *      the component fits MAX_COMPONENT_EDGES. A mixed cohort forms one larger connected component,
+ *      so Professionals would get a more aggressive edge reduction than they do today — degraded
+ *      match quality with no cross-community pair anywhere in the output.
+ *
+ * Partitioning first removes both channels at once: each community builds its own context and
+ * solves its own graph, and there is no variable in scope holding the combined cohort.
+ *
+ * ORDER IS PRESERVED EXACTLY, and this is load-bearing rather than tidy. The batch generator builds
+ * pairs with a nested `for i < j` loop over the cohort array and then sorts with a comparator that
+ * returns 0 for pairs within a ±10 relevance band and equal mutual score. Ties therefore fall
+ * through to Array.prototype.sort's stability — that is, to this array's order. A partition that
+ * reordered would change which Professional pairs win ties, on a database with no Next members at
+ * all. With one community present the Professional partition is the input array element for
+ * element, so every downstream stage sees exactly what it sees today.
+ *
+ * FAILS CLOSED. A row whose member_type is absent, null or unrecognised enters NEITHER partition.
+ * It contributes to no scoring context, no memberCount, no capacity and no suggestion. Callers
+ * report the count of such rows as an aggregate diagnostic; they never default it to professional.
+ *
+ * NO EXCEPTIONS LIVE HERE. Not mentorship, not recruiting/hiring. Those bridges will be explicit
+ * cross-community candidate SOURCES layered above the ordinary rule, never a loosening of it — the
+ * ordinary Thursday batch stays same-community permanently.
+ */
+export function partitionByCommunity<T>(
+  rows: readonly T[] | null | undefined,
+): Map<MemberType, T[]> {
+  // Every community is present as a key, even when empty, so a caller can iterate MEMBER_TYPES
+  // without branching on absence — and so a community with too few members is a natural no-op
+  // rather than a missing entry someone has to remember to handle.
+  const out = new Map<MemberType, T[]>(MEMBER_TYPES.map((t) => [t, [] as T[]]))
+  for (const row of rows ?? []) {
+    // communityOf returns null rather than guessing, so unknown/malformed simply matches no bucket.
+    const community = communityOf(row as HasMemberType)
+    if (community === null) continue
+    out.get(community)!.push(row)
+  }
+  return out
+}
+
+/** Rows that entered NO partition: absent, null or unrecognised member_type. Never defaulted. */
+export function countUnknownCommunity(rows: readonly unknown[] | null | undefined): number {
+  return (rows ?? []).filter((r) => communityOf(r as HasMemberType) === null).length
+}
