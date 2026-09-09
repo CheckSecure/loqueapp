@@ -30,7 +30,6 @@ import { validateSelection, validateSelectionWithCaps } from '@/lib/role-taxonom
 import { companySlug, isLinkableCompany } from '@/lib/company/slug'
 import { resolveCanonicalCompanyLink } from '@/lib/company/canonicalLink'
 import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
-import { provisionMemberRecords } from '@/lib/provisioning'
 import { validateFullName } from '@/lib/validation/fullName'
 import { validateLocation, resolveLocationUpdate } from '@/lib/validation/location'
 import { persistFocusAreas } from '@/lib/profile/focusAreas'

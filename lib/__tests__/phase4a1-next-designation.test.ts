@@ -139,10 +139,26 @@ describe('4A-1 ships NO production writer — the central claim of this stage', 
     expect(hits).toEqual([])
   })
 
-  it('the three live creation paths were not modified by 4A-1', () => {
-    const changed = execSync('git diff --name-only origin/main || true', { encoding: 'utf8' }).split('\n')
-    for (const f of ['app/api/profile/initialize/route.ts', 'app/actions.ts', 'lib/provisioning.ts']) {
-      expect(changed, f).not.toContain(f)
+  // Replaces an earlier `git diff --name-only origin/main` guard. That form asserted the 4A-1 BRANCH
+  // did not touch three named files; once 4A-1 merged, `origin/main` became the branch itself, so the
+  // guard compared main to main and asserted nothing. It also named lib/provisioning.ts, which no
+  // longer exists — the invite-time provisioner and its admin reconciler were removed once
+  // generateLink({type:'invite'}) made invite-time profile creation impossible by design.
+  //
+  // This is the content assertion the diff guard was standing in for, and it is strictly stronger:
+  // it enumerates the creation paths from the source every run, so ADDING a new one fails here —
+  // which the diff form never detected.
+  it('the live profile-creation paths are exactly the two expected, and none writes member_type', () => {
+    const creators = execSync(
+      "grep -rlnE \"from\\('profiles'\\)\\s*\\.\\s*(insert|upsert)\\(\" --include='*.ts' --include='*.tsx' app lib components 2>/dev/null | grep -v __tests__ || true",
+      { encoding: 'utf8' },
+    ).split('\n').filter(Boolean).sort()
+
+    expect(creators).toEqual(['app/actions.ts', 'app/api/profile/initialize/route.ts'])
+
+    for (const f of creators) {
+      expect(readFileSync(f, 'utf8'), `${f} writes member_type`)
+        .not.toMatch(/\.(insert|update|upsert)\([\s\S]{0,20}\{[^}]*member_type/)
     }
   })
 

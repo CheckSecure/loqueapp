@@ -34,14 +34,23 @@ describe('059 — handle_new_user() is DROPPED (orphaned), never recreated or gr
     expect(M).toMatch(/on_auth_user_email_verified/)
     expect(M).toMatch(/NO trigger binding/i)
   })
-  it('no app/lib code or repo migration calls handle_new_user, and provisioning is the live signup path', () => {
+  it('no app/lib code or repo migration calls handle_new_user, and an app-controlled creation path exists', () => {
     const hits = execSync(
       "grep -rInE \"handle_new_user\" app lib components supabase 2>/dev/null | grep -v '__tests__' | grep -v '059_harden' || true",
       { encoding: 'utf8' },
     ).trim()
     expect(hits).toBe('') // zero references outside migration 059 itself
-    // the live server-controlled signup/provisioning path exists
-    expect(readFileSync('lib/provisioning.ts', 'utf8')).toMatch(/export async function provisionMemberRecords/)
+
+    // 059's safety argument is that profile creation is app-controlled, so dropping the DB trigger
+    // removed no capability. The path it originally named (lib/provisioning.ts, via the invite-time
+    // provisioner) was retired when password invites became generateLink({type:'invite'}) — the auth
+    // user is minted with NO profile and the member's own session creates it later. The argument is
+    // unchanged; the two surviving server-side writers are asserted directly rather than by name, so
+    // this test tracks the live paths instead of a single function that can be replaced again.
+    expect(readFileSync('app/api/profile/initialize/route.ts', 'utf8'))
+      .toMatch(/admin\.from\('profiles'\)\.insert\(/)
+    expect(readFileSync('app/actions.ts', 'utf8'))
+      .toMatch(/adminClient\.from\('profiles'\)\.upsert\(/)
   })
 })
 
