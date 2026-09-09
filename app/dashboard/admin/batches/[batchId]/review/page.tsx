@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { professionalIdentityLine } from '@/lib/professionalIdentity'
+import { communityOf, MEMBER_TYPE_COLUMNS, MEMBER_TYPES } from '@/lib/community/memberType'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
@@ -45,7 +46,7 @@ export default async function BatchReviewPage({ params }: { params: { batchId: s
 
   const profilesResult = await admin
     .from('profiles')
-    .select('id, full_name, email, title, company, role_type, subscription_tier')
+    .select(`id, full_name, email, title, company, role_type, subscription_tier, ${MEMBER_TYPE_COLUMNS}`)
     .in('id', Array.from(userIds))
 
   const profileMap = new Map<string, any>()
@@ -70,6 +71,29 @@ export default async function BatchReviewPage({ params }: { params: { batchId: s
   const totalGenerated = suggestions.filter((s: any) => s.status === 'generated').length
   const totalDropped = suggestions.filter((s: any) => s.status === 'dropped').length
 
+  // ── COMMUNITY VISIBILITY (Phase 3 Stage 2B) ─────────────────────────────────────────────────
+  // One batch deliberately holds the Professional and Next results, computed independently
+  // (app/api/admin/generate-batch). Approval is still ONE lifecycle over that one batch — nothing
+  // here splits it or changes what approval does. This only lets a reviewer see which community
+  // each recipient group belongs to.
+  //
+  // communityOf returns null rather than guessing, so a row with an unreadable member_type renders
+  // as "Unknown" and is counted separately. Labelling it Professional would be the one genuinely
+  // dangerous thing this page could do.
+  const COMMUNITY_LABEL: Record<string, string> = { professional: 'Professional', next: 'Next' }
+  const labelFor = (profile: any) => COMMUNITY_LABEL[communityOf(profile) ?? ''] ?? 'Unknown'
+  const recipientsByCommunity = new Map<string, number>()
+  for (const rid of Array.from(grouped.keys())) {
+    const label = labelFor(profileMap.get(rid))
+    recipientsByCommunity.set(label, (recipientsByCommunity.get(label) ?? 0) + 1)
+  }
+  // Stable order: the known communities first, then Unknown if any row needs it. A
+  // Professional-only batch therefore reads exactly as it does today, with one extra clause.
+  const communityBreakdown = [...MEMBER_TYPES.map((t) => COMMUNITY_LABEL[t]), 'Unknown']
+    .filter((label) => (recipientsByCommunity.get(label) ?? 0) > 0)
+    .map((label) => `${recipientsByCommunity.get(label)} ${label}`)
+    .join(', ')
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -88,6 +112,7 @@ export default async function BatchReviewPage({ params }: { params: { batchId: s
           <p className="text-sm text-slate-500 mt-2">
             {recipientIds.length} recipients, {totalGenerated} active suggestions
             {totalDropped > 0 ? `, ${totalDropped} dropped` : ''}.
+            {communityBreakdown ? ` (${communityBreakdown})` : ''}
           </p>
         </div>
 
@@ -114,7 +139,7 @@ export default async function BatchReviewPage({ params }: { params: { batchId: s
                           {recipient?.full_name || 'Unknown'}
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5 truncate">
-                          {professionalIdentityLine(recipient)}
+                          {labelFor(recipient)} · {professionalIdentityLine(recipient)}
                           {recipient?.subscription_tier ? ` · ${recipient.subscription_tier}` : ''}
                         </p>
                       </div>
