@@ -27,18 +27,62 @@ import { VISIBLE_STATUS, RESERVED_STATUS, NO_EXPOSURE, visibleSlotsFree, type Ca
 // migration backfill can rank a member's EXISTING suggested candidates by the same
 // dominant component the live model used, without invoking the random tier jitter.
 // This does not change live generation — rankCandidatesForUser is untouched.
+/**
+ * Does a member's intro_preference describe this candidate's role?
+ *
+ * ─── WHY THIS EXISTS AS A FUNCTION ────────────────────────────────────────────────────────────
+ * The comparison below used to be written out twice — once in calculateAlignmentScore (worth 30 of
+ * the 80-point alignment scale) and once in calculateFinalScore (worth 4 tierAdjustment) — and both
+ * copies carried the same defect, which is what two copies of a rule are for.
+ *
+ * ─── THE GUARD, AND WHY IT IS THE WHOLE POINT ─────────────────────────────────────────────────
+ * `'anything'.includes('')` is TRUE in JavaScript. Without the empty test below, a candidate with
+ * no role_type satisfied EVERY non-empty preference, and a role-less member became universally more
+ * attractive in every other member's ranking than their fit warranted. Not a missed match — the
+ * reverse.
+ *
+ * Latent rather than live when this was written: of 138 profile_complete Professionals in
+ * production, zero had a null or blank role_type, because completeOnboarding and updateProfile both
+ * require it. It becomes systematic once Andrel Next members exist, since a student has no
+ * Professional role_type by design.
+ *
+ * The guard is deliberately the same shape as preferenceMatchesRole in
+ * lib/matching/introPreferenceMatch.ts, which already answers `if (!p || !r) return false`. The two
+ * engines now agree on the empty case instead of disagreeing silently.
+ *
+ * ─── WHAT IS DELIBERATELY UNCHANGED ───────────────────────────────────────────────────────────
+ * The loose, symmetric substring semantics for REAL roles. 'Counsel' still matches 'General
+ * Counsel' in both directions, matching is still case-insensitive, and a genuine non-match still
+ * scores nothing. Only the empty case moves. Trimming means a whitespace-only role_type is treated
+ * as absent — which it already effectively was, since `'investor'.includes('   ')` is false.
+ *
+ * NOT the taxonomy-aware matcher. That is preferenceMatchesRole in
+ * lib/matching/introPreferenceMatch.ts, used by the batch scorer, which resolves a job title to its
+ * role CATEGORY before comparing. This is the older loose substring compare these two sites have
+ * always used, GUARDED — not replaced. Replacing it here would change live Professional matching,
+ * which this fix must not do.
+ *
+ * NAMED DELIBERATELY UNLIKE IT. An earlier draft called this preferenceMatchesRoleLoose, one word
+ * away from a function with different semantics — the kind of near-collision that gets the wrong one
+ * imported. The two names now share no prefix.
+ */
+export function looseRoleMatchesPreference(
+  pref: string | null | undefined,
+  roleType: string | null | undefined,
+): boolean {
+  const p = String(pref ?? '').trim().toLowerCase()
+  const r = String(roleType ?? '').trim().toLowerCase()
+  if (!p || !r) return false
+  return p.includes(r) || r.includes(p)
+}
+
 export function calculateAlignmentScore(userProfile: any, candidate: any): number {
   let alignmentScore = 0
   
   // Goal/preference overlap (30 points)
   const userPrefs: string[] = Array.isArray(userProfile.intro_preferences) ? userProfile.intro_preferences : []
-  const candidateRole: string = candidate.role_type || ''
-  
-  const roleMatch = userPrefs.some((pref: string) => {
-    const prefLower = pref.toLowerCase()
-    const roleLower = candidateRole.toLowerCase()
-    return prefLower.includes(roleLower) || roleLower.includes(prefLower)
-  })
+
+  const roleMatch = userPrefs.some((pref: string) => looseRoleMatchesPreference(pref, candidate.role_type))
   
   if (roleMatch) {
     alignmentScore += 30
@@ -536,12 +580,8 @@ function calculateFinalScore(userProfile: any, candidate: any, userTier: string 
   
   // 1. Check if candidate matches user's intro preferences
   const userPrefs: string[] = Array.isArray(userProfile.intro_preferences) ? userProfile.intro_preferences : []
-  const candidateRole = (candidate.role_type || '').toLowerCase()
-  
-  const matchesPreference = userPrefs.some((pref: string) => {
-    const prefLower = pref.toLowerCase()
-    return prefLower.includes(candidateRole) || candidateRole.includes(prefLower)
-  })
+
+  const matchesPreference = userPrefs.some((pref: string) => looseRoleMatchesPreference(pref, candidate.role_type))
   
   // 2. Preference-based boosting (overrides role type penalties)
   if (matchesPreference) {

@@ -9,6 +9,7 @@ import { sendAdminWelcome } from '@/lib/onboarding/welcomeFromAdmin'
 import { getEffectiveTier, getMonthlyCredits } from '@/lib/tier-override'
 import { logRecommendationEvent } from '@/lib/analytics/recommendationEvents'
 import { validateLocation } from '@/lib/validation/location'
+import { communityOf } from '@/lib/community/memberType'
 
 export async function POST(req: Request) {
   const crossOrigin = assertSameOrigin(req)
@@ -38,7 +39,12 @@ export async function POST(req: Request) {
   // A read failure must NOT be reported as a validation error, so it is surfaced separately.
   const { data: identity, error: identityError } = await createAdminClient()
     .from('profiles')
-    .select('title, company, location')
+    // member_type and role_type join the EXISTING read rather than getting one of their own. This
+    // row already exists at this point — OnboardingStep1 persisted title/company/location through
+    // /api/profile/update before this route is called — so member_type was bound by migration 100's
+    // tg_profiles_provision_bind() at INSERT and is immutable under migration 099. That makes this
+    // the authoritative community source, and it costs no extra query.
+    .select('title, company, location, member_type, role_type')
     .eq('id', user.id)
     .single()
 
@@ -64,6 +70,37 @@ export async function POST(req: Request) {
   const locationCheck = validateLocation(identity?.location)
   if (!locationCheck.ok) {
     return NextResponse.json({ error: locationCheck.error }, { status: 400 })
+  }
+
+  // ─── PROFESSIONAL IDENTITY COMPLETENESS ──────────────────────────────────────────────────────
+  //
+  // THE HOLE THIS CLOSES. This route is the second path that sets profile_complete = true, and it
+  // was the only writer that did so without verifying role_type: completeOnboarding requires it
+  // (app/actions.ts) and updateProfile's D2 gate requires it, but the legacy /dashboard/onboarding
+  // wizard finishes here, and OnboardingStep1 requires role_type CLIENT-SIDE ONLY. That is the same
+  // reason title, company and location are re-validated above against stored values — a client
+  // check is not a gate — and role_type was simply the one field left out of that set.
+  //
+  // A Professional reaching profile_complete without a role_type is not merely incomplete: they
+  // enter the candidate pool (applyMemberEligibility requires only profile_complete) and, before
+  // the fix in this same change, satisfied every other member's intro_preferences universally.
+  //
+  // COMMUNITY-AWARE, AND SERVER-AUTHORITATIVE. Andrel Next members have no Professional role_type
+  // by design — a law student is not a General Counsel — so requiring one of them would be an
+  // outage, not a safeguard. The community is read from the stored profile row above, through
+  // communityOf(), which returns null for anything it does not recognise. Nothing from the request
+  // body, URL, header or client state participates.
+  //
+  // ON THE UNKNOWN CASE. migration 095 makes member_type NOT NULL DEFAULT 'professional' with a
+  // CHECK, so a row that exists always carries a valid value; the only way to reach null here is a
+  // failed read, which the identityError branch above already answers with a 503. The `!== 'next'`
+  // form therefore fails closed to REQUIRING the role — the safe direction for a gate whose job is
+  // to refuse — without that ever costing a real student their completion.
+  if (communityOf(identity) !== 'next') {
+    const roleType = (identity?.role_type || '').trim()
+    if (roleType.length < 1) {
+      return NextResponse.json({ error: 'Professional role is required.' }, { status: 400 })
+    }
   }
 
   // service_role write, scoped to the caller's own row (browser UPDATE on profiles revoked, migration 055).

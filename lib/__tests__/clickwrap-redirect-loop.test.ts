@@ -134,9 +134,13 @@ describe('onboarding completion — the identity read must not be a browser-role
   const STEP2 = readFileSync('components/OnboardingStep2.tsx', 'utf8')
 
   it('reads title/company/location via service_role, not the revoked base-table path', () => {
-    const idx = COMPLETE_ROUTE.indexOf("select('title, company, location')")
+    // The select gained member_type and role_type when profile completion became community-aware;
+    // this guard is about WHICH CLIENT performs the read, and that is unchanged.
+    const idx = COMPLETE_ROUTE.indexOf("select('title, company, location, member_type, role_type')")
     expect(idx).toBeGreaterThan(-1)
-    const readBlock = COMPLETE_ROUTE.slice(Math.max(0, idx - 300), idx)
+    // Widened from 300: the select gained an explanatory comment when completion became
+    // community-aware, which pushed createAdminClient() further above it. Same claim, same block.
+    const readBlock = COMPLETE_ROUTE.slice(Math.max(0, idx - 900), idx)
     expect(readBlock).toContain('createAdminClient()')
     expect(readBlock).not.toMatch(/\bsupabase\s*\r?\n?\s*\.from\(['"]profiles['"]\)/)
   })

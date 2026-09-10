@@ -52,7 +52,24 @@ describe('completion contract — every required field is collectable', () => {
    * the onboarding UI a way to satisfy it, this test fails — which is the whole point: a required
    * field must never again be invisible to the member who has to provide it.
    */
-  const REQUIRED_AT_COMPLETION = ['title', 'company', 'location'] as const
+  // THE CLAIM INTENTIONALLY CHANGED: role_type joined the required set, for PROFESSIONALS ONLY.
+  //
+  // Why: /api/profile/complete is the second writer that sets profile_complete = true, and it was
+  // the only one that did so without verifying role_type — completeOnboarding and updateProfile's
+  // D2 gate both require it. The legacy wizard finishes here and requires role_type client-side
+  // only, which is not a gate, for exactly the reason title/company/location are re-validated
+  // server-side against stored values.
+  //
+  // Why it is community-aware: Andrel Next members have no Professional role_type by design, so
+  // requiring one of a law student would be an outage rather than a safeguard.
+  //
+  // THIS GUARD'S REAL INVARIANT IS UNCHANGED AND STILL ENFORCED: a field the route can reject on
+  // must be collectable by the member who has to provide it. role_type is collected on wizard step
+  // 1 (asserted below), so adding it does not recreate the invisible-requirement failure this test
+  // exists to prevent.
+  const REQUIRED_AT_COMPLETION = ['title', 'company', 'location', 'role_type'] as const
+  /** Read for BRANCHING, never rejected on. Kept explicit so the select/reject rule still bites. */
+  const READ_BUT_NOT_REQUIRED = ['member_type'] as const
 
   it('the completion route rejects on exactly the audited field set', () => {
     // Every 400 the route can return, by the stored field it guards.
@@ -60,15 +77,20 @@ describe('completion contract — every required field is collectable', () => {
       title: /title\.length < 2/.test(COMPLETE_ROUTE),
       company: /company\.length < 2/.test(COMPLETE_ROUTE),
       location: /validateLocation\(identity\?\.location\)/.test(COMPLETE_ROUTE),
+      role_type: /roleType\.length < 1/.test(COMPLETE_ROUTE),
     }
-    expect(guards).toEqual({ title: true, company: true, location: true })
+    expect(guards).toEqual({ title: true, company: true, location: true, role_type: true })
 
-    // The stored columns it reads == the fields it can reject on. A new column appearing in this
-    // select is the signal that a new requirement may have been added.
+    // ...and the role guard is Professional-only.
+    expect(COMPLETE_ROUTE).toMatch(/if \(communityOf\(identity\) !== 'next'\) \{/)
+
+    // The stored columns it reads == the fields it can reject on, PLUS the explicitly-declared
+    // branch-only reads. A new column appearing in this select and in neither list is still the
+    // signal that a new requirement may have been added invisibly.
     const selectMatch = COMPLETE_ROUTE.match(/select\('([^']*title[^']*)'\)/)
     expect(selectMatch).toBeTruthy()
     const selected = selectMatch![1].split(',').map(s => s.trim()).sort()
-    expect(selected).toEqual([...REQUIRED_AT_COMPLETION].sort())
+    expect(selected).toEqual([...REQUIRED_AT_COMPLETION, ...READ_BUT_NOT_REQUIRED].sort())
   })
 
   it('wizard step 1 collects or derives every required field', () => {
@@ -77,6 +99,11 @@ describe('completion contract — every required field is collectable', () => {
     expect(STEP1).toMatch(/name="company"/)
     // title is derived from the role-title selector and set explicitly before submit.
     expect(STEP1).toMatch(/formData\.set\('title'/)
+    // role_type comes from the same selector, is required before the step advances, and is set
+    // explicitly before submit — so the new completion requirement is satisfiable here. This is the
+    // assertion that makes adding role_type to REQUIRED_AT_COMPLETION safe rather than a trap.
+    expect(STEP1).toMatch(/formData\.set\('role_type', roleType\)/)
+    expect(STEP1).toMatch(/if \(!roleType\.trim\(\)\)/)
   })
 
   it('wizard step 2 collects NONE of them — which is why opening on it was a dead end', () => {
