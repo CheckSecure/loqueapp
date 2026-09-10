@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Inbox, Zap, Users, Lock } from 'lucide-react';
 import PageHint from '@/components/PageHint';
+import { viewerIsNext, NEXT_REDIRECT_TARGET } from '@/lib/community/viewerCommunity';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,21 @@ export default async function OpportunitiesPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
+
+  // ─── ANDREL NEXT: THIS PRODUCT IS NOT FOR STUDENTS ───────────────────────────────────────────
+  //
+  // Opportunities is Professional business development — signalling a hiring or business need to
+  // other senior professionals. An Andrel Next member must not receive it, and hiding the sidebar
+  // link is not how that is enforced: this check runs on every request, reads the caller's own
+  // member_type through service_role, and does not consult any prop the layout passed anywhere.
+  //
+  // It runs BEFORE the tier read and the feed query, so a Next member's request costs one profiles
+  // read and nothing else — no candidate rows, no creator names, no tier state.
+  //
+  // Delivery was already community-scoped (lib/opportunities/matching.ts fails closed on an unknown
+  // member_type), so a Next member's feed was empty before this. Empty is not the same as closed:
+  // the create surface, the tier copy and the whole product framing were still reachable by URL.
+  if (await viewerIsNext(user.id)) redirect(NEXT_REDIRECT_TARGET);
 
   const admin = createAdminClient();
 

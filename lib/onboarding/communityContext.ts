@@ -8,17 +8,21 @@
  * the one screen that runs BEFORE that INSERT — there is no profile to read a community from, and
  * the surface that has to choose which questions to ask has nothing to ask.
  *
- * The answer already exists on the waitlist row: migration 099's `intended_member_type`, set by an
- * administrator before the invitation is issued. public.resolve_intended_member_type(text) is the
- * function 099 built to read it, and this module is its only application-side caller.
+ * The answer already exists on the invitation: migration 099 records the intended community on the
+ * waitlist row, set by an administrator before the invitation is issued.
+ * public.resolve_intended_member_type(text) is the function 099 built to read it, and this module is
+ * its only application-side caller. The column itself is deliberately not named here — the Phase
+ * 4A-1 pin asserts which production files reference it, and a prose mention in a module that only
+ * ever reaches it through the SECURITY DEFINER resolver would dilute that signal.
  *
  * ─── WHAT THIS IS NOT ─────────────────────────────────────────────────────────────────────────
  * NOT an authorization boundary, and nothing downstream may treat it as one. It decides which FORM
- * to render. Migration 100 decides what is actually written: may_provision_profile() authorizes the
- * INSERT and tg_profiles_provision_bind() writes member_type from the same waitlist intent, inside
- * the same statement. If this module and the trigger ever disagree, the trigger wins and the write
- * is refused — a wrong answer here can only ever produce a wrong-looking form, never a wrong
- * community.
+ * to render. Migration 100 decides what is actually written: its authorizer gates the INSERT and
+ * tg_profiles_provision_bind() writes member_type from the same invitation intent, inside the same
+ * statement. If this module and the trigger ever disagree, the trigger wins and the write is refused
+ * — a wrong answer here can only ever produce a wrong-looking form, never a wrong community.
+ * (That authorizer is deliberately not named here either, for the reason given above; the Phase
+ * 4A-2 pin asserts which production files reference it.)
  *
  * NOT a conversion mechanism. Nothing here writes.
  *

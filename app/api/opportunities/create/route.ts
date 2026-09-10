@@ -5,6 +5,7 @@ import { checkCreatorEligibility } from '@/lib/opportunities/eligibility';
 import { deliverOpportunity } from '@/lib/opportunities/matching';
 import { computeExpiryDays, type OpportunityType, type Urgency } from '@/lib/opportunities/caps';
 import { validateSelectionWithCaps, type CategoryTitleSelection } from '@/lib/role-taxonomy';
+import { viewerIsNext, COMMUNITY_FORBIDDEN, COMMUNITY_FORBIDDEN_STATUS } from '@/lib/community/viewerCommunity';
 
 function stripContactInfo(text: string | null | undefined): string | null {
   if (!text) return null;
@@ -172,6 +173,27 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  // ─── ANDREL NEXT: THE ROOT REFUSAL ───────────────────────────────────────────────────────────
+  //
+  // This is the endpoint that lets a member PUT an opportunity into the Professional product, and
+  // therefore the one that matters most: every other opportunity endpoint acts on a row that had to
+  // be created here first. A Next member creating one would be a student authoring senior-professional
+  // business development, and would seed the opportunity_candidates rows that the four creator-scoped
+  // endpoints only become reachable through.
+  //
+  // FIRST, before the body is even parsed. Not after validation: a refused caller must not learn the
+  // payload schema from a field-by-field 400, and not after checkCreatorEligibility either, because
+  // a Next member's tier, trust score and account age are Professional-product questions that should
+  // never be asked about somebody who is not in that product. The refusal names no reason and no
+  // community — see COMMUNITY_FORBIDDEN.
+  //
+  // The community comes from the caller's OWN profiles row, read through service_role with the id
+  // taken from the verified session above. Nothing in the request body participates, and no prop
+  // from the dashboard layout is consulted.
+  if (await viewerIsNext(user.id)) {
+    return NextResponse.json(COMMUNITY_FORBIDDEN, { status: COMMUNITY_FORBIDDEN_STATUS });
+  }
 
   let raw: unknown;
   try { raw = await request.json(); }
