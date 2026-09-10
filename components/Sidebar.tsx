@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useState, useEffect } from 'react'
 import { LOGO_ARIA_LABEL } from '@/lib/nav/logoHref'
 import { DEFAULT_MEMBER_TYPE, type MemberType } from '@/lib/community/memberType'
+import { showsNavHref, showsNextChrome, wordmarkSuffix } from '@/lib/nav/communityNav'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -42,11 +43,13 @@ interface SidebarProps {
    * self profile row — never derived in the browser, never editable here.
    *
    * PRESENTATION CONTEXT ONLY. This is a prop: it proves nothing about who the viewer is, and no
-   * authorization may rest on it. The surfaces that must be closed to a community — Opportunities,
-   * Billing — perform their own service_role read and redirect server-side, independently of this.
+   * authorization may rest on it. The surfaces it hides — Opportunities, Billing — perform their own
+   * service_role read and redirect server-side, independently of this. Hiding a link is a courtesy;
+   * the redirect is the rule. Deleting every use of this prop would make two links visible again and
+   * change nothing about what a Next member can actually reach.
    *
-   * Not read yet: Step 1 is plumbing, the Andrel Next navigation and wordmark are Step 3. Optional
-   * with a Professional default so an omitted prop renders exactly today's sidebar.
+   * Optional with a Professional default, and every read of it goes through showsNextChrome(), which
+   * fails closed — so an omitted, null or unrecognised value renders exactly today's sidebar.
    */
   memberType?: MemberType
 }
@@ -100,6 +103,10 @@ export default function Sidebar({
   const pathname = usePathname()
   const router = useRouter()
 
+  // Andrel Next chrome. Fails closed to Professional for any value that is not exactly 'next'.
+  const isNext = showsNextChrome(memberType)
+  const suffix = wordmarkSuffix(memberType)
+
   const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
@@ -130,13 +137,21 @@ export default function Sidebar({
           >
             Andrel
           </Link>
+          {/* One product family, not two brands: the existing wordmark with a small, lighter word on
+              the same baseline. Rendered OUTSIDE the link so its destination, accessible name and
+              clickable area are identical for every member. Empty for a professional. */}
+          {suffix && (
+            <span className="text-sm font-medium text-white/50 tracking-tight shrink-0">{suffix}</span>
+          )}
         </div>
         <NotificationBell />
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 min-h-0 px-3 py-5 space-y-0.5 overflow-y-auto">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {/* One list, filtered — never a second nav array for Next. showsNavHref returns true for
+            everything when the viewer is not a Next member, so this is today's list untouched. */}
+        {navItems.filter(({ href }) => showsNavHref(href, memberType)).map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
           const isMessages = href === '/dashboard/messages'
           const isNetwork = href === '/dashboard/network'
@@ -191,7 +206,14 @@ export default function Sidebar({
 
       {/* Membership card + identity + sign out */}
       <div className="shrink-0 px-4 pb-5 pt-4 border-t border-white/5 space-y-4">
-        {/* Premium membership card */}
+        {/* Premium membership card.
+            HIDDEN FOR ANDREL NEXT — the WHOLE card, not just the chip. It holds two billing
+            destinations: CreditsChip links to /dashboard/billing#credits and "Upgrade" to
+            /dashboard/billing, both of which now redirect a Next member straight back out. A card
+            whose every affordance bounces is worse than no card.
+            PRESENTATION ONLY: no credit balance, grant, consumption or subscription rule changes
+            here, and a professional's card is byte-identical to what it was. */}
+        {!isNext && (
         <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-[#162449] via-[#0F1C3A] to-[#0A1530] border border-brand-gold/15 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/5">
           <div className="absolute top-0 left-3 right-3 h-px bg-gradient-to-r from-transparent via-brand-gold to-transparent" />
           <div className="absolute -top-10 -right-10 w-28 h-28 bg-brand-gold/15 rounded-full blur-2xl pointer-events-none" aria-hidden="true" />
@@ -212,6 +234,7 @@ export default function Sidebar({
             </div>
           </div>
         </div>
+        )}
 
         {/* Identity */}
         <div className="flex items-center gap-3 px-1">

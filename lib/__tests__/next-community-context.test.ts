@@ -223,34 +223,44 @@ describe('5. the dashboard resolves member_type from the authoritative self row'
   })
 })
 
-// ═══ 6. STEP 1 CHANGES NOTHING A MEMBER CAN SEE ═══════════════════════════════════════════════
-describe('6. no visible difference yet — this step is plumbing', () => {
-  it('the nav item list is untouched and unconditional', () => {
+// ═══ 6. WHAT THE PROP NOW CHANGES — AND WHAT IT STILL DOES NOT ════════════════════════════════
+//
+// REWRITTEN AT STEP 3, AS INTENDED. These three guards were written to fail the moment the
+// navigation and wordmark became community-aware, so that arriving there was a decision rather than
+// a drift. Step 3 landed; they now pin the new behaviour instead of the absence of it. The full
+// rendered behaviour lives in next-navigation-branding.test.ts — what stays here is the narrow
+// claim this suite has always made: the value is server-resolved, and it changes chrome only.
+describe('6. the prop is read by the shell, and by nothing else', () => {
+  it('there is still exactly ONE nav array — Next is a filter, not a second list', () => {
     const items = SIDEBAR.slice(SIDEBAR.indexOf('const navItems = ['), SIDEBAR.indexOf('interface SidebarProps'))
     for (const label of ['Introductions', 'Opportunities', 'Network', 'Messages', 'Meetings', 'Profile', 'Billing', 'Settings']) {
       expect(items).toContain(label)
     }
-    // No community branching in the list itself — that is Step 3.
-    expect(items).not.toMatch(/memberType|next/)
+    // The declaration stays unconditional; the community decision happens at render.
+    expect(items).not.toMatch(/memberType|isNext|showsNav/)
+    expect(SIDEBAR).toMatch(/navItems\.filter\(\(\{ href \}\) => showsNavHref\(href, memberType\)\)/)
+    expect(SIDEBAR).not.toMatch(/const nextNavItems|navItemsForNext/)
   })
 
-  it('NEITHER component reads the prop yet', () => {
-    // Present in the signature, absent from the body: the value is plumbed, not consumed.
-    const sidebarBody = SIDEBAR.slice(SIDEBAR.indexOf('const pathname = usePathname()'))
-    expect(sidebarBody).not.toMatch(/memberType/)
-    const navBody = MOBILE_NAV.slice(
-      MOBILE_NAV.indexOf('memberType?: MemberType }) {') + 'memberType?: MemberType }) {'.length,
-    )
-    expect(navBody).not.toMatch(/memberType/)
+  it('BOTH components now read the prop, and only through the fail-closed predicate', () => {
+    for (const src of [SIDEBAR, MOBILE_NAV]) {
+      expect(src).toMatch(/const isNext = showsNextChrome\(memberType\)/)
+      // Never an inline comparison, which is how a second, subtly different rule starts.
+      const code = src.split('\n').filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join('\n')
+      expect(code).not.toMatch(/memberType === 'next'|memberType == 'next'/)
+    }
   })
 
-  it('the wordmark RENDERS the unconditional Andrel', () => {
-    // The rendered text, not the file — a doc comment may name Andrel Next while the JSX does not.
+  it('the wordmark renders Andrel, plus a suffix that is empty for a professional', () => {
     for (const src of [SIDEBAR, MOBILE_NAV]) {
       const jsx = src.split('\n').filter((l) => !l.trim().startsWith('*') && !l.trim().startsWith('//')).join('\n')
+      // The link's own content is still the bare wordmark for every member; the suffix is a sibling,
+      // so the destination, accessible name and clickable area are unchanged. (lib/nav/logoHref.ts)
       expect(jsx).toMatch(/>\s*Andrel\s*</)
+      expect(jsx).toMatch(/\{suffix && \(/)
+      expect(jsx).toMatch(/const suffix = wordmarkSuffix\(memberType\)/)
+      // Still no hardcoded second brand string anywhere in the markup.
       expect(jsx).not.toMatch(/Andrel Next/)
-      expect(jsx).not.toMatch(/memberType === 'next'/)
     }
   })
 

@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { LOGO_ARIA_LABEL } from '@/lib/nav/logoHref'
 import { DEFAULT_MEMBER_TYPE, type MemberType } from '@/lib/community/memberType'
+import { showsNextChrome, wordmarkSuffix } from '@/lib/nav/communityNav'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -25,14 +26,17 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
   /**
    * The viewer's community, resolved on the server (app/dashboard/layout.tsx) from the authoritative
    * self profile row. PRESENTATION CONTEXT ONLY — it is a prop, so it proves nothing and no
-   * authorization may rest on it; Opportunities and Billing close themselves server-side. Defaults to
-   * Professional so an omitted prop renders exactly today's navigation.
-   *
-   * Not read yet: Step 1 is plumbing, the Andrel Next chrome is Step 3.
+   * authorization may rest on it; Opportunities and Billing close themselves server-side and stay
+   * closed whatever this says. Defaults to Professional, and every read goes through
+   * showsNextChrome(), which fails closed — an omitted, null or unrecognised value renders exactly
+   * today's navigation.
    */
   memberType?: MemberType }) {
   const pathname = usePathname()
   const router = useRouter()
+  // Andrel Next chrome. Fails closed to Professional for any value that is not exactly 'next'.
+  const isNext = showsNextChrome(memberType)
+  const suffix = wordmarkSuffix(memberType)
   const [showMore, setShowMore] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
 
@@ -64,17 +68,26 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
     <>
       {/* Top header - REDESIGNED: Logo + Credits + Bell */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-100 h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] flex items-center justify-between px-4 gap-3">
-        {/* Same resolved-on-the-server href as the desktop sidebar. */}
-        <Link
-          href={logoHref}
-          aria-label={LOGO_ARIA_LABEL}
-          className="text-lg font-bold text-[#1B2850] tracking-tight flex-shrink-0 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2850] focus-visible:ring-offset-2"
-        >
-          Andrel
-        </Link>
+        {/* Same resolved-on-the-server href as the desktop sidebar, and the same wordmark treatment:
+            the suffix is a SIBLING of the link, so the link itself is identical for every member. */}
+        <div className="flex items-baseline gap-1.5 min-w-0 flex-shrink-0">
+          <Link
+            href={logoHref}
+            aria-label={LOGO_ARIA_LABEL}
+            className="text-lg font-bold text-[#1B2850] tracking-tight flex-shrink-0 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2850] focus-visible:ring-offset-2"
+          >
+            Andrel
+          </Link>
+          {suffix && (
+            <span className="text-xs font-medium text-[#1B2850]/55 tracking-tight shrink-0">{suffix}</span>
+          )}
+        </div>
         
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Compact credits chip */}
+          {/* Compact credits chip — HIDDEN FOR ANDREL NEXT. It is a billing destination
+              (/dashboard/billing#credits), and that route now redirects a Next member straight back
+              out. PRESENTATION ONLY: no balance, grant, consumption or subscription rule changes. */}
+          {!isNext && (
           <Link
             href="/dashboard/billing#credits"
             className={cn(
@@ -84,7 +97,8 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
           >
             {credits === null ? '✦ —' : `✦ ${credits}`}
           </Link>
-          
+          )}
+
           <NotificationBell />
         </div>
       </div>
@@ -104,6 +118,10 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
               </button>
             </div>
 
+            {/* Opportunities and Billing — the two destinations NEXT_HIDDEN_NAV_HREFS names, hidden
+                here for the same reason the sidebar filters them out of its list. Both routes close
+                themselves server-side regardless; this only stops a link that would bounce. */}
+            {!isNext && (
             <Link
               href="/dashboard/opportunities"
               onClick={() => setShowMore(false)}
@@ -117,7 +135,9 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
                 </span>
               )}
             </Link>
+            )}
 
+            {!isNext && (
             <Link
               href="/dashboard/billing"
               onClick={() => setShowMore(false)}
@@ -126,6 +146,7 @@ export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount 
               <CreditCard className="w-5 h-5 text-slate-400" />
               Billing
             </Link>
+            )}
 
             <Link
               href="/dashboard/settings"
