@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useState, useEffect } from 'react'
 import { LOGO_ARIA_LABEL } from '@/lib/nav/logoHref'
+import { DEFAULT_MEMBER_TYPE, type MemberType } from '@/lib/community/memberType'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -36,6 +37,18 @@ interface SidebarProps {
   adminBadgeCount: number
   /** Resolved on the server by app/dashboard/layout.tsx — never derived in the browser. */
   logoHref: string
+  /**
+   * The viewer's community, resolved on the server (app/dashboard/layout.tsx) from the authoritative
+   * self profile row — never derived in the browser, never editable here.
+   *
+   * PRESENTATION CONTEXT ONLY. This is a prop: it proves nothing about who the viewer is, and no
+   * authorization may rest on it. The surfaces that must be closed to a community — Opportunities,
+   * Billing — perform their own service_role read and redirect server-side, independently of this.
+   *
+   * Not read yet: Step 1 is plumbing, the Andrel Next navigation and wordmark are Step 3. Optional
+   * with a Professional default so an omitted prop renders exactly today's sidebar.
+   */
+  memberType?: MemberType
 }
 
 function CreditsChip({ credits }: { credits: number | null }) {
@@ -82,6 +95,7 @@ export default function Sidebar({
   opportunityBadgeCount,
   adminBadgeCount,
   logoHref,
+  memberType = DEFAULT_MEMBER_TYPE,
 }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()

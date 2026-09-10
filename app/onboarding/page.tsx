@@ -10,6 +10,9 @@ import { AUTHENTICATED_LOGO_HREF } from '@/lib/nav/logoHref'
 import { pickOnboardingPrefillName } from '@/lib/validation/fullName'
 import { resolveOnboardingGate, selfProfileFromRpc, type OnboardingProfileLite } from '@/lib/onboarding/steps'
 import { verifyContinuationToken, CONTINUATION_COOKIE } from '@/lib/auth/resetContinuation'
+// Pre-profile community resolution. Server-only: the RPC it wraps is service_role-granted, so this
+// import must never travel into a client component. See lib/onboarding/communityContext.ts.
+import { resolveOnboardingCommunity } from '@/lib/onboarding/communityContext'
 
 export const metadata = { title: 'Complete your profile | Andrel' }
 
@@ -66,6 +69,26 @@ export default async function OnboardingPage() {
     waitlistName = (wl as { full_name: string | null } | null)?.full_name ?? null
   }
   const initialFullName = pickOnboardingPrefillName(profile?.full_name ?? null, waitlistName)
+
+  // ─── WHICH COMMUNITY IS THIS INVITEE BEING ONBOARDED INTO? ───────────────────────────────────
+  //
+  // profiles.member_type does not exist yet for this member — migration 100 binds it at the first
+  // profile INSERT, which is what the form below is about to trigger. The intent lives on the
+  // waitlist row instead, and migration 099's resolve_intended_member_type() is the function built
+  // to read it. The address comes from the VERIFIED SESSION above (`user.email`), never from input.
+  //
+  // STEP 1 IS PLUMBING ONLY. Nothing about the rendered form changes yet; the value is resolved here
+  // so the student onboarding surface has an authoritative source to switch on when it lands, and so
+  // that source is proven in production before anything depends on it. Every failure — ambiguous
+  // intent, no waitlist row, an unavailable RPC — resolves to Professional, which is today's form.
+  //
+  // NOT AUTHORIZATION. Migration 100 decides what may be written; this decides what is asked.
+  const { community, resolution } = await resolveOnboardingCommunity(user.email)
+  if (resolution !== 'resolved' || community !== 'professional') {
+    // Aggregate only — no address, no waitlist id. Makes the first real Next invitation observable
+    // without waiting for a UI difference to appear.
+    console.log('[onboarding] community context', JSON.stringify({ community, resolution }))
+  }
 
   return <OnboardingForm initialFullName={initialFullName} needsPassword={gate.needsPassword} logoHref={AUTHENTICATED_LOGO_HREF} />
 }

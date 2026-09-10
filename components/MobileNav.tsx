@@ -9,6 +9,7 @@ import { OPEN_TUTORIAL_EVENT } from './Tutorial'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { LOGO_ARIA_LABEL } from '@/lib/nav/logoHref'
+import { DEFAULT_MEMBER_TYPE, type MemberType } from '@/lib/community/memberType'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -20,7 +21,16 @@ const bottomNavItems = [
   { href: '/dashboard/profile', label: 'Profile', icon: UserCircle },
 ]
 
-export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0, opportunityBadgeCount = 0, adminBadgeCount = 0, logoHref }: { credits: number | null; unreadCount?: number; meetingNotifCount?: number; opportunityBadgeCount?: number; adminBadgeCount?: number; /** Resolved on the server by app/dashboard/layout.tsx. */ logoHref: string }) {
+export default function MobileNav({ credits, unreadCount = 0, meetingNotifCount = 0, opportunityBadgeCount = 0, adminBadgeCount = 0, logoHref, memberType = DEFAULT_MEMBER_TYPE }: { credits: number | null; unreadCount?: number; meetingNotifCount?: number; opportunityBadgeCount?: number; adminBadgeCount?: number; /** Resolved on the server by app/dashboard/layout.tsx. */ logoHref: string;
+  /**
+   * The viewer's community, resolved on the server (app/dashboard/layout.tsx) from the authoritative
+   * self profile row. PRESENTATION CONTEXT ONLY — it is a prop, so it proves nothing and no
+   * authorization may rest on it; Opportunities and Billing close themselves server-side. Defaults to
+   * Professional so an omitted prop renders exactly today's navigation.
+   *
+   * Not read yet: Step 1 is plumbing, the Andrel Next chrome is Step 3.
+   */
+  memberType?: MemberType }) {
   const pathname = usePathname()
   const router = useRouter()
   const [showMore, setShowMore] = useState(false)
