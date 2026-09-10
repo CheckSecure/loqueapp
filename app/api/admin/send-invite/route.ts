@@ -11,6 +11,11 @@ import { canSendInvitation, invitationsMode, INVITATIONS_PAUSED_MESSAGE, INVITAT
 import { requestPasswordRecoveryForUserId } from '@/lib/auth/recoveryRequest'
 import { getSiteUrl, getRecoveryRedirectUrl } from '@/lib/config/siteUrl'
 import { mintBoundResumeLink, revokeResumeToken } from '@/lib/invitations/resumeTokenStore'
+import { assertSameOrigin } from '@/lib/http/sameOrigin'
+import {
+  normalizeDesignation, canDesignateAtStatus, designationRequested,
+  isCommunityConflict, communityConflictMessage, DESIGNATION_LOCKED_MESSAGE,
+} from '@/lib/invitations/communityDesignation'
 
 const ADMIN_EMAIL = 'bizdev91@gmail.com'
 
@@ -25,6 +30,12 @@ const ADMIN_EMAIL = 'bizdev91@gmail.com'
  * secure recovery link via the shared recovery flow — never a temp password.
  */
 export async function POST(req: Request) {
+  // CSRF: this is a cookie-authed state change that can send mail and mint an auth user, and now
+  // also designates the community an invitation is FOR. Same standard-headers helper the other
+  // admin mutations use (waitlist/change-email, invitations/rotate-resume, campaigns).
+  const crossOrigin = assertSameOrigin(req)
+  if (crossOrigin) return crossOrigin
+
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user || user.email !== ADMIN_EMAIL) {
@@ -69,6 +80,61 @@ export async function POST(req: Request) {
     }
     // test mode, recipient not on the allowlist — neutral, address-free message.
     return NextResponse.json({ success: false, state: 'not_allowlisted', message: INVITATION_TEST_BLOCKED_MESSAGE }, { status: 403 })
+  }
+
+  // ── ANDREL NEXT: THE COMMUNITY THIS INVITATION IS FOR ────────────────────────────────────────
+  //
+  // ORDERING IS THE SECURITY PROPERTY. This runs BEFORE sendSecureInvite, and therefore before
+  // generateLink mints an auth user, before a resume token is minted, and before any provider call.
+  // A refused or conflicting designation must leave NOTHING behind — the alternative, writing it in
+  // the post-send status update, would mean an invitation had already gone out under a community
+  // the database then refused to record.
+  //
+  // ABSENT MEANS PROFESSIONAL, AND MEANS NO WRITE AT ALL. The ordinary Professional send and every
+  // resend reach here with no `intendedMemberType` field, so this block is a no-op for them and
+  // that path stays byte-for-byte what it was. Migration 099 already defaulted every existing row
+  // to 'professional'; nothing needs reclassifying.
+  //
+  // THE BROWSER PROPOSES, THE SERVER DECIDES. The value arrives from the admin console but is
+  // whitelisted to exactly 'professional' | 'next' before it can reach the database, is accepted
+  // only from an invitation that has not been issued yet, and is written with the SERVICE-ROLE
+  // client after the admin identity check above. RLS independently restricts UPDATE on
+  // public.waitlist to is_admin(), so this is authorized twice over — but neither of those is a
+  // reason to pass an arbitrary value through.
+  if (designationRequested(body)) {
+    const intended = normalizeDesignation(body.intendedMemberType)
+
+    // LIFECYCLE. Only an invitation still in approved/contacted may be designated. Once it has been
+    // issued the community is fixed: migration 100 binds the first profile to it, and 099 makes the
+    // resulting member_type immutable. There is deliberately no reclassification path here.
+    if (!canDesignateAtStatus(entry.status)) {
+      return NextResponse.json(
+        { success: false, state: 'designation_locked', message: DESIGNATION_LOCKED_MESSAGE },
+        { status: 409 })
+    }
+
+    // Skip a no-op write so the Professional path issues exactly the statements it always did.
+    if (intended !== entry.intended_member_type) {
+      const { error: desErr } = await admin
+        .from('waitlist')
+        .update({ intended_member_type: intended })
+        .eq('id', entryId)
+
+      if (desErr) {
+        // Migration 099's conflicting-intent trigger: another LIVE row for this normalised address
+        // already intends a different community. Translated by MESSAGE, never by SQLSTATE — 099
+        // raises check_violation and so does every other CHECK in the schema, and an unrelated
+        // constraint failure must keep its own message.
+        if (isCommunityConflict(desErr)) {
+          return NextResponse.json(
+            { success: false, state: 'community_conflict', message: communityConflictMessage(intended) },
+            { status: 409 })
+        }
+        return NextResponse.json(
+          { success: false, state: 'error', message: 'Could not set the community for this invitation. Nothing was sent.' },
+          { status: 500 })
+      }
+    }
   }
 
   const deps: SecureInviteDeps = {

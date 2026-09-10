@@ -54,8 +54,21 @@ vi.mock('@/lib/invitations/featureGate', () => ({
 
 import { POST } from '@/app/api/admin/send-invite/route'
 
+// The route now carries assertSameOrigin (added with the Andrel Next issuance control, because this
+// endpoint mints an auth user, sends mail, and designates the community an invitation is for). That
+// guard FAILS CLOSED when a request carries neither Sec-Fetch-Site nor Origin, so these requests now
+// have to look like the browser mutation they model. Same shape as change-email-route.test.ts.
 const post = (body: any) =>
-  POST(new Request('http://localhost/api/admin/send-invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }))
+  POST(new Request('http://localhost/api/admin/send-invite', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'sec-fetch-site': 'same-origin',
+      origin: 'http://localhost',
+      host: 'localhost',
+    },
+    body: JSON.stringify(body),
+  }))
 
 beforeEach(() => {
   state.adminEmail = 'bizdev91@gmail.com'
