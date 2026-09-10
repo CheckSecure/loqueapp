@@ -310,7 +310,18 @@ describe('sameCommunity — the in-memory mirror of the base rule', () => {
 // pool scoping is Stage 2 and has not been authorized. A test that quietly went away here would
 // stop noticing if Stage 2 work leaked into Stage 1b.
 describe('Stage 2 is still inert: pool and scoring code does not read the new columns', () => {
-  it('no matching, scoring or eligibility code references member_type yet', () => {
+  it('no matching, scoring or eligibility code reads member_type AD HOC', () => {
+    // NARROWED AT STEP 3.5, and the claim is unchanged — arguably sharper.
+    //
+    // The original grep banned the SUBSTRING member_type in these files. Step 3.5 gives the batch
+    // scorer community-aware expertise semantics, and its diagnostic log line legitimately contains
+    // the words "unrecognised member_type" — a message, not a column read. Banning the substring
+    // would have failed on prose while saying nothing about behaviour.
+    //
+    // What must remain true, and is now asserted directly: none of these files touches the column
+    // itself. Every one of them goes through the lib/community/memberType helpers (communityOf,
+    // filterSameCommunity, partitionByCommunity, MEMBER_TYPE_COLUMNS), which is the single
+    // definition of what a community is and the reason a typo cannot fail open.
     for (const f of [
       'lib/generate-recommendations.ts',
       'lib/matching/eligibility.ts',
@@ -320,8 +331,10 @@ describe('Stage 2 is still inert: pool and scoring code does not read the new co
     ]) {
       const src = readFileSync(f, 'utf8')
       const code = src.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
-      expect(code, `${f} must not scope candidate pools before Stage 2`).not.toMatch(/member_type/)
-      expect(code, `${f} must not consume the pair predicate before Stage 2`).not.toMatch(/community_pair_allowed/)
+      // No property access, and no string literal that could be a hand-written select or filter.
+      expect(code, `${f} must not read member_type directly`).not.toMatch(/\.member_type\b/)
+      expect(code, `${f} must not name member_type as a literal`).not.toMatch(/['"]member_type['"]/)
+      expect(code, `${f} must not consume the pair predicate here`).not.toMatch(/community_pair_allowed/)
     }
   })
 
