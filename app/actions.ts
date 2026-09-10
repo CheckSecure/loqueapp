@@ -33,6 +33,9 @@ import { scheduleEnrichment } from '@/lib/company/enrichment/schedule'
 import { validateFullName } from '@/lib/validation/fullName'
 import { validateLocation, resolveLocationUpdate } from '@/lib/validation/location'
 import { persistFocusAreas } from '@/lib/profile/focusAreas'
+import {
+  PROVISIONING_REFUSED_MESSAGE, isProvisioningRefusal, provisioningRefusalReason,
+} from '@/lib/onboarding/provisioningError'
 import { sendMessageCore } from '@/lib/messages/sendMessageCore'
 import { canRequestMeetingWith, MEETING_NOT_AVAILABLE, MEETING_REQUESTS_PER_DAY } from '@/lib/meetings/authorization'
 import { checkRateLimit } from '@/lib/rateLimit'
@@ -164,7 +167,19 @@ export async function updateProfile(formData: FormData) {
     updated_at: new Date().toISOString(),
   })
 
-  if (error) return { error: error.message }
+  // DEFENSIVE, not a live path. This upsert conflicts on the primary key, so for an existing member
+  // it is an UPDATE and migration 100's step 0 exempts it. It could only meet the provisioning
+  // boundary if a member with NO profile reached the profile form — and app/dashboard/layout.tsx
+  // redirects such a visitor to /onboarding before this page renders. The translation costs one
+  // branch and closes the path before routing ever changes underneath it.
+  if (error) {
+    if (isProvisioningRefusal(error)) {
+      console.warn('[updateProfile] provisioning refused at write',
+        provisioningRefusalReason(error) ?? 'unknown')
+      return { error: PROVISIONING_REFUSED_MESSAGE }
+    }
+    return { error: error.message }
+  }
 
   // Current focus areas (optional, soft signal) — a separate best-effort write on
   // its own column that FAILS OPEN if migration 041 isn't applied, so the main
@@ -394,8 +409,56 @@ export async function completeOnboarding(formData: FormData) {
   // cases of an address held by a profile whose id is a different auth user. So for all 139 existing
   // profiles both targets resolve to the same row and this is observationally identical.
   //
-  // member_type is NOT written here and must not be: it is absent from this payload, the column
-  // keeps its DEFAULT, and migration 099's BEFORE UPDATE trigger forbids changing it.
+  // member_type is NOT written here and must not be: it is absent from this payload, migration 100
+  // removed the column DEFAULT so omission now means "derive from the invitation", and migration
+  // 099's BEFORE UPDATE trigger forbids changing it afterwards.
+
+  // ─── J1: A NEUTRAL ERROR FOR A REFUSED FIRST PROFILE — UX ONLY, NEVER AUTHORIZATION ──────────
+  //
+  // Migration 100 is the authorization boundary and stays the authorization boundary. Everything
+  // below exists so that a member who cannot be provisioned reads a sentence instead of
+  // `profiles: provisioning refused (waitlist_not_invited)`. It can only ever turn a refusal the
+  // database would ALSO make into friendlier words — it can never permit anything, and every one
+  // of its own failure modes proceeds to the write and lets the trigger decide.
+  //
+  // ONLY FOR A GENUINELY FIRST PROFILE. Migration 100's trigger exempts an upsert onto an existing
+  // id (step 0), so an existing member may edit or resubmit without a live invitation. Running the
+  // pre-check unconditionally would make this action STRICTER than the boundary it is fronting and
+  // would lock a resuming member out of finishing onboarding — the /onboarding gate deliberately
+  // keeps an incomplete profile on this form, so that member reaches here every time they retry.
+  //
+  // This read is its own, and it checks its error. The `priorRow` read above selects
+  // desired_connections and discards its error, so a failed query there is indistinguishable from
+  // "no profile" — reusing it would fire the pre-check at existing members.
+  const { data: existingProfile, error: existingProfileError } = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (existingProfileError) {
+    // FAIL OPEN. We could not establish whether this is a first profile, and the pre-check is not
+    // the thing that decides. Proceed; the trigger is authoritative either way.
+    console.warn('[completeOnboarding] provisioning pre-check skipped: existence read failed',
+      existingProfileError.code ?? 'unknown')
+  } else if (!existingProfile) {
+    const { data: verdict, error: precheckError } = await adminClient
+      .rpc('may_provision_profile', { p_email: user.email, p_auth_user_id: user.id })
+
+    if (precheckError) {
+      // FAIL OPEN, same reasoning. An unavailable pre-check must not become an outage.
+      console.warn('[completeOnboarding] provisioning pre-check unavailable',
+        precheckError.code ?? 'unknown')
+    } else if ((verdict as { outcome?: string } | null)?.outcome !== 'authorized') {
+      // The ONLY branch that refuses, and it refuses exactly where the database would. The reason
+      // code is logged and never returned: the browser learns that setup could not complete, not
+      // which of the nine reasons applied.
+      console.warn('[completeOnboarding] provisioning refused at pre-check',
+        (verdict as { reason?: string } | null)?.reason ?? 'unknown')
+      return { error: PROVISIONING_REFUSED_MESSAGE }
+    }
+  }
+
   const normalizedEmail = normalizeEmail(user.email)
 
   const { error } = await adminClient.from('profiles').upsert({
@@ -448,6 +511,17 @@ export async function completeOnboarding(formData: FormData) {
   }, { onConflict: 'id' })
 
   if (error) {
+    // THE RACE, HANDLED RATHER THAN ELIMINATED. The pre-check above and this write are two
+    // statements, and an invitation can be revoked between them. When that happens the trigger
+    // refuses — correctly, it is the authority — and the member must read the SAME sentence they
+    // would have read a moment earlier, not raw PostgreSQL. Trying to close the window instead
+    // would mean duplicating the database's transaction model in the application, which is how the
+    // pre-check would quietly become the authorization.
+    if (isProvisioningRefusal(error)) {
+      console.warn('[completeOnboarding] provisioning refused at write',
+        provisioningRefusalReason(error) ?? 'unknown')
+      return { error: PROVISIONING_REFUSED_MESSAGE }
+    }
     console.error('[completeOnboarding] error:', error.message)
     return { error: error.message }
   }
