@@ -16,23 +16,36 @@ import { purgeExpiredDeletionEvents } from '@/lib/account/retentionPurge'
 import { runOnboardingReminderStage, REMINDER_STAGE_BUDGET_MS } from '@/lib/onboarding/reminderWorker'
 import { runCapacityReleaseStage, RELEASE_STAGE_BUDGET_MS } from '@/lib/introductions/capacityRelease'
 import { sendWednesdayIntroReminderEmail } from '@/lib/email'
+import {
+  runPacedSends, emailSendsPerSecond, estimatedSendSeconds, backoffMs, sleep,
+  EMAIL_SEND_CONCURRENCY, MAX_SEND_ATTEMPTS, DEFAULT_SENDS_PER_SECOND,
+} from '@/lib/email/sendPacing'
+import {
+  ROUTE_MAX_DURATION_S, ROUTE_SAFETY_MARGIN_MS,
+  WAITING_BUDGET_MS, INTRO_REMINDER_BUDGET_MS,
+  REMINDER_MAX_PER_RUN, REMINDER_DEADLINE_MS, reachableAtRate, wednesdaySendDeadlineAt,
+  CREDIT_RETRY_BUDGET_MS, EXPIRY_BUDGET_MS, OUTBOX_STAGE_BUDGET_MS,
+} from '@/lib/cron/engagementBudget'
 
 /**
- * RESERVED STAGE BUDGETS. Each stage gets its own wall-clock slice measured from ITS OWN start, so
- * neither can starve the other: an expiry backlog cannot delay the Wednesday email past its window,
- * and the reminder cannot consume the whole invocation. The pre-existing PART 3/PART 4 work runs
- * first and is untouched.
+ * RUNTIME CEILING and every stage budget now come from lib/cron/engagementBudget, where they are
+ * added up and checked against each other.
+ *
+ * They used to live here, one constant per stage, chosen next to that stage's own code. Nothing
+ * summed them, so the route reserved ~78 seconds against a 60-second ceiling; and the Wednesday
+ * stage admitted 300 recipients into a 25-second window that could pace 50. Both were per-stage
+ * numbers picked in isolation, which is exactly what a shared table prevents.
+ *
+ * maxDuration is a CEILING, not a target. Six days a week PART 5 does not run at all and the route
+ * reserves nonWednesdayBudgetMs().
  */
+export const maxDuration = ROUTE_MAX_DURATION_S
+
 const REMINDER_PAGE = 1000
-const REMINDER_MAX_PER_RUN = 300
-const REMINDER_DEADLINE_MS = 25_000   // Wednesday reminder stage
 /** Ids per profiles read. Keeps the URL well inside PostgREST's limit on a large `.in()`. */
 const PROFILE_FETCH_CHUNK = 200
-/** Members whose claim+send+mark run concurrently. Matches the referral campaign's batch size. */
-const REMINDER_SEND_CONCURRENCY = 25
-const EXPIRY_BUDGET_MS = 15_000       // daily expiry stage, strictly after the reminder
-const CREDIT_RETRY_BUDGET_MS = 8_000  // mutual matches blocked on credits
-const OUTBOX_STAGE_BUDGET_MS = 12_000 // daily new-introduction outbox drain, strictly last
+// REMINDER_SEND_CONCURRENCY (25) is gone. Concurrency is now EMAIL_SEND_CONCURRENCY (small, fixed)
+// and the provider rate is bounded by a shared pacer — see lib/email/sendPacing.ts.
 import { sendIntroductionReminderEmail, sendWaitingResponseEmail } from '@/lib/email'
 import {
   shouldRemindWaiting,
@@ -81,8 +94,16 @@ export async function GET(req: Request) {
   const hasResend = !!process.env.RESEND_API_KEY
 
   // ── PART 4: "Someone is waiting on your response" (daily) ──────────────────
+  //
+  // NOW BOUNDED IN TIME. This loop had no bound of any kind: the query carries no limit, and each
+  // row costs two to three database round trips plus a provider call. It runs BEFORE the Wednesday
+  // stage, so a backlog here could consume the invocation and leave the weekly reminder unsent —
+  // the one email in this route that has no second chance until the following week. A cut here is
+  // recoverable: this stage runs every day, and its dedupeKey makes tomorrow's run resume rather
+  // than repeat. The cut is reported, never silent.
   let waitingSent = 0
   let waitingSkipped = 0
+  let waitingTruncated = false
   const waitingCutoff = new Date(now - WAITING_RESPONSE_THRESHOLD_MS).toISOString()
   const { data: approvedRows } = await admin
     .from('intro_requests')
@@ -96,7 +117,9 @@ export async function GET(req: Request) {
   // the page won't show. Computed once per recipient.
   const actionableByWaiter = new Map<string, Set<string>>()
 
+  const waitingStartedAt = Date.now()
   for (const row of approvedRows ?? []) {
+    if (Date.now() - waitingStartedAt > WAITING_BUDGET_MS) { waitingTruncated = true; break }
     const expresserId = row.requester_id // expressed interest → approved their outbound rec
     const waiterId = row.target_user_id  // the counterpart who must respond
 
@@ -151,8 +174,12 @@ export async function GET(req: Request) {
   // next batch is never revealed. Fires once per batch, ~7 days after it became
   // visible, with copy chosen by engagement (no_action vs partial). Resolved batches
   // get nothing. The dedupeKey enforces exactly one reminder per batch.
+  //
+  // BOUNDED IN TIME for the same reason as PART 4, and recoverable the same way: daily, deduped per
+  // batch, so a cut resumes tomorrow instead of repeating.
   let reminderSent = 0
   let reminderSkipped = 0
+  let reminderTruncated = false
   const staleCutoff = new Date(now - INTRO_REMINDER_STALE_MS).toISOString()
   const { data: activeBatches } = await admin
     .from('recommendation_batches')
@@ -160,7 +187,9 @@ export async function GET(req: Request) {
     .eq('state', 'active')
     .lte('displayed_at', staleCutoff) // 7-day gate (null displayed_at is excluded)
 
+  const introReminderStartedAt = Date.now()
   for (const b of activeBatches ?? []) {
+    if (Date.now() - introReminderStartedAt > INTRO_REMINDER_BUDGET_MS) { reminderTruncated = true; break }
     const unresolved = await countUnresolvedRecommendations(admin, b.member_id)
     // Has the member engaged with any introduction at all (expressed interest / passed)?
     const { data: acted } = await admin
@@ -227,6 +256,10 @@ export async function GET(req: Request) {
   //
   // ONE consolidated email per qualifying member per week, however many cards they hold.
   let wedConsidered = 0, wedClaimed = 0, wedSent = 0, wedFailed = 0
+  let wedUncertain = 0, wedRetried = 0, wedShortfall = 0
+  // Read ONCE per run so pacing, the capacity check and the response all agree on one number, and a
+  // mid-run environment change cannot make them disagree.
+  const sendsPerSecond = emailSendsPerSecond()
   const wedSkip: Record<string, number> = {}
   let wedTruncated = false
 
@@ -234,6 +267,10 @@ export async function GET(req: Request) {
     // Measured from THIS stage's start, not the route's: the pre-existing PART 3/PART 4 work must
     // not consume the reminder's reserved slice.
     const wedStartedAt = Date.now()
+    // ...but CLAMPED by the route ceiling, so an earlier stage that overran its own budget shortens
+    // this window rather than pushing the invocation past maxDuration and stranding PARTS 5b-10.
+    // Normally the clamp is inert: the budget table reserves the full nominal window.
+    const sendDeadlineAt = wednesdaySendDeadlineAt(startedAt, wedStartedAt)
     const cycleKey = newYorkIsoWeekKey(new Date(now))
     // Paged to exhaustion. An unbounded select is capped by PostgREST, which would silently drop
     // recipients — the same failure mode that let already-full members into a batch.
@@ -336,17 +373,57 @@ export async function GET(req: Request) {
         recipients.push({ p, openCount })
       }
 
-      // Claim + send + mark, REMINDER_SEND_CONCURRENCY at a time. Each member's three round trips
-      // stay sequential relative to each other — the claim must land before the send, and the send
-      // before the mark — but different members no longer wait on one another. That is what removes
-      // the truncation: the stage's cost becomes roughly total/concurrency instead of total.
+      // ── CAN THIS RUN ACTUALLY REACH EVERYONE AT THE CONFIGURED RATE? ───────────────────────
       //
-      // Concurrent claims are safe: reminder_deliveries' active-claim index is per
+      // Pacing trades wall-clock for reliability, and the trade has a limit: at R sends/second a
+      // window of D milliseconds reaches at most R·D/1000 members. Because this stage runs only on
+      // Wednesdays, a member it cannot reach waits a WEEK, not until the next invocation.
+      //
+      // Under the DEFAULT configuration this can no longer happen: REMINDER_DEADLINE_MS is derived
+      // from REMINDER_MAX_PER_RUN at DEFAULT_SENDS_PER_SECOND, and REMINDER_MAX_PER_RUN is the most
+      // this stage will admit, so the window always covers the admitted set. The check below is what
+      // catches the two ways that can still stop being true: EMAIL_SENDS_PER_SECOND tuned BELOW the
+      // default, or an earlier stage overrunning far enough that the clamped window is shorter than
+      // the nominal one. Either way it is computed BEFORE any send, logged as an error and returned
+      // in the response — loud on the run that causes it, never discovered from a mailbox.
+      const windowMs = Math.max(0, sendDeadlineAt - Date.now())
+      const capacityAtRate = reachableAtRate(sendsPerSecond, windowMs)
+      if (recipients.length > capacityAtRate) {
+        wedShortfall = recipients.length - capacityAtRate
+        console.error('[engagement-reminders] wednesday capacity shortfall', JSON.stringify({
+          eligible: recipients.length,
+          reachableAtRate: capacityAtRate,
+          shortfall: wedShortfall,
+          projectedSeconds: Math.ceil(estimatedSendSeconds(recipients.length, sendsPerSecond)),
+          sendsPerSecond,
+          admittedMax: REMINDER_MAX_PER_RUN,
+          nominalWindowMs: REMINDER_DEADLINE_MS,
+          remainingWindowMs: windowMs,
+          action: sendsPerSecond < DEFAULT_SENDS_PER_SECOND
+            ? 'EMAIL_SENDS_PER_SECOND is below the default the budget is sized for — raise it'
+            : 'an earlier stage overran; the send window was clamped to protect the later stages',
+        }))
+      }
+
+      // ── PACED SENDING ──────────────────────────────────────────────────────────────────────
+      //
+      // WHAT THIS REPLACED, AND WHY. This loop used to slice `recipients` into chunks of 25 and
+      // issue each chunk with Promise.all. On 2026-09-09 that put ~50 requests/second at Resend:
+      // 102 members were claimed, 20 were accepted inside the first second, and 81 failed over the
+      // next two. The burst was the defect — not the volume.
+      //
+      // Now: a small fixed concurrency to hide per-request latency, and a SHARED evenly-spaced gate
+      // that bounds the total rate regardless of how many workers are running. Claim, send and mark
+      // still happen together inside one handler, so a run that stops at its deadline never leaves a
+      // claim behind for a member it did not attempt.
+      //
+      // Concurrent claims remain safe for the same reason as before: the active-claim index is per
       // (member_id, purpose, cycle_key), so distinct members never contend.
-      for (let i = 0; i < recipients.length; i += REMINDER_SEND_CONCURRENCY) {
-        if (Date.now() - wedStartedAt > REMINDER_DEADLINE_MS) { wedTruncated = true; break }
-        const chunk = recipients.slice(i, i + REMINDER_SEND_CONCURRENCY)
-        await Promise.all(chunk.map(async ({ p, openCount }) => {
+      const paced = await runPacedSends(recipients, {
+        perSecond: sendsPerSecond,
+        concurrency: EMAIL_SEND_CONCURRENCY,
+        deadlineAt: sendDeadlineAt,
+        handle: async ({ p, openCount }) => {
           const claim = await claimReminder(admin, {
             memberId: p.id, purpose: REMINDER_PURPOSE, cycleKey, openCardCount: openCount,
           })
@@ -356,17 +433,45 @@ export async function GET(req: Request) {
             return
           }
           wedClaimed++
-          try {
-            const res = await sendWednesdayIntroReminderEmail(p.email as string, p.firstName, openCount)
-            if (res.sent) { await markAccepted(admin, claim.deliveryId, res.providerMessageId); wedSent++ }
-            else { wedSkip['pref_disabled'] = (wedSkip['pref_disabled'] ?? 0) + 1 }
-          } catch {
-            // Retryable: 'failed' sits outside the active-claim index, so the next run may re-claim.
-            await markFailed(admin, claim.deliveryId, 'provider_error')
-            wedFailed++
+
+          // IN-RUN RETRY REUSES THIS CLAIM. It never re-claims: a second claim would be a second
+          // reminder_deliveries row for one member in one cycle, which is exactly what the active
+          // -claim index exists to prevent.
+          for (let attempt = 1; ; attempt++) {
+            try {
+              const res = await sendWednesdayIntroReminderEmail(p.email as string, p.firstName, openCount)
+              if (res.sent) { await markAccepted(admin, claim.deliveryId, res.providerMessageId); wedSent++ }
+              else { wedSkip['pref_disabled'] = (wedSkip['pref_disabled'] ?? 0) + 1 }
+              return
+            } catch (e: any) {
+              const errorClass: string = e?.errorClass ?? 'provider_error'
+
+              // UNCERTAIN: the request threw, so the message may already be at the provider. Leave
+              // the claim standing rather than record a failure — markFailed's own rule. It blocks a
+              // retry this cycle, which is the safe direction: a missed reminder is recoverable, a
+              // duplicate is not.
+              if (errorClass === 'uncertain') { wedUncertain++; return }
+
+              // Only a rate limit is retried. A definite provider rejection — a bad address, a
+              // rejected payload — will fail identically on a second attempt and must not consume
+              // the run's budget.
+              const delay = backoffMs(attempt)
+              const canRetry = errorClass === 'rate_limited'
+                && attempt < MAX_SEND_ATTEMPTS
+                && Date.now() + delay < sendDeadlineAt
+              if (canRetry) { wedRetried++; await sleep(delay); continue }
+
+              // Persist what ACTUALLY happened. This used to be the literal 'provider_error' for
+              // every outcome, which is why 2026-09-09 could not be diagnosed from the ledger.
+              // 'failed' sits outside the active-claim index, so a later run may re-claim.
+              await markFailed(admin, claim.deliveryId, errorClass)
+              wedFailed++
+              return
+            }
           }
-        }))
-      }
+        },
+      })
+      if (paced.truncated) wedTruncated = true
     } else {
       wedSkip['read_failed_no_sends'] = 1
     }
@@ -492,7 +597,14 @@ export async function GET(req: Request) {
       ranToday: isWednesdayInNewYork(new Date(now)),
       considered: wedConsidered, claimed: wedClaimed, sent: wedSent, failed: wedFailed,
       truncated: wedTruncated, skipped: wedSkip,
+      // Observability for the pacing fix: how fast we were allowed to send, how many sends were
+      // retried after a rate limit, how many outcomes were genuinely unknown, and how many members
+      // the budget could not reach at this rate.
+      sendsPerSecond, retried: wedRetried, uncertain: wedUncertain, shortfall: wedShortfall,
     },
     creditRetry,
-    suggestedExpiry: expiry, waitingSent, waitingSkipped, reminderSent, reminderSkipped })
+    suggestedExpiry: expiry,
+    // Both daily stages are now time-bounded. A cut is reported rather than inferred from a count.
+    waitingSent, waitingSkipped, waitingTruncated,
+    reminderSent, reminderSkipped, reminderTruncated })
 }

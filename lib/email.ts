@@ -8,6 +8,11 @@ import { unsubscribeHeaders, unsubscribeFooterHtml, unsubscribeFooterText, norma
 import { buildSecureInviteEmail } from '@/lib/email/secureInvite'
 import { escapeHtml } from '@/lib/email/escapeHtml'
 import { getSiteUrl } from '@/lib/config/siteUrl'
+// Classification lives in a module with NO Resend client, so it can be imported (and tested)
+// without an API key. Re-exported here because call sites already reach for it via '@/lib/email'.
+import { classifyResendError, logSendFailure, EmailSendError } from '@/lib/email/sendErrors'
+export { classifyResendError, EmailSendError }
+export type { EmailSendErrorClass } from '@/lib/email/sendErrors'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -1447,16 +1452,29 @@ export async function sendWednesdayIntroReminderEmail(
   if (!await isPrefEnabled(toEmail, 'email_new_introductions')) return { sent: false, providerMessageId: null }
   const { buildWednesdayReminderEmail } = await import('@/lib/email/wednesdayReminder')
   const built = buildWednesdayReminderEmail(firstName, openCount)
-  const res = await sendManaged({
-    unsubscribeCategory: 'email_new_introductions',
-    from: 'Andrel <hello@andrel.app>',
-    to: toEmail,
-    subject: built.subject,
-    html: built.html,
-    text: built.text,
-  })
-  if ((res as any)?.error) throw new Error('provider_error')
-  return { sent: true, providerMessageId: (res as any)?.data?.id ?? null }
+  // A THROWN request is not the same fact as a REFUSED one. Nothing reached the provider's decision
+  // if the request itself failed, so the message may or may not have been accepted — 'uncertain',
+  // and the caller must leave the claim standing rather than record a failure.
+  let res: any
+  try {
+    res = await sendManaged({
+      unsubscribeCategory: 'email_new_introductions',
+      from: 'Andrel <hello@andrel.app>',
+      to: toEmail,
+      subject: built.subject,
+      html: built.html,
+      text: built.text,
+    })
+  } catch (e: any) {
+    logSendFailure('sendWednesdayIntroReminderEmail', 'uncertain', e)
+    throw new EmailSendError('uncertain')
+  }
+  if (res?.error) {
+    const errorClass = classifyResendError(res.error)
+    logSendFailure('sendWednesdayIntroReminderEmail', errorClass, res.error)
+    throw new EmailSendError(errorClass)
+  }
+  return { sent: true, providerMessageId: res?.data?.id ?? null }
 }
 
 /**
@@ -1479,6 +1497,13 @@ export async function sendNewIntroductionsEmail(
     html: built.html,
     text: built.text,
   })
-  if ((res as any)?.error) throw new Error('provider_error')
+  // Same narrow helper-level defect as the Wednesday sender above, fixed the same way: the provider
+  // error object was tested for truthiness and discarded, so a 429 and a rejected address were
+  // indistinguishable downstream. Recipients, eligibility and copy are untouched.
+  if ((res as any)?.error) {
+    const errorClass = classifyResendError((res as any).error)
+    logSendFailure('sendNewIntroductionsEmail', errorClass, (res as any).error)
+    throw new EmailSendError(errorClass)
+  }
   return { sent: true, providerMessageId: (res as any)?.data?.id ?? null }
 }

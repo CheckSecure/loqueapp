@@ -161,9 +161,17 @@ export async function POST(req: Request) {
       } else {
         bump('pref_disabled'); rows.push({ ...base, verdict: 'pref_disabled' })
       }
-    } catch {
-      await markFailed(admin, claim.deliveryId, 'provider_error')
-      bump('failed'); rows.push({ ...base, verdict: 'failed' })
+    } catch (e: any) {
+      // Persist the ACTUAL class rather than the literal 'provider_error'. An 'uncertain' outcome —
+      // a thrown request that may already have reached the provider — leaves the claim standing
+      // instead of recording a failure, per deliveryLedger.markFailed's own rule.
+      const errorClass: string = e?.errorClass ?? 'provider_error'
+      if (errorClass === 'uncertain') {
+        bump('uncertain'); rows.push({ ...base, verdict: 'uncertain' })
+      } else {
+        await markFailed(admin, claim.deliveryId, errorClass)
+        bump('failed'); rows.push({ ...base, verdict: 'failed' })
+      }
     }
   }
 

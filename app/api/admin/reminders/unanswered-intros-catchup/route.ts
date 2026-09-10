@@ -111,7 +111,7 @@ export async function POST(req: Request) {
   const candidates = Array.from(byMember.entries()).sort((a, b) => a[0].localeCompare(b[0]))
   const truncated = candidates.length > CATCHUP_MAX_RECIPIENTS
 
-  let considered = 0, claimed = 0, sent = 0, failed = 0, deadlineHit = false
+  let considered = 0, claimed = 0, sent = 0, failed = 0, uncertain = 0, deadlineHit = false
   const skip: Record<string, number> = {}
   const details: Array<{ firstName: string | null; email: string; classification: string; outcome: string }> = []
   const note = (k: string) => { skip[k] = (skip[k] ?? 0) + 1 }
@@ -170,11 +170,21 @@ export async function POST(req: Request) {
         await markAccepted(admin, claim.deliveryId, null)
         details.push({ firstName: p.firstName, email: maskEmail(p.email), classification: 'eligible', outcome: 'opted_out' })
       }
-    } catch {
-      // CLASS only, never the provider's message. 'failed' leaves the claim retryable.
-      await markFailed(admin, claim.deliveryId, 'provider_error')
-      failed++
-      details.push({ firstName: p.firstName, email: maskEmail(p.email), classification: 'eligible', outcome: 'failed' })
+    } catch (e: any) {
+      // CLASS only, never the provider's message — but the ACTUAL class now, rather than the literal
+      // 'provider_error' this used to persist for every outcome. 'failed' leaves the claim retryable.
+      const errorClass: string = e?.errorClass ?? 'provider_error'
+      if (errorClass === 'uncertain') {
+        // The request threw, so the message may already be at the provider. Leave the claim standing
+        // rather than record a failure — deliveryLedger.markFailed's own rule: a missed reminder is
+        // recoverable, a duplicate is not.
+        uncertain++
+        details.push({ firstName: p.firstName, email: maskEmail(p.email), classification: 'eligible', outcome: 'uncertain' })
+      } else {
+        await markFailed(admin, claim.deliveryId, errorClass)
+        failed++
+        details.push({ firstName: p.firstName, email: maskEmail(p.email), classification: 'eligible', outcome: 'failed' })
+      }
     }
 
     if (mode.kind === 'test_recipient') break   // exactly one
@@ -186,7 +196,7 @@ export async function POST(req: Request) {
     campaign: CATCHUP_CAMPAIGN_KEY,
     mode: mode.kind,
     eligibleTotal: candidates.length,
-    considered, claimed, sent, failed,
+    considered, claimed, sent, failed, uncertain,
     truncated, deadlineHit,
     skipped: skip,
     recipients: details,

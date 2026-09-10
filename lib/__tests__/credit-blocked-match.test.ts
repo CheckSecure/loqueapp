@@ -74,7 +74,11 @@ describe('the sweep retries rather than instrumenting the credit writers', () =>
   })
 
   it('is budgeted and cannot break the rest of the cron', () => {
-    expect(CRON).toMatch(/const CREDIT_RETRY_BUDGET_MS = [\d_]+/)
+    // The budget moved into the shared route budget table (lib/cron/engagementBudget), where every
+    // stage's slice is summed against maxDuration instead of being chosen stage by stage.
+    expect(readFileSync('lib/cron/engagementBudget.ts', 'utf8'))
+      .toMatch(/const CREDIT_RETRY_BUDGET_MS = [\d_]+/)
+    expect(CRON).toMatch(/budgetMs: CREDIT_RETRY_BUDGET_MS/)
     expect(CRON).toContain('credit-blocked sweep failed (class)')
   })
 })
