@@ -20,6 +20,7 @@ import { ACTING_CONSENT_STATUSES, COUNTERPART_INTEREST_STATUSES } from '@/lib/in
 
 const CRON = readFileSync('app/api/cron/engagement-reminders/route.ts', 'utf8')
 const EXPIRE = readFileSync('app/api/cron/expire-pending-intros/route.ts', 'utf8')
+const BUDGET = readFileSync('lib/cron/engagementBudget.ts', 'utf8')
 const M065 = readFileSync('supabase/migrations/065_reminder_deliveries.sql', 'utf8')
 const M066 = readFileSync('supabase/migrations/066_expire_intro_pair.sql', 'utf8')
 
@@ -368,7 +369,10 @@ describe('bounded processing and privacy of the worker', () => {
     expect(CRON).toMatch(/read_failed_no_sends/)
   })
   it('is capped and deadline-aware', () => {
-    expect(CRON).toMatch(/REMINDER_MAX_PER_RUN = \d+/)
+    // Both constants now live in the shared route budget table, where the cap and the window are
+    // checked against each other instead of being chosen stage by stage.
+    expect(BUDGET).toMatch(/REMINDER_MAX_PER_RUN = \d+/)
+    expect(CRON).toMatch(/candidates\.slice\(0, REMINDER_MAX_PER_RUN\)/)
     expect(CRON).toMatch(/REMINDER_DEADLINE_MS/)
     expect(CRON).toMatch(/wedTruncated = true/)
     expect(WORKER).toMatch(/maxPairs = opts\.maxPairs \?\? \d+/)
@@ -391,7 +395,9 @@ describe('bounded processing and privacy of the worker', () => {
     const stage = CRON.slice(CRON.indexOf('PART 4'), CRON.indexOf('PART 6'))
     expect(stage).not.toMatch(/\.eq\('id', memberId\)\s*\n\s*\.maybeSingle\(\)/)
     expect(stage).toContain('profById.get(memberId)')
-    expect(stage).toContain('REMINDER_SEND_CONCURRENCY')
+    // The 25-wide Promise.all that this profile round trip used to feed is gone; sends now go
+    // through the shared paced runner. (REMINDER_SEND_CONCURRENCY no longer exists as code.)
+    expect(stage).toContain('runPacedSends(recipients')
   })
   it('reports aggregate counts only, no identities', () => {
     expect(CRON).toMatch(/considered: wedConsidered, claimed: wedClaimed, sent: wedSent, failed: wedFailed/)
@@ -496,11 +502,23 @@ describe('Blocker 2 — the expiry stage rides the cron we can see running', () 
 
   it('the reminder stage runs BEFORE expiry, on its own reserved budget', () => {
     expect(CRON.indexOf('PART 5: WEDNESDAY')).toBeLessThan(CRON.indexOf('PART 6: bounded DAILY'))
-    expect(CRON).toMatch(/REMINDER_DEADLINE_MS = \d+_?\d*/)
-    expect(CRON).toMatch(/EXPIRY_BUDGET_MS = \d+_?\d*/)
-    // measured from the stage's own start, so PART 3/4 cannot eat the reminder's slice
+    expect(BUDGET).toMatch(/REMINDER_DEADLINE_MS = Math\.ceil\(/)
+    expect(BUDGET).toMatch(/EXPIRY_BUDGET_MS = \d+_?\d*/)
+    // Measured from the stage's own start, so PART 3/4 cannot eat the reminder's slice.
+    //
+    // The budget is now handed to the paced send runner as an absolute instant rather than
+    // re-computed per chunk — the send loop stopped being a chunked `Promise.all` when the 25-wide
+    // burst was removed (2026-09-09). Same property, same origin, different expression: the
+    // deadline is still `wedStartedAt + REMINDER_DEADLINE_MS` and nothing else can extend it.
     expect(CRON).toMatch(/const wedStartedAt = Date\.now\(\)/)
-    expect(CRON).toMatch(/Date\.now\(\) - wedStartedAt > REMINDER_DEADLINE_MS/)
+    expect(CRON).toMatch(/deadlineAt: sendDeadlineAt/)
+    // sendDeadlineAt IS wedStartedAt + REMINDER_DEADLINE_MS, additionally clamped by the route
+    // ceiling so PART 5 can never push the invocation past maxDuration and strand PARTS 5b-10.
+    expect(CRON).toMatch(/const sendDeadlineAt = wednesdaySendDeadlineAt\(startedAt, wedStartedAt\)/)
+    expect(BUDGET).toMatch(/Math\.min\(stageStartedAt \+ REMINDER_DEADLINE_MS, routeCeiling\)/)
+    // and the runner honours it before invoking the handler, so a stopped run claims nothing
+    const pacing = readFileSync('lib/email/sendPacing.ts', 'utf8')
+    expect(pacing).toMatch(/if \(now\(\) >= opts\.deadlineAt\)/)
   })
 
   it('an expiry backlog cannot starve the Wednesday email', () => {

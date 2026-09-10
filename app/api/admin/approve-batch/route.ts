@@ -9,6 +9,18 @@ import { finalizeWeeklyRelease } from '@/lib/introductions/batchRelease'
 export const dynamic = 'force-dynamic'
 
 /**
+ * RUNTIME CEILING. The send loop below is SEQUENTIAL — one awaited notification per placed member —
+ * which is why it was never the burst the Wednesday reminder was, and why it is deliberately left
+ * alone here. But sequential also means it scales with the batch: ~100 members at two or three round
+ * trips each is well past the platform default this route was inheriting.
+ *
+ * 60 is the Hobby maximum and matches weekly-refresh and the three campaign senders. Nothing else
+ * about the loop changes: still sequential, still one email per member, still guarded by the
+ * notification dedupeKey, so a re-run after a timeout skips everyone already notified.
+ */
+export const maxDuration = 60
+
+/**
  * Admin "Send" for a reciprocal batch. It MATERIALIZES the reviewed proposals into
  * intro_requests (the single member-facing queue) as an 'admin_reciprocal' batch.
  *
