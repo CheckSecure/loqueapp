@@ -470,11 +470,27 @@ describe('Stage 2B (Pool 3) was NOT implemented', () => {
     expect(src).toContain('partitionByCommunity')
   })
 
-  it('buildScoringContext still derives its IDF corpus from the whole cohort', () => {
+  it('buildScoringContext still derives its IDF corpus from the whole cohort it is given', () => {
     // Stage 2B must partition BEFORE this, because memberCount is the IDF denominator. Recorded
     // here so the reason survives with the code rather than only in a report.
     const bs = readFileSync('lib/matching/batch-scoring.ts', 'utf8')
     expect(bs).toMatch(/memberCount: profiles\.length/)
-    expect(bs).not.toContain('member_type')
+
+    // NARROWED AT STEP 3.5. The scorer now derives which community's semantics a cohort is scored
+    // under — but it still does so from the cohort it was HANDED, and it still reads the column only
+    // through communityOf(). The property that mattered is unchanged: this function never filters or
+    // re-partitions, so the corpus is exactly the profiles the caller passed.
+    const code = bs.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
+    expect(code).not.toMatch(/\.member_type\b/)
+    expect(code).not.toMatch(/['"]member_type['"]/)
+    expect(bs).toMatch(/semantics: cohortSemantics\(profiles, codePath\)/)
+
+    // The FUNCTION BODY neither filters nor re-partitions: every profile handed in contributes to
+    // memberCount and to all three rarity maps. (Scoped to the body — the module as a whole uses
+    // .filter freely for overlap computation, and asserting over the file would test nothing.)
+    const from = code.indexOf('export function buildScoringContext')
+    const body = code.slice(from, code.indexOf('export function cohortSemantics'))
+    expect(body.length).toBeGreaterThan(200)
+    expect(body).not.toMatch(/\.filter\(|partitionByCommunity\(|filterSameCommunity/)
   })
 })

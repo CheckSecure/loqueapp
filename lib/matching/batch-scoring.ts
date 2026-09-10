@@ -74,6 +74,60 @@ export type ScoringConfig = {
  * which the objective forbids). A gentle geometric decay tempers maximalist
  * multi-overlap without gutting it.
  */
+/**
+ * ─── ANDREL NEXT SCORING SEMANTICS ────────────────────────────────────────────────────────────
+ *
+ * The ONE term whose meaning differs by community, and the floor that term is measured against.
+ *
+ * WHY EXPERTISE MEANS SOMETHING ELSE FOR STUDENTS. For professionals, `expertise` is answered as
+ * "what I do", and the scorer rewards COMPLEMENTARITY: partial overlap scores, an identical or
+ * subset pair scores zero, because two people who do exactly the same thing are usually
+ * competitors rather than a useful introduction. For an Andrel Next member the same column is
+ * answered as "the areas of law I am interested in", and two students both specifically interested
+ * in Privacy & Cybersecurity are one of the best introductions the cohort can make. Same column,
+ * opposite meaning — which is why this is a semantics branch and not a weighting tweak.
+ *
+ * WHY IT REUSES overlapScore RATHER THAN INVENTING A FORMULA. Purposes and interests are already
+ * scored as rarity-weighted overlap with geometric decay, and that machinery solves the small-cohort
+ * problem for free: in a 50-student cohort a niche practice area is genuinely rare and earns up to
+ * rarityClampMax x base, while a near-universal one is damped to rarityClampMin x base. A second
+ * formula would be a second thing to calibrate, and a second thing to drift.
+ *
+ * ONE ACCURATE SELECTION IS ENOUGH. base is applied per shared item with no minimum-selection
+ * requirement, so a student who honestly picks a single practice area gets a real signal. Nobody is
+ * asked to over-select to satisfy the scorer.
+ */
+export const NEXT_SCORING_CONFIG = {
+  /**
+   * Per shared practice interest, before rarity. Slightly above purposeBase (12) because shared
+   * professional direction is the strongest student signal available, and deliberately below the
+   * 30/20 the intro-preference term is worth for professionals — a role-less member scores nothing
+   * there, and this is not trying to replace it point for point.
+   */
+  expertiseBase: 14,
+  /** The same geometric decay purposes and interests already use. One decay constant, three fields. */
+  expertiseDecay: 0.75,
+  /**
+   * PROVISIONAL. The weekly-batch relevance floor for a Next cohort.
+   *
+   * Professional's 40 sits at roughly the 20-25th percentile of its observed distribution. A Next
+   * pair cannot earn the intro-preference term at all (a student has no role_type), cannot earn the
+   * seniority term (NULL), and earns nothing from tier, verification or trust while the cohort is
+   * new — so its reachable range is far narrower, and 40 would sit near its 60th percentile.
+   * 28 is the proportionally equivalent floor on that narrower range.
+   *
+   * WHAT 28 STILL EXCLUDES, which is the point: format alignment plus one near-universal shared
+   * goal is 13, and that does not qualify. A pair must earn at least one substantive shared
+   * signal — a practice area, two-plus interests, or geography plus a real goal.
+   *
+   * IT IS PROVISIONAL BECAUSE THERE IS NO PRODUCTION NEXT SCORE DISTRIBUTION YET. No Andrel Next
+   * member exists. This number is derived from the reachable-range ratio, not measured, and the
+   * per-community histogram added alongside it is what will let it be revisited against the first
+   * real batch rather than argued about.
+   */
+  minRelevanceScore: 28,
+} as const
+
 export const SCORING_CONFIG: ScoringConfig = {
   purposeBase: 12,      // a TYPICAL shared purpose ≈ 12 (= old flat weight); rare > 12, "Networking" < 12
   purposeDecay: 0.75,   // each further shared purpose (rarest-first) = 75% of the previous
@@ -132,9 +186,33 @@ export function effectiveTierDistribution(tier: string | null | undefined): { hi
 export type Frequencies = Map<string, number>
 /** Rarity factor per item, centered on 1.0 for the typical shared item (scale-preserving). */
 export type RarityMap = Map<string, number>
-export type ScoringContext = { memberCount: number; purposeRarity: RarityMap; interestRarity: RarityMap; config: ScoringConfig }
+/**
+ * Which community's semantics a cohort is scored under.
+ *
+ * DERIVED, NEVER PASSED BY A CALLER. buildScoringContext reads it from the cohort's own
+ * profiles.member_type — the column migration 100 binds at INSERT and migration 099 makes
+ * immutable — which is the same value partitionByCommunity already used to build that cohort.
+ * There is deliberately no parameter for a call site to get wrong, and nothing here can be
+ * influenced by a request body, a URL, a UI prop or an email.
+ */
+export type ScoringSemantics = MemberType
+
+export type ScoringContext = {
+  memberCount: number
+  purposeRarity: RarityMap
+  interestRarity: RarityMap
+  /**
+   * Rarity for practice interests, built exactly like the other two. Present for every cohort so the
+   * shape is uniform; only Next semantics read it, and for a Professional cohort it is inert.
+   */
+  expertiseRarity: RarityMap
+  /** See ScoringSemantics. Fails closed to DEFAULT_MEMBER_TYPE. */
+  semantics: ScoringSemantics
+  config: ScoringConfig
+}
 
 import { assertAllEligible } from '@/lib/matching/eligibility'
+import { communityOf, DEFAULT_MEMBER_TYPE, type MemberType } from '@/lib/community/memberType'
 import { preferenceMatchesRole } from '@/lib/matching/introPreferenceMatch'
 import { RECOMMENDATIONS_PER_BATCH } from '@/lib/introductions/limits'
 
@@ -204,16 +282,63 @@ export function buildScoringContext(profiles: any[], config: ScoringConfig = SCO
   assertAllEligible(profiles, codePath)
   const purposeDf: Frequencies = new Map()
   const interestDf: Frequencies = new Map()
+  const expertiseDf: Frequencies = new Map()
   for (const p of profiles) {
     for (const x of uniqLow(p.purposes)) purposeDf.set(x, (purposeDf.get(x) ?? 0) + 1)
     for (const x of uniqLow(p.interests)) interestDf.set(x, (interestDf.get(x) ?? 0) + 1)
+    for (const x of uniqLow(parseList(p.expertise))) expertiseDf.set(x, (expertiseDf.get(x) ?? 0) + 1)
   }
   return {
     memberCount: profiles.length,
     purposeRarity: buildRarity(purposeDf, profiles.length, config.rarityClampMin, config.rarityClampMax),
     interestRarity: buildRarity(interestDf, profiles.length, config.rarityClampMin, config.rarityClampMax),
+    expertiseRarity: buildRarity(expertiseDf, profiles.length, config.rarityClampMin, config.rarityClampMax),
+    semantics: cohortSemantics(profiles, codePath),
     config,
   }
+}
+
+/**
+ * The community a cohort is scored as, read from the cohort itself.
+ *
+ * ─── FAIL CLOSED, ON EVERY UNCERTAINTY ────────────────────────────────────────────────────────
+ * An empty cohort, a cohort whose members disagree, or any member whose member_type is absent or
+ * unrecognised all yield DEFAULT_MEMBER_TYPE — Professional, which is what every existing member
+ * is and what today's semantics already produce. The dangerous direction would be the reverse:
+ * a cohort silently scored under Next semantics would change Professional results.
+ *
+ * A DISAGREEING COHORT SHOULD BE IMPOSSIBLE. The generate-batch route calls this once per
+ * partitionByCommunity partition, and those partitions are disjoint by construction. The assertion
+ * exists because "impossible by construction" is a property of today's caller, not of the function,
+ * and a future caller that hoisted the wrong variable would otherwise score a mixed cohort silently.
+ * It reports and degrades rather than throwing: a batch that still runs under Professional
+ * semantics is a better failure than a batch that does not run.
+ */
+export function cohortSemantics(profiles: any[], codePath = 'cohortSemantics'): ScoringSemantics {
+  if (!Array.isArray(profiles) || profiles.length === 0) return DEFAULT_MEMBER_TYPE
+  const first = communityOf(profiles[0])
+  if (first === null) {
+    console.warn(`[${codePath}] cohort semantics: unrecognised member_type; scoring as ${DEFAULT_MEMBER_TYPE}`)
+    return DEFAULT_MEMBER_TYPE
+  }
+  for (const p of profiles) {
+    if (communityOf(p) !== first) {
+      // Aggregate only — no member id, name, email or company.
+      console.error(`[${codePath}] cohort semantics: MIXED COMMUNITY cohort; scoring as ${DEFAULT_MEMBER_TYPE}`)
+      return DEFAULT_MEMBER_TYPE
+    }
+  }
+  return first
+}
+
+/**
+ * The weekly-batch relevance floor for a cohort's community.
+ *
+ * Selected from the cohort's own derived semantics, never from an argument a caller supplies.
+ * Professional is BATCH_CONFIG.minRelevanceScore and is unchanged at 40.
+ */
+export function relevanceFloorFor(semantics: ScoringSemantics): number {
+  return semantics === 'next' ? NEXT_SCORING_CONFIG.minRelevanceScore : BATCH_CONFIG.minRelevanceScore
 }
 
 /** Pairwise score of `candidate` for `recipient` (direction matters). */
@@ -251,11 +376,35 @@ export function scoreMatch(recipient: any, candidate: any, ctx: ScoringContext):
   const sharedPurposes = uniqLow(recipient.purposes).filter(p => uniqLow(candidate.purposes).includes(p))
   score += overlapScore(sharedPurposes, ctx.purposeRarity, cfg.purposeBase, cfg.purposeDecay)
 
-  // 4. Expertise complementarity — UNCHANGED (core signal): partial overlap, capped at 5
+  // 4. Expertise — THE ONE TERM WHOSE MEANING DEPENDS ON THE COMMUNITY.
+  //
+  // PROFESSIONAL: complementarity, byte-for-byte unchanged. Partial overlap scores min(5,n)x8;
+  // an identical or subset pair scores ZERO, because two professionals who do exactly the same
+  // thing are usually competitors rather than a useful introduction. Every branch of this is
+  // frozen in lib/__tests__/professional-scoring-golden.test.ts.
+  //
+  // NEXT: similarity. The same column is answered as "the areas of law I am interested in", and two
+  // students both specifically interested in Privacy & Cybersecurity are one of the best
+  // introductions the cohort can make — so a shared item is a POSITIVE signal, and an identical
+  // single-item pair is the strongest case rather than the weakest. Scored with the same
+  // rarity-weighted, geometric-decay machinery purposes and interests already use, so a niche
+  // practice area in a small cohort is automatically worth more than a near-universal one, and one
+  // honestly-chosen area is enough. No overlap contributes zero — never a rejection, just no signal.
+  // An empty set on either side shares nothing and therefore scores zero, which is exactly how
+  // "still exploring" is intended to behave without ever being stored as a value.
+  //
+  // ctx.semantics is DERIVED from the cohort's own immutable member_type (see cohortSemantics);
+  // there is no argument here a caller could get wrong, and it fails closed to professional.
   const rExp = uniqLow(parseList(recipient.expertise))
   const cExp = uniqLow(parseList(candidate.expertise))
-  const expOverlap = rExp.filter(e => cExp.includes(e)).length
-  if (expOverlap > 0 && expOverlap < Math.min(rExp.length, cExp.length)) score += Math.min(5, expOverlap) * 8
+  const sharedExpertise = rExp.filter(e => cExp.includes(e))
+  if (ctx.semantics === 'next') {
+    score += overlapScore(sharedExpertise, ctx.expertiseRarity,
+      NEXT_SCORING_CONFIG.expertiseBase, NEXT_SCORING_CONFIG.expertiseDecay)
+  } else {
+    const expOverlap = sharedExpertise.length
+    if (expOverlap > 0 && expOverlap < Math.min(rExp.length, cExp.length)) score += Math.min(5, expOverlap) * 8
+  }
 
   // 5. Geographic alignment
   const scope = recipient.geographic_scope || 'us-wide'
@@ -346,6 +495,11 @@ export function algorithmSnapshot() {
     version: RECOMMENDATION_ALGORITHM_VERSION,
     scoringModelVersion: SCORING_MODEL_VERSION,
     scoring: SCORING_CONFIG,
+    // The Next semantics are part of what produced a batch, so they belong in the reproducibility
+    // snapshot. Including them CHANGES THE CONFIG HASH for Professional batches too — accepted
+    // deliberately: the hash is a provenance stamp, and the configuration genuinely changed. It is
+    // not a scoring change, and the Professional golden fixtures prove that separately.
+    next: NEXT_SCORING_CONFIG,
     exposure: EXPOSURE_CONFIG,
     batch: BATCH_CONFIG,
   }

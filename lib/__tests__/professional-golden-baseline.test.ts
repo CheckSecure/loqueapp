@@ -155,10 +155,19 @@ describe('GOLDEN: algorithm identity is pinned', () => {
     expect(SCORING_MODEL_VERSION).toBe('v2.0.0')
   })
 
-  it('the scoring config hash is unchanged', () => {
-    // Any edit to SCORING_CONFIG / BATCH_CONFIG changes this. If it changes, Professional scores
-    // changed, and that is a product decision — not a side effect of a segmentation change.
-    expect(algorithmConfigHash()).toMatchInlineSnapshot(`"df26f0c8"`)
+  it('the scoring config hash records every input to a batch', () => {
+    // WHAT THIS PIN ORIGINALLY SAID, AND WHY IT NEEDED CORRECTING. It read: "If it changes,
+    // Professional scores changed." That was true while SCORING_CONFIG and BATCH_CONFIG were the
+    // only things in the snapshot. Step 3.5 added NEXT_SCORING_CONFIG — the Andrel Next expertise
+    // semantics and the Next relevance floor — because those are genuinely part of what produced a
+    // batch and belong in a reproducibility stamp. So the hash now also moves when NEXT config
+    // changes, with no Professional consequence whatsoever.
+    //
+    // df26f0c8 -> bec34e9e for exactly that reason. The claim the original pin was protecting is
+    // still enforced, and by something stronger than a hash: the eight other tests in THIS file —
+    // hard-gate admission, every directional score, the selected edge set, capacity and solver
+    // determinism — all pass unchanged, as do the 65 fixtures in professional-scoring-golden.
+    expect(algorithmConfigHash()).toMatchInlineSnapshot(`"bec34e9e"`)
   })
 
   it('per-tier batch sizes are unchanged', () => {

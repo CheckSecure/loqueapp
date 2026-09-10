@@ -234,10 +234,18 @@ describe('The route wires it the way the design requires', () => {
   )
 
   it('partitionByCommunity has exactly one production caller: this route', () => {
+    // NARROWED AT STEP 3.5: matches an actual CALL, not a mention. batch-scoring.ts now explains in
+    // prose why its derived semantics agree with the partition the route already built, and a
+    // filename-level grep cannot tell a comment from a call. The claim is unchanged — one caller.
     const { execSync } = require('node:child_process')
-    const callers = execSync("grep -rln 'partitionByCommunity' --include='*.ts' app lib || true", { encoding: 'utf8' })
+    const callers = execSync("grep -rln 'partitionByCommunity(' --include='*.ts' app lib || true", { encoding: 'utf8' })
       .split('\n').filter(Boolean)
       .filter((f: string) => !f.includes('__tests__') && f !== 'lib/community/memberType.ts')
+      .filter((f: string) => {
+        const code = readFileSync(f, 'utf8').split('\n')
+          .filter((l: string) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
+        return code.includes('partitionByCommunity(')
+      })
     expect(callers).toEqual(['app/api/admin/generate-batch/route.ts'])
   })
 
