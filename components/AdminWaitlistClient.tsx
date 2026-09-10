@@ -75,6 +75,10 @@ interface WaitlistEntry {
   linkedin_url: string | null
   referral_source: string | null
   status: string
+  // The community this invitation is FOR (migration 099). Read-only here: it is displayed after
+  // issuance and is never posted back — the send route is the only writer. Optional so a page that
+  // has not yet been redeployed with the column in its select does not break the badge.
+  intended_member_type?: string | null
   created_at: string
   invited_at: string | null
   invite_reminder_1_sent_at: string | null
@@ -253,6 +257,24 @@ export default function AdminWaitlistClient({
     setMarkFounding(prev => ({ ...prev, [entryId]: !prev[entryId] }))
   }
 
+  // Per-row "Invite to Andrel Next" toggle. Same shape as the founding toggle above and completely
+  // independent of it — a Next invitee can also be a founding member. Client-side only; the value is
+  // read at send time, posted to the admin route, and whitelisted there before it can reach the
+  // database. Unchecked means Professional, which is also what sending with no interaction at all
+  // means, so the ordinary path is unaffected.
+  //
+  // Offered ONLY on approved/contacted. After issuance the community is fixed — migration 100 binds
+  // the first profile to it and 099 makes the result immutable — so the invited tab shows a
+  // read-only badge instead, and the server refuses a designation for an already-issued invitation
+  // rather than relying on this control being absent.
+  const [markNext, setMarkNext] = useState<Record<string, boolean>>({})
+
+  const toggleMarkNext = (entryId: string) => {
+    setMarkNext(prev => ({ ...prev, [entryId]: !prev[entryId] }))
+  }
+
+  const canDesignateCommunity = activeTab === 'approved' || activeTab === 'contacted'
+
   const handleApprove = async (entryId: string) => {
     setProcessing(entryId)
     const res = await fetch('/api/admin/waitlist/approve', {
@@ -276,10 +298,20 @@ export default function AdminWaitlistClient({
   }
 
   const postInvite = async (entryId: string, action: 'invite' | 'password_reset', force = false) => {
+    // intendedMemberType is included ONLY where a community may still be chosen. On the invited tab
+    // — every resend — the field is omitted entirely, so a resend carries no fresh community value
+    // and preserves whatever was stored at issuance. The server refuses a designation outside
+    // approved/contacted regardless; this just never asks.
+    const body: Record<string, unknown> = {
+      entryId, markAsFounding: !!markFounding[entryId], action, force,
+    }
+    if (canDesignateCommunity && action === 'invite') {
+      body.intendedMemberType = markNext[entryId] ? 'next' : 'professional'
+    }
     const res = await fetch('/api/admin/send-invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entryId, markAsFounding: !!markFounding[entryId], action, force }),
+      body: JSON.stringify(body),
     })
     return res.json()
   }
@@ -617,6 +649,16 @@ export default function AdminWaitlistClient({
                           <div>
                             <p className="text-sm font-semibold text-slate-900">
                               {entry.full_name || 'No name provided'}
+                              {/* Community. Before issuance this reflects the pending choice; after
+                                  issuance it reflects the STORED designation and is read-only.
+                                  Professional shows nothing — it is the default and the
+                                  overwhelming majority, so a badge on every row would be noise. */}
+                              {((canDesignateCommunity && markNext[entry.id]) ||
+                                entry.intended_member_type === 'next') && (
+                                <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-full">
+                                  Andrel Next
+                                </span>
+                              )}
                             </p>
                             <p className="text-xs text-slate-500">{entry.email}</p>
                           </div>
@@ -788,6 +830,18 @@ export default function AdminWaitlistClient({
                               />
                               Mark as founding member
                             </label>
+                            {/* Community. Independent of founding member: either, both or neither.
+                                Unchecked = Andrel Professional, which is also what sending without
+                                touching this means. Choosable only until the invitation is sent. */}
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900 select-none">
+                              <input
+                                type="checkbox"
+                                checked={!!markNext[entry.id]}
+                                onChange={() => toggleMarkNext(entry.id)}
+                                className="w-4 h-4 rounded border-slate-400 accent-brand-navy focus:ring-2 focus:ring-brand-gold"
+                              />
+                              Invite to Andrel Next
+                            </label>
                             <button
                               onClick={() => handleSendInvite(entry.id)}
                               disabled={processing === entry.id}
@@ -824,6 +878,18 @@ export default function AdminWaitlistClient({
                                 className="w-4 h-4 rounded border-slate-400 accent-brand-navy focus:ring-2 focus:ring-brand-gold"
                               />
                               Mark as founding member
+                            </label>
+                            {/* Community. Independent of founding member: either, both or neither.
+                                Unchecked = Andrel Professional, which is also what sending without
+                                touching this means. Choosable only until the invitation is sent. */}
+                            <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900 select-none">
+                              <input
+                                type="checkbox"
+                                checked={!!markNext[entry.id]}
+                                onChange={() => toggleMarkNext(entry.id)}
+                                className="w-4 h-4 rounded border-slate-400 accent-brand-navy focus:ring-2 focus:ring-brand-gold"
+                              />
+                              Invite to Andrel Next
                             </label>
                             <button
                               onClick={() => handleSendInvite(entry.id)}

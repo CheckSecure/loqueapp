@@ -76,11 +76,58 @@ describe('intended community: server-controlled, Professional-safe', () => {
     expect(code).toContain('a waitlist row carries an unrecognised intended_member_type')
   })
 
-  it('no browser role can reach it, and no client parameter selects it', () => {
-    // The column is on waitlist, which the browser cannot write; and nothing in production names it.
+  it('only the admin issuance path names it, and no client value reaches it unchecked', () => {
+    // CORRECTED IN THE NEXT ISSUANCE CONTROL. This previously read "the column is on waitlist, which
+    // the browser cannot write", and asserted the file list was migrationHealth alone. The first
+    // half was never verified and is not quite true: authenticated and anon DO hold the table-level
+    // UPDATE privilege on public.waitlist — migration 055 revoked browser DML on the core member
+    // tables and never covered this one.
+    //
+    // What actually protects the column, measured against production:
+    //   * RLS is ENABLED on public.waitlist, and the ONLY update policy is
+    //     waitlist_update_admin — USING is_admin(). Ordinary members cannot update a waitlist row
+    //     through PostgREST at all, whatever the grant says.
+    //   * The single production writer runs behind the send-invite route's server-side admin check
+    //     and writes with the SERVICE-ROLE client, so it never depends on the caller's own role.
+    //   * The value is whitelisted to 'professional' | 'next' before it can reach the database.
+    //
+    // The file list is pinned rather than the claim. A new name here fails until it is reviewed.
     const hits = execSync("grep -rln 'intended_member_type' --include='*.ts' --include='*.tsx' app lib components || true",
-      { encoding: 'utf8' }).split('\n').filter(Boolean).filter((f) => !f.includes('__tests__'))
-    expect(hits).toEqual(['lib/db/migrationHealth.ts'])   // registration only, not a writer
+      { encoding: 'utf8' }).split('\n').filter(Boolean).filter((f) => !f.includes('__tests__')).sort()
+    expect(hits).toEqual([
+      'app/api/admin/send-invite/route.ts',        // the ONE writer, admin-gated, service-role
+      'app/dashboard/admin/waitlist/page.tsx',     // reads it for the read-only badge
+      'components/AdminWaitlistClient.tsx',        // renders the badge; posts a request, never a value
+      'lib/db/migrationHealth.ts',                 // probe registration
+      'lib/invitations/communityDesignation.ts',   // the whitelist itself
+    ])
+  })
+
+  it('the whitelist is the only way a browser value becomes a community', () => {
+    const route = readFileSync('app/api/admin/send-invite/route.ts', 'utf8')
+    // The raw body value is never written. It goes through normalizeDesignation first.
+    expect(route).toMatch(/normalizeDesignation\(body\.intendedMemberType\)/)
+    expect(route).not.toMatch(/intended_member_type:\s*body\./)
+    // And the write is on the service-role client, not the caller's.
+    expect(route).toMatch(/admin\s*\n?\s*\.from\('waitlist'\)\s*\n?\s*\.update\(\{ intended_member_type/)
+
+    const wl = readFileSync('lib/invitations/communityDesignation.ts', 'utf8')
+    expect(wl).toMatch(/raw === 'next' \? 'next' : 'professional'/)
+  })
+
+  it('bulk and campaign issuance cannot name or accept a community', () => {
+    // These paths CREATE waitlist rows. They must keep taking migration 099's DEFAULT, so a bulk
+    // send or a nomination campaign can never issue an Andrel Next invitation by accident.
+    for (const f of [
+      'app/api/admin/bulk-invite/route.ts',
+      'app/api/admin/campaigns/james-nomination/route.ts',
+      'app/api/admin/campaigns/jesse-nomination/route.ts',
+      'lib/campaigns/campaignRouteHandler.ts',
+    ]) {
+      const src = readFileSync(f, 'utf8')
+      expect(src, `${f} names intended_member_type`).not.toContain('intended_member_type')
+      expect(src, `${f} names a community`).not.toMatch(/'next'/)
+    }
   })
 })
 
@@ -149,17 +196,31 @@ describe('4A-1 ships NO production writer — the central claim of this stage', 
     execSync("grep -rn 'member_type' --include='*.ts' --include='*.tsx' app lib components 2>/dev/null | grep -v __tests__ || true",
       { encoding: 'utf8' }).split('\n').filter(Boolean)
 
+  // BOTH REGEXES BELOW NOW EXCLUDE `intended_member_type`, WHICH CONTAINS `member_type` AS A
+  // SUBSTRING. That is a tightening, not a relaxation: the invitation's intended community lives on
+  // public.waitlist and is a completely different column from profiles.member_type, which remains
+  // unwritten and unassigned by any production code. Before this, the admin issuance control's
+  // `waitlist.update({ intended_member_type })` and a read-only `=== 'next'` comparison rendered for
+  // a badge both matched, so these guards would have failed on code that does exactly what they
+  // exist to require. A guard that cannot tell the two columns apart cannot protect either.
+  const PROFILES_MEMBER_TYPE = /(?<!intended_)member_type/
+
   it('no production file writes profiles.member_type', () => {
     const files = Array.from(new Set(productionMemberTypeWrites().map((l) => l.split(':')[0])))
     for (const f of files) {
       const src = readFileSync(f, 'utf8')
-      expect(src, `${f} writes member_type`).not.toMatch(/\.(insert|update|upsert)\([\s\S]{0,20}\{[^}]*member_type/)
+      expect(src, `${f} writes member_type`)
+        .not.toMatch(/\.(insert|update|upsert)\([\s\S]{0,20}\{[^}]*(?<!intended_)member_type/)
     }
   })
 
   it("no production code assigns 'next' to a member", () => {
     const hits = execSync(`grep -rnE "member_type[^\\n]*[:=][^=]*'next'" --include='*.ts' --include='*.tsx' app lib components || true`,
-      { encoding: 'utf8' }).split('\n').filter(Boolean).filter((l) => !l.includes('__tests__'))
+      { encoding: 'utf8' }).split('\n').filter(Boolean)
+      .filter((l) => !l.includes('__tests__'))
+      // Drop lines whose ONLY match is the waitlist column. A line that assigns a community to a
+      // PROFILE still fails.
+      .filter((l) => PROFILES_MEMBER_TYPE.test(l.replace(/intended_member_type/g, '')))
     expect(hits).toEqual([])
   })
 
