@@ -10,6 +10,8 @@ import MobileNav from '@/components/MobileNav'
 // renders — dashboard and admin alike — is behind the auth guard below, so the wordmark
 // destination is a constant the client is handed rather than something it has to ask about.
 import { AUTHENTICATED_LOGO_HREF } from '@/lib/nav/logoHref'
+// communityOf() returns null for an absent/unrecognised value rather than guessing — see below.
+import { communityOf, DEFAULT_MEMBER_TYPE } from '@/lib/community/memberType'
 import Tutorial from '@/components/Tutorial'
 import FloatingHelp from '@/components/FloatingHelp'
 import PresenceHeartbeat from '@/components/PresenceHeartbeat'
@@ -87,7 +89,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // A3: both are SELF reads. Server component → read the caller's OWN row via service_role scoped to
     // user.id (base-table SELECT is revoked for the browser/authenticated role; the legal-acceptance
     // fields are not in the minimal self RPC allowlist, so admin is the right server-side path here).
-    createAdminClient().from('profiles').select('profile_complete, full_name, avatar_url').eq('id', user.id).single(),
+    // member_type joins this SELECT rather than getting a read of its own: it is the same self row,
+    // already read through service_role with the id taken from the verified session, so this is the
+    // authoritative post-profile source and costs nothing extra. get_my_profile() is deliberately
+    // NOT extended — its migration-057 allowlist excludes future columns, and no client needs it.
+    createAdminClient().from('profiles').select('profile_complete, full_name, avatar_url, member_type').eq('id', user.id).single(),
     createAdminClient()
       .from('profiles')
       .select('terms_version_accepted, privacy_version_accepted, terms_grandfathered_through_version, privacy_grandfathered_through_version')
@@ -246,6 +252,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
     grandfatheredPrivacyVersion: acceptance.privacy_grandfathered_through_version,
   })) redirect('/legal/accept')
 
+  // ─── PRESENTATION CONTEXT, NEVER AUTHORIZATION ───────────────────────────────────────────────
+  //
+  // Handed to Sidebar/MobileNav so a later step can render Andrel Next chrome without either of them
+  // asking the database who the viewer is. It is a HINT: a client component receiving
+  // memberType='next' proves nothing, and no gate may be built on it. Every surface that must
+  // actually be closed to a community — Opportunities, Billing — performs its OWN service_role read
+  // (lib/community/viewerCommunity.ts) and redirects server-side, independently of this prop.
+  //
+  // FAILS CLOSED TO PROFESSIONAL. communityOf() returns null for a missing, null or unrecognised
+  // value rather than coercing it, and null becomes DEFAULT_MEMBER_TYPE here — so a failed read, an
+  // unapplied migration 095 or a future third community all render exactly today's navigation.
+  const memberType = communityOf(profile) ?? DEFAULT_MEMBER_TYPE
+
   const displayName = profile?.full_name || user.email?.split('@')[0] || 'You'
   const initials = displayName.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
   const avatarColor = pickColor(user.id)
@@ -284,7 +303,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <>
       <Tutorial />
       <MainScrollReset />
-      <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} opportunityBadgeCount={opportunityBadgeCount} adminBadgeCount={adminBadgeCount} logoHref={AUTHENTICATED_LOGO_HREF} />
+      <MobileNav credits={credits} unreadCount={unreadCount} meetingNotifCount={meetingNotifCount} opportunityBadgeCount={opportunityBadgeCount} adminBadgeCount={adminBadgeCount} logoHref={AUTHENTICATED_LOGO_HREF} memberType={memberType} />
       <div className="dashboard-shell min-h-screen md:flex bg-[#FAF6EE]">
         <Sidebar
           displayName={displayName}
@@ -299,6 +318,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           opportunityBadgeCount={opportunityBadgeCount}
           adminBadgeCount={adminBadgeCount}
           logoHref={AUTHENTICATED_LOGO_HREF}
+          memberType={memberType}
         />
         <main id="dashboard-main" className="flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto overflow-x-hidden pb-[env(safe-area-inset-bottom)] md:pb-0">
           {children}

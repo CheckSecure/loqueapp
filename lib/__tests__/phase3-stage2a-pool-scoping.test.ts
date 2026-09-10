@@ -433,9 +433,22 @@ describe('member_type data flow: available internally, never widened outward', (
 
   it('the For-you read needs no presentation-layer filter', () => {
     // Scoping candidate CREATION is the fix; a client-side filter would paper over an upstream bug.
+    //
+    // ASSERTED AGAINST THE CODE, NOT THE COMMENTS. The page now carries a whole-page community GATE
+    // — a Next member is redirected away before the feed is read at all — and its comment explains
+    // why, which necessarily names member_type. That gate is not what this test is about and does
+    // not weaken it: it is an access decision taken BEFORE the query, not a filter applied to the
+    // rows that come back. The claim being pinned is unchanged — nothing narrows the delivered set
+    // in the presentation layer — so the assertion reads the executable lines and ignores prose.
     const page = readFileSync('app/dashboard/opportunities/page.tsx', 'utf8')
-    expect(page).not.toContain('member_type')
-    expect(page).not.toContain('filterSameCommunity')
+    const code = page.split('\n')
+      .filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l))
+      .join('\n')
+    expect(code).not.toContain('member_type')
+    expect(code).not.toContain('filterSameCommunity')
+
+    // The gate precedes the feed read, so it cannot be acting as a filter on it.
+    expect(page.indexOf('viewerIsNext(user.id)')).toBeLessThan(page.indexOf('opportunity_candidates'))
   })
 
   it('the stale "member_type does not exist yet" comment is gone', () => {

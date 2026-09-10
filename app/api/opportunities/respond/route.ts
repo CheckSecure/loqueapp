@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { RESPONSE_CAP, RECRUITER_WEEKLY_CAP } from '@/lib/opportunities/caps';
+import { viewerIsNext, COMMUNITY_FORBIDDEN, COMMUNITY_FORBIDDEN_STATUS } from '@/lib/community/viewerCommunity';
 
 function isoWeekStart(d = new Date()): string {
   const copy = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -14,6 +15,25 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  // ─── ANDREL NEXT: THE SECOND MEMBER-FACING WRITE ─────────────────────────────────────────────
+  //
+  // Responding is the other endpoint through which a member ENTERS the Professional opportunity
+  // product rather than merely reading it: it writes a credit_transactions row, an
+  // opportunity_responses row, and notifies the creator that this person is interested.
+  //
+  // Today it is already unreachable for a Next member by a second route — the candidacy check below
+  // requires an opportunity_candidates row, and lib/opportunities/matching.ts scopes candidate pools
+  // by community and fails closed on an unknown member_type, so a Next member is never a candidate.
+  // That is an argument from STATE, though, not from authorization: it holds because no Next
+  // candidacy rows exist, and it would stop holding the moment pool scoping regressed. This check
+  // holds regardless of what rows exist.
+  //
+  // FIRST, like create: before the body is parsed and before the opportunity is read, so a refused
+  // caller learns nothing about whether the id they addressed exists, is open, or has expired.
+  if (await viewerIsNext(user.id)) {
+    return NextResponse.json(COMMUNITY_FORBIDDEN, { status: COMMUNITY_FORBIDDEN_STATUS });
+  }
 
   let body: { opportunity_id?: string };
   try { body = await request.json(); }

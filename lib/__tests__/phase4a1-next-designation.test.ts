@@ -92,8 +92,20 @@ describe('intended community: server-controlled, Professional-safe', () => {
     //   * The value is whitelisted to 'professional' | 'next' before it can reach the database.
     //
     // The file list is pinned rather than the claim. A new name here fails until it is reviewed.
+    // THE GREP EXCLUDES resolve_intended_member_type, and that is a sharpening rather than a
+    // loosening. The migration-099 RESOLVER's name contains the column's name as a substring, so once
+    // a production file legitimately calls the resolver (see the onboarding community context, pinned
+    // separately below) a bare grep starts reporting it as a column consumer. It is not one: it never
+    // names the column, never selects it, and reaches the value only through the SECURITY DEFINER
+    // function. Keeping the file list at exactly five preserves the claim this pin actually makes —
+    // which files touch the COLUMN — instead of diluting it with resolver call sites.
     const hits = execSync("grep -rln 'intended_member_type' --include='*.ts' --include='*.tsx' app lib components || true",
-      { encoding: 'utf8' }).split('\n').filter(Boolean).filter((f) => !f.includes('__tests__')).sort()
+      { encoding: 'utf8' }).split('\n').filter(Boolean).filter((f) => !f.includes('__tests__'))
+      .filter((f) => {
+        const src = readFileSync(f, 'utf8')
+        return src.replace(/resolve_intended_member_type/g, '').includes('intended_member_type')
+      })
+      .sort()
     expect(hits).toEqual([
       'app/api/admin/send-invite/route.ts',        // the ONE writer, admin-gated, service-role
       'app/dashboard/admin/waitlist/page.tsx',     // reads it for the read-only badge
@@ -281,17 +293,51 @@ describe('4A-1 ships NO production writer — the central claim of this stage', 
     expect(prodHits('correct_member_type|change_member_type|set_member_type|promote_member'))
       .toEqual([])
 
-    // 3. THE CENTRAL 4A-1 CLAIM: no production code consults the provisioning resolver, so no
-    //    production code can act on a community at all. migrationHealth REGISTERS the name for an
-    //    all-NULL probe; it never invokes it as a provisioner, which is asserted separately below.
+    // 3. THE RESOLVER HAS EXACTLY ONE AUTHORIZED CONSUMER.
     //
-    //    THIS ASSERTION IS EXPECTED TO FAIL AT 4A-2, AND THAT IS ITS PURPOSE. 4A-2 introduces the
-    //    first legitimate caller. When it does, this must be REWRITTEN to pin the caller to exactly
-    //    one authorized provisioning site — never deleted, and never widened to "any file". Failing
-    //    loudly at that moment is what stops a second resolver consumer arriving unreviewed.
+    //    REWRITTEN, AS 4A-1 INSTRUCTED IT SHOULD BE. The original assertion claimed NO production
+    //    code consulted the provisioning resolver, and said in as many words that it was expected to
+    //    fail when the first legitimate caller arrived — to be rewritten to pin that caller to
+    //    exactly one site, never deleted and never widened to "any file".
+    //
+    //    It did not fire at 4A-2 as predicted, because migration 100 resolved the community inside
+    //    tg_profiles_provision_bind() — in SQL, in the same statement as the INSERT — so no
+    //    TypeScript caller appeared. It fires now, at the first TypeScript consumer: the onboarding
+    //    surface, which must know which FORM to render before the profile row that carries
+    //    member_type exists at all.
+    //
+    //    THE CALLER IS NOT A PROVISIONER, and that distinction is the whole reason it is allowed.
+    //    It renders a form. It writes nothing, and every one of its failure modes — ambiguous intent,
+    //    no invitation, an unavailable RPC, an unrecognised value — resolves to Professional. The
+    //    boundary is still migration 100's trigger, which re-resolves the same intent at INSERT and
+    //    refuses the write if it cannot.
     const resolverFiles = Array.from(new Set(prodHits('resolve_intended_member_type').map((l) => l.split(':')[0])))
-    expect(resolverFiles).toEqual(['lib/db/migrationHealth.ts'])
+    expect(resolverFiles).toEqual([
+      'app/onboarding/page.tsx',                 // names the resolver in prose; calls the module below
+      'lib/db/migrationHealth.ts',               // probe registration only
+      'lib/onboarding/communityContext.ts',      // THE one caller
+    ])
+
+    // Registration is not invocation.
     expect(readFileSync('lib/db/migrationHealth.ts', 'utf8'))
       .not.toMatch(/\.rpc\(\s*['"]resolve_intended_member_type/)
+
+    // EXACTLY ONE application call site, in the module named for it. A second .rpc() anywhere —
+    // including a second one inside that module — fails here until it is reviewed.
+    const allCalls = execSync(
+      "grep -rn \"rpc('resolve_intended_member_type'\" --include='*.ts' --include='*.tsx' app lib components 2>/dev/null || true",
+      { encoding: 'utf8' },
+    ).split('\n').filter(Boolean).filter((l) => !l.includes('__tests__'))
+    expect(allCalls).toHaveLength(1)
+    expect(allCalls[0].split(':')[0]).toBe('lib/onboarding/communityContext.ts')
+
+    // The onboarding page reaches it ONLY through that module — never with its own client.
+    const page = readFileSync('app/onboarding/page.tsx', 'utf8')
+    expect(page).toMatch(/import \{ resolveOnboardingCommunity \} from '@\/lib\/onboarding\/communityContext'/)
+    expect(page).not.toMatch(/\.rpc\(\s*['"]resolve_intended_member_type/)
+
+    // And the one caller still cannot write a community anywhere.
+    const ctx = readFileSync('lib/onboarding/communityContext.ts', 'utf8')
+    expect(ctx).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|member_type:/)
   })
 })
