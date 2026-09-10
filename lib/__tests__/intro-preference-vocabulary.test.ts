@@ -85,9 +85,21 @@ describe('intro_preferences → role_type vocabulary bridge', () => {
   })
 
   it('scope: only batch-scoring is wired — the other engines are untouched', () => {
-    expect(readFileSync('lib/matching/batch-scoring.ts', 'utf8')).toMatch(/preferenceMatchesRole/)
+    // NARROWED to assert the IMPORT rather than a substring. The claim is unchanged and still
+    // exactly what it was: only batch-scoring consults the taxonomy-aware matcher. What changed is
+    // that generate-recommendations now has its own loose compare — a different function with
+    // different semantics — and a bare substring test cannot tell one from the other.
+    expect(readFileSync('lib/matching/batch-scoring.ts', 'utf8'))
+      .toMatch(/import \{ preferenceMatchesRole \} from '@\/lib\/matching\/introPreferenceMatch'/)
+    // Asserted over EXECUTABLE lines: generate-recommendations' own helper documents in prose why it
+    // is NOT the taxonomy matcher and names it to say so, which a raw scan would read as a use.
     for (const f of ['lib/generate-recommendations.ts',
-                     'app/api/admin/batch/[batchId]/generate-replacements/route.ts'])
-      expect(readFileSync(f, 'utf8'), f).not.toMatch(/preferenceMatchesRole/)
+                     'app/api/admin/batch/[batchId]/generate-replacements/route.ts']) {
+      const code = readFileSync(f, 'utf8').split('\n')
+        .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*') && !l.trim().startsWith('/*'))
+        .join('\n')
+      expect(code, f).not.toMatch(/introPreferenceMatch/)
+      expect(code, f).not.toMatch(/\bpreferenceMatchesRole\b/)
+    }
   })
 })

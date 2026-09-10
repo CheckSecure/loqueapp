@@ -623,9 +623,26 @@ describe('Nicholas audit and repair', () => {
 
 // ── 8. Unrelated behaviour ───────────────────────────────────────────────────────────
 describe('unrelated behaviour unchanged', () => {
-  it('profile completion still requires title, company and location only', () => {
+  it('profile completion requires title, company, location and (Professionals only) role_type', () => {
+    // THE CLAIM INTENTIONALLY CHANGED. This guard previously asserted that profile completion
+    // required title, company and location and NOTHING else. It now also requires role_type — but
+    // for PROFESSIONALS ONLY.
+    //
+    // Why it changed: /api/profile/complete is the second writer that sets profile_complete = true,
+    // and it was the only one that did so without verifying role_type (completeOnboarding and
+    // updateProfile's D2 gate both require it). The legacy /dashboard/onboarding wizard finishes
+    // here, and it requires role_type client-side only — which is not a gate, for the same reason
+    // title, company and location are re-validated server-side against stored values.
+    //
+    // Why it is community-aware: Andrel Next members have no Professional role_type by design, so
+    // requiring one of a law student would be an outage rather than a safeguard. The community is
+    // read from the stored profile row through communityOf(), never from client input.
+    // This suite's own concern — that completion does not depend on current_status — is unchanged
+    // and still asserted. Only the "and nothing else" half of the claim moved.
     const route = readFileSync('app/api/profile/complete/route.ts', 'utf8')
     expect(route).toContain('Professional title is required.')
+    expect(route).toContain('Professional role is required.')
+    expect(route).toMatch(/if \(communityOf\(identity\) !== 'next'\) \{/)
     expect(route).not.toMatch(/current_status/)
   })
 

@@ -353,7 +353,9 @@ describe('server boundaries — profile_complete can never be set on an invalid 
 
   it('/api/profile/complete re-validates the STORED location, so a skipped client cannot bypass it', () => {
     expect(COMPLETE_ROUTE).toMatch(/validateLocation\(identity\?\.location\)/)
-    expect(COMPLETE_ROUTE).toMatch(/select\('title, company, location'\)/)
+    // The select gained member_type and role_type when completion became community-aware; the
+    // location half of this guard — stored value, validated before the write — is unchanged.
+    expect(COMPLETE_ROUTE).toMatch(/select\('title, company, location, member_type, role_type'\)/)
     const gate = COMPLETE_ROUTE.indexOf('validateLocation(identity?.location)')
     const write = COMPLETE_ROUTE.indexOf('profile_complete: true')
     expect(gate).toBeGreaterThan(-1)
