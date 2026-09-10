@@ -99,17 +99,29 @@ describe('may_provision_profile has only its authorized consumers', () => {
     expect(SQL).toMatch(/RAISE NOTICE '100: % of % existing profiles would not be re-provisionable/)
   })
 
-  it('no production TypeScript calls it — the boundary is the database, not the application', () => {
-    // The J1 pre-check in completeOnboarding is a SEPARATE, later, reviewed step. When it lands it
-    // must be pinned to exactly one file here, never widened to "any file".
+  it('exactly two production TypeScript files name it, and only one CALLS it', () => {
+    // WIDENED ONCE, DELIBERATELY, IN J1 — from ['lib/db/migrationHealth.ts'] to add app/actions.ts,
+    // which holds the onboarding pre-check. That pre-check is UX: it turns a refusal the database
+    // would also make into a readable sentence, and every one of its failure modes proceeds to the
+    // write. The boundary is still the trigger.
+    //
+    // This is a PIN, not a relaxation. A third file, or a second call site inside app/actions.ts,
+    // fails here until it is explicitly reviewed.
     const hits = execSync(
       "grep -rn 'may_provision_profile' --include='*.ts' --include='*.tsx' app lib components 2>/dev/null || true",
       { encoding: 'utf8' },
     ).split('\n').filter(Boolean).filter((l) => !l.includes('__tests__'))
-    const files = Array.from(new Set(hits.map((l) => l.split(':')[0])))
-    expect(files).toEqual(['lib/db/migrationHealth.ts'])
+    const files = Array.from(new Set(hits.map((l) => l.split(':')[0]))).sort()
+    expect(files).toEqual(['app/actions.ts', 'lib/db/migrationHealth.ts'])
+
+    // migrationHealth REGISTERS the name for an all-NULL probe; it must never invoke it by literal.
     expect(readFileSync('lib/db/migrationHealth.ts', 'utf8'))
       .not.toMatch(/\.rpc\(\s*['"]may_provision_profile/)
+
+    // EXACTLY ONE application call site.
+    const calls = Array.from(
+      readFileSync('app/actions.ts', 'utf8').matchAll(/\.rpc\(\s*['"]may_provision_profile['"]/g))
+    expect(calls).toHaveLength(1)
   })
 })
 

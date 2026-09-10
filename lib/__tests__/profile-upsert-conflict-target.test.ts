@@ -66,6 +66,12 @@ vi.mock('@/lib/supabase/server', () => ({
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
+    // Added in J1. completeOnboarding now asks may_provision_profile whether a GENUINELY FIRST
+    // profile may be created, so the service-role client this file models has to answer. It always
+    // authorizes here: this file is about the conflict target and address normalisation, and a
+    // refusal would change which behaviour is under test rather than adding to it. The pre-check's
+    // own outcomes are covered in j1-onboarding-provisioning-ux.test.ts.
+    rpc: async () => ({ data: { outcome: 'authorized' }, error: null }),
     from: (table: string) => {
       const b: any = {
         _res: { data: null, error: null },
