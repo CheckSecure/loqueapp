@@ -174,6 +174,36 @@ describe('the migration binds the community at the first INSERT and nowhere else
     expect(body).not.toMatch(/<>\s*'revoked'/)
   })
 
+  /**
+   * The behavioural proof for these lives in supabase/tests/phase4a2/concurrency_proof.sh, which
+   * runs two independent connections and measures blocking from pg_stat_activity. It is NOT run
+   * here: it needs a local PostgreSQL toolchain and takes ~40s of deliberate waiting, and a timing
+   * test in the ordinary suite is exactly the kind of flake that gets muted and then ignored.
+   *
+   * What IS durable is the STRUCTURE the measured behaviour depends on. These two assertions are
+   * the two ways it could regress silently, and neither involves timing.
+   */
+  it('the trigger takes its waitlist lock BEFORE asking whether provisioning is allowed', () => {
+    const body = functionBody('tg_profiles_provision_bind')
+    expect(body).toMatch(/FOR SHARE/)
+    // The lock must be on the waitlist rows for this normalised address, and it must precede the
+    // authorization read — locking afterwards would serialise nothing.
+    const lock = body.indexOf('FOR SHARE')
+    expect(body.slice(0, lock)).toMatch(/FROM public\.waitlist w/)
+    expect(lock).toBeLessThan(body.indexOf('may_provision_profile'))
+  })
+
+  it('the volatility split that makes the post-lock read observe a committed revoke', () => {
+    // MEASURED (scenario 3): after the trigger's FOR SHARE unblocks, a revoke that committed while
+    // it waited IS observed, and provisioning is refused. That depends on the trigger being
+    // VOLATILE — a volatile function takes a fresh snapshot for each statement it runs, and the
+    // STABLE authorizer then inherits that fresh snapshot. Declaring the trigger STABLE would keep
+    // the lock, silently reintroduce the stale read, and no existing assertion would notice.
+    const trigger = functionBody('tg_profiles_provision_bind')
+    expect(trigger).not.toMatch(/\bSTABLE\b|\bIMMUTABLE\b/)
+    expect(functionBody('may_provision_profile')).toMatch(/\bSTABLE\b/)
+  })
+
   it('the two questions stay in two functions', () => {
     // may_provision_profile must not learn about communities…
     expect(functionBody('may_provision_profile')).not.toMatch(/member_type|resolve_intended/)
