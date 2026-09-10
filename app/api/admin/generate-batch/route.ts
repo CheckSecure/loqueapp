@@ -6,7 +6,7 @@ import { isBusinessSolutionProvider, maxBusinessSolutionCount, isLegalNetworking
 import { isSameCompany } from '@/lib/matching/same-company'
 import { introReasonText } from '@/lib/match-signals'
 import { sanitizeMatchScore, assertStorableScore } from '@/lib/matching/score'
-import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
+import { buildScoringContext, scoreMatch as scoreMatchV2, BATCH_CONFIG, relevanceFloorFor, RECOMMENDATION_ALGORITHM_VERSION, SCORING_MODEL_VERSION, algorithmSnapshot, algorithmConfigHash, type ScoringContext } from '@/lib/matching/batch-scoring'
 import { applyMemberEligibility, filterEligible, ELIGIBILITY_COLUMNS } from '@/lib/matching/eligibility'
 import { MEMBER_TYPE_COLUMNS, MEMBER_TYPES, partitionByCommunity, countUnknownCommunity } from '@/lib/community/memberType'
 import { enforceRecipientLimits, perRecipientIntroLimit } from '@/lib/matching/batch-limits'
@@ -362,6 +362,19 @@ export async function POST(req: NextRequest) {
       // "score everyone, then drop cross-community pairs" shape cannot be written here.
       const scoringCtx: ScoringContext = buildScoringContext(cohort, undefined, 'generate-batch')
 
+      // THE FLOOR IS THE COHORT'S, NOT THE ROUTE'S.
+      //
+      // Professional stays at BATCH_CONFIG.minRelevanceScore = 40, unchanged. A Next cohort uses
+      // NEXT_SCORING_CONFIG.minRelevanceScore = 28, because a student pair cannot earn the
+      // intro-preference term (no role_type), the seniority term (NULL) or the tier/verification/
+      // trust amplifiers while the cohort is new — so 40 sits near the 60th percentile of what a
+      // Next pair can reach rather than the 20-25th.
+      //
+      // Selected from scoringCtx.semantics, which buildScoringContext DERIVED from this cohort's
+      // own immutable member_type. There is no argument here for a caller to supply, and it fails
+      // closed to the Professional floor on any uncertainty.
+      const cohortFloor = relevanceFloorFor(scoringCtx.semantics)
+
       const allPairs: PairScore[] = []
       // SCORE-FLOOR INSTRUMENTATION. `pairsConsidered` in the response is the count AFTER the
       // floor, so nothing reported how much of the graph the floor removes. Read-only
@@ -421,7 +434,7 @@ export async function POST(req: NextRequest) {
         
           pairsPassingHardGates++
           scoreHistogram[bucketOf(avgScore)]++
-          if (avgScore < MIN_RELEVANCE_SCORE) { pairsCutByScoreFloor++; continue }
+          if (avgScore < cohortFloor) { pairsCutByScoreFloor++; continue }
         
           allPairs.push({
             userA,

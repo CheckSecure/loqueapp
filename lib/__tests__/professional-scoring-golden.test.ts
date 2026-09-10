@@ -427,7 +427,13 @@ describe('11. the whole Professional pool is deterministic end to end', () => {
     const route = readFileSync('app/api/admin/generate-batch/route.ts', 'utf8')
     expect(route).toMatch(/const scoringCtx: ScoringContext = buildScoringContext\(cohort, undefined, 'generate-batch'\)/)
     expect(route).toMatch(/const avgScore = \(scoreAtoB \+ scoreBtoA\) \/ 2/)
-    expect(route).toMatch(/if \(avgScore < MIN_RELEVANCE_SCORE\) \{ pairsCutByScoreFloor\+\+; continue \}/)
+    // UPDATED BY STEP 3.5, and deliberately: the floor is now selected from the cohort's own derived
+    // semantics rather than read from a single constant. This is a STRUCTURAL pin, not a score
+    // expectation — every Professional value in this file is unchanged, and relevanceFloorFor
+    // returns BATCH_CONFIG.minRelevanceScore (40) for a Professional cohort, which the Next
+    // semantics suite asserts directly.
+    expect(route).toMatch(/const cohortFloor = relevanceFloorFor\(scoringCtx\.semantics\)/)
+    expect(route).toMatch(/if \(avgScore < cohortFloor\) \{ pairsCutByScoreFloor\+\+; continue \}/)
     expect(route).toMatch(/Math\.abs\(a\.relevanceScore - b\.relevanceScore\) > 10/)
     expect(route).toMatch(/solveGlobalBMatching\(primaryPairs as any\[\], baseSolverConfig\)/)
   })
@@ -484,16 +490,28 @@ describe('13. the pre-change algorithm configuration', () => {
     })
   })
 
-  it('the snapshot carries the three config objects', () => {
+  it('the snapshot carries the config objects, now including Next', () => {
     const snap = algorithmSnapshot() as any
-    expect(Object.keys(snap).sort()).toEqual(['batch', 'exposure', 'scoring', 'scoringModelVersion', 'version'])
+    expect(Object.keys(snap).sort()).toEqual(['batch', 'exposure', 'next', 'scoring', 'scoringModelVersion', 'version'])
   })
 
-  it('the config hash BEFORE Step 3.5 is pinned', () => {
-    // Recorded so the Step 3.5 hash change is a visible, reviewed delta rather than a silent one.
-    // This value is the PRE-3.5 hash and is expected to change when Next constants join the
-    // snapshot. When it does, the change is deliberate and the new value is pinned alongside it.
-    expect(algorithmConfigHash()).toBe('df26f0c8')
+  it('the config hash CHANGED, and only because Next configuration joined the snapshot', () => {
+    // BEFORE Step 3.5:  df26f0c8
+    // AFTER  Step 3.5:  bec34e9e
+    //
+    // The hash moved because NEXT_SCORING_CONFIG is now part of the reproducible algorithm
+    // configuration recorded on every batch — the Next expertise semantics and the Next relevance
+    // floor are genuinely part of what produced a batch, and hiding them outside the snapshot to
+    // preserve the old value would make batches less reproducible, not more honest.
+    //
+    // A CONFIG-HASH CHANGE IS NOT A SCORING CHANGE. Every Professional expectation in this file —
+    // all 62 of them, including the whole-pool ordering, floor and selection — is unchanged.
+    expect(algorithmConfigHash()).toBe('bec34e9e')
+  })
+
+  it('the Next constants are the ones recorded', () => {
+    expect((algorithmSnapshot() as any).next)
+      .toEqual({ expertiseBase: 14, expertiseDecay: 0.75, minRelevanceScore: 28 })
   })
 })
 
